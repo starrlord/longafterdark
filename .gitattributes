@@ -8,6 +8,11 @@
 *.sh text eol=lf
 tools/versions text eol=lf
 
+# Always CRLF, whatever the checkout: the manifests, which the .rc files
+# embed in the programs as they are, so a Linux cross build embeds the same
+# bytes as a Windows build.
+*.manifest text eol=crlf
+
 # Never converted or diffed as text.
 *.png binary
 *.jpg binary

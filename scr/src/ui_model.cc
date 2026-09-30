@@ -251,8 +251,9 @@ std::wstring assets_summary(const AssetCounts& a) {
 std::wstring welcome_text() {
   // Twelve releases, one of them not After Dark's: the product name stays
   // "Long After Dark", the releases are named for what they are. (Star Trek:
-  // The Screen Saver, Marvel Comics Screen Posters, Snoopy's Screen Savers
-  // and ScreamSavers came on floppies: "discs" covers them.)
+  // The Screen Saver, the Simpsons, Marvel Comics Screen Posters, Snoopy's
+  // Screen Savers, the Looney Tunes (also on a CD), ScreamSavers and the
+  // Disney Collection came on floppies: "discs" covers them.)
   return L"The screen saver runs the original modules of After Dark and Star Wars Screen Entertainment from your "
          L"own discs.\n\n"
          L"Import them from any of your discs (twelve releases are supported), a disc image, or the Internet Archive "

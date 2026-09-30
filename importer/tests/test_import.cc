@@ -12,8 +12,8 @@
 // ZIP), and a ZIP's disks are flat; then imported end to end (an AD 3.x
 // install over two disks, a Microsoft Setup one, a Presage one over five, a
 // plain CD tree split in two), one disk alone, and a note beside them never
-// opened. And the UTF-8 the records are written in: winutil.h's test and
-// repair of it against Windows' own decoder, and json_escape.
+// opened. And the UTF-8 the records are written in: utf8.h's test and repair
+// of it against Windows' own decoder, and json_escape.
 #include <phosg/JSON.hh>
 
 #include <functional>
@@ -785,7 +785,7 @@ int main(int argc, char** argv) {
   }
 
   // ---- the records are UTF-8 whatever they are given ---------------------------
-  // winutil.h's utf8_sequence_length draws the line Windows' strict decoder
+  // utf8.h's utf8_sequence_length draws the line Windows' strict decoder
   // draws: every string of one or two bytes, every three-byte string that
   // starts past 0xBF, four-byte strings around every edge. to_valid_utf8
   // keeps UTF-8 as it is and makes U+FFFD of every other byte; json_escape

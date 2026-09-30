@@ -19,7 +19,8 @@ Screen Entertainment, 284 catalog entries in all
 and using it is covered in [INSTALL.md](INSTALL.md). This page is for
 working on it: the architecture, the components, building, testing,
 headless runs, where the assets live, and the conventions. Every command
-below runs in Git Bash from the repository root.
+below runs from the repository root, in Git Bash on Windows or bash on
+Linux ([Building on Linux](#building-on-linux)).
 
 **No file of any of those releases is shipped or committed.** Nothing in
 the repository, the build output or the test fixtures is a file of those
@@ -105,6 +106,7 @@ LongAfterDark.scr ──spawns──► adhostwin.exe  one process per monitor, 
 | Document | What it covers |
 |---|---|
 | [INSTALL.md](INSTALL.md) | For users: importing the releases, covers, installing the screen saver, its settings, where the files are, updating |
+| [LINUX.md](LINUX.md) | For users on Linux: what the Linux player needs, importing under Wine, its options and controls, XScreenSaver, where the files are |
 | [DESIGN.md](DESIGN.md) | The architecture and every contract in brief: host protocol, CPU, loader, core, shims, pacing, catalog and settings, assets, packages, interaction, covers, audio |
 | [ABI.md](ABI.md) | The host/engine/module ABI, recovered by our own disassembly and verified on the After Dark 4.0 Deluxe disc's binaries, Intermission's IMX protocol, verified on the Star Wars Screen Entertainment disc's (ABI.md §3.8), and After Dark 2.0's host, `AD.EXE`, verified on Star Trek: The Screen Saver's floppies (ABI.md §3.9) |
 | [API_SURFACE.md](API_SURFACE.md) | Every function the Deluxe disc's modules and engines import, counted and classified (and where Star Wars Screen Entertainment's census is) |
@@ -130,9 +132,10 @@ actually behaves; the design documents record the plan and the evidence.
 | `importer/` | `adw_import`, **`adimport.exe`** | `adw::import` | Package registry, ISO-9660/Joliet, FAT12/16, PKZIP, ARJ, SZDD, KWAJ and InstallShield 2 library readers, disk sets, verification, atomic per-package import, Internet Archive downloads, covers, catalog generator | [importer/README.md](../importer/README.md) |
 | `importer/gui/` | `adw_import_gui` | `adw::import::gui` | The importer's windows (`adimport --gui`): sources, downloads, progress, result, cover | [importer/gui/README.md](../importer/gui/README.md) |
 | `scr/` | `adw_scr`, **`LongAfterDark.scr`** | `adw::scr` | The screen saver (`/s`, `/p`, `/c`), the settings dialog, input rules, which host plays sound, thumbnails, desktop capture | [scr/README.md](../scr/README.md) |
+| `scr/linux/` | **`longafterdark`** (by `tools/build-player.sh`, not CMake) | `lad` | The Linux player: runs `adhostwin.exe` under Wine and presents its frames on X11 (full screen, a window, XScreenSaver's window or its preview) with the saver's input, sound and screen rules; unit and smoke tests in `tests/` | [LINUX.md](LINUX.md), INTERACTION §4.5 |
 | `common/ui/` | `adw_ui` | `adw::ui` | The Windows 11 theming and widgets shared by the settings dialog and the importer's windows | [common/ui/README.md](../common/ui/README.md), COVERS §3 |
 | `cmake/` | | | `llvm-mingw.cmake` (the toolchain file), `adw_version.h.in` (the one version), `adhostwin.rc` and its manifest | |
-| `tools/` | | | `bootstrap.sh`, `build.sh`, `package.sh`, `versions` (the pinned dependencies) | below |
+| `tools/` | | | `bootstrap.sh`, `build.sh`, `package.sh`, `build-player.sh` (the Linux player), `versions` (the pinned dependencies), `longafterdark.xml` (the player's entry for XScreenSaver's settings) | below |
 
 Each lane's knobs (`ADMIPS`, `ADNE16BRIDGE`, `ADPE32SCALE`, …) are listed in
 the header comment of its `lane.hh`.
@@ -141,7 +144,9 @@ the header comment of its `lane.hh`.
 
 You need Git for Windows (Git Bash, with `curl`, `unzip` and `git`) and
 CMake 3.24 or later, on `PATH` or in `C:\Program Files\CMake`. The host
-executes x87 code on the host FPU, so the target is x86-64 Windows only.
+executes x87 code on the host FPU, so the target is x86-64 Windows only (on
+Linux the same programs are cross-built for it: [Building on
+Linux](#building-on-linux)).
 
 ```bash
 # Git Bash, from the repository root
@@ -165,8 +170,11 @@ bash tools/package.sh       # Release build in build/win-release, staged for ins
   and runs `ctest`. Environment:
   `AD_BUILD_DIR` (default `build/win`), `AD_COMPONENTS` (a `;`-separated
   subset of component directories), `AD_NO_TESTS=1`, `AD_CTEST_ARGS`
-  (e.g. `"-R import"`), `CMAKE_BUILD_TYPE` (default Release, which an
-  interpreter needs).
+  (extra `ctest` arguments, e.g. `-R import` or `-LE gui -j8`: split at
+  whitespace and passed as they are, never read as shell syntax or
+  globbed, so a regex needs no quotes, as in `-R cpu|win16`, and can hold
+  no space), `CMAKE_BUILD_TYPE` (default Release, which an interpreter
+  needs).
 * **`package.sh`** builds only the three shipped programs in Release (in
   `AD_BUILD_DIR`, default `build/win-release`; no test programs, no tests
   run) and stages `LongAfterDark.scr`, `adhostwin.exe`, `adimport.exe`, a
@@ -179,7 +187,8 @@ bash tools/package.sh       # Release build in build/win-release, staged for ins
   is replaced and it exits 1. The binaries carry no link timestamp, so the
   same source gives the same `adhostwin.exe` and `adimport.exe` byte for
   byte (`LongAfterDark.scr` differs only in the build date and time its
-  last-exit log records), and all three carry a VERSIONINFO
+  last-exit log records, unless `SOURCE_DATE_EPOCH` sets them, as CI
+  does), and all three carry a VERSIONINFO
   (`project(VERSION)` in `CMakeLists.txt`, with the copyright line taken
   from `LICENSE`).
 
@@ -200,6 +209,89 @@ and `scr/LongAfterDark-test.scr`, the saver with its test hooks
 and so must anything else that sets those variables (with `AD_HOST_EXE`
 naming the host); the packaged `LongAfterDark.scr` never reads them.
 The binaries are linked statically (no DLLs beside them) with an 8 MB stack.
+
+## Building on Linux
+
+On Linux the same three programs are cross-built for Windows with the
+pinned llvm-mingw's Linux build, and Wine runs the build's own Windows
+programs (the icon generators) and the tests. The Linux player,
+`longafterdark` (`scr/linux/`, [LINUX.md](LINUX.md)), is built beside them
+with the system's g++ by `tools/build-player.sh`; CMake never compiles
+`scr/linux/`. On Debian or Ubuntu (24.04 or later: 22.04's CMake, 3.22, is
+older than the 3.24 the build needs, though the player alone builds there):
+
+```bash
+sudo apt install cmake git curl unzip xz-utils zip g++ libx11-dev libxext-dev libxrandr-dev wine wine64
+sudo apt install xvfb xdotool python3   # an X display for the tests, and the player's smoke test
+bash tools/bootstrap.sh                 # once: the toolchain's Linux build, ninja, zlib, phosg -> third_party/
+bash tools/build-player.sh              # the player -> build/linux/longafterdark
+bash tools/build-player.sh --tests      # its unit tests, built and run
+bash tools/package.sh                   # the player, then build/dist/LongAfterDark and its zip
+# the cross build and its tests under Wine -> build/win, without the tests Wine fails (below):
+xvfb-run -a env AD_CTEST_ARGS='-LE gui -E ^(ui\.(theme|image|capture|slider)|core\.audio|win(16|32)\.unit|import\.(download|covers|gui_model)|scr_unit_(releases|present))$ -j4' bash tools/build.sh
+```
+
+* **`bootstrap.sh`** also needs `curl`, `git`, `cmake`, `unzip`, `tar` and
+  `xz` on Linux, and names any that is missing. Everything specific to the
+  host has a folder of its own, so a checkout shared with Windows (WSL, a
+  dual boot, a container's bind mount) keeps both hosts' builds:
+  `third_party/toolchains/llvm-mingw-<ver>-<LLVM_MINGW_LINUX_BUILD>/` (the
+  release's Linux build; `LLVM_MINGW_LINUX_BUILD` is in `tools/versions`),
+  `third_party/toolchains/ninja-linux/`, and zlib and phosg in
+  `third_party/win/local-linux/` (built in `third_party/win/build-linux-*`);
+  their sources are shared. The Linux archives have digests of their own
+  (`LLVM_MINGW_LINUX_SHA256`, `NINJA_LINUX_SHA256`), so bumping
+  `LLVM_MINGW_VER` or `NINJA_VER` needs both digests. `AD_SEED_DIR` supplies
+  `llvm-mingw-*.tar.xz` and `ninja-linux.zip` offline.
+* **`cmake/llvm-mingw.cmake`** makes it a cross build
+  (`CMAKE_SYSTEM_NAME Windows`), runs the build's programs through Wine
+  (`CMAKE_CROSSCOMPILING_EMULATOR`), and stops at configure with a message
+  when there is no Wine (`-DWINE_EXECUTABLE=<path>` names one).
+* **`build-player.sh [<output>]`** compiles every `scr/linux/*.cc` (not
+  `tests/`) and `importer/minijson.cc` as C++20 with `-O2 -Wall -Wextra`
+  (not the environment's `CXXFLAGS`), links libstdc++ and libgcc statically
+  and `-lX11 -lXext -lXrandr -lpthread`, and takes the version from
+  `adw_version.h`, which it makes beside the output from
+  `cmake/adw_version.h.in` as CMake does. The player then needs only glibc
+  (the version it was built against, or newer) and libX11, libXext and
+  libXrandr. `AD_CXX` names the compiler, `AD_WERROR=1` makes warnings
+  errors, and `AD_GLIBC_MAX=2.35` refuses (and deletes) a player that needs
+  a newer glibc symbol, or libstdc++ or libgcc_s at all. `--tests [<output>]`
+  builds `scr/linux/tests/unit.cc` with the same sources but `main.cc` and
+  runs it; it needs no X display and no Wine.
+* **`package.sh`** on Linux builds the player first (or stages
+  `AD_PLAYER=<player>`), so a machine without g++ or `zip` fails before the
+  long build, then builds the three programs as on Windows and stages
+  `build/dist/LongAfterDark/` with `longafterdark` (mode 755),
+  `longafterdark.xml`, a Linux `README.txt`, `LICENSE.txt` and `licenses/`,
+  whose `NOTICE.txt` covers the player too; the text files keep LF endings.
+  It zips the folder as `build/dist/LongAfterDark-linux-x64.zip` (`AD_ZIP`
+  names another), since zip keeps the player's executable bit.
+* **The tests under Wine** are the Windows ones, but for twelve tests that
+  check what Wine does differently from Windows: the pixels of the Windows 11
+  look, Windows' own ADPCM codec, 8.3 aliases, GDI object counts, WinHTTP
+  on dropped and cancelled transfers, dropped files, Segoe UI's metrics and
+  HALFTONE stretching. A plain `build.sh` runs them too: they fail, and
+  `import.download` and `import.covers` hang until their timeouts. The
+  `-E` list above leaves them out; the CI's, in
+  `.github/workflows/build.yml`, is the same and says why for each, and the
+  Windows job runs them all. Without 32-bit Wine, `cpu_x86_diff` and
+  `cpu_x86_diff_seed2` skip (their oracle runs x86 code natively).
+* **The player's smoke test**,
+  `bash scr/linux/tests/smoke.sh <player> <adhostwin.exe> [<assets root>]`,
+  runs it in private Xvfb servers and a private Wine prefix, as CI does
+  with `build/win-release/host/core/adhostwin.exe`: the test pattern's
+  frames (or a module's), a host killed mid-run (the player must recover
+  or end, never hang), Shift and Caps Lock not ending it (its host hearing
+  Caps Lock) and a key ending it, a 16-bit display without MIT-SHM, a host
+  killed while the display is off (`--test-display-off`: the player must
+  sleep, start no host until the display is back, then show frames again),
+  XScreenSaver's protocol (`$XSCREENSAVER_WINDOW`, a resize, SIGTERM) and a
+  preview whose window goes away (neither host hearing Caps Lock), and two
+  RandR monitors (frames on the primary one, black on the other, and a
+  move over it ends the player); these last three need python3, and are
+  skipped without it. It exits 0 when every check passes,
+  1 on a failure, 2 when it can't run.
 
 ## Test
 
@@ -409,7 +501,13 @@ Package ids are `deluxe` (its files stay in `FILES\`), `ad10`, `ad32`, `tt`,
 `simpsons`, `swse`, `startrek`, `marvel`, `snoopy`, `looney`, `screams` and
 `disney`. `ADSTATE` is unset in headless runs, so
 the state overlay lives in memory and no user state is read or written.
-Build trees go to `build/` (gitignored).
+Build trees go to `build/` (gitignored); on Linux the player goes to
+`build/linux/`.
+
+On Linux the importer and the hosts run under Wine, so the data folder is
+the Wine prefix's `%LOCALAPPDATA%\LongAfterDark`, and the Linux player
+keeps the modules' state in `$XDG_DATA_HOME/longafterdark/state` instead
+([LINUX.md](LINUX.md#your-files)).
 
 ## Conventions
 
@@ -433,3 +531,21 @@ Build trees go to `build/` (gitignored).
   `latest-main` pre-release, and a `v<version>` tag makes the release of
   that version (the tag must match `project(VERSION)` in `CMakeLists.txt`;
   a `-suffix`, as in `v1.1.0-rc1`, makes it a pre-release).
+  A second job, `build-linux`, does the same on an Ubuntu 24.04 runner (the
+  cross build and its tests under Wine and Xvfb, without the twelve tests
+  above), builds the player in an Ubuntu 22.04 container (`AD_WERROR=1
+  AD_GLIBC_MAX=2.35`, so it runs on glibc 2.35 and newer), runs its unit
+  tests and its smoke test, and makes the Linux zip. Neither the Windows
+  build nor its release waits for it, and a Linux failure neither fails
+  the run nor marks the commit as failed: every step of the job is
+  `continue-on-error` with a timeout of its own (a job that reaches its
+  own timeout is cancelled, which `continue-on-error` doesn't cover), so
+  the job succeeds, a warning on the run and the job's summary name the
+  step that failed, and that run makes no Linux zip. When it has passed,
+  `release-linux` adds its zip to the release that the release job
+  published (`LongAfterDark-<version>-linux-x64.zip` for a tag,
+  `LongAfterDark-linux-x64.zip` on `latest-main`, where the release job
+  first removes an earlier commit's, and only while `latest-main` is still
+  at its commit), with a paragraph for it in the notes. Both jobs build
+  with `SOURCE_DATE_EPOCH` set to the commit's time, so both zips hold the
+  same three Windows programs, byte for byte.

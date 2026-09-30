@@ -1,7 +1,8 @@
 # Long After Dark
 
 The original After Dark screen savers, Flying Toasters and all, running on
-today's Windows, along with LucasArts' Star Wars Screen Entertainment.
+today's Windows (and on Linux, through Wine), along with LucasArts' Star
+Wars Screen Entertainment.
 
 ![The Long After Dark settings window in dark mode: box covers of four After Dark releases across the top, the module list on the left, and Flying Toasters! in the live preview](docs/images/settings.png)
 
@@ -72,12 +73,17 @@ Dark would have.
 - **A modern settings window.** It follows Windows' light or dark mode,
   shows each release's box cover, and has a live preview.
 
+On Linux you get the modules, their sound and their games, but not the
+settings window or the modules' own options (see [On Linux](#on-linux)).
+
 ![Flying Toasters! from After Dark 4.0 Deluxe, running in Long After Dark](docs/images/flying-toasters.png)
 
 ## What you need
 
 - **A 64-bit Windows PC** with an x64 (Intel or AMD) processor. Long After
-  Dark is developed on Windows 11.
+  Dark is developed on Windows 11. It also runs on 64-bit Linux with glibc
+  2.35 or newer (Ubuntu 22.04, Debian 12 or later), under Wine, with a
+  player of its own for X11 and XScreenSaver: see [On Linux](#on-linux).
 - **The screen savers themselves.** They aren't included, and you're
   responsible for sourcing them legally. The importer copies a release from
   any of these:
@@ -110,11 +116,11 @@ After Dark 3.2's engine files in place of the April release's.
 
 1. **Get the programs.** Download `LongAfterDark-<version>-x64.zip` from the
    [latest release](https://github.com/starrlord/longafterdark/releases/latest)
-   and unzip it anywhere, or build it from source (see
-   [Building from source](#building-from-source)). The programs aren't
-   code-signed yet, so Windows may warn that they come from an unknown
-   publisher: click **More info**, then **Run anyway**. It is three
-   programs, which must stay together in one folder:
+   (for Linux, see [On Linux](#on-linux)) and unzip it anywhere, or build it
+   from source (see [Building from source](#building-from-source)). The
+   programs aren't code-signed yet, so Windows may warn that they come from
+   an unknown publisher: click **More info**, then **Run anyway**. It is
+   three programs, which must stay together in one folder:
    - `LongAfterDark.scr`: the screen saver and its settings window;
    - `adhostwin.exe`: the emulator that runs the modules;
    - `adimport.exe`: the importer.
@@ -174,6 +180,34 @@ After Dark 3.2's engine files in place of the April release's.
   settings and what the modules save themselves, such as message texts and
   high scores.
 
+## On Linux
+
+On Linux the emulator and the importer are the same Windows programs, run
+under 64-bit Wine, and `longafterdark`, a Linux program, shows the modules:
+full screen, in a window, or as one of XScreenSaver's display modes, with
+the same rules for ending it and for the games. Download
+`LongAfterDark-<version>-linux-x64.zip` from the
+[releases](https://github.com/starrlord/longafterdark/releases) (1.1.0 and
+older are for Windows only; the newest build of `main` is on the
+[latest-main](https://github.com/starrlord/longafterdark/releases/tag/latest-main)
+pre-release), then:
+
+```bash
+sudo apt install wine wine64 libx11-6 libxext6 libxrandr2 ca-certificates   # Debian, Ubuntu
+unzip LongAfterDark-<version>-linux-x64.zip && cd LongAfterDark
+./longafterdark --import --download simpsons   # or --image <disc image>; --import alone opens its window
+./longafterdark                                # full screen, every module in turn; a key ends it
+```
+
+What differs from Windows: there is no settings window (you choose with
+`longafterdark`'s options, or in XScreenSaver's settings), and the modules'
+own options and buttons aren't there, so each module runs with its
+defaults. On its own it plays on the primary monitor and keeps the others
+black; XScreenSaver runs it on every monitor. What the modules save is
+kept, in `~/.local/share/longafterdark/state`.
+[docs/LINUX.md](docs/LINUX.md) has the rest: what you need (fonts, MIDI
+music), importing, the options, XScreenSaver and where the files are.
+
 ## Status
 
 Long After Dark is new. It has no installer or code signing yet, and not
@@ -181,25 +215,42 @@ every module's speed has been compared with the original. Known
 differences: Marvel's poster transitions (wipes, irises, blinds and the
 like) show at once where the original swept them over about half a
 second, and in Chameleon (Totally Twisted and 10th Anniversary) a stray
-icon covers the "Accessories" label after about half a minute.
+icon covers the "Accessories" label after about half a minute. The Linux
+player is newer still: [docs/LINUX.md](docs/LINUX.md#status) says what
+hasn't been tried on it yet.
 
 ## Building from source
 
-You need [Git for Windows](https://gitforwindows.org/) (for Git Bash) and
-[CMake](https://cmake.org/) 3.24 or later. Everything else, the compiler
-included, is downloaded into `third_party/` and nothing is installed
-system-wide. In Git Bash, from the repository folder:
+You need [CMake](https://cmake.org/) 3.24 or later. What the Windows
+programs are built with, their compiler (llvm-mingw), ninja and the
+libraries built into them, is downloaded into `third_party/` by
+`tools/bootstrap.sh`, rather than installed system-wide. The rest comes
+from the system:
+
+- **On Windows**: [Git for Windows](https://gitforwindows.org/) (for Git
+  Bash, which has `curl`, `unzip` and `git`).
+- **On Linux** (a cross build of the Windows programs, and the Linux
+  player): the tools from your distribution, g++ and the X11 headers for
+  the player, and Wine, which runs the build's own Windows programs and the
+  tests. On Debian and Ubuntu: `sudo apt install cmake git curl unzip
+  xz-utils zip g++ libx11-dev libxext-dev libxrandr-dev wine wine64`
+  (Ubuntu 22.04's CMake, 3.22, is too old: use 24.04, or a newer CMake).
+
+From the repository folder:
 
 ```bash
 bash tools/bootstrap.sh   # once: fetches the compiler and libraries into third_party/
-bash tools/package.sh     # builds the three programs into build/dist/LongAfterDark/
+bash tools/package.sh     # builds the programs into build/dist/LongAfterDark/ (on Linux also the player, zipped)
 ```
 
 [docs/BUILDING.md](docs/BUILDING.md) covers the rest: how the pieces fit
-together, the tests, and running a module without the screen saver.
+together, building on Linux, the tests, and running a module without the
+screen saver.
 
 ## Documentation
 
+- [docs/LINUX.md](docs/LINUX.md): Long After Dark on Linux: what you need,
+  importing, the player's options, XScreenSaver and where the files are.
 - [docs/INSTALL.md](docs/INSTALL.md): installing and using Long After Dark
   in detail, including the importer's command line.
 - [docs/BUILDING.md](docs/BUILDING.md): building, testing and the source

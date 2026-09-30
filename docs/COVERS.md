@@ -358,6 +358,10 @@ MSAA and UIA work with no custom accessibility code.
 * **Select all / Clear** act on the rows shown.
 * **Rotation summary** counts the rows shown: "All 15 in rotation" or "12
   of 15 in rotation". The existing "· N can run now" rule still applies.
+  A list of one module (Marvel Comics Screen Posters, alone or filtered
+  to) reads "1 in rotation" (or "1 selected · 0 can run now"), never "All
+  1", and a group of one says the same in its screen-reader name ("Marvel
+  Comics Screen Posters, 1 in rotation").
 * **What the saver plays**, given `Settings` and the catalog (a pure
   function `effective_rotation`):
   1. Start from `Randomize`, or every catalog id when it is empty.
@@ -1511,14 +1515,24 @@ sections above stay the contract; this records the differences.
   **601** Choose a picture…, **602** Use the original cover, **603** Download
   the original cover, and IDOK Done.
 * Screenshot keys beyond §4.3: `phase`, `result`, `package`, `status`,
-  `caution`, `workarea`, `dpichange`, `themechange` and `report`.
+  `caution`, `workarea`, `dpichange`, `themechange` and `report` (where the
+  client area is in the picture, and `pal.base`; since the twelve releases,
+  on Sources also `list=<shown>,<whole>,<row>`: the installed list's height
+  as shown, its whole height and a row's, in pixels).
   `AD_IMPORT_TEST_PICK=<path>[|<path>…]` answers the file dialogs.
-* On a very short work area the Sources page first shrinks its installed
-  list to two scrolling rows, then scrolls its whole body; the header and the
-  footer (Cancel) stay put. Since the twelve releases the list shrinks
-  further first, to as many rows as fit, down to one, so that ten releases
-  and more at 150% on a 1080-line screen keep the import choices in view;
-  only when even one row does not fit does the whole body scroll. The
+* On a work area too short for the Sources page its installed list scrolls
+  in its card, first shrunk to two rows, then the whole body scrolled; the
+  header and the footer (Cancel) stay put. Since the twelve releases the
+  list shows as many whole rows as fit, two at the least (eleven of twelve
+  at 150% on a 2560×1440 monitor, six at 100% on a 1080-line screen); with
+  room for fewer than two, as many as fit, down to one (the part of a row
+  that shows says there are more: ten releases and more at 150% on a
+  1080-line screen keep the import choices in view); only when even one row
+  does not fit does the whole body scroll, with the list at its full
+  height, so only one thing ever scrolls. `import.gui_shots` checks it from
+  the report's `list=`, with cover downloads off: at least 11 whole rows of
+  12 at a 2560×1392 DIP work area and 150%, at least 5 at 1920×1032 and
+  100%, and the fallback at 640×520 and 150%. The
   Sources intro names every release only while nothing is imported, and
   then gives their number ("… of twelve releases."). A release known by
   the ZIP of its install files is "verified against the known ZIP", and
@@ -1528,7 +1542,13 @@ sections above stay the contract; this records the differences.
   (the maximum tracking size) is laid out again for the client it got, so the
   footer stays in view; off screen the hook lifts that limit, so a 200%
   screenshot shows the whole page as a large monitor would. The Progress page
-  shows no "0.0 MB" amount for a cover step that has nothing to count.
+  shows no "0.0 MB" amount for a step that has nothing to count (a cover
+  from the disc, and since the twelve releases the finishing step too).
+  Since the twelve releases, each release of **Every release not imported
+  yet** starts at "Starting…" under its own title (never under the previous
+  release's "Finishing"), and the item line shows only what the step names
+  (a download's file name, the file copied or verified, the cover's source),
+  never the last log line.
 * The windows use the moon mark, drawn at run time, as their icon;
   `adimport.exe` itself still has no icon resource.
 * The Downloads page reads "already downloaded" from the default downloads

@@ -2,9 +2,10 @@
 //
 // The importer speaks UTF-8 std::string at its API edges (names, messages,
 // import.json) and UTF-16 to Win32; these are the two conversions, the code
-// page 437 names of DOS-era sources, the test and repair of UTF-8 itself, an
-// owning HANDLE and the write/rename steps every atomic replacement is built
-// from, kept header-only so the tests can use them too.
+// page 437 names of DOS-era sources, an owning HANDLE and the write/rename
+// steps every atomic replacement is built from, kept header-only so the tests
+// can use them too. The test and repair of UTF-8 itself are utf8.h's
+// (portable, so minijson.cc needs no Win32), included here.
 #pragma once
 
 #include <windows.h>
@@ -13,6 +14,8 @@
 #include <string>
 #include <string_view>
 #include <utility>
+
+#include "utf8.h"
 
 namespace adw::import {
 
@@ -43,61 +46,6 @@ inline std::string oem437_to_utf8(std::string_view oem) {
   std::wstring ws(size_t(w > 0 ? w : 0), L'\0');
   if (w > 0) MultiByteToWideChar(437, 0, oem.data(), int(oem.size()), ws.data(), w);
   return to_utf8(ws);
-}
-
-// The length of the well-formed UTF-8 sequence that starts at s[i], i <
-// s.size() (RFC 3629: no overlong form, no UTF-16 surrogate, nothing past
-// U+10FFFF), or 0 when none does there (a continuation byte, C0, C1, F5-FF,
-// a sequence cut short, also by the end of `s`). Windows' own decoder
-// (MB_ERR_INVALID_CHARS) draws the same line.
-inline size_t utf8_sequence_length(std::string_view s, size_t i) {
-  const auto at = [&](size_t k) { return static_cast<unsigned char>(s[k]); };
-  const unsigned char c = at(i);
-  if (c < 0x80) return 1;
-  size_t n = 0;
-  unsigned char lo = 0x80, hi = 0xBF;  // the second byte's range
-  if (c >= 0xC2 && c <= 0xDF) {
-    n = 2;
-  } else if (c >= 0xE0 && c <= 0xEF) {
-    n = 3;
-    if (c == 0xE0) lo = 0xA0;       // below U+0800: overlong
-    if (c == 0xED) hi = 0x9F;       // U+D800-DFFF: surrogates
-  } else if (c >= 0xF0 && c <= 0xF4) {
-    n = 4;
-    if (c == 0xF0) lo = 0x90;       // below U+10000: overlong
-    if (c == 0xF4) hi = 0x8F;       // past U+10FFFF
-  } else {
-    return 0;
-  }
-  if (s.size() - i < n || at(i + 1) < lo || at(i + 1) > hi) return 0;
-  for (size_t k = 2; k < n; k++)
-    if (at(i + k) < 0x80 || at(i + k) > 0xBF) return 0;
-  return n;
-}
-
-// Whether every byte of `s` belongs to a well-formed UTF-8 sequence.
-inline bool is_utf8(std::string_view s) {
-  for (size_t i = 0, n = 0; i < s.size(); i += n)
-    if (!(n = utf8_sequence_length(s, i))) return false;
-  return true;
-}
-
-// `s` as well-formed UTF-8: every byte that starts no well-formed sequence
-// becomes U+FFFD, the replacement character; the rest is kept as it is.
-inline std::string to_valid_utf8(std::string_view s) {
-  std::string out;
-  out.reserve(s.size());
-  for (size_t i = 0; i < s.size();) {
-    const size_t n = utf8_sequence_length(s, i);
-    if (n) {
-      out.append(s.substr(i, n));
-      i += n;
-    } else {
-      out += "\xEF\xBF\xBD";
-      i++;
-    }
-  }
-  return out;
 }
 
 // "The system cannot find the file specified. (2)" — for error messages.

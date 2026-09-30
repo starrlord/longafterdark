@@ -251,13 +251,17 @@ column at most 1240 DIP wide, centred.
   list's menu does the same (Shift+F10 or the Apps key on a row, or a
   right-click on a row or header: **Check all in Totally Twisted**, **Clear
   all in Totally Twisted**), and screen readers hear the group's state in its
-  name ("Totally Twisted After Dark, 4 of 13 in rotation"); under the list, the
+  name ("Totally Twisted After Dark, 4 of 13 in rotation"; a group of one,
+  "Marvel Comics Screen Posters, 1 in rotation"); under the list, the
   rotation line with **Select all** and **Clear** (each greyed while it would
   change nothing), and **Change module every**, which only Random uses. The
-  rotation line counts the checked rows shown; when some of them are the same
+  rotation line counts the checked rows shown ("All 15 in rotation", "12 of
+  15 in rotation"; a list of one module, "1 in rotation" or "1 selected · 0
+  can run now", never "All 1"); when some of them are the same
   module on several releases, which plays once per pass, it says how many
   different ones rotate: "All 202 selected · 129 distinct" (its tooltip
-  explains). When settings.ini names a module to play first in front of its
+  explains, and for copies of one module alone ends "…, so 1 module is in
+  rotation."). When settings.ini names a module to play first in front of its
   Randomize list (see **Settings**), that row carries a **Plays first**
   badge in Random (screen readers hear "…, plays first"), and the rotation
   line's tooltip names it. In Single module mode the checklist is put aside
@@ -428,11 +432,16 @@ ABI, above) and the module file is there. Pressing it runs
 `adhostwin --configure <module> --button <index> --owner <this window>`
 (`CREATE_NO_WINDOW`, with `AD_ASSETS_DIR`, the dialog's current values, saved
 or not, as `ADCVSET`, and `ADSTATE`): the module's dialogs are real windows
-owned by the settings window. Meanwhile the settings window is disabled (as
-the After Dark 3 control panel disabled itself), the live preview paused, and
-only one button runs at a time. As a module's dialog closes, the settings
-window takes the activation back (the host hands it over; it is not left
-behind another application's window). When the host exits, whatever its exit
+owned by the settings window. They open over it: the host lays the module's
+640×480 screen over the settings window (inside that monitor's work area),
+so a dialog that places itself on its screen, as Marvel's Saver.., Lunatic
+Fringe's Keys... and the Star Wars modules' Configure... do, is centred on
+the settings window rather than at the monitor's top left
+(`docs/INTERACTION.md` §6.2, Placement). Meanwhile the settings window is
+disabled (as the After Dark 3 control panel disabled itself), the live
+preview paused, and only one button runs at a time. As a module's dialog
+closes, the settings window takes the activation back (the host hands it
+over; it is not left behind another application's window). When the host exits, whatever its exit
 (a crash included), the window is enabled again and brought forward, the
 live preview starts the module afresh (it reads what the module saved at its
 start) and its thumbnail is taken again. Under the button: "Nothing to set

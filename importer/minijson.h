@@ -3,7 +3,8 @@
 // installed packages. The library does not depend on phosg (the tests use
 // phosg to check the importer's output independently), so this is its own.
 // It also holds json_escape, the string escaping those records are written
-// with.
+// with. Standard C++ only (no Win32): the Linux player (scr/linux) compiles
+// minijson.cc with g++ to read the catalog.
 #pragma once
 
 #include <cstdint>
@@ -45,7 +46,7 @@ std::optional<JsonValue> parse_json(std::string_view text);
 // The inside of a JSON string for `s` (import.json's): '"', '\\' and the C0
 // controls escaped, everything else as it is. The result is UTF-8 whatever
 // `s` holds: a byte that starts no well-formed UTF-8 sequence is written as
-// U+FFFD (winutil.h to_valid_utf8), so a record always reads as UTF-8 JSON.
+// U+FFFD (utf8.h to_valid_utf8), so a record always reads as UTF-8 JSON.
 std::string json_escape(std::string_view s);
 
 }  // namespace adw::import

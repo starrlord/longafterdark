@@ -1,17 +1,25 @@
 # The pinned versions of the build's dependencies, in one place:
-# tools/bootstrap.sh reads all of them, and cmake/llvm-mingw.cmake
-# reads LLVM_MINGW_VER to use exactly that toolchain. Plain NAME=value lines.
+# tools/bootstrap.sh reads all of them, and cmake/llvm-mingw.cmake reads
+# LLVM_MINGW_VER (and on Linux LLVM_MINGW_LINUX_BUILD) to use exactly that
+# toolchain. Plain NAME=value lines.
 # Bumping one is enough: bootstrap.sh fetches (and checks) the new zips and
-# rebuilds zlib and phosg when their revisions or the toolchain change.
+# rebuilds zlib and phosg when their revisions or the toolchain change. A pin
+# with a Linux digest beside it needs both (a Linux build checks its own).
 
 # https://github.com/mstorsjo/llvm-mingw/releases (UCRT, x86_64); the sha256
-# is the release asset's (GitHub's published digest).
+# is the release asset's (GitHub's published digest). Windows takes
+# llvm-mingw-<ver>-ucrt-x86_64.zip; Linux takes the release's Linux build,
+# llvm-mingw-<ver>-<LLVM_MINGW_LINUX_BUILD>.tar.xz, unpacked into a folder
+# of that name beside the Windows one.
 LLVM_MINGW_VER=20260922
 LLVM_MINGW_SHA256=e3ad77d117a4bea19a7a3b333341824d79a5a371004a10e25b8504e7b3047666
+LLVM_MINGW_LINUX_BUILD=ucrt-ubuntu-22.04-x86_64
+LLVM_MINGW_LINUX_SHA256=bb7bb7654b33d5aa8712acb837c963b2e0c56352560c76105270a3268c665c21
 
-# https://github.com/ninja-build/ninja/releases (ninja-win.zip)
+# https://github.com/ninja-build/ninja/releases (ninja-win.zip / ninja-linux.zip)
 NINJA_VER=v1.13.2
 NINJA_SHA256=07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65
+NINJA_LINUX_SHA256=5749cbc4e668273514150a80e387a957f933c6ed3f5f11e03fb30955e2bbead6
 
 # https://github.com/madler/zlib
 ZLIB_REV=767c4c947852e143f582c85f14cf573411df1b35

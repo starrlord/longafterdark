@@ -74,17 +74,28 @@ jobs:
             !third_party/win/build-*
           key: ${{ steps.third-party.outputs.cache-primary-key }}
 
+      # The commit's time as the build's (clang's __DATE__ and __TIME__, which
+      # LongAfterDark.scr's last-exit log records): with no link timestamp
+      # either, this job and build-linux make the same programs, byte for
+      # byte, from the same commit. Only a whole number is passed on, since
+      # clang refuses any other SOURCE_DATE_EPOCH.
+      - name: Take the build time from the commit
+        run: |
+          t=$(git log -1 --format=%ct) && [[ "$t" =~ ^[0-9]+$ ]] &&
+            echo "SOURCE_DATE_EPOCH=$t" >> "$GITHUB_ENV" ||
+            echo "::warning::no commit time: LongAfterDark.scr records its build's own"
+
       # Into build/win-release, package.sh's build directory, so the package
       # step reuses this build instead of compiling the programs again.
       #
       # -LE gui leaves out the tests that open real windows on the desktop:
       # scr_smoke_* (with the opt-in scr_smoke_e2e-*) and import.gui_flow.
-      # The runner has no After Dark, Star Wars Screen Entertainment or Star
-      # Trek modules, so the suites that need them skip themselves (exit 77):
-      # core.lane_detect_assets, loader_corpus, win16.assets, pe32.assets,
-      # pe32.packages, ne16.assets, ne16.pkg, ne16.interaction, ne16.swse,
-      # ne16.startrek and import.catalog_real; so do the opt-in ones
-      # (core.audio_assets, import.e2e, import.pkg_real, import.download_real,
+      # The runner has no module of any of the releases, so the suites that
+      # need them skip themselves (exit 77): core.lane_detect_assets,
+      # loader_corpus, win16.assets, pe32.assets, pe32.packages, ne16.assets,
+      # ne16.pkg, ne16.interaction, ne16.swse, ne16.startrek, ne16.snoopy and
+      # import.catalog_real; so do the opt-in ones (core.audio_assets,
+      # import.e2e, import.pkg_real, import.isz_real, import.download_real,
       # import.covers_real) and cpu_perf (no upstream resource_dasm clone to
       # compare with). The download and cover tests serve their files from a
       # loopback server and need no network.
@@ -110,6 +121,241 @@ jobs:
           path: build/dist/LongAfterDark
           if-no-files-found: error
 
+  # Linux: the same three programs cross-built on Linux (bootstrap.sh takes
+  # the Linux build of the pinned toolchain) and tested under Wine, the Linux
+  # player built on Ubuntu 22.04 and tried under Xvfb and Wine, and the Linux
+  # zip. Linux never holds up Windows: neither the Windows build nor its
+  # release needs this job, and release-linux adds its zip only to a release
+  # already published. Nor does a Linux failure fail the run or mark the
+  # commit as failed: this job succeeds whatever its steps do, and its last
+  # step names the one that failed in a warning. Every step is
+  # continue-on-error, with a timeout of its own, and runs only when the step
+  # it needs passed. A step that times out has failed, which
+  # continue-on-error passes over; a job that reaches its own timeout-minutes
+  # is cancelled instead, which continue-on-error does not cover, so the
+  # job's limit is above the sum of its steps' and never comes first. The job
+  # is continue-on-error as well, for anything else that fails it; one that
+  # never gets a runner at all (a GitHub outage) still fails the run, as the
+  # release job would.
+  build-linux:
+    runs-on: ubuntu-24.04
+    # Above the sum of the steps' timeout-minutes (168), so a step always
+    # times out first.
+    timeout-minutes: 180
+    continue-on-error: true
+    outputs:
+      # The zip's name, set by the Done step alone, so it is empty unless
+      # every step before it passed. The job succeeds either way, so the jobs
+      # after it go by this output.
+      zip: ${{ steps.done.outputs.zip }}
+    env:
+      ADAUDIOLIVE: '0'
+    steps:
+      - uses: actions/checkout@v7
+        id: checkout
+        continue-on-error: true
+        timeout-minutes: 5
+
+      # Wine runs the build's own Windows programs (the icon generators),
+      # the tests and the player's host; Xvfb and xdotool serve the tests and
+      # the player's smoke test.
+      - name: Install Wine, Xvfb and xdotool
+        id: install
+        if: steps.checkout.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update -qq
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
+            wine wine64 xvfb xdotool libx11-6 libxext6 libxrandr2
+
+      # As the Windows job's, from the Linux host's own folders.
+      - name: Restore third_party
+        id: third-party
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            third_party
+            !third_party/toolchains/*.tar.xz
+            !third_party/toolchains/*.zip
+            !third_party/win/build-*
+          key: third-party-linux-${{ hashFiles('tools/versions') }}-v2
+
+      - name: Bootstrap (toolchain, zlib, phosg)
+        id: bootstrap
+        if: steps.third-party.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        run: bash tools/bootstrap.sh
+
+      - name: Save third_party
+        if: steps.bootstrap.outcome == 'success' && steps.third-party.outputs.cache-hit != 'true'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            third_party
+            !third_party/toolchains/*.tar.xz
+            !third_party/toolchains/*.zip
+            !third_party/win/build-*
+          key: ${{ steps.third-party.outputs.cache-primary-key }}
+
+      # As the Windows job's, so that both make the same programs.
+      - name: Take the build time from the commit
+        if: steps.bootstrap.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 1
+        run: |
+          t=$(git log -1 --format=%ct) && [[ "$t" =~ ^[0-9]+$ ]] &&
+            echo "SOURCE_DATE_EPOCH=$t" >> "$GITHUB_ENV" ||
+            echo "::warning::no commit time: LongAfterDark.scr records its build's own"
+
+      # The Windows job's tests, under Wine and Xvfb, except these, which
+      # check what Wine does differently from Windows (the Windows job runs
+      # them all on the same code):
+      #   ui.theme, ui.image, ui.capture, ui.slider   the pixels of the
+      #       Windows 11 look: Wine draws, scales and captures windows
+      #       differently.
+      #   core.audio      compares the ADPCM decoders with Windows' own ACM
+      #       codec, which Wine's does not match (it has no MS ADPCM encoder
+      #       and rounds some samples one off).
+      #   win32.unit      one check: the 8.3 alias of a long file name, which
+      #       Wine forms differently.
+      #   win16.unit      GDI object counts, and colours matched to a
+      #       monochrome bitmap, which Wine's GDI does differently.
+      #   import.download, import.covers   downloads from a loopback server:
+      #       under Wine, WinHTTP loses the bytes before a dropped connection
+      #       and a cancel never ends a stalled transfer (the tests hang);
+      #       the covers' pictures also decode differently (colours, EXIF
+      #       rotation).
+      #   import.gui_model   Wine's shell does not parse the dropped paths.
+      #   scr_unit_releases  Wine's fonts measure wider than Segoe UI, so the
+      #       settings window's covers lay out differently.
+      #   scr_unit_present   Wine's HALFTONE stretching smooths differently.
+      # As on Windows, the suites that need modules skip (77), and so do
+      # cpu_perf and, with no 32-bit Wine, cpu_x86_diff and
+      # cpu_x86_diff_seed2 (their oracle runs x86 code natively).
+      # build.sh splits AD_CTEST_ARGS at whitespace, so the regex has none.
+      - name: Build and test
+        id: build
+        if: steps.bootstrap.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 40
+        run: >-
+          xvfb-run -a env AD_BUILD_DIR="$PWD/build/win-release"
+          AD_CTEST_ARGS='-LE gui -E ^(ui\.(theme|image|capture|slider)|core\.audio|win(16|32)\.unit|import\.(download|covers|gui_model)|scr_unit_(releases|present))$ -j4'
+          bash tools/build.sh
+
+      - name: Upload the test log
+        if: steps.build.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-log-linux
+          path: build/win-release/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+
+      # The released player (tools/build-player.sh), built on Ubuntu 22.04
+      # with its C++ runtime linked in, so it runs on glibc 2.35 and newer;
+      # warnings are errors, and a player that needs a newer glibc is refused.
+      # Its unit tests (scr/linux/tests/unit.cc) are built the same way and run.
+      - name: Build the player (Ubuntu 22.04)
+        id: player
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 20
+        run: |
+          docker pull -q ubuntu:22.04 || { sleep 20; docker pull -q ubuntu:22.04; }
+          docker run --rm -v "$PWD:/src" -w /src -e HOST_IDS="$(id -u):$(id -g)" ubuntu:22.04 bash -c '
+            set -euo pipefail
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get -o Acquire::Retries=3 update -qq
+            apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
+              g++ binutils libx11-dev libxext-dev libxrandr-dev >/dev/null
+            status=0
+            AD_WERROR=1 AD_GLIBC_MAX=2.35 bash tools/build-player.sh build/linux/longafterdark || status=$?
+            [ "$status" != 0 ] || AD_WERROR=1 bash tools/build-player.sh --tests build/linux/longafterdark-unit || status=$?
+            chown -R "$HOST_IDS" build/linux
+            exit "$status"'
+
+      # That player shows a host's frames (the test pattern), ends on a key,
+      # and does not hang when the host dies.
+      - name: Smoke test the player (Xvfb, Wine)
+        id: smoke
+        if: steps.player.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        run: bash scr/linux/tests/smoke.sh build/linux/longafterdark build/win-release/host/core/adhostwin.exe
+
+      # build/dist/LongAfterDark with that player, zipped under the name the
+      # release gives it; the zip must keep the player executable.
+      - name: Package
+        id: package
+        if: steps.smoke.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            zip="LongAfterDark-${GITHUB_REF_NAME#v}-linux-x64.zip"
+          else
+            zip=LongAfterDark-linux-x64.zip
+          fi
+          AD_PLAYER="$PWD/build/linux/longafterdark" AD_ZIP="$PWD/build/dist/$zip" bash tools/package.sh
+          mode=$(unzip -Z "build/dist/$zip" LongAfterDark/longafterdark)
+          [[ "$mode" == -rwxr-xr-x* ]] || { echo "::error::longafterdark is not executable in $zip: $mode"; exit 1; }
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+
+      # The zip as it is: archive: false uploads the file itself (not zipped
+      # again, so the player keeps its mode), under the file's name.
+      - name: Upload the zip
+        id: upload
+        if: steps.package.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/upload-artifact@v7
+        with:
+          path: build/dist/${{ steps.package.outputs.zip }}
+          archive: false
+          overwrite: true
+          if-no-files-found: error
+
+      - name: Done
+        id: done
+        if: steps.upload.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 1
+        env:
+          ZIP: ${{ steps.package.outputs.zip }}
+        run: echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      # The job succeeds whatever failed above: this says what did, on the
+      # run's page, as a warning and in the job's summary.
+      - name: Say which step failed
+        if: ${{ !cancelled() && steps.done.outcome != 'success' }}
+        continue-on-error: true
+        timeout-minutes: 1
+        env:
+          OUTCOMES: |
+            Checkout: ${{ steps.checkout.outcome }}
+            Install Wine, Xvfb and xdotool: ${{ steps.install.outcome }}
+            Restore third_party: ${{ steps.third-party.outcome }}
+            Bootstrap: ${{ steps.bootstrap.outcome }}
+            Build and test: ${{ steps.build.outcome }}
+            Build the player: ${{ steps.player.outcome }}
+            Smoke test the player: ${{ steps.smoke.outcome }}
+            Package: ${{ steps.package.outcome }}
+            Upload the zip: ${{ steps.upload.outcome }}
+            Done: ${{ steps.done.outcome }}
+        run: |
+          failed=$(sed -n 's/: failure$//p' <<< "$OUTCOMES" | paste -sd ',' - | sed 's/,/, /g')
+          echo "::warning title=Linux build failed::${failed:-A step} failed, so this run makes no Linux zip. The Windows build and its release are not affected."
+          { echo '### The Linux build failed'; echo; sed '/^$/d; s/^/- /' <<< "$OUTCOMES"; } >> "$GITHUB_STEP_SUMMARY"
+
   # The build job's dist, zipped, on a GitHub Release:
   #   a v* tag  the release of that name, "Long After Dark <version>", with
   #             LongAfterDark-<version>-x64.zip and generated notes; a tag
@@ -117,6 +363,7 @@ jobs:
   #   main      one pre-release, latest-main, moved to each new commit with
   #             its LongAfterDark-x64.zip replaced: always the newest build,
   #             at the same URL. A pre-release is never marked Latest.
+  # It needs the Windows build alone; release-linux adds the Linux zip.
   # Only zips and uploads, so it runs on Linux.
   release:
     needs: build
@@ -160,8 +407,133 @@ jobs:
               gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$tag" -f sha="$GITHUB_SHA" -F force=true >/dev/null
               gh release upload "$tag" "$zip" --clobber
               gh release edit "$tag" --prerelease --title "Latest main build" --notes "$notes"
+              # A Linux zip there is an earlier commit's: release-linux adds
+              # this commit's once build-linux has made it, so it goes (and
+              # that never fails the release).
+              assets=$(gh release view "$tag" --json assets --jq '.assets[].name') ||
+                { echo "::warning::could not list the files of $tag"; assets=; }
+              while IFS= read -r asset; do
+                case "$asset" in
+                  LongAfterDark-linux-*)
+                    gh release delete-asset "$tag" "$asset" --yes ||
+                      echo "::warning::could not remove $asset, an earlier commit's, from $tag" ;;
+                esac
+              done <<< "$assets"
             else
               gh release create "$tag" "$zip" --target "$GITHUB_SHA" --prerelease --latest=false \
                 --title "Latest main build" --notes "$notes"
             fi
           fi
+
+  # The Linux zip, added to the release the release job has published: only
+  # when build-linux made it (its zip output, which its Done step alone
+  # sets). As build-linux, it never fails the run or marks the commit: every
+  # step is continue-on-error with a timeout of its own, the job's limit is
+  # above their sum, and the last step warns when one failed. The notes get
+  # a paragraph for it after the Windows zip's checksum.
+  release-linux:
+    needs: [build-linux, release]
+    if: success() && needs.build-linux.outputs.zip != ''
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    # Above the sum of the steps' timeout-minutes (16).
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ZIP: ${{ needs.build-linux.outputs.zip }}
+    steps:
+      # A tag's release is always this run's own. latest-main is this
+      # commit's only until a newer push to main moves it; after that, this
+      # run is an older one (its Linux jobs re-run, say, which reuses its
+      # release job's result) and its zip must not replace the newer
+      # commit's. latest-main is a lightweight tag: it names the commit.
+      - name: Find the release
+        id: target
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          at=$(gh api "repos/$GH_REPO/git/ref/tags/latest-main" --jq .object.sha)
+          if [ "$at" != "$GITHUB_SHA" ]; then
+            echo "::notice::latest-main is at ${at:0:7}, not at this run's commit ${GITHUB_SHA:0:7}: this run's Linux zip is not added"
+            exit 0
+          fi
+          echo "tag=latest-main" >> "$GITHUB_OUTPUT"
+
+      # The file itself: skip-decompress keeps download-artifact from
+      # unpacking a .zip, which would lose the player's mode.
+      - name: Download the zip
+        id: download
+        if: steps.target.outputs.tag != ''
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build-linux.outputs.zip }}
+          path: dist
+          skip-decompress: true
+
+      - name: Add the Linux zip to the release
+        id: add
+        if: steps.download.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+          tag=$TAG
+          # The one file downloaded, under the zip's own name.
+          shopt -s nullglob
+          got=(dist/*)
+          [ "${#got[@]}" = 1 ] || { echo "::error::expected one file in dist/, found ${#got[@]}"; exit 1; }
+          file="dist/$ZIP"
+          [ "${got[0]}" = "$file" ] || mv "${got[0]}" "$file"
+          mode=$(unzip -Z "$file" LongAfterDark/longafterdark)
+          [[ "$mode" == -rwxr-xr-x* ]] || { echo "::error::longafterdark is not executable in $ZIP: $mode"; exit 1; }
+          gh release upload "$tag" "$file" --clobber
+          sha=$(sha256sum "$file" | cut -d' ' -f1)
+          gh release view "$tag" --json body --jq .body > notes.md
+          # Its paragraph after the first checksum line (the Windows zip's),
+          # or in place of the one an earlier attempt added.
+          python3 - "$ZIP" "$sha" notes.md <<'EOF'
+          import re, sys
+          name, sha, path = sys.argv[1:]
+          begin, end = "<!-- linux -->", "<!-- /linux -->"
+          block = (begin + "\n"
+                   f"For Linux: `{name}` holds the same programs and longafterdark, the Linux player, "
+                   "which runs them under Wine. It needs 64-bit x86 Linux with glibc 2.35 or newer "
+                   "(Ubuntu 22.04, Debian 12 or later) and 64-bit Wine; README.txt inside says what to do next.\n\n"
+                   f"SHA-256 of `{name}`: `{sha}`\n" + end)
+          body = open(path, encoding="utf-8").read().rstrip("\n")
+          if begin in body and end in body:
+              body = re.sub(re.escape(begin) + ".*?" + re.escape(end), lambda m: block, body, count=1, flags=re.S)
+          else:
+              m = re.search(r"^SHA-256 of `[^`]*`: `[0-9a-f]{64}`\r?$", body, flags=re.M)
+              at = m.end() if m else len(body)
+              body = body[:at] + "\n\n" + block + body[at:]
+          open(path, "w", encoding="utf-8").write(body + "\n")
+          EOF
+          gh release edit "$tag" --notes-file notes.md
+
+      # The job succeeds whatever failed above: this says what did.
+      - name: Say which step failed
+        if: ${{ !cancelled() && (steps.target.outcome == 'failure' || steps.download.outcome == 'failure' || steps.add.outcome == 'failure') }}
+        continue-on-error: true
+        timeout-minutes: 1
+        env:
+          OUTCOMES: |
+            Find the release: ${{ steps.target.outcome }}
+            Download the zip: ${{ steps.download.outcome }}
+            Add the Linux zip to the release: ${{ steps.add.outcome }}
+        run: |
+          failed=$(sed -n 's/: failure$//p' <<< "$OUTCOMES" | paste -sd ',' - | sed 's/,/, /g')
+          echo "::warning title=Linux zip not added::$failed failed, so the release may lack this run's Linux zip, or its paragraph in the notes. The Windows release is not affected."
+          { echo '### The Linux zip was not added'; echo; sed '/^$/d; s/^/- /' <<< "$OUTCOMES"; } >> "$GITHUB_STEP_SUMMARY"

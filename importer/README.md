@@ -1149,7 +1149,7 @@ atomic failure cases, hostile and device names, one folder listed twice
 (siblings, a loop and a 3^12 bomb, in both trees; a folder junction), the
 staging budget, a size mismatch refused before the copy, lock, late cancel, recovery
 from both interrupted-swap states, an unrepresentable timestamp,
-`AD_ASSETS_DIR` trimming, manifest shape; `winutil.h`'s UTF-8 test against
+`AD_ASSETS_DIR` trimming, manifest shape; `utf8.h`'s UTF-8 test against
 Windows' strict decoder over every string of one and two bytes, every
 three-byte string that starts past 0xBF and four-byte strings around every
 edge, its repair, and `json_escape` read back by phosg as UTF-8 for every

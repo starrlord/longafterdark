@@ -822,8 +822,9 @@ adimport --remove <id> [--dest <root>]          (should)
     the same rule; a folder disk may hold subfolders, which merge. A root
     that holds anything besides its `DISK<n>` folders (a `desktop.ini`, the
     downloaded ZIP beside its unzipped disks) is read as it is, its
-    `DISK<n>` folders ordinary folders, and the log says why: such a source
-    is then usually no known release.
+    `DISK<n>` folders ordinary folders, and the log says why; so does the
+    importer window's caution, which puts that note before the error
+    (`identify_folder`): such a source is then usually no known release.
   * `import.json`'s `from` names a file by its path in the union, without
     its disk folder (`AFI.ZIP!SCREAMS.AFI`).
 * **A known ZIP** (fourth round): a ZIP of install files whose md5 is one
@@ -877,8 +878,9 @@ adimport --remove <id> [--dest <root>]          (should)
   modules" and lists the installed packages. The restyle queued for later
   is out of scope here. (As built since the seventh
   release: the filter reads "Disc and floppy images, and ZIPs of them or of
-  install files", and the disc-image card "An ISO image of a CD, or floppy
-  images (.img), zipped or not; select every disk of a set.")
+  install files"; since the twelve releases the disc-image card reads "An
+  ISO image of a CD or floppy images (.img), or a ZIP of them or of the
+  install files; select every disk of a set.")
 * `win_assets_dir(root)`, in both the importer and the host: `<root>\win`
   if it holds `FILES`, `packages` or `catalog-win.json`; else `<root>` if
   it holds one of those; else `<root>\win`.
@@ -2151,7 +2153,9 @@ releases). It serves only to identify the release (§3).
     a flat ZIP, `Disk1`/`Disk2` folders and a ZIP of them, and two floppies
     in either order: the `from` forms and DOS times, a known ZIP's md5
     verified `image`, disk 1 alone ("needs every install disk") and disk 2
-    alone (no release), decoys, notes and the Looney Tunes' `SETUP.PKG`
+    alone (no release), `Disk1`/`Disk2` beside a `desktop.ini` (read as
+    they are, no release: `identify_folder`'s reason starts with the note
+    that says so), decoys, notes and the Looney Tunes' `SETUP.PKG`
     locked and never read, a `SETUP.PKG` without the tag member, too large,
     of another magic, with a bad offset, a group one byte short, cut short
     or with a stray byte (no release), `--package` mismatches, a volume
@@ -2162,7 +2166,10 @@ releases). It serves only to identify the release (§3).
     and Marvel's second copy from its loopback server (each a known image,
     its medium starting "ZIP"); `import.cli` pins the `--list-packages`
     lines (the title column 34 characters wide); `import.gui_model` and
-    `import.gui_shots` show twelve releases.
+    `import.gui_shots` show twelve releases, and `import.gui_shots` checks
+    the Sources list's whole rows with cover downloads off (at least 11 of
+    the 12 at a 2560×1392 DIP work area and 150%, at least 5 at 1920×1032
+    and 100%, and the fallback at 640×520 and 150%).
   * Importer, real sources: `import.isz_real` (`AD_E2E_PKG=1`) reads the
     user's Marvel and Snoopy ZIPs, found by md5, as disk sets, and checks
     all 88 members against the format survey's md5s, from the ZIPs and from
