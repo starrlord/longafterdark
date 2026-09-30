@@ -89,6 +89,11 @@ struct State {
   std::wstring import_note;                             // why the last import changed nothing
   bool random = true;
   bool sound_on = true;                                 // the Sound dropdown says "Primary monitor" (AUDIO.md §9)
+  // "A different module on each monitor" (ui_model.h: per_monitor_choice):
+  // the monitors there are to tell apart, counted again at each display
+  // change (the test hook's staged layouts follow those changes).
+  int monitors = 1;
+  size_t display_changes = 0;
   // What this adhostwin can run (dialog_support.h, module_run): its
   // `--capabilities` answer (the lanes and module ABIs it lists; asked once,
   // and again at a new catalog only while it hasn't answered), and the
@@ -232,6 +237,22 @@ int control_value(const State& st, const Module& m, const Control& c) {
 }
 
 bool is_present(const State& st, int i) { return i >= 0 && i < (int)st.present.size() && st.present[i]; }
+
+// The monitors connected now; in the test build, those AD_SCR_TEST_MONITORS
+// stages when it stages any (geometry.h: parse_staged_monitors, as the saver
+// reads them), its `layout` after as many display changes.
+int count_monitors(size_t layout) {
+#if AD_SCR_TEST_HOOKS
+  const std::vector<StagedMonitor> staged = parse_staged_monitors(env_w(L"AD_SCR_TEST_MONITORS"), layout);
+  if (!staged.empty()) return (int)staged.size();
+#else
+  (void)layout;
+#endif
+  return std::max(1, GetSystemMetrics(SM_CMONITORS));
+}
+
+// The Monitors dropdown says "All monitors" (not "Primary monitor only").
+bool monitors_all(const State& st) { return SendDlgItemMessageW(st.dlg, IDC_MONITORS, CB_GETCURSEL, 0, 0) != 1; }
 
 const Module* shown_module(const State& st) {
   return st.shown >= 0 && st.shown < (int)st.catalog.modules.size() ? &st.catalog.modules[st.shown] : nullptr;
@@ -733,6 +754,8 @@ void layout(State& st) {
   const bool rows = ListView_GetItemCount(st.list) > 0;
   const bool rotation = st.random && rows;
   LayoutInput in{cr.right, cr.bottom, st.theme.dpi, rotation};
+  // Under it, with several monitors: "A different module on each monitor".
+  in.per_monitor = rotation && per_monitor_choice(st.random, monitors_all(st), st.monitors).shown;
   in.strip_tiles = st.strip_on && st.strip ? (int)st.strip->count() : 0;
   {
     // The links' text widths, so their text lines up with the card's edge.
@@ -782,6 +805,12 @@ void layout(State& st) {
   for (int id : {IDC_ROTATION_SUMMARY, IDC_CHECK_ALL, IDC_CHECK_NONE, IDC_DURATION_LABEL, IDC_DURATION}) {
     ShowWindow(item(id), rotation ? SW_SHOWNA : SW_HIDE);
   }
+  {
+    // Gone (a monitor unplugged): the keyboard moves on rather than stay on it.
+    HWND pm = item(IDC_PER_MONITOR);
+    if (!in.per_monitor && GetFocus() == pm) SetFocus(rotation ? item(IDC_DURATION) : st.list);
+    ShowWindow(pm, in.per_monitor ? SW_SHOWNA : SW_HIDE);
+  }
   const int combo_h = st.theme.px(32) + 2 * fm;
   const int drop_h = st.theme.px(32) * 8 + st.theme.px(8);
   auto place_combo = [&](int id, const Rc& r) {
@@ -793,6 +822,7 @@ void layout(State& st) {
     place(item(IDC_CHECK_NONE), L.check_none, fm);
     place(item(IDC_DURATION_LABEL), L.duration_label);
     place_combo(IDC_DURATION, L.duration);
+    if (in.per_monitor) place(item(IDC_PER_MONITOR), L.per_monitor, fm);
   }
 
   const int line = std::max(1, st.theme.body_line_height());
@@ -2197,10 +2227,23 @@ void update_sound(State& st) {
   for (int id : {IDC_VOLUME_LABEL, IDC_VOLUME_VALUE, IDC_VOLUME}) InvalidateRect(GetDlgItem(st.dlg, id), nullptr, TRUE);
 }
 
+// "A different module on each monitor" (ui_model.h: per_monitor_choice),
+// which layout() shows in Random on a PC with several monitors: greyed,
+// keeping its check, while only the primary monitor plays.
+void update_per_monitor(State& st) {
+  HWND pm = GetDlgItem(st.dlg, IDC_PER_MONITOR);
+  const bool on = per_monitor_choice(st.random, monitors_all(st), st.monitors).enabled;
+  if ((IsWindowEnabled(pm) != FALSE) == on) return;
+  if (!on && GetFocus() == pm) SetFocus(GetDlgItem(st.dlg, IDC_MONITORS));
+  EnableWindow(pm, on);
+  InvalidateRect(pm, nullptr, TRUE);
+}
+
 void update_mode(State& st) {
   st.random = IsDlgButtonChecked(st.dlg, IDC_MODE_RANDOM) == BST_CHECKED;
   refresh_lead_row(st);
   EnableWindow(GetDlgItem(st.dlg, IDC_DURATION), st.random);
+  update_per_monitor(st);
   layout(st);
   update_preview_button(st);
   // The rotation row changes the list's height: show the selection afresh.
@@ -2423,7 +2466,10 @@ Settings gather(State& st) {
   }
   LRESULT sel = SendDlgItemMessageW(st.dlg, IDC_SCALE, CB_GETCURSEL, 0, 0);
   if (sel != CB_ERR) s.scale = (double)SendDlgItemMessageW(st.dlg, IDC_SCALE, CB_GETITEMDATA, sel, 0) / 100.0;
-  s.all_monitors = SendDlgItemMessageW(st.dlg, IDC_MONITORS, CB_GETCURSEL, 0, 0) != 1;
+  s.all_monitors = monitors_all(st);
+  // As it stands, even while hidden (one monitor, Single module) or greyed
+  // (Primary monitor only): the file's value stays until the user changes it.
+  s.different_per_monitor = IsDlgButtonChecked(st.dlg, IDC_PER_MONITOR) == BST_CHECKED;
   // Sound (AUDIO.md §9); SoundMonitor stays as loaded (reserved).
   s.sound = SendDlgItemMessageW(st.dlg, IDC_SOUND, CB_GETCURSEL, 0, 0) != 1;
   s.volume = std::clamp((int)SendDlgItemMessageW(st.dlg, IDC_VOLUME, TBM_GETPOS, 0, 0), 0, 100);
@@ -3211,6 +3257,10 @@ void init_dialog(State& st) {
   SendMessageW(mon, CB_ADDSTRING, 0, (LPARAM)L"All monitors");
   SendMessageW(mon, CB_ADDSTRING, 0, (LPARAM)L"Primary monitor only");
   SendMessageW(mon, CB_SETCURSEL, st.settings.all_monitors ? 0 : 1, 0);
+  // Random on several monitors: the same module on all of them, or
+  // (DifferentPerMonitor=1) a different one on each.
+  CheckDlgButton(st.dlg, IDC_PER_MONITOR, st.settings.different_per_monitor ? BST_CHECKED : BST_UNCHECKED);
+  st.monitors = count_monitors(0);
 
   // Sound (AUDIO.md §9): where it plays, or Off; and After Dark's volume.
   HWND snd = item(IDC_SOUND);
@@ -3445,6 +3495,9 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case IDC_SOUND:
           if (HIWORD(wp) == CBN_SELCHANGE) update_sound(*st);
           return TRUE;
+        case IDC_MONITORS:
+          if (HIWORD(wp) == CBN_SELCHANGE) update_per_monitor(*st);
+          return TRUE;
         case IDC_STRIP_SHOW_ALL:
           if (st->strip && st->strip->selected_count()) {
             // Back to every release; the keyboard goes to the tiles (the link hides).
@@ -3595,6 +3648,21 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
       RedrawWindow(h, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
       return TRUE;
     }
+    case WM_DISPLAYCHANGE:
+      // A monitor plugged in or out: "A different module on each monitor"
+      // shows only while there are several.
+      if (st && st->list) {
+        const int n = count_monitors(++st->display_changes);
+        if (n != st->monitors) {
+          log_line("dialog: %d monitor(s)", n);
+          st->monitors = n;
+          update_per_monitor(*st);
+          layout(*st);
+          // In Random the list's height changed with it: the selection afresh.
+          if (st->random) position_list(*st, ListView_GetNextItem(st->list, -1, LVNI_SELECTED));
+        }
+      }
+      break;
     case WM_SETTINGCHANGE:
     case WM_SYSCOLORCHANGE:
     case WM_THEMECHANGED:
@@ -3648,6 +3716,13 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 //     focus=credit (its focus ring); the report says where it shows (credit=, credit_lead=,
 //     credit_name=; "hidden" when it doesn't fit), the assets line's text (assets_text=) and
 //     Preview (preview_button=), in the picture's pixels
+//     monitors=primary (the Monitors dropdown at Primary monitor only)  different=1|0 (the
+//     "A different module on each monitor" box checked or not)  focus=permonitor (its focus
+//     ring); the report says how many monitors the dialog counts (monitors=), where the box
+//     shows (per_monitor=x,y,w,h or "hidden"), whether it is enabled and checked
+//     (per_monitor_enabled=, per_monitor_checked=) and its text fits beside its box
+//     (per_monitor_fits=), and where "Change module every"'s dropdown and the list's card are
+//     (duration=, list_card=)
 
 std::map<std::wstring, std::wstring> parse_state(const std::wstring& s) {
   std::map<std::wstring, std::wstring> kv;
@@ -3742,6 +3817,11 @@ int run_screenshot(State& st, const std::wstring& png) {
     SendDlgItemMessageW(dlg, IDC_VOLUME, TBM_SETPOS, TRUE, std::clamp(_wtoi(kv[L"volume"].c_str()), 0, 100));
     update_volume_value(st);
   }
+  if (kv[L"monitors"] == L"primary") {
+    SendDlgItemMessageW(dlg, IDC_MONITORS, CB_SETCURSEL, 1, 0);
+    update_per_monitor(st);
+  }
+  if (!kv[L"different"].empty()) CheckDlgButton(dlg, IDC_PER_MONITOR, kv[L"different"] == L"1" ? BST_CHECKED : BST_UNCHECKED);
   if (kv[L"hover"] == L"preview") {
     st.hover_preview = true;
     live_preview_set_hover(st.preview, true);
@@ -3764,7 +3844,8 @@ int run_screenshot(State& st, const std::wstring& png) {
     static const std::map<std::wstring, int> ids = {{L"list", IDC_MODULE_LIST}, {L"ok", IDOK}, {L"single", IDC_MODE_SINGLE},
                                                     {L"random", IDC_MODE_RANDOM}, {L"duration", IDC_DURATION},
                                                     {L"preview", IDC_PREVIEW}, {L"sound", IDC_SOUND},
-                                                    {L"volume", IDC_VOLUME}, {L"credit", IDC_FOOTER_CREDIT}};
+                                                    {L"volume", IDC_VOLUME}, {L"credit", IDC_FOOTER_CREDIT},
+                                                    {L"permonitor", IDC_PER_MONITOR}};
     SendMessageW(dlg, WM_CHANGEUISTATE, MAKEWPARAM(UIS_CLEAR, UISF_HIDEFOCUS | UISF_HIDEACCEL), 0);
     HWND f = nullptr;
     if (auto it = ids.find(kv[L"focus"]); it != ids.end()) f = GetDlgItem(dlg, it->second);
@@ -3902,6 +3983,23 @@ int run_screenshot(State& st, const std::wstring& png) {
               "\ncredit_name=" + (credit ? pic(st.footer_credit.name) : std::string("hidden")) +
               "\nassets_text=" + pic(Rc{(int)ar.left, (int)ar.top, st.assets_right - (int)ar.left, (int)(ar.bottom - ar.top)}) +
               "\npreview_button=" + pic(st.L.preview_button) + "\n";
+    // "A different module on each monitor": where it shows, its state, and
+    // whether its text fits beside its box (as custom_draw_button lays a
+    // checkbox out: the 20-DIP box, 8 DIP, the text); its neighbours.
+    {
+      HWND pm = GetDlgItem(dlg, IDC_PER_MONITOR);
+      const bool shown = (GetWindowLongW(pm, GWL_STYLE) & WS_VISIBLE) != 0 && !st.L.per_monitor.empty();
+      HDC dc = GetDC(pm);
+      const int text_w = measure_text(dc, without_mnemonic(window_text(pm)), st.theme.fonts.body).cx;
+      ReleaseDC(pm, dc);
+      const bool fits = st.L.per_monitor.w - st.theme.px(20) - st.theme.px(8) >= text_w;
+      const bool dur = (GetWindowLongW(GetDlgItem(dlg, IDC_DURATION), GWL_STYLE) & WS_VISIBLE) != 0;
+      report += "monitors=" + std::to_string(st.monitors) + "\nper_monitor=" + (shown ? pic(st.L.per_monitor) : "hidden") +
+                "\nper_monitor_enabled=" + (IsWindowEnabled(pm) ? "1" : "0") +
+                "\nper_monitor_checked=" + (IsDlgButtonChecked(dlg, IDC_PER_MONITOR) == BST_CHECKED ? "1" : "0") +
+                "\nper_monitor_fits=" + (fits ? "1" : "0") + "\nduration=" + (dur ? pic(st.L.duration) : "hidden") +
+                "\nlist_card=" + pic(st.L.list_card) + "\n";
+    }
     write_file_atomic(kv[L"report"], report);
   }
   DestroyWindow(dlg);

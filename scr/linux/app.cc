@@ -29,10 +29,12 @@
 //    is; a preview's 320x240 at 30 frames a second) and its frames
 //    letterboxed into the window, the mouse mapped through the same
 //    rectangle (present.h);
-//  * XScreenSaver: -root draws in its window and only the player on the
-//    primary monitor makes sound; a -window-id preview is silent, and its
-//    host and Wine run at nice 10 (the Windows /p preview's host runs below
-//    normal priority);
+//  * XScreenSaver: -root draws in its window, its rotation follows the
+//    clock, so the players on the other monitors show the same module and
+//    change it at the same moment (rotation.h; --different-modules gives
+//    each an order of its own), and only the player on the primary monitor
+//    makes sound; a -window-id preview is silent, and its host and Wine run
+//    at nice 10 (the Windows /p preview's host runs below normal priority);
 //  * stopping: QUIT first, a grace for the sound shutdown, then SIGTERM and
 //    SIGKILL; no child left behind.
 #include "app.h"
@@ -71,6 +73,7 @@
 #include "options.h"
 #include "present.h"
 #include "restart.h"
+#include "rotation.h"
 #include "sound.h"
 #include "status.h"
 #include "wine.h"
@@ -89,6 +92,8 @@ constexpr auto kCapsCheck = 250ms;
 constexpr auto kHoldPoll = 16ms;
 // A rotation that waits for a game to end re-checks this often (§4.2).
 constexpr auto kRotateRetry = 1s;
+// The clock's order changes this long after its slot ends (rotation.h).
+constexpr auto kChangeMargin = 50ms;
 // The longest the first host waits for the --capabilities answer when the
 // rotation holds a module of another ABI than After Dark's.
 constexpr auto kCapsGateWait = 2s;
@@ -123,51 +128,20 @@ void on_signal(int sig) {
   errno = saved;
 }
 
-// A shuffle bag over the rotation (the Windows saver's Rotation,
-// scr/src/settings.h): every module plays once per pass, and a new pass
-// never starts with the module that just ended. `first` plays before the
-// bag.
-class Rotation {
- public:
-  Rotation(std::vector<std::string> ids, uint32_t seed, const std::string& first = {}) : rng_(seed) {
-    for (auto& id : ids) {
-      if (std::find(order_.begin(), order_.end(), id) == order_.end()) order_.push_back(std::move(id));
-    }
-    std::shuffle(order_.begin(), order_.end(), rng_);
-    if (first.empty()) return;
-    if (auto it = std::find(order_.begin(), order_.end(), first); it != order_.end()) std::iter_swap(order_.begin(), it);
-    else lead_ = first;
-  }
-  const std::string& current() const {
-    static const std::string none;
-    if (!lead_.empty()) return lead_;
-    return order_.empty() ? none : order_[pos_];
-  }
-  const std::string& next() {
-    if (!lead_.empty() && !order_.empty()) {
-      lead_.clear();
-      return order_[pos_];
-    }
-    if (order_.size() <= 1) return current();
-    if (++pos_ < order_.size()) return order_[pos_];
-    std::string last = order_.back();
-    std::shuffle(order_.begin(), order_.end(), rng_);
-    if (order_[0] == last) {
-      std::uniform_int_distribution<size_t> d(1, order_.size() - 1);
-      std::swap(order_[0], order_[d(rng_)]);
-    }
-    pos_ = 0;
-    return order_[0];
-  }
-  size_t size() const { return order_.size() + (lead_.empty() ? 0 : 1); }
-  bool empty() const { return size() == 0; }
+// The wall clock, in milliseconds since the Unix epoch: the clock's order
+// (rotation.h) follows it.
+int64_t wall_ms() {
+  return std::chrono::duration_cast<milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
 
- private:
-  std::vector<std::string> order_;
-  std::string lead_;
-  size_t pos_ = 0;
-  std::mt19937 rng_;
-};
+// A wall-clock time as the local time of day, for the log.
+std::string time_of_day(int64_t unix_ms) {
+  const time_t t = (time_t)(unix_ms / 1000);
+  tm local{};
+  char text[16] = "?";
+  if (localtime_r(&t, &local)) strftime(text, sizeof(text), "%H:%M:%S", &local);
+  return text;
+}
 
 void print_help() {
   printf(
@@ -200,9 +174,13 @@ void print_help() {
       "      --assets-dir <dir>  the imported releases' folder (default: $AD_ASSETS_DIR, else\n"
       "                          the Wine prefix's %%LOCALAPPDATA%%\\LongAfterDark\\assets)\n"
       "  -root                   XScreenSaver's mode: draw in its window ($XSCREENSAVER_WINDOW),\n"
-      "                          else the virtual root, else the root window; with a window per\n"
-      "                          monitor, only the primary monitor's plays sound. The default\n"
-      "                          when $XSCREENSAVER_WINDOW is set and no other mode is given\n"
+      "                          else the virtual root, else the root window. With a window per\n"
+      "                          monitor, all show the same module and change it together, on\n"
+      "                          the clock, and only the primary monitor's plays sound. The\n"
+      "                          default when $XSCREENSAVER_WINDOW is set and no other mode is given\n"
+      "      --different-modules\n"
+      "                          with -root, a rotation in an order of its own: a different module\n"
+      "                          on each monitor\n"
       "  -window-id <id>         draw in an existing window (xscreensaver-settings' preview, which\n"
       "                          passes --window-id): silent, a 320x240 screen, 30 frames a second\n"
       "      --verbose           log what the player and the host do on stderr\n"
@@ -280,6 +258,8 @@ class App {
   void show_start_failed(const std::string& text);
   void check_display();
   void rotate();
+  int64_t slot_ms() const;
+  void schedule_change();
   void start_probe();
   void poll_probe(const std::vector<pollfd>& fds, size_t idx);
   void finish_probe(bool answered);
@@ -318,6 +298,12 @@ class App {
   const Module* named_ = nullptr;   // the module named on the command line
   bool rotating_ = false;
   std::unique_ptr<Rotation> rotation_;
+  // rotation_, when it is the clock's order (-root, rotation.h); and the
+  // wall clock as the player started, which its first slot follows
+  // (XScreenSaver starts its players at once, but each may then wait a
+  // different while for its host's capabilities).
+  ClockRotation* clock_ = nullptr;
+  int64_t started_ms_ = 0;
 
   Display* dpy_ = nullptr;
   Presenter pres_;
@@ -405,6 +391,7 @@ int x_io_error_handler(Display*) {
 // ---- setup -------------------------------------------------------------------------
 
 int App::run(int argc, char** argv) {
+  started_ms_ = wall_ms();
   if (int r = parse_options(argc, argv, opt_); r >= 0) return r;
   if (opt_.help) {
     print_help();
@@ -977,6 +964,9 @@ void App::start_rotation() {
   std::vector<std::string> ids;
   size_t left_out = 0;
   rotating_ = opt_.random || !named_;
+  // XScreenSaver's players, one on each monitor, follow the clock's order,
+  // and so show the same module (rotation.h).
+  const bool clocked = rotating_ && opt_.mode == WindowMode::root && !opt_.different_modules;
   if (rotating_) {
     for (const Module& m : catalog_.modules) {
       if (!m.same_as.empty()) continue;   // a byte-identical copy plays once per pass, as its first
@@ -987,12 +977,22 @@ void App::start_rotation() {
       ids.push_back(m.id);
     }
     if (left_out) log_line("rotation: left out %zu module(s) this host can't run", left_out);
-    log_line("rotation: %zu module(s), %d s each", ids.size(), opt_.cycle_s);
+    log_line("rotation: %zu module(s), %d s each, %s", ids.size(), opt_.cycle_s,
+             clocked ? "in the clock's order" : "in an order of its own");
   } else {
     ids.push_back(named_->id);
   }
-  std::random_device rd;
-  rotation_ = std::make_unique<Rotation>(ids, rd(), named_ ? named_->id : std::string());
+  const std::string first = named_ ? named_->id : std::string();
+  if (clocked) {
+    // The first slot as the player started, unless it is over already.
+    const int64_t slot = std::max(first_slot(started_ms_, slot_ms()), clock_slot(wall_ms(), slot_ms()));
+    auto clock = std::make_unique<ClockRotation>(ids, slot, first);
+    clock_ = clock.get();
+    rotation_ = std::move(clock);
+  } else {
+    std::random_device rd;
+    rotation_ = std::make_unique<ShuffleRotation>(ids, rd(), first);
+  }
   if (rotation_->empty()) {
     const std::string text = "None of the modules imported can run on this Long After Dark host (adhostwin.exe).";
     err_line("%s", text.c_str());
@@ -1001,7 +1001,9 @@ void App::start_rotation() {
     return;
   }
   spawn();
-  if (rotating_ && rotation_->size() > 1 && opt_.cycle_s > 0) rotate_at_ = Clock::now() + std::chrono::seconds(opt_.cycle_s);
+  if (!rotating_ || rotation_->size() < 2 || opt_.cycle_s <= 0) return;
+  if (clock_) schedule_change();
+  else rotate_at_ = Clock::now() + std::chrono::seconds(opt_.cycle_s);
 }
 
 void App::spawn() {
@@ -1200,22 +1202,42 @@ void App::rotate() {
   rotate_at_.reset();
   if (!rotation_ || rotation_->size() < 2 || exiting_ || gave_up_) return;
   const auto now = Clock::now();
-  if (!display_on_) {
+  if (!display_on_ && !clock_) {
     rotate_at_ = now + std::chrono::seconds(opt_.cycle_s);
     return;
   }
   // A game in progress is not switched away (AFTERDAR.SCR 0x40190b): the
   // switch waits, re-checked every second, unless the module says it may
-  // be rotated (INTERACTION.md §4.2).
+  // be rotated (INTERACTION.md §4.2). The clock's order waits so while the
+  // display is off too, and then goes to the clock's module, where the
+  // other monitors' players are.
   const OwnerStatus st = owner_status();
-  if (st.interactive() && !st.rotate_ok()) {
-    if (!rotate_waiting_) log_line("rotate-wait: the module is interactive");
+  const bool game = st.interactive() && !st.rotate_ok();
+  if (game || !display_on_) {
+    if (!rotate_waiting_) log_line("rotate-wait: %s", game ? "the module is interactive" : "the display is off");
     rotate_waiting_ = true;
     rotate_at_ = now + kRotateRetry;
     return;
   }
   rotate_waiting_ = false;
-  const std::string next = rotation_->next();
+  std::string next;
+  if (clock_) {
+    const int64_t slot = clock_slot(wall_ms(), slot_ms());
+    if (slot == clock_->slot()) {   // not there yet on the wall clock
+      schedule_change();
+      return;
+    }
+    // A module the order reached by skipping plays on while it plays well.
+    const std::string playing = clock_->current();
+    next = clock_->go_to(slot, host_ && !host_->ended() && host_->frames() > 0);
+    if (next == playing && (host_ || respawn_pending_)) {
+      log_line("rotate: %s plays on", next.c_str());
+      schedule_change();
+      return;
+    }
+  } else {
+    next = rotation_->next();
+  }
   log_line("rotate -> %s", next.c_str());
   kill_host();
   // Black between modules, as the original randomizer did (a "could not be
@@ -1224,7 +1246,21 @@ void App::rotate() {
   restart_.new_module();
   respawn_pending_ = false;
   spawn();
-  rotate_at_ = now + std::chrono::seconds(opt_.cycle_s);
+  if (clock_) schedule_change();
+  else rotate_at_ = now + std::chrono::seconds(opt_.cycle_s);
+}
+
+// The clock's slots: --cycle seconds, or the default's with --cycle 0 (the
+// module is then chosen as with the default, and kept).
+int64_t App::slot_ms() const { return (int64_t)(opt_.cycle_s > 0 ? opt_.cycle_s : kDefaultCycleS) * 1000; }
+
+// The clock's next change: when its slot ends on the wall clock, timed on
+// the loop's steady clock, and a moment later, so that the wall clock is in
+// the next slot by then (rotate() waits for it if it isn't).
+void App::schedule_change() {
+  const int64_t end = slot_start(clock_->slot() + 1, slot_ms());
+  rotate_at_ = Clock::now() + milliseconds(std::max<int64_t>(end - wall_ms(), 0)) + kChangeMargin;
+  log_line("rotation: the clock's slot %lld, until %s", (long long)clock_->slot(), time_of_day(end).c_str());
 }
 
 void App::start_probe() {

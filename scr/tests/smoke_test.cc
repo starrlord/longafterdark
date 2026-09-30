@@ -40,6 +40,7 @@
 #include "host_process.h"
 #include "log.h"
 #include "paths.h"
+#include "releases.h"
 #include "resource.h"
 #include "settings.h"
 #include "sound.h"
@@ -133,7 +134,7 @@ EnvList base_env(const Opts& o, const Work& w) {
       {L"FAKEHOST_FAIL_START", L""}, {L"FAKEHOST_CORRUPT_EVERY", L""}, {L"FAKEHOST_IGNORE_QUIT", L""},
       {L"FAKEHOST_GARBAGE", L""}, {L"AD_SCR_TESTEXIT_AFTER_FRAMES", L""}, {L"AD_SCR_TEST_ROTATE_MS", L""},
       {L"AD_SCR_TEST_STALL_MS", L""}, {L"AD_SCR_TEST_DISPLAY_OFF_MS", L""}, {L"ADFRAMES", L""}, {L"ADCVSET", L""},
-      {L"AD_SCR_TEST_MONITORS", L""}, {kPreviewSettingsEnv, L""}, {L"AD_IMPORT_EXE", o.fakeimport},
+      {L"AD_SCR_TEST_MONITORS", L""}, {L"AD_SCR_TEST_SEED", L""}, {kPreviewSettingsEnv, L""}, {L"AD_IMPORT_EXE", o.fakeimport},
       {L"FAKEIMPORT_LOG", (w.dir / "fakeimport.log").wstring()}, {L"FAKEIMPORT_EXIT", L""},
       {L"FAKEIMPORT_CATALOG", L""}, {L"FAKEIMPORT_WAIT_MS", L""}, {L"FAKEHOST_LANES", L""},
       {L"FAKEHOST_ABIS", L""}, {L"FAKEHOST_EXIT3_MODULE", L""}, {L"FAKEHOST_CAPS_DELAY_MS", L""},
@@ -2761,6 +2762,454 @@ int test_rotate_abi_wait(const Opts& o) {
   return 0;
 }
 
+int find_line(const std::vector<std::string>& lines, const std::string& needle, int from);   // below
+
+// The modules the saver started, by its own spawn lines ("spawn window=<w>
+// gen=<g> module=<id> …"), in log order: {window, module id}.
+std::vector<std::pair<int, std::string>> spawned_modules(const Work& w) {
+  std::vector<std::pair<int, std::string>> out;
+  for (const auto& l : lines_of(w.scr_log)) {
+    const size_t at = l.find("] spawn window=");
+    if (at == std::string::npos) continue;
+    const size_t m = l.find(" module=", at);
+    if (m == std::string::npos) continue;
+    const size_t end = l.find(' ', m + 8);
+    out.push_back({atoi(l.c_str() + at + 15), l.substr(m + 8, end == std::string::npos ? end : end - m - 8)});
+  }
+  return out;
+}
+
+// Window `window`'s modules, in order (`spawned_modules`).
+std::vector<std::string> modules_of(const std::vector<std::pair<int, std::string>>& spawns, int window) {
+  std::vector<std::string> v;
+  for (const auto& [win, m] : spawns) {
+    if (win == window) v.push_back(m);
+  }
+  return v;
+}
+
+// The same without a module's repeated starts (a host that failed and was started again).
+std::vector<std::string> collapsed(const std::vector<std::string>& v) {
+  std::vector<std::string> out;
+  for (const auto& m : v) {
+    if (out.empty() || out.back() != m) out.push_back(m);
+  }
+  return out;
+}
+
+// The first `n` modules of a rotation over `ids` seeded `seed` (settings.h:
+// Rotation): what one window plays, or every window following one.
+std::vector<std::string> rotation_order(const std::vector<std::string>& ids, uint32_t seed, size_t n) {
+  Rotation r(ids, seed);
+  std::vector<std::string> v;
+  for (size_t i = 0; i < n; ++i) v.push_back(i == 0 ? r.current() : r.next());
+  return v;
+}
+
+bool starts_with(const std::vector<std::string>& v, const std::vector<std::string>& prefix) {
+  return v.size() >= prefix.size() && std::equal(prefix.begin(), prefix.end(), v.begin());
+}
+
+// Random on two (staged) monitors, off every real one, its order fixed by
+// AD_SCR_TEST_SEED:
+//  * by default every monitor plays the same module and they switch
+//    together: both windows follow one shuffle bag (SharedRotation), a
+//    Rotation over the rotation's modules with that seed, each switch one
+//    pair of spawns, window 0's and window 1's;
+//  * a module one monitor's host can't start (fakehost exits 3 for it) is
+//    skipped on both, once, and both start the next one together;
+//  * a monitor plugged in while it runs joins on the module the other plays,
+//    and switches with it from then on;
+//  * with DifferentPerMonitor=1 each has a rotation of its own, seeded apart
+//    (the seed, and the seed + 7919): today's way.
+// (The rotation waiting for the primary monitor's game, and then everyone
+// switching, is SharedRotation's rule, in the unit tests: a game here would
+// clip the cursor, as input-rotate does with one monitor.)
+int test_rotate_monitors(const Opts& o) {
+  Work w = prepare(o, "rotate-monitors");
+  edit_settings(w, [](Settings& s) {
+    s.module = "random";
+    s.randomize.clear();
+    s.all_monitors = true;
+    s.different_per_monitor = false;
+  });
+  // The rotation's modules as the saver builds it (every module on disk, in catalog order).
+  Catalog c;
+  load_catalog((w.assets / "win" / "catalog-win.json").wstring(), c, nullptr);
+  Settings loaded;
+  load_settings(w.settings.wstring(), loaded);
+  const std::wstring win = (w.assets / "win").wstring();
+  const std::vector<std::string> ids =
+      effective_rotation(loaded, c, [&](const std::string& id) {
+        const Module* m = c.find(id);
+        return m && file_exists(resolve_module_path(win, m->path));
+      }).ids;
+  CHECK(ids.size() == 4);
+  // A seed whose two own rotations (DifferentPerMonitor) start on different modules.
+  uint32_t seed = 1;
+  while (seed < 100 && rotation_order(ids, seed, 1) == rotation_order(ids, seed + 7919u, 1)) ++seed;
+  const std::wstring two = L"-16000,0,856,480,p;-15144,0,640,480";
+  // One /s run; `done` (given the saver's pid) says when to close it. Each
+  // run's log is kept as scr-<n>.log.
+  int runs = 0;
+  auto run = [&](const std::wstring& monitors, const EnvList& extra, const wchar_t* rotate_ms,
+                 const std::function<bool(DWORD)>& done) {
+    fs::remove(w.scr_log);
+    fs::remove(w.host_log);
+    EnvList env = base_env(o, w);
+    env.insert(env.end(), extra.begin(), extra.end());
+    env.push_back({L"AD_SCR_TEST_MONITORS", monitors});
+    env.push_back({L"AD_SCR_TEST_ROTATE_MS", rotate_ms});
+    env.push_back({L"AD_SCR_TEST_SEED", std::to_wstring(seed)});
+    const ULONGLONG t0 = GetTickCount64();
+    bool closed = false;
+    RunResult r = run_scr(o, L"/s", env, 60000, [&](DWORD pid) {
+      if (!closed && (done(pid) || GetTickCount64() - t0 > 40000)) {
+        close_saver(pid);
+        closed = true;
+      }
+    });
+    std::error_code ec;
+    fs::copy_file(w.scr_log, w.dir / ("scr-" + std::to_string(++runs) + ".log"), fs::copy_options::overwrite_existing, ec);
+    return expect_exit(w, r, 0);
+  };
+  auto spawns_of = [&](int window) { return modules_of(spawned_modules(w), window); };
+
+  // 1. The same module on both, switching together, in the bag's order.
+  {
+    if (!run(two, {}, L"1000", [&](DWORD) { return spawns_of(0).size() >= 6 && spawns_of(1).size() >= 6; })) return 1;
+    const auto sp = spawned_modules(w);
+    const auto w0 = modules_of(sp, 0), w1 = modules_of(sp, 1);
+    CHECK(w0.size() >= 6 && w0 == w1);
+    CHECK(w0 == rotation_order(ids, seed, w0.size()));
+    CHECK(sp.size() % 2 == 0);
+    for (size_t i = 0; i + 1 < sp.size(); i += 2) {
+      if (sp[i].first != 0 || sp[i + 1].first != 1 || sp[i].second != sp[i + 1].second) {
+        failf("spawns %zu and %zu: window %d %s, window %d %s (want a pair, window 0's and 1's)", i, i + 1, sp[i].first,
+              sp[i].second.c_str(), sp[i + 1].first, sp[i + 1].second.c_str());
+      }
+    }
+    CHECK(count_in_log(w.scr_log, "rotation: the same module on every monitor, switching together") == 1);
+    CHECK(count_in_log(w.scr_log, "rotate window=0 ->") >= 5 &&
+          count_in_log(w.scr_log, "rotate window=0 ->") == count_in_log(w.scr_log, "rotate window=1 ->"));
+    check_hosts_gone(w);
+    if (g_failures) {
+      dump_logs(w);
+      return 1;
+    }
+  }
+  // 2. A module neither host can start is skipped on both, once, and the
+  //    next one starts on both at once. (The rotation's clock, 5 s, leaves
+  //    the three tries, 1.5 s apart at most, time to fail first.)
+  {
+    const std::vector<std::string> order = rotation_order(ids, seed, 4);
+    const Module* bad = c.find(order[1]);
+    CHECK(bad != nullptr);
+    if (!bad) return 1;
+    const std::string file = fs::path(bad->path).filename().string();
+    auto has = [](const std::vector<std::string>& v, const std::string& m) { return std::find(v.begin(), v.end(), m) != v.end(); };
+    if (!run(two, {{L"FAKEHOST_EXIT3_MODULE", widen(file)}}, L"5000",
+             [&](DWORD) { return has(spawns_of(0), order[3]) && has(spawns_of(1), order[3]); })) {
+      return 1;
+    }
+    const auto sp = spawned_modules(w);
+    CHECK(starts_with(collapsed(modules_of(sp, 0)), order) && starts_with(collapsed(modules_of(sp, 1)), order));
+    const std::string skipped = "module=" + order[1] + " after ";
+    CHECK(count_in_log(w.scr_log, ", on every monitor") == 1 && count_in_log(w.scr_log, skipped) == 1);
+    // Tried on both before it went; after it, not again, and the next one on
+    // both at once: the first two spawns after the skip are that pair.
+    int tried0 = 0, tried1 = 0;
+    for (const auto& [win, m] : sp) (win == 0 ? tried0 : tried1) += m == order[1];
+    CHECK(tried0 >= 1 && tried1 >= 1);
+    const auto lines = lines_of(w.scr_log);
+    const int skip = find_line(lines, skipped, 0);
+    std::vector<std::pair<int, std::string>> after;
+    for (int i = std::max(0, skip); skip >= 0 && i < (int)lines.size(); ++i) {
+      const size_t at = lines[i].find("] spawn window=");
+      if (at == std::string::npos) continue;
+      const size_t m = lines[i].find(" module=", at), end = lines[i].find(' ', m + 8);
+      after.push_back({atoi(lines[i].c_str() + at + 15), lines[i].substr(m + 8, end - m - 8)});
+    }
+    CHECK(after.size() >= 2);
+    if (after.size() >= 2) {
+      CHECK(after[0].first == 0 && after[1].first == 1 && after[0].second == order[2] && after[1].second == order[2]);
+    }
+    for (const auto& [win, m] : after) CHECK(m != order[1]);
+    check_hosts_gone(w);
+    if (g_failures) {
+      dump_logs(w);
+      return 1;
+    }
+  }
+  // 3. A monitor plugged in joins on the module the other one plays, and
+  //    switches with it.
+  {
+    bool posted = false;
+    if (!run(L"-16000,0,856,480,p|" + two, {}, L"1500", [&](DWORD pid) {
+          if (!posted && spawns_of(0).size() >= 2) {
+            post_display_change(pid, 1);
+            posted = true;
+          }
+          return posted && spawns_of(1).size() >= 3;
+        })) {
+      return 1;
+    }
+    CHECK(posted);
+    CHECK(count_in_log(w.scr_log, "relayout monitors=1->2 kept=1 moved=0 created=1 retired=0") == 1);
+    const auto sp = spawned_modules(w);
+    // Window 0's in the bag's order all along; window 1's first host the
+    // module window 0 played then, and every one after it a pair with window 0's.
+    const auto w0 = modules_of(sp, 0);
+    CHECK(w0 == rotation_order(ids, seed, w0.size()));
+    size_t first1 = 0;
+    while (first1 < sp.size() && sp[first1].first != 1) ++first1;
+    CHECK(first1 > 0 && first1 < sp.size());
+    if (first1 > 0 && first1 < sp.size()) {
+      CHECK(sp[first1 - 1].first == 0 && sp[first1 - 1].second == sp[first1].second);
+      CHECK((sp.size() - first1 - 1) % 2 == 0);
+      for (size_t i = first1 + 1; i + 1 < sp.size(); i += 2) {
+        CHECK(sp[i].first == 0 && sp[i + 1].first == 1 && sp[i].second == sp[i + 1].second);
+      }
+    }
+    CHECK(modules_of(sp, 1).size() >= 3);
+    check_hosts_gone(w);
+    if (g_failures) {
+      dump_logs(w);
+      return 1;
+    }
+  }
+  // 4. DifferentPerMonitor=1: a rotation of its own for each (today's way).
+  {
+    edit_settings(w, [](Settings& s) { s.different_per_monitor = true; });
+    if (!run(two, {}, L"1000", [&](DWORD) { return spawns_of(0).size() >= 5 && spawns_of(1).size() >= 5; })) return 1;
+    const auto sp = spawned_modules(w);
+    const auto w0 = modules_of(sp, 0), w1 = modules_of(sp, 1);
+    CHECK(w0.size() >= 5 && w1.size() >= 5);
+    CHECK(w0 == rotation_order(ids, seed, w0.size()));
+    CHECK(w1 == rotation_order(ids, seed + 7919u, w1.size()));
+    CHECK(!w0.empty() && !w1.empty() && w0[0] != w1[0]);   // the seed was chosen so
+    CHECK(count_in_log(w.scr_log, "rotation: a different module on each monitor (DifferentPerMonitor=1)") == 1);
+    CHECK(count_in_log(w.scr_log, "rotation: the same module") == 0);
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  return 0;
+}
+
+// "x,y,w,h" from a screenshot report; false when it says "hidden" (or nothing).
+bool report_rect(const std::string& v, RECT* r) {
+  int x = 0, y = 0, w = 0, h = 0;
+  if (sscanf(v.c_str(), "%d,%d,%d,%d", &x, &y, &w, &h) != 4) return false;
+  *r = RECT{x, y, x + w, y + h};
+  return true;
+}
+
+// The settings dialog's "A different module on each monitor"
+// (DifferentPerMonitor; ui_model.h: per_monitor_choice), driven by control
+// ID with monitors staged (AD_SCR_TEST_MONITORS, which the test build's
+// dialog counts as the saver does):
+//  * two monitors, a file without the key (the fixture: Random, a named
+//    module leading its list): shown under "Change module every", enabled,
+//    unchecked; checked, then "Primary monitor only": greyed, still checked;
+//    "All monitors": enabled again; Single: hidden; Random: back; OK saves
+//    DifferentPerMonitor=1 and keeps the rest;
+//  * the next dialog shows it checked; unchecked, then Cancel: the file as it was;
+//  * one monitor: not there, and OK keeps the file's value; a monitor
+//    plugged in (WM_DISPLAYCHANGE: the staged layout after it) brings it,
+//    checked;
+// then off-screen renders, light and dark at 100% and 150%, greyed, focused,
+// at the minimum size and with one monitor: under "Change module every",
+// clear of it and of the list's card, its text whole beside its box; with one
+// monitor the list keeps that room.
+int test_config_monitors(const Opts& o) {
+  Work w = prepare(o, "config-monitors");
+  const std::wstring two = L"0,0,1280,720,p;1280,0,1024,768", one = L"0,0,1280,720,p";
+  auto env_for = [&](const std::wstring& monitors) {
+    EnvList env = base_env(o, w);
+    env.push_back({L"AD_SCR_TEST_MONITORS", monitors});
+    return env;
+  };
+  struct Seen {
+    bool visible = false, enabled = false, checked = false;
+  };
+  auto look = [](HWND dlg) {
+    HWND pm = GetDlgItem(dlg, IDC_PER_MONITOR);
+    Seen s;
+    s.visible = IsWindowVisible(pm) != FALSE;
+    s.enabled = IsWindowEnabled(pm) != FALSE;
+    s.checked = SendMessageW(pm, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    return s;
+  };
+  auto set_monitors = [](HWND dlg, int sel) {
+    HWND mon = GetDlgItem(dlg, IDC_MONITORS);
+    SendMessageW(mon, CB_SETCURSEL, sel, 0);
+    SendMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDC_MONITORS, CBN_SELCHANGE), (LPARAM)mon);
+  };
+  auto set_check = [](HWND dlg, bool on) {
+    HWND pm = GetDlgItem(dlg, IDC_PER_MONITOR);
+    SendMessageW(pm, BM_SETCHECK, on ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDC_PER_MONITOR, BN_CLICKED), (LPARAM)pm);
+  };
+  auto ready = [](DWORD pid) -> HWND {
+    HWND d = find_dialog(pid);
+    HWND list = d ? GetDlgItem(d, IDC_MODULE_LIST) : nullptr;
+    return list && SendMessageW(list, LVM_GETITEMCOUNT, 0, 0) > 0 ? d : nullptr;
+  };
+  std::string text, again;
+
+  // ---- session 1: two monitors, a file without the key.
+  Seen first, checked, primary, all, single, random;
+  std::string label;
+  bool acted = false;
+  RunResult r = run_scr(o, L"/c", env_for(two), 60000, [&](DWORD pid) {
+    if (acted) return;
+    HWND dlg = ready(pid);
+    if (!dlg) return;
+    first = look(dlg);
+    label = window_text(GetDlgItem(dlg, IDC_PER_MONITOR));
+    set_check(dlg, true);
+    checked = look(dlg);
+    set_monitors(dlg, 1);
+    primary = look(dlg);
+    set_monitors(dlg, 0);
+    all = look(dlg);
+    choose_radio(dlg, IDC_MODE_SINGLE, IDC_MODE_RANDOM);
+    single = look(dlg);
+    choose_radio(dlg, IDC_MODE_RANDOM, IDC_MODE_SINGLE);
+    random = look(dlg);
+    PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), (LPARAM)GetDlgItem(dlg, IDOK));
+    acted = true;
+  });
+  CHECK(acted);
+  if (!expect_exit(w, r, 0)) return 1;
+  CHECK(label == "A di&fferent module on each monitor");
+  CHECK(first.visible && first.enabled && !first.checked);
+  CHECK(checked.visible && checked.enabled && checked.checked);
+  CHECK(primary.visible && !primary.enabled && primary.checked);   // greyed, keeping its check
+  CHECK(all.visible && all.enabled && all.checked);
+  CHECK(!single.visible && single.checked);
+  CHECK(random.visible && random.enabled && random.checked);
+  Settings s;
+  CHECK(load_settings(w.settings.wstring(), s));
+  CHECK(s.different_per_monitor && s.all_monitors && s.rotates() && s.module == "test.rings");
+  read_file(w.settings.wstring(), text);
+  CHECK(text.find("Monitors=all\r\n") != std::string::npos && text.find("DifferentPerMonitor=1\r\n") != std::string::npos);
+  CHECK(text.find("FutureKey=keep me\r\n") != std::string::npos);
+
+  // ---- session 2: shown checked; unchecked, then Cancel writes nothing.
+  Seen reopened, unchecked;
+  acted = false;
+  r = run_scr(o, L"/c", env_for(two), 60000, [&](DWORD pid) {
+    if (acted) return;
+    HWND dlg = ready(pid);
+    if (!dlg) return;
+    reopened = look(dlg);
+    set_check(dlg, false);
+    unchecked = look(dlg);
+    PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED), (LPARAM)GetDlgItem(dlg, IDCANCEL));
+    acted = true;
+  });
+  CHECK(acted);
+  if (!expect_exit(w, r, 0)) return 1;
+  CHECK(reopened.visible && reopened.enabled && reopened.checked && !unchecked.checked);
+  read_file(w.settings.wstring(), again);
+  CHECK(again == text);
+
+  // ---- session 3: one monitor: not there, and OK keeps the file's value.
+  Seen alone;
+  acted = false;
+  r = run_scr(o, L"/c", env_for(one), 60000, [&](DWORD pid) {
+    if (acted) return;
+    HWND dlg = ready(pid);
+    if (!dlg) return;
+    alone = look(dlg);
+    PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), (LPARAM)GetDlgItem(dlg, IDOK));
+    acted = true;
+  });
+  CHECK(acted);
+  if (!expect_exit(w, r, 0)) return 1;
+  CHECK(!alone.visible && alone.checked);
+  CHECK(load_settings(w.settings.wstring(), s) && s.different_per_monitor);
+
+  // ---- session 4: one monitor, then a second one plugged in.
+  fs::remove(w.scr_log);
+  Seen plugged_before, plugged_after;
+  acted = false;
+  r = run_scr(o, L"/c", env_for(one + L"|" + two), 60000, [&](DWORD pid) {
+    if (acted) return;
+    HWND dlg = ready(pid);
+    if (!dlg) return;
+    plugged_before = look(dlg);
+    SendMessageW(dlg, WM_DISPLAYCHANGE, 32, MAKELPARAM(1280, 720));
+    plugged_after = look(dlg);
+    PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED), (LPARAM)GetDlgItem(dlg, IDCANCEL));
+    acted = true;
+  });
+  CHECK(acted);
+  if (!expect_exit(w, r, 0)) return 1;
+  CHECK(!plugged_before.visible && plugged_after.visible && plugged_after.enabled && plugged_after.checked);
+  CHECK(count_in_log(w.scr_log, "dialog: 2 monitor(s)") == 1);
+  check_hosts_gone(w);
+  if (g_failures) {
+    fprintf(stderr, "---- settings.ini\n%s\n", text.c_str());
+    dump_logs(w);
+    return 1;
+  }
+
+  // ---- renders (kept as per-monitor-<name>.png in the test's folder)
+  struct Shot {
+    const char* name;
+    std::string state;
+    bool two_monitors, enabled;
+  };
+  const std::string base = "mode=random;different=1;wait=5000;frames=3;size=";
+  const std::vector<Shot> shots = {
+      {"light-100", "theme=light;dpi=96;" + base + "1040x680", true, true},
+      {"dark-100", "theme=dark;dpi=96;" + base + "1040x680", true, true},
+      {"light-150", "theme=light;dpi=144;" + base + "1040x680", true, true},
+      {"dark-150-focus", "theme=dark;dpi=144;focus=permonitor;" + base + "1040x680", true, true},
+      {"light-100-greyed", "theme=light;dpi=96;monitors=primary;" + base + "1040x680", true, false},
+      {"dark-150-min", "theme=dark;dpi=144;" + base + "900x600", true, true},
+      {"light-100-one", "theme=light;dpi=96;" + base + "1040x680", false, false},
+  };
+  int card_h_two = 0, card_h_one = 0;
+  for (const Shot& shot : shots) {
+    auto kv = dialog_report(o, w, shot.state, {{L"AD_SCR_TEST_MONITORS", shot.two_monitors ? two : one}});
+    const fs::path png = w.dir / (std::string("per-monitor-") + shot.name + ".png");
+    std::error_code ec;
+    fs::copy_file(w.dir / "dialog.png", png, fs::copy_options::overwrite_existing, ec);
+    int pw = 0, ph = 0;
+    std::vector<uint8_t> px;
+    CHECK(load_png(png, &pw, &ph, &px));
+    RECT pm{}, dur{}, card{};
+    const bool shown = report_rect(kv["per_monitor"], &pm);
+    CHECK(report_rect(kv["duration"], &dur) && report_rect(kv["list_card"], &card));
+    if (std::string(shot.name) == "light-100") card_h_two = card.bottom - card.top;
+    if (!shot.two_monitors) {
+      CHECK(kv["monitors"] == "1" && !shown && kv["per_monitor"] == "hidden");
+      card_h_one = card.bottom - card.top;
+      continue;
+    }
+    CHECK(kv["monitors"] == "2" && shown);
+    CHECK(kv["per_monitor_enabled"] == (shot.enabled ? "1" : "0") && kv["per_monitor_checked"] == "1");
+    CHECK(kv["per_monitor_fits"] == "1");   // its text whole beside its box
+    // In the picture, under "Change module every" and the list's card, across the card's width.
+    CHECK(pm.left >= 0 && pm.top >= 0 && pm.right <= pw && pm.bottom <= ph);
+    CHECK(pm.top >= dur.bottom && pm.top >= card.bottom);
+    CHECK(std::abs(pm.left - card.left) <= 1 && std::abs(pm.right - card.right) <= 1);
+    if (g_failures) {
+      fprintf(stderr, "%s: per_monitor=%s duration=%s list_card=%s fits=%s picture %dx%d\n", shot.name,
+              kv["per_monitor"].c_str(), kv["duration"].c_str(), kv["list_card"].c_str(), kv["per_monitor_fits"].c_str(),
+              pw, ph);
+      return 1;
+    }
+  }
+  // With one monitor the list keeps the row's room (40 DIP at 100%).
+  CHECK(card_h_one - card_h_two == 40);
+  check_hosts_gone(w);
+  return 0;
+}
+
 // The hosts' start lines for modules whose path ends in `suffix`, in order.
 std::vector<std::map<std::string, std::string>> starts_of(const Work& w, const char* suffix) {
   std::vector<std::map<std::string, std::string>> v;
@@ -4297,7 +4746,7 @@ int test_resources(const Opts& o) {
                            "AD_SCR_TEST_FIRSTFRAME_MS", "AD_SCR_TEST_DISPLAY_OFF_MS", "AD_SCR_TEST_DISPLAY_ON",
                            "AD_SCR_TEST_ROTATE_MS", "AD_SCR_TESTEXIT_AFTER_FRAMES", "AD_SCR_TEST_SCREENSHOT",
                            "AD_SCR_TEST_SCREENSHOT_STATE", "AD_SCR_TEST_CAPTURE", "AD_UI_TEST_HC_SCHEME",
-                           "AD_SCR_TEST_OPEN_LOG"}) {
+                           "AD_SCR_TEST_OPEN_LOG", "AD_SCR_TEST_SEED"}) {
     if (binary_mentions(shipped_bytes, hook)) failf("the shipped LongAfterDark.scr reads %s", hook);
     if (!binary_mentions(test_bytes, hook)) failf("LongAfterDark-test.scr doesn't read %s", hook);
   }
@@ -5940,6 +6389,8 @@ int wmain(int argc, wchar_t** argv) {
       {L"config-abi", test_config_abi},
       {L"rotate-abi", test_rotate_abi},
       {L"rotate-abi-wait", test_rotate_abi_wait},
+      {L"rotate-monitors", test_rotate_monitors},
+      {L"config-monitors", test_config_monitors},
       {L"screen-abi", test_screen_abi},
       {L"screen-field", test_screen_field},
       {L"config-twelve", test_config_twelve},

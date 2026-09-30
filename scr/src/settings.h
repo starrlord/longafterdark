@@ -1,6 +1,10 @@
 // settings.ini (DESIGN.md §6a): UTF-8 INI owned by the front-end.
 //   [Saver]  Module=<id>|random  Randomize=<id>,<id>,…  DurationMin=<n>|0
 //            Scale=1.0|1.5  Monitors=all|primary
+//            DifferentPerMonitor=1|0  (a saver that rotates, on several monitors:
+//                                      1 = a different module on each, each
+//                                      switching on its own; 0 or missing = the
+//                                      same module on all, switching together)
 //            RandomizeSaved=<id>,<id>,…|-  (the dialog's checklist while a single
 //                                          module is chosen, "-" = nothing
 //                                          checked; the saver ignores it)
@@ -60,6 +64,12 @@ struct Settings {
   int duration_min = 5;                       // rotation interval; 0 = never rotate
   double scale = 1.0;                         // 1.0 (480-line) or 1.5 (720-line)
   bool all_monitors = true;                   // false = primary only, others black
+  // [Saver] DifferentPerMonitor: when the saver rotates (Random, or a
+  // Randomize list) on several monitors, each monitor plays a different
+  // module, on a rotation of its own. False, the default (and a file without
+  // the key, written before there was one): they all play the same module
+  // and switch together, following one rotation (SharedRotation, saver.cc).
+  bool different_per_monitor = false;
   // [Saver] StartFromDesktop=0: /s starts every module on black instead of
   // on a capture of the desktop (INTERACTION.md §8). No UI; default 1.
   bool start_from_desktop = true;
@@ -175,6 +185,47 @@ class Rotation {
   std::string lead_;                      // plays once, before order_
   size_t pos_ = 0;
   std::mt19937 rng_;
+};
+
+// The rotation every monitor follows when the saver rotates without
+// DifferentPerMonitor (saver.cc): one shuffle bag (a Rotation) and one clock,
+// so they all play the same module and switch together; a monitor that
+// joins (plugged in while it runs) plays the module the others play. The
+// rules for moving it on, kept free of windows for the tests:
+//  * the clock (DurationMin) moves every monitor on to the next module, but
+//    not while the primary monitor's module plays a game it may not be
+//    switched away from (INTERACTION.md §4.2): the rotation then waits (the
+//    saver asks again every second) and moves on once the game ends;
+//  * a module a monitor's host fails three times in a row is skipped on
+//    every monitor, except while another monitor's module plays such a game
+//    (the player keeps it; the failing monitor says it can't start it), and
+//    except when that monitor has failed every module in turn without a
+//    frame: then it, not the module, is at fault, and it no longer moves the
+//    others on (it retries at a relaxed pace until the clock moves them).
+class SharedRotation {
+ public:
+  SharedRotation(std::vector<std::string> ids, uint32_t seed, const std::string& first = {})
+      : bag_(std::move(ids), seed, first) {}
+  const Rotation& bag() const { return bag_; }
+  const std::string& current() const { return bag_.current(); }
+  size_t size() const { return bag_.size(); }
+  bool empty() const { return bag_.empty(); }
+  uint64_t step() const { return step_; }     // how many times it has moved on
+  bool waiting() const { return waiting_; }   // the clock ran out during such a game
+  // The clock ran out. `owner_plays`: the primary monitor's module plays a
+  // game it may not be switched away from. True when every monitor moves on.
+  bool tick(bool owner_plays);
+  // A monitor's host failed the current module three times in a row. `dead`:
+  // the modules that monitor has given up in a row without showing a frame
+  // (this one included when it showed none of it); `owner`: it is the
+  // primary monitor's. True when the module is skipped on every monitor.
+  bool give_up(size_t dead, bool owner, bool owner_plays);
+
+ private:
+  void move_on();
+  Rotation bag_;
+  uint64_t step_ = 0;
+  bool waiting_ = false;
 };
 
 bool iequals(std::string_view a, std::string_view b);

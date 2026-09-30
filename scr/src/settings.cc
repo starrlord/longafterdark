@@ -294,6 +294,7 @@ Settings parse_settings(std::string_view text) {
     if (end != tmp.c_str() && d >= 0.5 && d <= 4.0) s.scale = d;
   }
   if (auto* v = ini.get(kSaver, "Monitors")) s.all_monitors = !iequals(trim(*v), "primary");
+  if (auto* v = ini.get(kSaver, "DifferentPerMonitor")) parse_switch(*v, s.different_per_monitor);
   if (auto* v = ini.get(kSaver, "StartFromDesktop"); v && parse_int(*v, n)) s.start_from_desktop = n != 0;
   if (auto* v = ini.get(kSaver, "Sound")) parse_switch(*v, s.sound);
   if (auto* v = ini.get(kSaver, "Volume"); v && parse_int(*v, n)) s.volume = (int)std::clamp<long long>(n, 0, 100);
@@ -335,6 +336,13 @@ std::string serialize_settings(const Settings& s, std::string_view base) {
   ini.set(kSaver, "DurationMin", std::to_string(std::max(0, s.duration_min)));
   ini.set(kSaver, "Scale", format_scale(s.scale));
   ini.set(kSaver, "Monitors", s.all_monitors ? "all" : "primary");
+  // A value that already says this ("on", "yes", "false") is left as written.
+  {
+    bool cur = !s.different_per_monitor;
+    const std::string* v = ini.get(kSaver, "DifferentPerMonitor");
+    if (!v || !parse_switch(*v, cur) || cur != s.different_per_monitor)
+      ini.set(kSaver, "DifferentPerMonitor", s.different_per_monitor ? "1" : "0");
+  }
   // No UI sets it: written only when it differs from the default, or when
   // the file already says something else.
   if (!s.start_from_desktop || ini.get(kSaver, "StartFromDesktop"))
@@ -432,6 +440,33 @@ const std::string& Rotation::next() {
   }
   pos_ = 0;
   return order_[0];
+}
+
+// ---- SharedRotation ------------------------------------------------------------
+
+bool SharedRotation::tick(bool owner_plays) {
+  if (bag_.size() < 2) return false;
+  if (owner_plays) {
+    waiting_ = true;
+    return false;
+  }
+  move_on();
+  return true;
+}
+
+bool SharedRotation::give_up(size_t dead, bool owner, bool owner_plays) {
+  // Nothing else to show; or every module failed on that monitor in turn.
+  if (bag_.size() < 2 || dead >= bag_.size()) return false;
+  // Another monitor's game plays it: never taken from under the player.
+  if (!owner && owner_plays) return false;
+  move_on();
+  return true;
+}
+
+void SharedRotation::move_on() {
+  bag_.next();
+  ++step_;
+  waiting_ = false;
 }
 
 } // namespace adw::scr

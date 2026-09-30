@@ -171,6 +171,10 @@ After Dark 3.2's engine files in place of the April release's.
   only: your own desktop stays as it is.
 - **Sound** plays only from the main monitor's screen saver. The small live
   preview is always silent.
+- **Random on several monitors** shows the same module on all of them, and
+  changes it on all of them at once. For a different module on each, check
+  **A different module on each monitor** under **Change module every** (it
+  shows only when two or more monitors are connected).
 - **Star Wars, Star Trek, ScreamSavers and Marvel modules** always get
   640×480, scaled up to fit the screen in its 4:3 shape (with bars at the
   sides on a widescreen monitor). The Resolution setting applies to the
@@ -204,11 +208,12 @@ What differs from Windows: there is no settings window (you choose with
 `longafterdark`'s options, or in XScreenSaver's settings), and the modules'
 own options and buttons aren't there, so each module runs with its
 defaults. On its own it plays on the primary monitor and keeps the others
-black; XScreenSaver runs it on every monitor, but ends it on any key or
-mouse move, so no game can be played there. The modules' music needs a
-MIDI synthesizer, such as FluidSynth. What the modules save is kept, in
-`~/.local/share/longafterdark/state` (`$XDG_DATA_HOME/longafterdark/state`
-when that is set).
+black. XScreenSaver runs it on every monitor, all showing the same module
+unless you check **A different module on each monitor** in its settings,
+but ends it on any key or mouse move, so no game can be played there. The
+modules' music needs a MIDI synthesizer, such as FluidSynth. What the
+modules save is kept, in `~/.local/share/longafterdark/state`
+(`$XDG_DATA_HOME/longafterdark/state` when that is set).
 [docs/LINUX.md](docs/LINUX.md) has the rest: what you need (fonts, MIDI
 music), importing, the options, XScreenSaver and where the files are.
 

@@ -34,7 +34,9 @@ Different:
   **Configure...**, aren't available: every module runs with its defaults.
 * **One monitor on its own.** `longafterdark` plays on the primary monitor
   and keeps the others black, as the Windows setting **Primary monitor
-  only** does; XScreenSaver runs one on every monitor.
+  only** does; XScreenSaver runs one on every monitor, all showing the same
+  module unless you check **A different module on each monitor**, as on
+  Windows.
 * **No games under XScreenSaver.** XScreenSaver ends the screen saver on
   any key or mouse move; the games are played in `longafterdark`'s own
   full-screen mode.
@@ -196,6 +198,7 @@ imported, it shows the emulator's test pattern.
 | `--module <module>` | The module to run, named as above: the same as naming it at the end of the line. XScreenSaver's settings write it this way. |
 | `-r`, `--random` | Every module in turn even when one is named (it plays first). |
 | `--cycle <seconds>` | How long each module plays in the rotation (default 300; 0 never changes it). |
+| `--different-modules` | Under XScreenSaver (`--root`): each monitor's player goes through the modules in a random order of its own, rather than all of them showing the same module ([How it runs there](#how-it-runs-there)). It changes nothing in the other modes. |
 | `--fps <n>` | Frames per second (1 to 240; default 60). |
 | `--sound`, `--no-sound` | Sound on (the default) or off. |
 | `--volume <0-100>` | The modules' volume (default 50). |
@@ -322,13 +325,16 @@ each desktop; in short:
 
 * **Settings...** has the module to show (**Module**: an id from
   `longafterdark --list`, such as `ad40.toasters`; empty, every module in
-  turn), how often the module changes (0: never), the resolution of After
-  Dark modules, **Sound** and **Volume**. They are saved on the entry's
-  line in `~/.xscreensaver`, as the options `--module`, `--cycle`,
+  turn), how often the module changes (0: never), **A different module on
+  each monitor** (below), the resolution of After Dark modules, **Sound**
+  and **Volume**. They are saved on the entry's line in `~/.xscreensaver`,
+  as the options `--module`, `--cycle`, `--different-modules`,
   `--lines 720`, `--no-sound` and `--volume`, and shown again next time.
 * XScreenSaver's own **Cycle After** setting (10 minutes unless you change
-  it) also stops `longafterdark` and starts it again, with another module
-  unless one is chosen. Set it to 0 to leave the changes to Long After
+  it) also stops `longafterdark` and starts it again. Unless a module is
+  chosen, it comes back on the module the clock has reached (below), the
+  same one if its turn isn't over; with **A different module on each
+  monitor**, on another one. Set it to 0 to leave the changes to Long After
   Dark's own setting.
 * To show one module only, choose it under **Module**, or write it on the
   entry's line as an option: `longafterdark --root --module ad40.toasters`.
@@ -336,7 +342,18 @@ each desktop; in short:
   until you save the entry's **Settings...**, which drops a word
   `xscreensaver-settings` doesn't know.
 * On several monitors each has its own `longafterdark`, and only the one
-  on the primary monitor plays sound.
+  on the primary monitor plays sound. They show the same module and change
+  it together, without a word between them: the order and the changes
+  follow the clock, so with the default 5 minutes the module changes at
+  :00, :05, :10 and so on (while the monitor is off, a change waits for it
+  to come back on). The first module plays until the next change, or, when
+  that is less than 10 seconds away, until the change after it. With 0
+  under **Change module every** they all keep one module. A module that
+  fails on one monitor gives way there to the next one early, and the next
+  change brings the monitors together again.
+* With **A different module on each monitor** (`--different-modules`),
+  each monitor's player goes through the modules in a random order of its
+  own, changing module a cycle after it last did.
 * The preview in `xscreensaver-settings` is always silent, whatever
   **Sound** says, and plays a small 320×240 picture at 30 frames a second.
   Its emulator, and the Wine processes it starts, run at a low priority

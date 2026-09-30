@@ -93,7 +93,8 @@ The rules are the 1996 After Dark 4 saver's (`docs/INTERACTION.md`
   its exam, and the module asks its host to wake the saver (as After Dark
   2.0 let it), which ends the saver too (`input: wake`). While a game runs
   the pointer shows when the module asks for one, stays on the primary
-  monitor, and the randomizer waits before switching modules.
+  monitor, and the randomizer waits before switching modules (on every
+  monitor, unless `DifferentPerMonitor=1`: see **Settings**).
 * Locking the session (Win+L, Ctrl+Alt+Del then Lock, an idle-lock policy) or
   disconnecting it ends the saver, playing or not: a lock sends no
   deactivation, and the saver, a game and its sound would otherwise run on
@@ -254,7 +255,13 @@ column at most 1240 DIP wide, centred.
   name ("Totally Twisted After Dark, 4 of 13 in rotation"; a group of one,
   "Marvel Comics Screen Posters, 1 in rotation"); under the list, the
   rotation line with **Select all** and **Clear** (each greyed while it would
-  change nothing), and **Change module every**, which only Random uses. The
+  change nothing), and **Change module every**, which only Random uses.
+  Under it, with two or more monitors, comes **A different module on each
+  monitor** (`DifferentPerMonitor`, see **Settings**), its row taking 40 DIP
+  from the list: with one monitor the row isn't there, and it comes and goes
+  as a monitor is plugged in or out while the window is open. It is greyed,
+  keeping its check, while Monitors is **Primary monitor only**, and OK
+  saves it as it stands, hidden or greyed too. The
   rotation line counts the checked rows shown ("All 15 in rotation", "12 of
   15 in rotation"; a list of one module, "1 in rotation" or "1 selected · 0
   can run now", never "All 1"); when some of them are the same
@@ -505,6 +512,7 @@ RandomizeSaved=ad40.fish ; the dialog's Random checklist kept while Module names
 DurationMin=5            ; Random switches module this often; 0 = never
 Scale=1.0                ; 1.0 = 480-line emulated screen, 1.5 = 720-line (modules that follow the display; Intermission, Star Trek, ScreamSavers and Marvel modules: always 640x480)
 Monitors=all             ; or primary (the other monitors stay black)
+DifferentPerMonitor=0    ; 1: in a rotation each monitor follows its own order; 0 or missing: the same module on all, switching together
 StartFromDesktop=1       ; 0: /s starts every module on black (no desktop capture); no UI
 Collections=simpsons,tt  ; the strip's filter: release ids; empty or missing = every release
 Sound=1                  ; 0: no sound from any module (1, or on/yes/true, is the default)
@@ -519,6 +527,26 @@ The saver rotates modules when `Module=random` (or there is no `Module` key)
 or when `Randomize` lists any modules. With both a named `Module` and a
 `Randomize` list, the named module plays first and the list rotates after it.
 A named `Module` with an empty `Randomize` shows just that module.
+
+On several monitors a rotation plays the same module on all of them, and
+they switch together: every window follows one shuffle bag with one clock
+(`SharedRotation` in `settings.h`), which belong to the saver rather than to
+a window, so a monitor plugged in while it runs starts on the module the
+others play. While the primary monitor's module plays a game, the rotation
+waits on every monitor; then they all switch, and the next module gets a
+full interval. A module one monitor's host fails three times in a row is
+skipped on every monitor (`skip window=N module=X after 3 failures, on
+every monitor`), except while the primary monitor plays it as a game (`…
+waits: the primary monitor's module is interactive`; the failing monitor
+keeps trying) and when that monitor has failed every module in turn (`…:
+not on the other monitors, every module failed here in turn`; it retries
+every 30 s, and the others carry on). `DifferentPerMonitor=1` gives each
+window a rotation and a clock of its own, seeded apart, so each monitor
+goes through the modules in its own order, and only the primary's rotation
+waits for a game. The last-exit log says which (`rotation: the same module
+on every monitor, switching together`, or `…: a different module on each
+monitor (DifferentPerMonitor=1)`). The dialog's OK writes the key, as `1`
+or `0`, into a file that lacks it.
 
 In Random the saver plays `Randomize` (or every module) limited to the
 releases in `Collections` (`effective_rotation` in `releases.h`), and a
@@ -569,9 +597,10 @@ offers 1 minute to 2 hours and Never (`DurationMin=0`); a value the file holds
 that isn't one of those is offered as well, so it survives OK unchanged.
 
 The dialog updates the file in place. Keys, sections and comments it doesn't
-know about are left alone. `Sound` and `Volume` are read leniently (`on`,
-`off`, `075`; a volume outside 0–100 is clamped; anything unreadable is the
-default) and a value that already says what OK saves is left as written.
+know about are left alone. `Sound`, `Volume` and `DifferentPerMonitor` are
+read leniently (`on`, `off`, `075`; a volume outside 0–100 is clamped;
+anything unreadable is the default) and a value that already says what OK
+saves is left as written.
 
 **Import…** starts `adimport.exe --gui` with `CREATE_NO_WINDOW` (it is a
 console program; this keeps a console window from appearing behind its own
@@ -660,8 +689,10 @@ running. Only files named that way are ever deleted.
   windows go last, after the ones whose size matches a monitor, so neither
   kind restarts for the other). A
   monitor that is new, or whose aspect changed under an After Dark module,
-  gets a new window and host. A window's next host (its rotation's next
-  module, a respawn) takes its module's size on the monitor it is on then.
+  gets a new window and host, which in a rotation starts on the module the
+  other windows play (unless `DifferentPerMonitor=1`). A window's next host
+  (its rotation's next module, a respawn) takes its module's size on the
+  monitor it is on then.
   Windows for monitors that are gone are closed along with their hosts. None
   of this counts as the user coming back: Windows moves the cursor off a
   monitor that goes away or changes mode, often by far more than the
@@ -734,7 +765,8 @@ running. Only files named that way are ever deleted.
   no first frame within 90 s is restarted with backoff. After three failed
   starts without a frame, the window says "“Name” could not be started (host
   exit code N)" instead of staying black; the real host exits 3 for a module
-  whose lane it doesn't have yet. When rotating, such a module is skipped, and
+  whose lane it doesn't have yet. When rotating, such a module is skipped (on
+  every monitor, unless `DifferentPerMonitor=1`: see **Settings**), and
   if every module fails in turn, retries slow to one every 30 s. Every host
   runs in a kill-on-close Job (created inside it, so
   not even one being started can be left behind), so none can outlive the saver.
@@ -800,14 +832,15 @@ with `AD_HOST_EXE` pointing at its `adhostwin.exe`.
 | `AD_SCR_TEST_IGNORE_INPUT` | input doesn't end the run |
 | `AD_SCR_TEST_INPUT=<file>` | drive the input rules with a script instead of real input (which is then ignored), with synthetic Caps Lock and Num Lock toggles (both off at the start) so a test never touches the real ones: `WAIT <ms>`, `FRAMES <n>` (the owner shows n more frames), `KEY <vk> <0\|1>` (`KEY 20 1` flips the synthetic Caps Lock, `KEY 144 1` the synthetic Num Lock), `SYSKEY <vk> <0\|1>`, `CAPSSTATE <0\|1>`, `NUMLOCKSTATE <0\|1>` (set without a key: the saver notices within 250 ms), `BUTTON <1\|2\|4> <0\|1>`, `WHEEL`, `MOVE <dx> <dy>` (the synthetic cursor starts mid-owner), `DEACTIVATE`, `DISPLAYCHANGE` (`WM_DISPLAYCHANGE` to the owner window), `CLIPLOG` / `STATUSLOG` (log the cursor clip / the owner's status record), `LOG <text>`; `#` comments (`input_rules.h`) |
 | `AD_SCR_TEST_ROTATE_MS` | rotation interval in ms, used instead of `DurationMin` |
+| `AD_SCR_TEST_SEED` | the rotations' seed (0 to 4294967295) instead of one from the tick count and the process id, so a test knows the order: every window follows a `Rotation` with that seed, or with `DifferentPerMonitor=1` window N's own with the seed + N × 7919 |
 | `AD_SCR_TEST_STALL_MS`, `AD_SCR_TEST_FIRSTFRAME_MS` | watchdog timeouts |
 | `AD_SCR_TEST_DISPLAY_OFF_MS` | after 5 frames, behave as if the display powered off for this long |
 | `AD_SCR_TEST_DISPLAY_ON` | take the console display to be on whatever Windows reports (`display state 0 taken as on` in `AD_SCR_LOG`): with the monitors asleep the saver pauses every host, and no `/s` smoke test would see a frame. Set it in the environment that runs the tests (the smoke tests pass it on); `AD_SCR_TEST_DISPLAY_OFF_MS` still simulates a power-off |
 | `AD_SCR_TEST_CAPTURE=<dir>` | each window writes what it shows when it has presented the frames in `AD_SCR_TEST_CAPTURE_FRAMES=<k>,…` (default 30): `window<N>-frame<K>.png` at its client size (the frame scaled into its letterbox as the window drew it, Direct2D or GDI, re-drawn off screen by `render_frame_bgr`) and `window<N>-frame<K>-host.png` (the host's frame as it came); `AD_SCR_LOG` gets a `capture window=N frame=K ok …` line for each |
-| `AD_SCR_TEST_MONITORS` | `x,y,w,h[,p];…` monitors to use instead of the real ones (`,p` marks the primary). `\|` separates the layouts reported after each successive display change |
+| `AD_SCR_TEST_MONITORS` | `x,y,w,h[,p];…` monitors to use instead of the real ones (`,p` marks the primary). `\|` separates the layouts reported after each successive display change (`parse_staged_monitors` in `geometry.h`). The settings dialog counts them too, for **A different module on each monitor**, taking the next layout at each `WM_DISPLAYCHANGE` it gets |
 | `AD_SCR_TEST_OPEN_LOG=<file>` | the settings dialog's credit link appends `open<TAB><url>` here. The test build never opens a page itself, whatever its environment (it logs `dialog: open <url> (the test build opens nothing)`); only `LongAfterDark.scr` calls `ShellExecuteW` |
 | `AD_SCR_TEST_SCREENSHOT=<png>` | `/c` renders the settings dialog to this PNG and exits (0, or 1 if it couldn't). The window is created hidden, parked off every monitor and cloaked, never activated or focused (`WS_EX_NOACTIVATE`: no keystroke meant for another window can reach it), and drawn with `PrintWindow`: it never appears on screen. |
-| `AD_SCR_TEST_SCREENSHOT_STATE` | `key=value;…` for the screenshot: `theme=light\|dark\|hc`, `module=<id>`, `mode=single\|random`, `dpi=<n>` (lay out at that DPI), `dpichange=<n>` (send `WM_DPICHANGED` as if dragged to such a monitor), `size=<w>x<h>` (client, DIPs), `focus=list\|slider\|ok\|single\|random\|duration\|preview\|strip\|sound\|volume\|credit` (draw that control's focus ring; `strip`: the first selected cover, else the first, scrolled into view), `sound=off` (the Sound dropdown at Off: Volume greyed), `volume=<0..100>`, `wait=<ms>` and `frames=<n>` (how long to let the live preview run), `hover=preview` (the pointer over the live preview), `hover=strip:<id>` (that release's cover hovered), `hover=credit` and `pressed=credit` (the footer's credit under the pointer, and held down), `collections=<id>,…` (the strip's filter, as if those covers had been clicked), `thumbgen=1\|wait` (take missing thumbnails in the background; `wait`: until all are taken, within `wait`), `report=<file>` (write where the list shows in the picture, the card's colour and whether anything straddles the list's top edge; `strip=x,y,w,h` where the strip's tiles area shows, `strip_mode=regular\|compact\|hidden`, the base colour and how many rows the list shows; the strip's scroll position, `strip_first=`, its last stop, `strip_max_first=`, and how many covers a stop shows, `strip_slots=`, each cover's window, `tile<i>=x,y,w,h` (or `hidden` while it lies outside the strip, not shown), the chevrons, `chevron_left=` and `chevron_right=`, and the status line, `strip_status=`; each group's accessible name, `group<g>=`, and its title as the header drew it, `drawn<g>=` (whole, or ellipsized); what the host said, `caps=`, the modules "Coming soon", `soon=`, and the module the details show, `details=`, with its chip, `badge=`, whether its buttons are live, `button_live=`, and Preview enabled, `preview_enabled=`; the footer's credit, `credit=x,y,w,h` (its link's box, or `hidden`), `credit_lead=` and `credit_name=` (its two texts), with the assets line's text, `assets_text=`, and Preview, `preview_button=`, all in the picture's pixels). A `size=` taller or wider than this machine's screen is honoured (the window's maximum tracking size is lifted off screen), so the regular strip can be captured at 150% and up. With `theme=hc`, `AD_UI_TEST_HC_SCHEME=nightsky\|aquatic\|desert\|dusk` stands one of Windows 11's contrast themes in for the system colours (the hook passes it to adw_ui's `set_test_hc_scheme`; the library itself reads no environment) |
+| `AD_SCR_TEST_SCREENSHOT_STATE` | `key=value;…` for the screenshot: `theme=light\|dark\|hc`, `module=<id>`, `mode=single\|random`, `dpi=<n>` (lay out at that DPI), `dpichange=<n>` (send `WM_DPICHANGED` as if dragged to such a monitor), `size=<w>x<h>` (client, DIPs), `focus=list\|slider\|ok\|single\|random\|duration\|preview\|strip\|sound\|volume\|credit\|permonitor` (draw that control's focus ring; `strip`: the first selected cover, else the first, scrolled into view), `sound=off` (the Sound dropdown at Off: Volume greyed), `volume=<0..100>`, `monitors=primary` (the Monitors dropdown at Primary monitor only), `different=1\|0` (**A different module on each monitor** checked or not), `wait=<ms>` and `frames=<n>` (how long to let the live preview run), `hover=preview` (the pointer over the live preview), `hover=strip:<id>` (that release's cover hovered), `hover=credit` and `pressed=credit` (the footer's credit under the pointer, and held down), `collections=<id>,…` (the strip's filter, as if those covers had been clicked), `thumbgen=1\|wait` (take missing thumbnails in the background; `wait`: until all are taken, within `wait`), `report=<file>` (write where the list shows in the picture, the card's colour and whether anything straddles the list's top edge; `strip=x,y,w,h` where the strip's tiles area shows, `strip_mode=regular\|compact\|hidden`, the base colour and how many rows the list shows; the strip's scroll position, `strip_first=`, its last stop, `strip_max_first=`, and how many covers a stop shows, `strip_slots=`, each cover's window, `tile<i>=x,y,w,h` (or `hidden` while it lies outside the strip, not shown), the chevrons, `chevron_left=` and `chevron_right=`, and the status line, `strip_status=`; each group's accessible name, `group<g>=`, and its title as the header drew it, `drawn<g>=` (whole, or ellipsized); what the host said, `caps=`, the modules "Coming soon", `soon=`, and the module the details show, `details=`, with its chip, `badge=`, whether its buttons are live, `button_live=`, and Preview enabled, `preview_enabled=`; the footer's credit, `credit=x,y,w,h` (its link's box, or `hidden`), `credit_lead=` and `credit_name=` (its two texts), with the assets line's text, `assets_text=`, and Preview, `preview_button=`; the monitors the dialog counts, `monitors=`, and **A different module on each monitor**: where it shows, `per_monitor=x,y,w,h` (or `hidden`), whether it is enabled and checked, `per_monitor_enabled=` and `per_monitor_checked=`, and whether its text fits whole beside its box, `per_monitor_fits=`, with **Change module every**'s dropdown, `duration=`, and the list's card, `list_card=`; all in the picture's pixels). A `size=` taller or wider than this machine's screen is honoured (the window's maximum tracking size is lifted off screen), so the regular strip can be captured at 150% and up. With `theme=hc`, `AD_UI_TEST_HC_SCHEME=nightsky\|aquatic\|desert\|dusk` stands one of Windows 11's contrast themes in for the system colours (the hook passes it to adw_ui's `set_test_hc_scheme`; the library itself reads no environment) |
 
 ## Build and test
 
@@ -836,7 +869,10 @@ only reads it.
 * **Unit tests:** `scr_unit_*` cover argument parsing, the P8/P6 stream parser
   (including headers claiming frames past 8192 on an axis or 4096×4096 in
   all, which are resynced past rather than waited on), the settings.ini
-  round-trip and the dialog's Random / single-module rules, the catalog
+  round-trip (`DifferentPerMonitor` too: missing is 0, read leniently,
+  written after `Monitors` in a new file, a value already saying so left as
+  written, the dialog's two choices leaving it alone) and the dialog's
+  Random / single-module rules, the catalog
   (including the generated catalog's string sliders, units and buttons, the
   module ABI, `abi` (absent, empty or not a string is `afterdark`), a
   module's own screen, `screen` (`"640x480"`, either `x`; absent, not a
@@ -864,14 +900,19 @@ only reads it.
   Intermission module's one picture, and one of another size its own;
   three at most among 70 screens in any order: 640x480 before smaller
   ones, then the smallest, the rest counted as left out, and one that
-  follows the display, the first given),
+  follows the display, the first given; and the monitors
+  `AD_SCR_TEST_MONITORS` stages, `parse_staged_monitors`),
   window re-planning on monitor changes (`layout`: also a window running an
   Intermission or a Star Trek module kept whatever the new aspect, and
   matched after the windows of a monitor's own size, so neither kind
   restarts for the other), rotation (also between an After Dark module and
   an Intermission or a Star Trek one, host by host: each its module's size,
   the one of its own kept through a monitor change and the After Dark one
-  replaced), frame conversion, the environment block (with `ADNUMLOCK`: the
+  replaced; and the one every monitor follows, `SharedRotation`: a
+  `Rotation`'s order with the same seed, one step per move, the wait for
+  the primary monitor's game, the skip on every monitor and its two
+  exceptions, a named module first),
+  frame conversion, the environment block (with `ADNUMLOCK`: the
   toggle for a host that keeps one or hasn't answered yet, none for one
   that answered without `numlock=1`, whatever is inherited), the dialog's helpers (`dialog`:
   adimport's exit codes, the preview-file names and sweep, and starting
@@ -881,7 +922,10 @@ only reads it.
   layout at 100/125/150/200% and several sizes (inside the window, nothing
   overlapping, on the 4-DIP grid, 200% = 100% doubled, the large-window
   caps, the content column capped and centred, "Change module every" under
-  the list in Random only, the two-line title, the links' text on the card
+  the list in Random only, and under it "A different module on each
+  monitor" (`per_monitor_choice`: in Random with two or more monitors,
+  greyed under Primary monitor only; its row taking 40 DIP from the list alone,
+  at 100–200%, five sizes), the two-line title, the links' text on the card
   edge; the footer's credit, `layout_footer_credit`, measured in the real caption
   face at 100–250% beside the assets line's texts: whenever it shows, clear
   of the assets line's text and of Preview by 24 DIP, centred between them
@@ -1080,7 +1124,24 @@ only reads it.
   reload the host isn't asked again and a pe32 module's live preview runs
   on in the same host),
   `rotate-collections` (`/s` with `Collections`: only those releases play,
-  and a byte-identical copy once), `rotate-abi` (`/s` on one monitor staged
+  and a byte-identical copy once), `rotate-monitors` (four `/s` runs on two
+  monitors staged off every real one, the order fixed by
+  `AD_SCR_TEST_SEED`: both windows start each module of the seeded bag
+  together; a module fakehost can't start is skipped on both, once, and both
+  start the next one at once; a monitor plugged in joins on the module the
+  other plays, then switches with it; with `DifferentPerMonitor=1` each
+  follows a rotation of its own), `config-monitors` (the dialog driven by
+  control ID on staged monitors: with two and a file without the key, **A
+  different module on each monitor** shows under **Change module every**,
+  enabled and unchecked, greyed keeping its check under Primary monitor
+  only, hidden in Single, and OK writes `DifferentPerMonitor=1` keeping the
+  rest; the next dialog shows it checked, and Cancel writes nothing; with one
+  monitor it isn't there and OK keeps the file's value, and a monitor
+  plugged in brings it; then seven off-screen renders, light and dark at
+  100% and 150%, greyed, focused, the smallest window and one monitor: under
+  **Change module every** and clear of it and of the list's card, its text
+  whole beside its box, and with one monitor the list keeps that room),
+  `rotate-abi` (`/s` on one monitor staged
   off every real one, and `/p`, with the six releases: on a host without
   `abis=` no Intermission module is started, "left out 14", even for a list
   of only theirs ("left out 2"), and a list of one of theirs and one After
@@ -1270,7 +1331,9 @@ data folder) for what happened.
    change one's resolution in Settings → Display (Win+P works without a
    mouse): the saver keeps running and covers exactly the monitors there
    are ("relayout monitors=…" in the last-exit log), and doesn't end
-   because Windows moved the cursor.
+   because Windows moved the cursor. In Random, with **Change module every**
+   at 1 minute, both monitors show the same module and switch together;
+   with **A different module on each monitor** checked, each shows its own.
 6. **Display power-off.** With Power & sleep → Screen set to 1 minute and
    the saver's wait shorter: the display goes off with the saver running,
    the hosts pause ("display off: pausing hosts") and resume when it comes

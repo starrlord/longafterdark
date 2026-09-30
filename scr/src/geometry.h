@@ -149,4 +149,18 @@ struct RelayoutPlan {
 // Anything else is a new window with a new host.
 RelayoutPlan plan_relayout(const std::vector<ScreenSlot>& current, const std::vector<ScreenSlot>& next);
 
+// ---- staged monitors (a test hook) ---------------------------------------------------
+// AD_SCR_TEST_MONITORS="x,y,w,h[,p];…|…", which LongAfterDark-test.scr reads
+// in place of the real monitors (the saver's /s windows, the settings
+// dialog's count): the monitors of layout `layout` (each '|' starts the
+// layout reported from the next topology change on; past the last one, the
+// last), ",p" marking the primary (without one, the first is). An entry that
+// doesn't parse, or has no area, is left out; an empty spec stages none.
+struct StagedMonitor {
+  RectI rc;
+  bool primary = false;
+  bool operator==(const StagedMonitor&) const = default;
+};
+std::vector<StagedMonitor> parse_staged_monitors(std::wstring_view spec, size_t layout);
+
 } // namespace adw::scr

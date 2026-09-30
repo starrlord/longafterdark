@@ -471,8 +471,11 @@ event goes to the owner's host.
   with `MA_NOACTIVATE`, so the owner keeps the keyboard.
 * **Rotation**: when the rotation timer fires while the owner is `I` and not
   `ADWS_ROTATE_OK`, the owner window's switch waits (re-checked every
-  second) until it is not (AFTERDAR.SCR `0x40190b`). Other windows rotate on
-  time.
+  second) until it is not (AFTERDAR.SCR `0x40190b`), and the next module
+  then gets a full interval. By default every window follows one rotation
+  (the same module on every monitor, `scr/README.md`), so they all wait and
+  then switch together; with `DifferentPerMonitor=1` each window has a
+  rotation of its own, and the other windows rotate on time.
 * The exit reason is logged (`input: key vk=0x41`, `input: syskey`,
   `input: move dx=… dy=…`, `input: deactivated fg=<exe>`,
   `input: session locked`, `input: session disconnected`, `input: wake`),
@@ -573,7 +576,11 @@ to a host whose `--capabilities` answer (asked for in the background) says
   `CAPS` or `NUMLOCK` line when a lock changes: the Windows saver sends
   those only to its input owner, and a `/p` saver has none. `ADCAPS` and
   `ADNUMLOCK` still go at every spawn. Sound comes only from the player
-  whose window holds the centre of the primary monitor (RandR).
+  whose window holds the centre of the primary monitor (RandR). The
+  players never talk to each other: their rotation follows the wall clock,
+  which gives them all the same module and the same moment to change it
+  (LINUX.md; `--different-modules` gives each an order of its own, as
+  `DifferentPerMonitor=1` does on Windows).
 * **A window of its own** (`-w`) forwards every key but the system keys
   (Alt, F10 and any key while Alt is held, which go nowhere), every click
   and every move, never the wheel, and decides nothing: Esc or `q` closes

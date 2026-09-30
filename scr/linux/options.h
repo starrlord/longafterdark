@@ -10,6 +10,7 @@
 namespace lad {
 
 inline constexpr int kExitOk = 0, kExitError = 1, kExitUsage = 2;
+inline constexpr int kDefaultCycleS = 300;
 
 struct Options {
   WindowMode mode = WindowMode::fullscreen;
@@ -17,7 +18,10 @@ struct Options {
   bool root_from_env = false;   // -root because $XSCREENSAVER_WINDOW is set and no mode was given
   unsigned long window_id = 0;
   bool random = false;
-  int cycle_s = 300;
+  int cycle_s = kDefaultCycleS;
+  // -root: a rotation in an order of its own, not the clock's that the
+  // players on the other monitors follow too (rotation.h).
+  bool different_modules = false;
   bool list = false;
   int scale = 0;
   int lines = 480;   // After Dark modules' screen: 480 or 720 lines (the Windows Resolution setting)

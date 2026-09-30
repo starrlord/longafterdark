@@ -1,7 +1,9 @@
 #include "geometry.h"
 
 #include <algorithm>
+#include <cwchar>
 #include <set>
+#include <string>
 
 #include "catalog.h"
 
@@ -159,6 +161,34 @@ RelayoutPlan plan_relayout(const std::vector<ScreenSlot>& current, const std::ve
     if (!taken[c]) ++p.retired;
   }
   return p;
+}
+
+std::vector<StagedMonitor> parse_staged_monitors(std::wstring_view spec, size_t layout) {
+  std::vector<std::wstring_view> layouts;
+  for (size_t p = 0; !spec.empty();) {
+    const size_t bar = spec.find(L'|', p);
+    layouts.push_back(spec.substr(p, bar == std::wstring_view::npos ? std::wstring_view::npos : bar - p));
+    if (bar == std::wstring_view::npos) break;
+    p = bar + 1;
+  }
+  std::vector<StagedMonitor> v;
+  if (layouts.empty()) return v;
+  const std::wstring_view l = layouts[std::min(layout, layouts.size() - 1)];
+  bool have_primary = false;
+  for (size_t p = 0; p < l.size();) {
+    const size_t semi = l.find(L';', p);
+    const std::wstring m(l.substr(p, semi == std::wstring_view::npos ? std::wstring_view::npos : semi - p));
+    p = semi == std::wstring_view::npos ? l.size() : semi + 1;
+    long x = 0, y = 0, w = 0, h = 0;
+    wchar_t flag[8] = {};
+    const int n = swscanf(m.c_str(), L" %ld , %ld , %ld , %ld , %7ls", &x, &y, &w, &h, flag);
+    if (n < 4 || w <= 0 || h <= 0) continue;
+    const bool primary = n == 5 && flag[0] == L'p' && !have_primary;
+    have_primary |= primary;
+    v.push_back({{(int)x, (int)y, (int)w, (int)h}, primary});
+  }
+  if (!v.empty() && !have_primary) v.front().primary = true;
+  return v;
 }
 
 } // namespace adw::scr

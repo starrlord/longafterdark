@@ -93,6 +93,7 @@ struct Hooks {
   long long exit_after_frames = 0;   // AD_SCR_TESTEXIT_AFTER_FRAMES: exit 0 once every host window showed N
   bool ignore_input = false;         // AD_SCR_TEST_IGNORE_INPUT: a stray mouse can't end a test
   long long rotate_ms = 0;           // AD_SCR_TEST_ROTATE_MS: rotation interval instead of DurationMin
+  long long seed = -1;               // AD_SCR_TEST_SEED: the rotations' seed instead of the clock's
   milliseconds stall{20000};         // AD_SCR_TEST_STALL_MS: no frame for this long after the first = hung
   milliseconds first_frame{90000};   // AD_SCR_TEST_FIRSTFRAME_MS: grace for the first frame (slow module init)
   long long display_off_ms = 0;      // AD_SCR_TEST_DISPLAY_OFF_MS: after 5 frames, act as if the display slept this long
@@ -115,6 +116,7 @@ Hooks read_hooks() {
   h.exit_after_frames = env_int(L"AD_SCR_TESTEXIT_AFTER_FRAMES", 0);
   h.ignore_input = env_set(L"AD_SCR_TEST_IGNORE_INPUT");
   h.rotate_ms = env_int(L"AD_SCR_TEST_ROTATE_MS", 0);
+  h.seed = std::clamp<long long>(env_int(L"AD_SCR_TEST_SEED", -1), -1, 0xFFFFFFFFll);
   h.stall = milliseconds(std::max<long long>(500, env_int(L"AD_SCR_TEST_STALL_MS", 20000)));
   h.first_frame = milliseconds(std::max<long long>(500, env_int(L"AD_SCR_TEST_FIRSTFRAME_MS", 90000)));
   h.display_off_ms = env_int(L"AD_SCR_TEST_DISPLAY_OFF_MS", 0);
@@ -156,40 +158,19 @@ BOOL CALLBACK enum_monitor(HMONITOR m, HDC, LPRECT, LPARAM lp) {
   return TRUE;
 }
 
-// AD_SCR_TEST_MONITORS="x,y,w,h[,p];…|…" (test hook): report these monitors
-// instead of the real ones (",p" marks the primary; without one, the first
-// is). Each '|' starts the layout reported from the next topology change
-// on, so the smoke tests can stage monitors coming and going on any machine.
+// AD_SCR_TEST_MONITORS="x,y,w,h[,p];…|…" (test hook, geometry.h:
+// parse_staged_monitors): report these monitors instead of the real ones.
+// Each '|' starts the layout reported from the next topology change on, so
+// the smoke tests can stage monitors coming and going on any machine.
 std::vector<Monitor> test_monitors(size_t layout) {
 #if !AD_SCR_TEST_HOOKS
   (void)layout;
   return {};
 #else
-  std::wstring spec = env_w(L"AD_SCR_TEST_MONITORS");
-  std::vector<std::wstring> layouts;
-  for (size_t p = 0; !spec.empty();) {
-    size_t bar = spec.find(L'|', p);
-    layouts.push_back(spec.substr(p, bar == std::wstring::npos ? std::wstring::npos : bar - p));
-    if (bar == std::wstring::npos) break;
-    p = bar + 1;
-  }
   std::vector<Monitor> v;
-  if (layouts.empty()) return v;
-  const std::wstring& l = layouts[std::min(layout, layouts.size() - 1)];
-  bool have_primary = false;
-  for (size_t p = 0; p < l.size();) {
-    size_t semi = l.find(L';', p);
-    std::wstring m = l.substr(p, semi == std::wstring::npos ? std::wstring::npos : semi - p);
-    p = semi == std::wstring::npos ? l.size() : semi + 1;
-    long x = 0, y = 0, w = 0, h = 0;
-    wchar_t flag[8] = {};
-    int n = swscanf(m.c_str(), L" %ld , %ld , %ld , %ld , %7ls", &x, &y, &w, &h, flag);
-    if (n < 4 || w <= 0 || h <= 0) continue;
-    bool primary = n == 5 && flag[0] == L'p' && !have_primary;
-    have_primary |= primary;
-    v.push_back({{x, y, x + w, y + h}, primary});
+  for (const StagedMonitor& m : parse_staged_monitors(env_w(L"AD_SCR_TEST_MONITORS"), layout)) {
+    v.push_back({{m.rc.x, m.rc.y, m.rc.x + m.rc.w, m.rc.y + m.rc.h}, m.primary});
   }
-  if (!v.empty() && !have_primary) v.front().primary = true;
   return v;
 #endif
 }
@@ -234,10 +215,21 @@ class SaverWindow {
   bool create_fullscreen(const RECT& rc);
   bool create_preview(HWND parent);
   void start();
-  // Builds the rotation and starts the first host; start() does it at once
-  // unless the App still waits for the host's capabilities (then App does).
+  // Builds the rotation (or, when every monitor follows one, joins it) and
+  // starts the first host; start() does it at once unless the App still
+  // waits for the host's capabilities (then App does).
   void start_rotation();
   bool rotation_started() const { return rotation_ != nullptr; }
+  // The rotation every monitor follows moved on (App::rotate_shared, App::
+  // give_up): the module it plays now, started at once or after `delay`.
+  void follow(milliseconds delay);
+  // ...because its module was skipped on every monitor: counted among the
+  // modules this window gave up without a frame when it showed none of it,
+  // and started at once with the others (at a relaxed pace once every module
+  // has failed here in turn).
+  void follow_skip();
+  // The modules it gave up in a row without showing a frame of any.
+  size_t dead_modules() const { return dead_modules_; }
   // Monitor topology changes (/s only): where the window is and what it
   // shows; moving it onto a (possibly resized) monitor keeps its host; a
   // retired window loses its host and its HWND without ending the saver.
@@ -314,7 +306,11 @@ class SaverWindow {
   RECT rc_{};                      // full screen: the monitor it covers
   bool retiring_ = false;          // being destroyed by a relayout, not by an exit
   double aspect_ = 4.0 / 3.0;
-  std::unique_ptr<Rotation> rotation_;
+  // What it plays: a rotation of its own (DifferentPerMonitor, or the one
+  // module shown), which it moves on itself, or the one every monitor
+  // follows (App::rotation), which only the App moves on.
+  const Rotation* rotation_ = nullptr;
+  std::unique_ptr<Rotation> own_rotation_;
   bool rotating_ = false;
   UINT rotate_interval_ms_ = 0;
   bool rotate_waiting_ = false;    // the owner's rotation waits for a game to end
@@ -328,6 +324,8 @@ class SaverWindow {
   RectI last_fit_{-1, -1, -1, -1};
   int failures_ = 0;               // consecutive failed runs of the current module
   size_t dead_modules_ = 0;        // modules skipped in a row without one frame
+  bool module_shown_ = false;      // a frame of the current module has been shown here
+  bool module_given_up_ = false;   // ...or it was given up here (counted in dead_modules_ when none was)
   std::wstring status_;            // "could not be started", until a frame arrives
   bool respawn_pending_ = false;
   Clock::time_point respawn_at_{};
@@ -357,6 +355,15 @@ bool same_frame(const Frame& a, const Frame& b) {
   if (a.bpp == 8 && memcmp(a.palette.data(), b.palette.data(), sizeof(RGBQUAD) * 256) != 0) return false;
   return memcmp(a.bits.data(), b.bits.data(), a.bits.size()) == 0;
 }
+
+// What a window's rotation holds (App::rotation_start): the modules, the one
+// that plays first, and whether it rotates.
+struct RotationStart {
+  std::vector<std::string> ids;
+  std::string first;
+  bool rotates = false;      // Settings::rotates()
+  bool none_runs = false;    // ...and this host can run none of the modules imported
+};
 
 // A decision held for the owner's verdict (INTERACTION.md §4.3).
 struct PendingHold {
@@ -416,6 +423,23 @@ class App {
   bool owner_playing_no_rotate() const;
   void on_cursor(HWND h);   // WM_SETCURSOR
 
+  // ---- the rotation (Random, or a Randomize list) ----
+  // What a window's rotation holds: Random leaves out what this host can't
+  // run (may_rotate), and the first one built says so in the logs.
+  RotationStart rotation_start();
+  // The one every monitor follows (`shared`): built by the first window that
+  // starts, with its clock; `none_runs` as for rotation_start.
+  const Rotation& shared_rotation(bool* none_runs);
+  // Its clock ran out, or, while it waits for a game to end, a second went by.
+  void rotate_shared();
+  // `w`'s host failed its module `failures` (three or more) times in a row:
+  // true when the module is skipped on every monitor (SharedRotation::
+  // give_up), each window then moving on with it.
+  bool give_up(SaverWindow* w, int failures);
+  // The shared rotation moved on: a wait for a game (if it waited) is over,
+  // and the next module gets a full interval.
+  void rotation_moved_on(bool was_waiting);
+
   Args args;
   HINSTANCE hinst;
   bool preview;
@@ -464,6 +488,17 @@ class App {
   bool exiting = false;
   int exit_code = kExitOk;
   uint32_t seed = 0;
+  // Random without DifferentPerMonitor: every window plays the same module
+  // and they switch together, on one rotation (SharedRotation, settings.h)
+  // that outlives the windows a relayout makes and retires; its clock is a
+  // thread timer for that reason. With DifferentPerMonitor each window has a
+  // rotation and a clock of its own (seeded apart); showing one module
+  // chosen, each has that module.
+  bool shared = false;
+  std::unique_ptr<SharedRotation> rotation;
+  bool rotation_none_runs = false;
+  UINT rotate_interval_ms = 0;
+  UINT_PTR rotate_timer = 0, rotate_retry_timer = 0;
   std::vector<std::unique_ptr<SaverWindow>> windows;
   int next_window_index = 0;               // log/seed identity; never reused
   UINT_PTR relayout_timer = 0;             // thread timer (no window: windows come and go)
@@ -572,65 +607,56 @@ void SaverWindow::start() {
 
 void SaverWindow::start_rotation() {
   if (rotation_ || !runs_host_ || app_.exiting) return;
-  std::vector<std::string> ids;
-  const Settings& s = app_.settings;
-  auto avail = [&](const std::string& id) { return app_.is_available(id); };
-  std::string first;
-  if (!s.is_random()) {
-    if (avail(s.module)) first = s.module;
-    else log_line("module %s unavailable; picking at random", s.module.c_str());
-  }
-  if (s.rotates()) {
-    // Module=random, or a Randomize list: rotate through the list (a named
-    // Module plays first), limited to the releases in Collections, with
-    // byte-identical copies once per pass (COVERS.md §1.8). An empty or
-    // all-stale list means every module. Random leaves out what this host
-    // can't run (App::may_rotate): a list of only such modules means every
-    // module it can run. A module chosen on its own is tried all the same,
-    // and says why it can't start.
-    const HostRotation r =
-        rotation_for_host(s, app_.catalog, avail, [&](const std::string& id) { return app_.may_rotate(id); });
-    const bool log_it = !app_.rotation_logged;
-    app_.rotation_logged = true;
-    if (r.plan.collections_ignored && log_it) {
-      log_line("rotation: Collections ignored (nothing checked in them)");
-      last_log("rotation: Collections ignored (nothing checked in them)");
-    }
-    ids = r.plan.ids;
-    first = r.plan.lead;   // a named Module leads, unless this host can't run it
-    // Nothing is left when the host can run none of the modules imported:
-    // then nothing plays (below), rather than every one of them in turn into
-    // errors, black and "could not be started" over and over.
-    const bool none_runs = ids.empty() && r.left_out > 0;
-    if (ids.empty() && !none_runs) ids = app_.available;
-    if (log_it) {
-      std::string f;
-      for (const auto& id : effective_collections(s.collections, app_.catalog)) f += (f.empty() ? "" : ",") + id;
-      log_line("rotation: %zu module(s), collections=%s", ids.size(), f.empty() ? "all" : f.c_str());
-      if (r.left_out) last_log("rotation: left out %zu module(s) this host can't run", r.left_out);
-    }
+  bool none_runs = false;
+  if (app_.shared) {
+    // Every monitor plays the same module and switches with the others: a
+    // window that starts late (a monitor plugged in) plays what they play.
+    rotation_ = &app_.shared_rotation(&none_runs);
     rotating_ = true;
-    if (none_runs) {
-      // As the not-imported and host-missing messages do, this says what is
-      // wrong: the settings dialog shows these modules "Coming soon".
-      set_status(app_.preview ? L"No module can run on this host"
-                              : L"None of the modules imported can run on this Long After Dark host (adhostwin.exe).",
-                 kExitNoneRuns);
-    }
-  } else if (!first.empty()) {
-    ids.push_back(first);
   } else {
-    // The chosen module vanished (re-import, hand edit): show *something*.
-    ids = app_.available;
+    RotationStart r = app_.rotation_start();
+    own_rotation_ = std::make_unique<Rotation>(std::move(r.ids), app_.seed + (uint32_t)index_ * 7919u, r.first);
+    rotation_ = own_rotation_.get();
+    rotating_ = r.rotates;
+    none_runs = r.none_runs;
   }
-  rotation_ = std::make_unique<Rotation>(ids, app_.seed + (uint32_t)index_ * 7919u, first);
+  if (none_runs) {
+    // As the not-imported and host-missing messages do, this says what is
+    // wrong: the settings dialog shows these modules "Coming soon".
+    set_status(app_.preview ? L"No module can run on this host"
+                            : L"None of the modules imported can run on this Long After Dark host (adhostwin.exe).",
+               kExitNoneRuns);
+  }
   if (rotation_->empty()) return;
   spawn();
-  long long interval = app_.hooks.rotate_ms > 0 ? app_.hooks.rotate_ms : (long long)s.duration_min * 60000;
-  if (rotating_ && rotation_->size() > 1 && interval > 0) {
+  // A rotation of its own has a clock of its own (the shared one's is the App's).
+  long long interval = app_.hooks.rotate_ms > 0 ? app_.hooks.rotate_ms : (long long)app_.settings.duration_min * 60000;
+  if (own_rotation_ && rotating_ && rotation_->size() > 1 && interval > 0) {
     rotate_interval_ms_ = (UINT)std::min<long long>(interval, 0x7FFFFFFF);
     SetTimer(hwnd, kTimerRotate, rotate_interval_ms_, nullptr);
   }
+}
+
+void SaverWindow::follow(milliseconds delay) {
+  if (!runs_host_ || !rotation_ || rotation_->empty() || app_.exiting) return;
+  last_log("rotate window=%d -> %s", index_, rotation_->current().c_str());
+  kill_host(false);
+  // Blank between modules, as the original randomizer did.
+  if (current_) current_.reset();
+  InvalidateRect(hwnd, nullptr, FALSE);
+  failures_ = 0;
+  module_shown_ = module_given_up_ = false;
+  // Now, or by the watchdog: after `delay`, and not while the display is off.
+  respawn_pending_ = delay.count() > 0 || !app_.display_on;
+  respawn_at_ = Clock::now() + delay;
+  if (!respawn_pending_) spawn();
+}
+
+void SaverWindow::follow_skip() {
+  if (!runs_host_ || !rotation_ || rotation_->empty() || app_.exiting) return;
+  if (!module_shown_ && !module_given_up_) ++dead_modules_;
+  // Every module in the rotation failed here in turn: a relaxed pace.
+  follow(dead_modules_ >= rotation_->size() ? milliseconds(30s) : milliseconds(0));
 }
 
 ModuleScreen SaverWindow::screen_for(const Module* m) const {
@@ -905,17 +931,27 @@ void SaverWindow::watchdog() {
   // A module that can't stay up is skipped when there is anything else to show.
   bool skipped = false;
   if (failures_ >= 3 && rotating_ && rotation_->size() > 1) {
-    last_log("skip window=%d module=%s after %d failures", index_, rotation_->current().c_str(), failures_);
-    if (frames == 0) ++dead_modules_;
-    rotation_->next();
-    failures_ = 0;
-    skipped = true;
+    if (own_rotation_) {
+      last_log("skip window=%d module=%s after %d failures", index_, rotation_->current().c_str(), failures_);
+      if (frames == 0) ++dead_modules_;
+      own_rotation_->next();
+      failures_ = 0;
+      skipped = true;
+    } else {
+      // Every monitor plays the same module: skipped on all of them, this
+      // window moving on with the others, unless SharedRotation::give_up
+      // keeps it (another monitor's game plays it, or every module failed
+      // here in turn); then it is tried again here.
+      if (!module_shown_ && !module_given_up_) ++dead_modules_;
+      module_given_up_ = true;
+      if (app_.give_up(this, failures_)) return;
+    }
   }
   milliseconds delay = failures_ == 0 ? milliseconds(250)
                                       : std::min<milliseconds>(30s, 500ms * (1 << std::min(failures_ - 1, 6)));
   // Every module in the rotation failed in turn: stop churning through
   // process launches and retry at a relaxed pace.
-  if (skipped && dead_modules_ >= rotation_->size()) delay = 30s;
+  if ((skipped || module_given_up_) && dead_modules_ >= rotation_->size()) delay = 30s;
   respawn_pending_ = true;
   respawn_at_ = now + delay;
 }
@@ -929,8 +965,9 @@ void SaverWindow::drop_sound() {
   if (runs_host_ && rotation_ && !rotation_->empty()) spawn();
 }
 
+// A rotation of its own (DifferentPerMonitor): its clock ran out.
 void SaverWindow::rotate() {
-  if (!rotation_ || rotation_->size() < 2 || app_.exiting || !app_.display_on) return;
+  if (!own_rotation_ || own_rotation_->size() < 2 || app_.exiting || !app_.display_on) return;
   // A game in progress on the input owner is not switched away (AFTERDAR.SCR
   // 0x40190b): the switch waits, re-checked every second, unless the module
   // says it may be rotated (INTERACTION.md §4.2). Other windows rotate on time.
@@ -948,13 +985,14 @@ void SaverWindow::rotate() {
     // A full interval for the next module, counted from now.
     if (rotate_interval_ms_) SetTimer(hwnd, kTimerRotate, rotate_interval_ms_, nullptr);
   }
-  const std::string& next = rotation_->next();
+  const std::string& next = own_rotation_->next();
   last_log("rotate window=%d -> %s", index_, next.c_str());
   kill_host(false);
   // Blank between modules, as the original randomizer did.
   if (current_) current_.reset();
   InvalidateRect(hwnd, nullptr, FALSE);
   failures_ = 0;
+  module_shown_ = module_given_up_ = false;
   respawn_pending_ = false;
   spawn();
 }
@@ -1011,6 +1049,7 @@ void SaverWindow::present_latest() {
   current_ = std::move(f);
   ++presented;
   dead_modules_ = 0;
+  module_shown_ = true;
   if (!status_.empty()) set_status({});
   maybe_capture();
   app_.on_presented();
@@ -1430,7 +1469,10 @@ int App::run() {
   hooks = read_hooks();
   sound_forced_off = adw::scr::sound_forced_off();
   load();
-  seed = (uint32_t)GetTickCount64() ^ (GetCurrentProcessId() << 16);
+  seed = hooks.seed >= 0 ? (uint32_t)hooks.seed : (uint32_t)GetTickCount64() ^ (GetCurrentProcessId() << 16);
+  // Random plays the same module on every monitor unless DifferentPerMonitor
+  // gives each one a rotation of its own.
+  shared = settings.rotates() && !settings.different_per_monitor;
 
   WNDCLASSEXW wc{};
   wc.cbSize = sizeof(wc);
@@ -1539,7 +1581,7 @@ void App::request_exit(int code, const char* why) {
     clip_active = false;
     log_line("clip released (exit)");
   }
-  for (UINT_PTR* t : {&caps_timer, &hold_timer, &script_timer, &caps_wait_timer}) {
+  for (UINT_PTR* t : {&caps_timer, &hold_timer, &script_timer, &caps_wait_timer, &rotate_timer, &rotate_retry_timer}) {
     if (*t) KillTimer(nullptr, *t);
     *t = 0;
   }
@@ -1579,6 +1621,119 @@ void App::caps_wait_over() {
   for (auto& w : windows) {
     if (w->runs_host() && !w->rotation_started()) w->start_rotation();
   }
+}
+
+RotationStart App::rotation_start() {
+  RotationStart r;
+  const Settings& s = settings;
+  auto avail = [&](const std::string& id) { return is_available(id); };
+  if (!s.is_random()) {
+    if (avail(s.module)) r.first = s.module;
+    else log_line("module %s unavailable; picking at random", s.module.c_str());
+  }
+  if (!s.rotates()) {
+    if (!r.first.empty()) r.ids.push_back(r.first);
+    else r.ids = available;   // the chosen module vanished (re-import, hand edit): show *something*
+    return r;
+  }
+  // Module=random, or a Randomize list: rotate through the list (a named
+  // Module plays first), limited to the releases in Collections, with
+  // byte-identical copies once per pass (COVERS.md §1.8). An empty or
+  // all-stale list means every module. Random leaves out what this host
+  // can't run (may_rotate): a list of only such modules means every module
+  // it can run. A module chosen on its own is tried all the same, and says
+  // why it can't start.
+  const HostRotation h = rotation_for_host(s, catalog, avail, [&](const std::string& id) { return may_rotate(id); });
+  const bool log_it = !rotation_logged;
+  rotation_logged = true;
+  if (h.plan.collections_ignored && log_it) {
+    log_line("rotation: Collections ignored (nothing checked in them)");
+    last_log("rotation: Collections ignored (nothing checked in them)");
+  }
+  r.rotates = true;
+  r.ids = h.plan.ids;
+  r.first = h.plan.lead;   // a named Module leads, unless this host can't run it
+  // Nothing is left when the host can run none of the modules imported:
+  // then nothing plays (the window says why), rather than every one of them
+  // in turn into errors, black and "could not be started" over and over.
+  r.none_runs = r.ids.empty() && h.left_out > 0;
+  if (r.ids.empty() && !r.none_runs) r.ids = available;
+  if (log_it) {
+    std::string f;
+    for (const auto& id : effective_collections(s.collections, catalog)) f += (f.empty() ? "" : ",") + id;
+    log_line("rotation: %zu module(s), collections=%s", r.ids.size(), f.empty() ? "all" : f.c_str());
+    if (h.left_out) last_log("rotation: left out %zu module(s) this host can't run", h.left_out);
+    if (!preview) {
+      last_log("rotation: %s", shared ? "the same module on every monitor, switching together"
+                                      : "a different module on each monitor (DifferentPerMonitor=1)");
+    }
+  }
+  return r;
+}
+
+const Rotation& App::shared_rotation(bool* none_runs) {
+  if (!rotation) {
+    RotationStart r = rotation_start();
+    rotation = std::make_unique<SharedRotation>(std::move(r.ids), seed, r.first);
+    rotation_none_runs = r.none_runs;
+    // One clock for every window, on this thread: windows come and go.
+    const long long interval = hooks.rotate_ms > 0 ? hooks.rotate_ms : (long long)settings.duration_min * 60000;
+    if (rotation->size() > 1 && interval > 0) {
+      rotate_interval_ms = (UINT)std::min<long long>(interval, 0x7FFFFFFF);
+      rotate_timer = SetTimer(nullptr, 0, rotate_interval_ms, nullptr);
+    }
+  }
+  *none_runs = rotation_none_runs;
+  return rotation->bag();
+}
+
+// A game in progress on the input owner is not switched away (AFTERDAR.SCR
+// 0x40190b): the switch waits, re-checked every second, unless the module
+// says it may be rotated (INTERACTION.md §4.2). The other windows wait with
+// it, and then all of them switch.
+void App::rotate_shared() {
+  if (!rotation || exiting || !display_on) return;
+  const bool was_waiting = rotation->waiting();
+  if (!rotation->tick(owner_playing_no_rotate())) {
+    if (!rotation->waiting()) return;
+    if (!was_waiting) last_log("rotate-wait window=%d: the module is interactive", owner() ? owner()->index() : -1);
+    if (!rotate_retry_timer) rotate_retry_timer = SetTimer(nullptr, 0, kRotateRetryMs, nullptr);
+    return;
+  }
+  rotation_moved_on(was_waiting);
+  for (auto& w : windows) w->follow(milliseconds(0));
+}
+
+bool App::give_up(SaverWindow* w, int failures) {
+  if (!rotation || exiting) return false;
+  const bool was_waiting = rotation->waiting();
+  const std::string gone = rotation->current();
+  const bool plays = owner_playing_no_rotate();
+  if (!rotation->give_up(w->dead_modules(), w == owner(), plays)) {
+    // Once per module (the first give-up; the retries back off after it).
+    if (failures == 3) {
+      if (w->dead_modules() >= rotation->size()) {
+        last_log("skip window=%d module=%s: not on the other monitors, every module failed here in turn", w->index(),
+                 gone.c_str());
+      } else if (plays) {
+        last_log("skip window=%d module=%s waits: the primary monitor's module is interactive", w->index(), gone.c_str());
+      }
+    }
+    return false;
+  }
+  last_log("skip window=%d module=%s after %d failures, on every monitor", w->index(), gone.c_str(), failures);
+  rotation_moved_on(was_waiting);
+  for (auto& x : windows) x->follow_skip();
+  return true;
+}
+
+void App::rotation_moved_on(bool was_waiting) {
+  if (rotate_retry_timer) {
+    KillTimer(nullptr, rotate_retry_timer);
+    rotate_retry_timer = 0;
+  }
+  // A full interval for the next module, counted from now.
+  if (was_waiting && rotate_timer) rotate_timer = SetTimer(nullptr, rotate_timer, rotate_interval_ms, nullptr);
 }
 
 ScreenSlot App::slot_for(const Monitor& m) const {
@@ -1641,6 +1796,10 @@ bool App::on_thread_message(const MSG& msg) {
   if (caps_wait_timer && msg.wParam == caps_wait_timer) {
     last_log("host capabilities: no answer within %u ms; Random keeps every module", kCapsWaitMs);
     caps_wait_over();
+    return true;
+  }
+  if ((rotate_timer && msg.wParam == rotate_timer) || (rotate_retry_timer && msg.wParam == rotate_retry_timer)) {
+    rotate_shared();
     return true;
   }
   if (script_timer && msg.wParam == script_timer) {

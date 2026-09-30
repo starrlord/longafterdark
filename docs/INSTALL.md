@@ -178,6 +178,12 @@ monitors to use and the sound. A live preview shows the selected module with
 its options. With two or more releases imported, click their covers to list
 only those releases (§2).
 
+In Random, two or more monitors show the same module and change it
+together. For a different module on each, check **A different module on
+each monitor** under **Change module every**; it is there only when two or
+more monitors are connected, and greyed while **Monitors** is **Primary
+monitor only**.
+
 Some modules have options of their own, shown as buttons among the module's
 settings: Fish World's **Select Fish…**, the messages of the message
 modules, Art Critic's **Pictures** and others. A button opens the module's

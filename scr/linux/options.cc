@@ -76,6 +76,8 @@ int parse_options(int argc, char** argv, Options& o) {
       o.random = true;
     } else if (a == "--cycle") {
       if (!number(i, a, 0, 86400, &o.cycle_s)) return kExitUsage;
+    } else if (a == "--different-modules") {
+      o.different_modules = true;
     } else if (a == "-l" || a == "--list") {
       o.list = true;
     } else if (a == "-s" || a == "--scale") {

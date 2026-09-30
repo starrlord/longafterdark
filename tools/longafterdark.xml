@@ -16,6 +16,12 @@
           _label="Change module every (seconds; 0: never)"
           low="0" high="3000" default="300"/>
 
+  <!-- XScreenSaver runs a player on each monitor. Unchecked (the default),
+       they all show the same module and change it together, on the clock;
+       checked, each goes through the modules in an order of its own. -->
+  <boolean id="different" _label="A different module on each monitor"
+           arg-set="--different-modules"/>
+
   <select id="lines">
     <option id="480" _label="Resolution: Classic (480 lines)"/>
     <option id="720" _label="Resolution: Sharp (720 lines)" arg-set="--lines 720"/>
@@ -33,7 +39,9 @@ The Simpsons, Star Trek and more) and LucasArts' Star Wars Screen
 Entertainment: their own modules, run unchanged by Long After Dark's x86
 emulator under Wine. Import your releases first (longafterdark --import).
 It shows every imported module in turn, or only the one whose id you give
-under Module (longafterdark --list shows the ids).
+under Module (longafterdark --list shows the ids). On several monitors they
+all show the same module and change it together, unless you check A
+different module on each monitor.
 
 The Resolution applies to After Dark modules; Star Wars, Star Trek,
 ScreamSavers and Marvel modules always draw at 640x480, keeping their

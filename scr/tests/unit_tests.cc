@@ -343,6 +343,48 @@ void test_settings() {
   CHECK(parse_settings("[Saver]\nScale=abc\n").scale == 1.0);
   CHECK(parse_settings("[Saver]\nScale=9\n").scale == 1.0);
 
+  // DifferentPerMonitor: Random plays the same module on every monitor unless
+  // it says 1 -- a file without it (the fixture, any file written before it)
+  // included. Read as written or as a hand might write it, like Sound.
+  CHECK(!d.different_per_monitor && !s.different_per_monitor);
+  for (const char* on : {"1", "on", "YES", "true", " 1 ", "2"}) {
+    CHECK(parse_settings(std::string("[Saver]\nDifferentPerMonitor=") + on + "\n").different_per_monitor);
+  }
+  for (const char* off : {"0", "off", "no", "False", "", "maybe", "-"}) {
+    CHECK(!parse_settings(std::string("[Saver]\nDifferentPerMonitor=") + off + "\n").different_per_monitor);
+  }
+  CHECK(parse_settings("[saver]\ndifferentpermonitor=1\n").different_per_monitor);   // any case
+  CHECK(!parse_settings("[Saver]\nDifferentPerMonitor=1\nDifferentPerMonitor=0\n").different_per_monitor);   // the last wins
+  {
+    // Written after Monitors in a new file, 1 or 0; round trips; the fixture
+    // gains the key once it is saved.
+    Settings p;
+    p.different_per_monitor = true;
+    const std::string fresh = serialize_settings(p);
+    CHECK(fresh.find("Monitors=all\r\nDifferentPerMonitor=1\r\n") != std::string::npos);
+    CHECK(parse_settings(fresh) == p);
+    p.different_per_monitor = false;
+    CHECK(serialize_settings(p).find("Monitors=all\r\nDifferentPerMonitor=0\r\n") != std::string::npos);
+    const std::string saved = serialize_settings(parse_settings(fixture("settings.ini")), fixture("settings.ini"));
+    CHECK(saved.find("DifferentPerMonitor=0\r\n") != std::string::npos && !parse_settings(saved).different_per_monitor);
+    // A value that already says it is left as written; one that doesn't is replaced.
+    const std::string yes = "[Saver]\r\nMonitors=all\r\nDifferentPerMonitor=yes\r\n";
+    p.different_per_monitor = true;
+    CHECK(serialize_settings(p, yes).find("DifferentPerMonitor=yes\r\n") != std::string::npos);
+    p.different_per_monitor = false;
+    const std::string now_off = serialize_settings(p, yes);
+    CHECK(now_off.find("DifferentPerMonitor=0\r\n") != std::string::npos && now_off.find("=yes") == std::string::npos);
+    CHECK(serialize_settings(p, "[Saver]\r\nDifferentPerMonitor=off\r\n").find("DifferentPerMonitor=off\r\n") !=
+          std::string::npos);
+    p.different_per_monitor = true;
+    CHECK(serialize_settings(p, "[Saver]\r\nDifferentPerMonitor=junk\r\n").find("DifferentPerMonitor=1\r\n") !=
+          std::string::npos);
+    // The dialog's choices leave it as it was (it is its own checkbox).
+    Settings lead_on = parse_settings("[Saver]\nModule=b\nRandomize=a,b\nDifferentPerMonitor=1\n");
+    CHECK(apply_dialog_choice(lead_on, {false, {"a"}, 4, "c"}).different_per_monitor);
+    CHECK(apply_dialog_choice(lead_on, {true, {"a", "b"}, 4, "c"}).different_per_monitor);
+  }
+
   // ---- the settings dialog's two modes (apply_dialog_choice) ----
   using Ids = std::vector<std::string>;
   // A named Module leading a Randomize list keeps leading through Random...
@@ -903,6 +945,26 @@ void test_geometry() {
     CHECK(p.size() == 2 && left == 1);
     if (p.size() == 2) CHECK(p[0].screen == ad_169 && p[1].screen == trek);
   }
+
+  // The monitors the smoke tests stage (AD_SCR_TEST_MONITORS), as the saver
+  // and the settings dialog read them: one layout per topology change, the
+  // last one past the end, ",p" the primary (else the first), bad entries
+  // and ones without area left out.
+  {
+    using M = std::vector<StagedMonitor>;
+    CHECK(parse_staged_monitors(L"", 0).empty() && parse_staged_monitors(L"", 3).empty());
+    const std::wstring two = L"0,0,1280,720,p;1280,0,1024,768|0,0,1280,720;1280,0,1024,768,p|-16000, 0, 856, 480";
+    CHECK((parse_staged_monitors(two, 0) == M{{{0, 0, 1280, 720}, true}, {{1280, 0, 1024, 768}, false}}));
+    CHECK((parse_staged_monitors(two, 1) == M{{{0, 0, 1280, 720}, false}, {{1280, 0, 1024, 768}, true}}));
+    CHECK((parse_staged_monitors(two, 2) == M{{{-16000, 0, 856, 480}, true}}));
+    CHECK(parse_staged_monitors(two, 9) == parse_staged_monitors(two, 2));
+    // Without ",p" the first is the primary; a second ",p" is not one; bad entries go.
+    CHECK((parse_staged_monitors(L"10,20,640,480;0,0,800,600", 0) == M{{{10, 20, 640, 480}, true}, {{0, 0, 800, 600}, false}}));
+    CHECK((parse_staged_monitors(L"0,0,640,480;640,0,640,480,p;1280,0,640,480,p", 0) ==
+           M{{{0, 0, 640, 480}, false}, {{640, 0, 640, 480}, true}, {{1280, 0, 640, 480}, false}}));
+    CHECK((parse_staged_monitors(L"junk;0,0,0,480;1,2,3;0,0,640,480;", 0) == M{{{0, 0, 640, 480}, true}}));
+    CHECK(parse_staged_monitors(L"x,y,w,h", 0).empty());
+  }
 }
 
 // ---- monitor topology changes (plan_relayout) ---------------------------------------
@@ -1062,6 +1124,63 @@ void test_rotation() {
   CHECK(after.count("z") == 0 && after["a"] == 50 && after["b"] == 50);
   Rotation lead_only({}, 3, "z");
   CHECK(!lead_only.empty() && lead_only.current() == "z" && lead_only.next() == "z");
+
+  // The rotation every monitor follows (SharedRotation): the order is its
+  // bag's, a Rotation's with the same seed (so every monitor plays what one
+  // would, and a monitor that joins plays current()), one step per move.
+  {
+    for (uint32_t seed : {1u, 7u, 12345u}) {
+      SharedRotation sr({"a", "b", "c", "d"}, seed, "c");
+      Rotation same({"a", "b", "c", "d"}, seed, "c");
+      CHECK(sr.current() == "c" && sr.current() == same.current() && sr.size() == 4 && sr.step() == 0);
+      for (int i = 1; i <= 40; ++i) {
+        CHECK(sr.tick(false));
+        CHECK(sr.current() == same.next() && sr.step() == (uint64_t)i && !sr.waiting());
+      }
+    }
+    // The clock waits while the primary monitor's module plays a game it
+    // may not be switched away from, as long as the game lasts, then moves
+    // every monitor on once.
+    SharedRotation sr({"a", "b", "c"}, 5);
+    const std::string first = sr.current();
+    CHECK(!sr.tick(true) && sr.waiting() && sr.current() == first && sr.step() == 0);
+    CHECK(!sr.tick(true) && sr.waiting() && sr.step() == 0);
+    CHECK(sr.tick(false) && !sr.waiting() && sr.current() != first && sr.step() == 1);
+    // Nothing else to show: never moves, never waits.
+    SharedRotation one({"only"}, 1);
+    CHECK(!one.tick(false) && !one.tick(true) && !one.waiting() && one.current() == "only" && one.step() == 0);
+    CHECK(!one.give_up(1, true, false) && one.step() == 0);
+    SharedRotation none({}, 1);
+    CHECK(none.empty() && !none.tick(false) && !none.give_up(0, true, false) && none.current().empty());
+    // A module a monitor's host fails three times is skipped on every monitor,
+    // the primary's or another's...
+    SharedRotation skip({"a", "b", "c", "d"}, 9);
+    Rotation skip_same({"a", "b", "c", "d"}, 9);
+    CHECK(skip.give_up(1, false, false) && skip.current() == skip_same.next() && skip.step() == 1);
+    CHECK(skip.give_up(1, true, false) && skip.current() == skip_same.next() && skip.step() == 2);
+    // ...even while the primary monitor's module plays, when it is the one failing (it plays no game then)...
+    CHECK(skip.give_up(2, true, true) && skip.current() == skip_same.next() && skip.step() == 3);
+    // ...but not from under another monitor's game: that monitor retries meanwhile.
+    const std::string kept = skip.current();
+    CHECK(!skip.give_up(1, false, true) && skip.current() == kept && skip.step() == 3);
+    // A monitor that has failed every module in turn is at fault, not the
+    // module: it no longer moves the others on (it retries at a relaxed pace).
+    CHECK(!skip.give_up(4, false, false) && !skip.give_up(5, true, false) && skip.current() == kept);
+    CHECK(skip.give_up(3, false, false) && skip.step() == 4);
+    // A skip ends a wait for a game (the clock then counts a full interval).
+    SharedRotation wait({"a", "b", "c"}, 3);
+    CHECK(!wait.tick(true) && wait.waiting());
+    CHECK(wait.give_up(1, true, false) && !wait.waiting() && wait.step() == 1);
+    // A named module leading the list plays first on every monitor, then the bag.
+    SharedRotation lead_bag({"a", "b"}, 3, "z");
+    CHECK(lead_bag.current() == "z" && lead_bag.size() == 3);
+    std::map<std::string, int> after_lead;
+    for (int i = 0; i < 100; ++i) {
+      CHECK(lead_bag.tick(false));
+      after_lead[lead_bag.current()]++;
+    }
+    CHECK(after_lead.count("z") == 0 && after_lead["a"] == 50 && after_lead["b"] == 50);
+  }
 
   // A rotation switching between an After Dark module and one with a screen
   // of its own (an Intermission module's by its ABI, a Star Trek module's by
@@ -1348,7 +1467,7 @@ void check_layout(const WindowLayout& L, int cw, int ch, bool random) {
   };
   apart("bands", {L.header, L.body, L.footer});
   apart("left and cards", {L.list_card, L.details_card, L.options_card, L.mode, L.modules_label, L.rotation_summary,
-                           L.check_all, L.check_none, L.duration_label, L.duration});
+                           L.check_all, L.check_none, L.duration_label, L.duration, L.per_monitor});
   apart("details", {L.preview, L.about, L.module_icon, L.module_title, L.module_badge, L.panel});
   apart("details with credits", {L.preview, L.credits, L.module_icon, L.module_title, L.module_badge, L.panel});
   apart("controls column", {L.module_icon, L.panel, L.defaults});
@@ -1408,6 +1527,15 @@ void check_layout(const WindowLayout& L, int cw, int ch, bool random) {
     CHECK(client.contains(L.duration) && L.duration.y >= L.check_all.bottom());
     CHECK(L.duration_label.x == L.list_card.x && L.duration.right() == L.list_card.right());
     CHECK(L.duration_label.right() < L.duration.x && L.duration.bottom() < L.options_card.bottom() + 1);
+  }
+  // "A different module on each monitor" (Random, several monitors): under
+  // "Change module every", across the left column (its box on the card's
+  // edge), ending level with the options card.
+  CHECK(random || L.per_monitor.empty());
+  if (!L.per_monitor.empty()) {
+    CHECK(client.contains(L.per_monitor) && L.per_monitor.y >= L.duration.bottom() + dip(8, L.dpi) - 1);
+    CHECK(L.per_monitor.x == L.list_card.x && L.per_monitor.right() == L.list_card.right());
+    CHECK(std::abs(L.per_monitor.bottom() - L.options_card.bottom()) <= 1 && L.per_monitor.h >= dip(32, L.dpi) - 1);
   }
   if (random) {
     // "Clear"'s text (its box less the link padding) ends on the card's edge.
@@ -1609,6 +1737,48 @@ void test_ui() {
   // Single module: no rotation row, and the list takes its room.
   WindowLayout single = layout_window({kDesignClientW, kDesignClientH, 96, false});
   CHECK(single.check_all.empty() && single.list_card.h > L96.list_card.h);
+
+  // "A different module on each monitor" (per_monitor_choice): shown in
+  // Random with several monitors, enabled while every monitor plays; hidden
+  // with one monitor and in Single.
+  CHECK((per_monitor_choice(true, true, 2) == PerMonitorChoice{true, true}));
+  CHECK((per_monitor_choice(true, true, 3) == PerMonitorChoice{true, true}));
+  CHECK((per_monitor_choice(true, false, 2) == PerMonitorChoice{true, false}));   // Primary monitor only: greyed
+  for (bool all : {false, true}) {
+    CHECK((per_monitor_choice(true, all, 1) == PerMonitorChoice{}));
+    CHECK((per_monitor_choice(true, all, 0) == PerMonitorChoice{}));
+    for (int n : {1, 2, 4}) CHECK((per_monitor_choice(false, all, n) == PerMonitorChoice{}));
+  }
+  // Its row, under "Change module every" (which moves up by as much: 8 DIP
+  // and its 32), takes the room from the list; at every scale, at the
+  // first-open, the minimum and a large size, with and without the strip.
+  // In Single it changes nothing.
+  for (int dpi : {96, 120, 144, 168, 192}) {
+    for (auto [w, h, tiles] : {std::tuple{kDesignClientW, kDesignClientH, 0}, std::tuple{kMinClientW, kMinClientH, 0},
+                               std::tuple{kMinClientW, kMinClientHStrip, 7}, std::tuple{kDesignClientW, kDesignClientHStrip, 12},
+                               std::tuple{1600, 1000, 12}}) {
+      const int cw = dip(w, dpi), ch = dip(h, dpi);
+      for (bool random : {false, true}) {
+        LayoutInput without{cw, ch, dpi, random}, with = without;
+        without.strip_tiles = with.strip_tiles = tiles;
+        with.per_monitor = true;
+        const WindowLayout a = layout_window(without), b = layout_window(with);
+        check_layout(b, cw, ch, random);
+        CHECK(a.per_monitor.empty() && random == !b.per_monitor.empty());
+        if (!random) {
+          CHECK(a.list_card == b.list_card && a.list == b.list && b.duration.empty());
+          continue;
+        }
+        const int step = dip(40, dpi);
+        CHECK(std::abs((a.list_card.h - b.list_card.h) - step) <= 1 && a.list_card.y == b.list_card.y);
+        CHECK(std::abs((a.duration.y - b.duration.y) - step) <= 1 && std::abs((a.check_all.y - b.check_all.y) - step) <= 1);
+        CHECK(std::abs(b.per_monitor.y - a.duration.y) <= 1);   // where "Change module every" was
+        CHECK(a.details_card == b.details_card && a.options_card == b.options_card && a.preview == b.preview);
+        // The list keeps room for a few rows (40 DIP each) even so.
+        CHECK(b.list.h >= dip(4 * 40, dpi));
+      }
+    }
+  }
   // A large window: the content stops growing at its cap and is centred;
   // the controls column and dropdowns stop at theirs, the preview takes the
   // room, and the two dropdowns each start their half of the options card.

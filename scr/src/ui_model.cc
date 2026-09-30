@@ -186,6 +186,13 @@ std::vector<DurationChoice> duration_choices(int current) {
   return out;
 }
 
+PerMonitorChoice per_monitor_choice(bool random, bool all_monitors, int monitors) {
+  PerMonitorChoice c;
+  c.shown = random && monitors > 1;
+  c.enabled = c.shown && all_monitors;
+  return c;
+}
+
 std::wstring rotation_summary(size_t checked, size_t total, long long runnable, long long distinct) {
   if (total == 0) return L"";
   if (checked == 0) return L"None in rotation";
@@ -538,8 +545,11 @@ WindowLayout layout_window(const LayoutInput& in) {
   L.modules_label = s.rc(lx, label_y, lw - 128, kLabelH);
   L.modules_count = s.rc(lx + lw - 120, label_y, 120, kLabelH);
   const double card_y = label_y + kLabelH + 8;
-  // Random: the rotation line, then "Change module every" under it.
-  const double block = in.random ? 8 + kControlH + 8 + kControlH : 0;
+  // Random: the rotation line, then "Change module every" under it, then
+  // (several monitors) "A different module on each monitor".
+  const bool per_monitor = in.random && in.per_monitor;
+  const double per_monitor_h = per_monitor ? 8 + kControlH : 0;
+  const double block = in.random ? 8 + kControlH + 8 + kControlH + per_monitor_h : 0;
   const double list_bottom = bottom - block;
   L.list_card = s.rc(lx, card_y, lw, list_bottom - card_y);
   L.list = s.rc(lx + 2, card_y + 4, lw - 4, list_bottom - card_y - 8);
@@ -553,9 +563,11 @@ WindowLayout layout_window(const LayoutInput& in) {
     L.check_none = s.rc(right - none_w, ry, none_w, kControlH);
     L.check_all = s.rc(right - none_w - 4 - all_w, ry, all_w, kControlH);
     L.rotation_summary = s.rc(lx, ry, std::max(40.0, right - none_w - 4 - all_w + kLinkPad - 12 - lx), kControlH);
-    const double dur_y = bottom - kControlH;
+    const double dur_y = bottom - per_monitor_h - kControlH;
     L.duration_label = s.rc(lx, dur_y, lw - kDurationW - 12, kControlH);
     L.duration = s.rc(lx + lw - kDurationW, dur_y, kDurationW, kControlH);
+    // A checkbox across the column, its box on the column's edge.
+    if (per_monitor) L.per_monitor = s.rc(lx, bottom - kControlH, lw, kControlH);
   }
 
   // Right column: the module's details, then the saver-wide options.

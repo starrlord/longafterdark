@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -39,6 +40,7 @@
 #include "../pixels.h"
 #include "../present.h"
 #include "../restart.h"
+#include "../rotation.h"
 #include "../sound.h"
 #include "../status.h"
 #include "../wine.h"
@@ -710,6 +712,143 @@ void test_restart() {
   }
 }
 
+// The rotation's orders (rotation.h): the clock's, the same in every player
+// given the same modules and slot, with every module once per pass; and a
+// shuffle bag, each player's own.
+void test_rotation() {
+  auto ids_of = [](int n) {
+    std::vector<std::string> v;
+    for (int i = 0; i < n; ++i) v.push_back("rel.m" + std::to_string(i));
+    return v;
+  };
+  auto pass_of = [](const ClockOrder& o, int64_t p) {
+    std::vector<std::string> v;
+    for (int64_t i = 0; i < (int64_t)o.size(); ++i) v.push_back(o.at(p * (int64_t)o.size() + i));
+    return v;
+  };
+  {
+    // The same ids in another order, one of them twice: the same order.
+    std::vector<std::string> ids = ids_of(12), other = ids;
+    std::reverse(other.begin(), other.end());
+    other.push_back("rel.m3");
+    const ClockOrder a(ids), b(other);
+    bool same = a.size() == 12 && b.size() == 12;
+    for (int64_t n = -40; n < 400; ++n) same = same && a.at(n) == b.at(n);
+    CHECK(same);
+    // Another set of modules: another order.
+    ids.push_back("rel.m12");
+    const ClockOrder c(ids);
+    bool differs = false;
+    for (int64_t n = 0; n < 12; ++n) differs = differs || a.at(n) != c.at(n);
+    CHECK(differs);
+  }
+  // Every module once per pass, and never one twice in a row, a pass's end
+  // and the next one's start included (two modules alternate).
+  for (int count : {1, 2, 3, 4, 7, 12, 202}) {
+    const ClockOrder o(ids_of(count));
+    bool every = true, no_repeat = true;
+    for (int64_t p = -3; p < 40; ++p) {
+      const std::vector<std::string> pass = pass_of(o, p);
+      every = every && std::set<std::string>(pass.begin(), pass.end()).size() == (size_t)count;
+    }
+    for (int64_t n = -3 * count; n < 40 * count && count > 1; ++n) no_repeat = no_repeat && o.at(n) != o.at(n + 1);
+    CHECK(every && no_repeat);
+  }
+  {
+    // A shuffle each pass, not one order again: every module starts a pass
+    // now and then.
+    const ClockOrder o(ids_of(5));
+    std::set<std::string> firsts;
+    std::set<std::vector<std::string>> passes;
+    for (int64_t p = 0; p < 200; ++p) {
+      firsts.insert(o.at(p * 5));
+      passes.insert(pass_of(o, p));
+    }
+    CHECK(firsts.size() == 5 && passes.size() > 30);
+    CHECK(ClockOrder(std::vector<std::string>{}).at(7).empty());
+    CHECK(ClockOrder(std::vector<std::string>{"rel.x"}).at(-9) == "rel.x");
+  }
+
+  // The slots: 5 minutes, and the first slot a player plays.
+  const int64_t C = 300000, t = 5913024LL * C;   // a slot's start
+  CHECK(clock_slot(t, C) == 5913024 && clock_slot(t - 1, C) == 5913023 && clock_slot(t + C - 1, C) == 5913024);
+  CHECK(clock_slot(-1, C) == -1 && clock_slot(0, C) == 0 && slot_start(5913024, C) == t);
+  CHECK(first_slot(t, C) == 5913024 && first_slot(t + C - kFirstSlotMs, C) == 5913024);
+  CHECK(first_slot(t + C - kFirstSlotMs + 1, C) == 5913025 && first_slot(t + C - 1, C) == 5913025);
+  // Slots under 20 s: the first module plays half a slot at least.
+  CHECK(first_slot(6 * 6000 + 3000, 6000) == 6 && first_slot(6 * 6000 + 3001, 6000) == 7);
+  // Players started a second and a half apart, anywhere in a slot but
+  // either side of its last 10 s: the same first slot, so the same module.
+  bool same_first = true;
+  for (int64_t at = t; at < t + C; at += 7000) {
+    if (at < t + C - kFirstSlotMs && at + 1500 >= t + C - kFirstSlotMs) continue;
+    same_first = same_first && first_slot(at, C) == first_slot(at + 1500, C);
+  }
+  CHECK(same_first);
+
+  {
+    // Two players, the same modules and first slot: the same module, and the
+    // same again at each change.
+    const ClockOrder o(ids_of(8));
+    ClockRotation p1(ids_of(8), 100), p2(ids_of(8), 100);
+    CHECK(p1.current() == p2.current() && p1.current() == o.at(100) && p1.size() == 8);
+    bool together = true;
+    for (int64_t s = 101; s < 140; ++s) together = together && p1.go_to(s, true) == p2.go_to(s, true) && p1.slot() == s;
+    CHECK(together && p1.current() == o.at(139));
+    // A module named first (-r): until its slot ends, then the order at the
+    // next slot's position; counted once when it is among the ids.
+    ClockRotation lead(ids_of(8), 100, "other.x");
+    CHECK(lead.current() == "other.x" && lead.size() == 9 && lead.go_to(101, true) == o.at(101));
+    ClockRotation among(ids_of(8), 100, "rel.m3");
+    CHECK(among.current() == "rel.m3" && among.size() == 8 && among.go_to(101, false) == o.at(101));
+  }
+  {
+    // A skip plays the next position, ahead of the clock, and on when the
+    // clock comes to it; after two, the module reached plays on while it
+    // plays well (keep_ahead), and otherwise the clock's takes over.
+    const ClockOrder o(ids_of(8));
+    ClockRotation r(ids_of(8), 100);
+    CHECK(r.next() == o.at(101) && r.go_to(101, true) == o.at(101));
+    r.next();
+    r.next();
+    CHECK(r.current() == o.at(103) && r.go_to(102, true) == o.at(103) && r.go_to(103, true) == o.at(103));
+    ClockRotation q(ids_of(8), 100);
+    q.next();
+    q.next();
+    CHECK(q.go_to(101, false) == o.at(101));
+    // The wall clock set back: its slot, as it is.
+    CHECK(r.go_to(90, true) == o.at(90) && r.slot() == 90);
+    // A lead that fails gives way to the next slot's module, or the one after
+    // it when that is the lead itself; a lead alone stays.
+    ClockRotation l1(ids_of(8), 100, "other.x");
+    CHECK(l1.next() == o.at(101));
+    ClockRotation l2(ids_of(8), 100, o.at(101));
+    CHECK(l2.next() == o.at(102));
+    ClockRotation alone({}, 100, "other.x");
+    CHECK(alone.size() == 1 && alone.next() == "other.x" && alone.go_to(101, true) == "other.x");
+    CHECK(ClockRotation({}, 100).empty() && ClockRotation({}, 100).current().empty());
+  }
+  {
+    // --different-modules: a shuffle bag each, seeded by its own player, so
+    // each has its own order (the same seed, the same order); every module
+    // once per pass; the named module first.
+    ShuffleRotation r1(ids_of(40), 1), r2(ids_of(40), 2), r3(ids_of(40), 1);
+    std::vector<std::string> s1, s2, s3;
+    for (int i = 0; i < 40; ++i) {
+      s1.push_back(r1.current());
+      s2.push_back(r2.current());
+      s3.push_back(r3.current());
+      r1.next();
+      r2.next();
+      r3.next();
+    }
+    CHECK(s1 == s3 && s1 != s2 && std::set<std::string>(s1.begin(), s1.end()).size() == 40);
+    CHECK(r1.current() != s1.back());   // a new pass doesn't start with the module that ended the last
+    ShuffleRotation lead(ids_of(5), 7, "rel.m2");
+    CHECK(lead.current() == "rel.m2" && lead.size() == 5 && lead.next() != "rel.m2");
+  }
+}
+
 // The monitors a full-screen window leaves to black windows (monitors.h).
 void test_monitors() {
   auto mon = [](int x, int y, int w, int h, bool primary = false) {
@@ -780,6 +919,8 @@ void test_options() {
   unsetenv("XSCREENSAVER_WINDOW");
   CHECK(parse({"--cycle", "30", "--lines", "720", "--no-sound", "--volume", "30"}, &o) == -1 && o.cycle_s == 30 &&
         o.lines == 720 && !o.sound && o.volume == 30);
+  CHECK(parse({"--root"}, &o) == -1 && !o.different_modules && o.cycle_s == kDefaultCycleS);
+  CHECK(parse({"--root", "--different-modules"}, &o) == -1 && o.different_modules && o.mode == WindowMode::root);
   CHECK(parse({"--lines", "600"}, &o) == kExitUsage && parse({"--bogus"}, &o) == kExitUsage);
 }
 
@@ -854,6 +995,7 @@ int main() {
   test_sound();
   test_host_protocol();
   test_restart();
+  test_rotation();
   test_monitors();
   test_options();
   test_nice();

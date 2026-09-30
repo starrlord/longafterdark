@@ -64,6 +64,10 @@
 // The footer's credit (ui_model.h: layout_footer_credit): "Made With Love by
 // StarrLord", one link that opens the project's page in the browser.
 #define IDC_FOOTER_CREDIT   1042
+// "A different module on each monitor" (Settings::different_per_monitor),
+// under "Change module every" in Random on a PC with several monitors
+// (ui_model.h: per_monitor_choice).
+#define IDC_PER_MONITOR     1043
 #define IDC_COVER_TILE_BASE 3000
 
 // Runtime-built controls in the module-settings panel: one block of IDs per

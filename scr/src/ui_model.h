@@ -36,6 +36,20 @@ struct DurationChoice {
 std::vector<DurationChoice> duration_choices(int current_minutes);
 std::wstring duration_label(int minutes);
 
+// "A different module on each monitor" (Settings::different_per_monitor),
+// under "Change module every" in Random: shown only while there is more than
+// one monitor (with one there is nothing to tell apart, so the row isn't
+// there and the list keeps its room; it comes and goes with a monitor
+// plugged in or out), and enabled while every monitor plays (Monitors: All
+// monitors); with "Primary monitor only" it is greyed and keeps its check.
+// However it shows, OK saves it as it stands, so the file's value stays until
+// the user changes it.
+struct PerMonitorChoice {
+  bool shown = false, enabled = false;
+  bool operator==(const PerMonitorChoice&) const = default;
+};
+PerMonitorChoice per_monitor_choice(bool random, bool all_monitors, int monitors);
+
 // The Random mode line under the module list: "All 84 in rotation" /
 // "12 of 84 in rotation" / "None in rotation". `runnable` is how many of the
 // checked modules this adhostwin can run now (-1: not known yet). When some
@@ -225,6 +239,9 @@ struct LayoutInput {
   // Random mode: under the list, the rotation line (summary, Select all,
   // Clear) and "Change module every", which only Random uses.
   bool random = true;
+  // ...and under them, on a PC with several monitors, "A different module on
+  // each monitor" (per_monitor_choice().shown).
+  bool per_monitor = false;
   // Text widths (DIPs) of "Select all" and "Clear", so that their text, not
   // their boxes, lines up with the list card's right edge. 0 = a typical width.
   int link_all_w = 0, link_none_w = 0;
@@ -252,6 +269,7 @@ struct WindowLayout {
   Rc list;                          // the list view inside list_card
   Rc rotation_summary, check_all, check_none;   // Random only (empty otherwise)
   Rc duration_label, duration;      // "Change module every", under them (Random only)
+  Rc per_monitor;                   // "A different module on each monitor", under that (LayoutInput::per_monitor)
   // Details card.
   Rc preview;                       // live preview, 16:9
   Rc about, credits;                // under the preview
