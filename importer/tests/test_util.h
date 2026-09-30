@@ -153,7 +153,7 @@ inline std::string read_text(const std::filesystem::path& p) {
 
 // Whether `s` is UTF-8 to Windows' own strict decoder (MB_ERR_INVALID_CHARS):
 // the tests' check of what the importer writes, independent of the
-// importer's own winutil.h utf8_sequence_length.
+// importer's own utf8.h utf8_sequence_length.
 inline bool strict_utf8(const std::string& s) {
   return s.empty() || MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), int(s.size()), nullptr, 0) > 0;
 }

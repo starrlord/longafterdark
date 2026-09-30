@@ -3,13 +3,25 @@
 #   build/dist/LongAfterDark/{LongAfterDark.scr, adhostwin.exe, adimport.exe,
 #                             README.txt, LICENSE.txt, licenses/}
 #   bash tools/package.sh
+# On Linux (a cross build) the folder also holds the Linux player,
+# longafterdark (tools/build-player.sh), and longafterdark.xml, its entry
+# for XScreenSaver's settings, with a README.txt and NOTICE.txt for Linux,
+# and is zipped as build/dist/LongAfterDark-linux-x64.zip: zip keeps the
+# player's executable bit, and the release publishes that zip as it is.
 # Env: AD_BUILD_DIR (default build/win-release), AD_DIST_DIR (default
-# build/dist/LongAfterDark; replaced whole on every run), AD_COMPONENTS.
+# build/dist/LongAfterDark; replaced whole on every run), AD_COMPONENTS; on
+# Linux AD_PLAYER, a player already built to stage instead of building one
+# (CI's release build, made on Ubuntu 22.04), and AD_ZIP, the zip (default
+# LongAfterDark-linux-x64.zip beside the dist folder).
 # Only what ships is built (no test programs, no tests run): build.sh builds
 # and tests the whole tree. The binaries carry no link timestamp, so the same
-# source gives the same bytes. The new folder is staged beside the old one
-# and swapped in only when complete; if the old one is in use (a running
-# screen saver or settings window), nothing is replaced.
+# source gives the same adhostwin.exe and adimport.exe. LongAfterDark.scr
+# records its build date and time (__DATE__, __TIME__), so two builds of it
+# match only when SOURCE_DATE_EPOCH sets those, as CI does (the commit's
+# time); the Linux player is built by the host's g++. The new folder is
+# staged beside the old one and swapped in only when complete; if the old
+# one is in use (a running screen saver or settings window), nothing is
+# replaced.
 # No After Dark or Star Wars Screen Entertainment file is ever staged: the
 # user imports their own discs (or the Internet Archive copies) with adimport.
 set -euo pipefail
@@ -19,7 +31,28 @@ DIST="${AD_DIST_DIR:-$ROOT/build/dist/LongAfterDark}"
 # Both lanes: pe32 (the 32-bit modules) and ne16 (the 16-bit ones).
 COMPONENTS="${AD_COMPONENTS:-host/core;host/cpu;host/loader;common/ui;host/win32;host/pe32;host/win16;host/ne16;importer;scr}"
 eval "$(tr -d '\r' < "$ROOT/tools/versions" | grep -E '^[A-Z0-9_]+=[^ ]*$')"
-LLVM_DIR="$ROOT/third_party/toolchains/llvm-mingw-$LLVM_MINGW_VER-ucrt-x86_64"
+if [ "$(uname -s)" = "Linux" ]; then
+  LINUX=1
+  LLVM_DIR="$ROOT/third_party/toolchains/llvm-mingw-$LLVM_MINGW_VER-$LLVM_MINGW_LINUX_BUILD"
+else
+  LINUX=0
+  LLVM_DIR="$ROOT/third_party/toolchains/llvm-mingw-$LLVM_MINGW_VER-ucrt-x86_64"
+fi
+
+# On Linux the player first, so a machine without g++ (or zip) fails before
+# the long build, never with a dist that lacks the player.
+if [ "$LINUX" -eq 1 ]; then
+  command -v zip >/dev/null 2>&1 || { echo "package.sh: zip is needed (Debian, Ubuntu: sudo apt install zip)" >&2; exit 1; }
+  PLAYER="${AD_PLAYER:-}"
+  if [ -z "$PLAYER" ]; then
+    PLAYER="$ROOT/build/linux/longafterdark"
+    bash "$ROOT/tools/build-player.sh" "$PLAYER"
+  fi
+  [ -f "$PLAYER" ] && [ -x "$PLAYER" ] || { echo "package.sh: no player at $PLAYER" >&2; exit 1; }
+  ZIP="${AD_ZIP:-$(dirname "$DIST")/LongAfterDark-linux-x64.zip}"
+  mkdir -p "$(dirname "$ZIP")"
+  ZIP="$(cd "$(dirname "$ZIP")" && pwd)/$(basename "$ZIP")"
+fi
 
 AD_BUILD_DIR="$BUILD" AD_COMPONENTS="$COMPONENTS" AD_NO_TESTS=1 \
   bash "$ROOT/tools/build.sh" --target adhostwin adimport LongAfterDark
@@ -37,6 +70,11 @@ trap 'rm -rf "$DIST"' EXIT
 mkdir -p "$DIST/licenses"
 cp "$SCR" "$DIST/LongAfterDark.scr"
 cp "$BUILD/host/core/adhostwin.exe" "$BUILD/importer/adimport.exe" "$DIST/"
+if [ "$LINUX" -eq 1 ]; then
+  cp "$PLAYER" "$DIST/longafterdark"
+  chmod 755 "$DIST/longafterdark"
+  cp "$ROOT/tools/longafterdark.xml" "$DIST/longafterdark.xml"
+fi
 
 # Windows line endings for Notepad on older systems: every text file staged.
 crlf() { sed -i 's/\r*$/\r/' "$@"; }
@@ -51,7 +89,8 @@ cp "$ROOT/third_party/win/phosg/src/LICENSE" "$L/phosg.LICENSE.txt"
 cp "$ROOT/third_party/win/zlib/LICENSE" "$L/zlib.LICENSE.txt"
 cp "$LLVM_DIR/LICENSE.TXT" "$L/LLVM.LICENSE.txt"
 cp "$LLVM_DIR/x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt" "$L/mingw-w64-runtime.COPYING.txt"
-cat > "$L/NOTICE.txt" <<EOF
+{
+cat <<EOF
 Long After Dark: third-party software
 =====================================
 
@@ -106,11 +145,203 @@ which have no file of their own, are quoted below).
     https://www.mingw-w64.org/), as built by llvm-mingw $LLVM_MINGW_VER,
     in all three programs.
 
+EOF
+if [ "$LINUX" -eq 1 ]; then
+cat <<'EOF'
+The Linux player, longafterdark, is this project's own code (including the
+JSON reader adimport.exe also uses), built with GCC. GCC's runtime
+libraries, libstdc++ and libgcc, are linked into it statically. They are
+under the GPL version 3 with the GCC Runtime Library Exception
+(https://www.gnu.org/licenses/gcc-exception-3.1.html), which lets a program
+built with GCC be distributed under its own terms. The player uses the C
+library (glibc) and the X11 libraries (libX11, libXext and libXrandr) of
+the system it runs on, and runs adhostwin.exe and adimport.exe with the
+system's Wine; none of them is included.
+
+Apart from the code above and this project's own, everything the three
+programs use comes with Windows, or with Wine, which runs them on Linux.
+No After Dark or Star Wars Screen Entertainment file is included.
+EOF
+else
+cat <<'EOF'
 Apart from the code above and this project's own, everything the programs
 use comes with Windows. No After Dark or Star Wars Screen Entertainment file
 is included.
 EOF
+fi
+} > "$L/NOTICE.txt"
 
+if [ "$LINUX" -eq 1 ]; then
+cat > "$DIST/README.txt" <<'EOF'
+Long After Dark for Linux
+=========================
+
+Long After Dark is a screen saver that runs the original modules of After
+Dark and of LucasArts' Star Wars Screen Entertainment, unchanged, under x86
+emulation. It knows seven releases:
+
+  id        Release                                Internet Archive download
+  deluxe    After Dark 4.0 Deluxe (1996)           CD image, 381.7 MB
+  ad10      After Dark 10th Anniversary (1999)     CD image, 143.3 MB
+  ad32      After Dark 3.2 (1995)                  CD image, 58.8 MB
+  tt        Totally Twisted After Dark (1995)      CD image, 37.9 MB
+  simpsons  The Simpsons Screen Saver (1994)       install files (ZIP), 2.6 MB
+  swse      Star Wars Screen Entertainment (1994)  CD image, 6.9 MB
+  startrek  Star Trek: The Screen Saver (1992)     two floppy images, 2.8 MB
+
+No After Dark or Star Wars Screen Entertainment files are included: you
+import them from your own copies (and are responsible for sourcing them
+legally).
+
+On Linux the emulator and the importer are the Windows programs, run under
+Wine, and longafterdark, a Linux program, shows what the emulator draws:
+full screen, in a window, or as one of XScreenSaver's display modes. This
+folder holds:
+
+  longafterdark       the Linux player and screen saver
+  adhostwin.exe       the emulator; longafterdark runs it under Wine
+  adimport.exe        copies the modules from your discs, under Wine
+  longafterdark.xml   longafterdark's entry for XScreenSaver's settings
+  LongAfterDark.scr   the Windows screen saver (for Windows only)
+
+Keep longafterdark, adhostwin.exe and adimport.exe together: the player
+looks for the other two in the folder it is really in.
+
+
+What you need
+
+  - A 64-bit PC (x86-64) running Linux with glibc 2.35 or newer (Ubuntu
+    22.04, Debian 12, Fedora 36, Linux Mint 21 or later), and an X11
+    desktop.
+  - 64-bit Wine, the X11 libraries, and the CA certificates that the
+    importer's downloads need. On Debian and Ubuntu:
+      sudo apt install wine wine64 libx11-6 libxext6 libxrandr2 \
+        ca-certificates
+  - For the modules' text as it looked on Windows, Microsoft's core fonts
+    (sudo apt install ttf-mscorefonts-installer); without them Wine draws
+    the text in fonts of its own.
+  - For the modules' MIDI music, a MIDI synthesizer on ALSA's sequencer,
+    such as FluidSynth, started before Long After Dark:
+      sudo apt install fluidsynth fluid-soundfont-gm
+      systemctl --user enable --now fluidsynth
+    Without one the music is silent; the sound effects still play.
+
+
+1. Import your releases
+
+   From this folder, with the ids above:
+     ./longafterdark --import                 (the importer's window)
+     ./longafterdark --import --download simpsons
+     ./longafterdark --import --download all
+     ./longafterdark --import --image ~/Downloads/afterdark-deluxe.iso
+     ./longafterdark --import --list-packages
+   "./longafterdark --import" runs adimport.exe under Wine with the options
+   that follow ("--import --help" lists them), and gives it your paths in
+   the form a Windows program needs. The importer works out which release
+   it was given, checks every file against that release's known MD5s and
+   installs it in Wine's data folder (below), beside the releases already
+   imported. The first time, Wine makes that folder, which takes a moment.
+
+2. Run it
+
+     ./longafterdark
+   runs the screen saver full screen: every imported module in turn, five
+   minutes each. "./longafterdark --help" lists every option; for example:
+     ./longafterdark --list        the modules imported, with their ids
+     ./longafterdark toasters      one module, by its id or name
+     ./longafterdark -w            in a window
+     ./longafterdark --no-sound    without sound
+
+   Any key except Shift, Ctrl, Caps Lock and Num Lock, a click, the mouse
+   wheel or moving the mouse ends it. Caps Lock never does: in some modules
+   it changes something or starts a game. While a game is playing, press
+   Caps Lock again to stop playing, or Alt to end the screen saver at once.
+   Num Lock starts Star Trek's Final Exam: type the number of your answer;
+   moving the mouse ends the exam and the screen saver. In a window, Esc or
+   q closes it when no game is playing.
+
+3. Use it as your screen saver (XScreenSaver)
+
+   XScreenSaver needs an X11 session (at the login screen: GNOME on Xorg,
+   Ubuntu on Xorg or Plasma (X11), not a Wayland session):
+   a. Install it (Debian, Ubuntu: sudo apt install xscreensaver) and have
+      it start when you log in. GNOME, KDE Plasma, Xfce, MATE, Cinnamon,
+      LXQt and LXDE start what ~/.config/autostart lists:
+        mkdir -p ~/.config/autostart
+        printf '%s\n' '[Desktop Entry]' Type=Application Name=XScreenSaver \
+          'Exec=xscreensaver -no-splash' \
+          > ~/.config/autostart/xscreensaver.desktop
+      It runs from your next login on; "xscreensaver -no-splash &" starts
+      it now (one dash: XScreenSaver 5 refuses "--no-splash"). With a
+      window manager alone, start "xscreensaver -no-splash" from its own
+      startup file.
+   b. Turn off the desktop's own screen blanking and lock, or they blank
+      the screen before XScreenSaver does: in GNOME's Settings, under
+      Power and Privacy; in KDE's System Settings, Screen Locking and Power
+      Management; in Xfce, MATE or Cinnamon, their own screen saver.
+      "man xscreensaver" says how for each desktop.
+   c. Put longafterdark on your PATH with a symbolic link, so that it still
+      finds the other two programs here:
+        sudo ln -s "$PWD/longafterdark" /usr/local/bin/longafterdark
+   d. So that XScreenSaver's settings show its options, copy its entry to
+      XScreenSaver's configuration folder:
+        sudo cp longafterdark.xml /usr/share/xscreensaver/config/
+   e. Add it to the programs list in ~/.xscreensaver. That file holds all
+      your XScreenSaver settings: edit it, and never copy anything over it.
+      If you have none yet, change any setting in xscreensaver-settings
+      (xscreensaver-demo in XScreenSaver 5; Mode, for one), which writes
+      it. With that program closed, add this line right after the line
+      "programs:":
+        "Long After Dark"  longafterdark --root  \n\
+      XScreenSaver notices the change by itself.
+   f. In xscreensaver-settings, choose Long After Dark. Its Settings... has
+      the module to show (Module: an id from "./longafterdark --list";
+      empty, every module in turn), how often the module changes, the
+      resolution, the sound and the volume; the preview there is always
+      silent. XScreenSaver's own Cycle After setting also restarts it,
+      with another module unless one is chosen (0 turns that off).
+   XScreenSaver ends it on any key or mouse move, so the games are played
+   in longafterdark's own full-screen mode.
+
+What is different from Windows
+
+   There is no settings window: you choose with longafterdark's options, or
+   in XScreenSaver's settings. The modules' own options and buttons (such
+   as Fish World's Select Fish... or a Star Wars module's Configure...) are
+   not available, so each module runs with its defaults. On its own,
+   longafterdark plays on the primary monitor and keeps the others black;
+   XScreenSaver runs it on every monitor, and only the primary monitor's
+   plays sound.
+
+Where your files are
+
+   In Wine's data folder, ~/.wine/drive_c/users/<you>/AppData/Local/
+   LongAfterDark (with Wine 6, as on Ubuntu 22.04, .../users/<you>/Local
+   Settings/Application Data/LongAfterDark), in $WINEPREFIX instead of
+   ~/.wine if you set it: the imported modules (assets/win) and the
+   Internet Archive downloads (downloads). What the modules save themselves
+   (message texts, high scores, settings files) is in
+   ~/.local/share/longafterdark/state.
+
+Updating
+
+   Make sure the screen saver is not running, and unzip the new release
+   over this folder. Imported releases, downloads and saved state are kept.
+
+More
+
+   https://github.com/starrlord/longafterdark: docs/LINUX.md there has the
+   rest: the player's options, XScreenSaver, troubleshooting and building
+   from source.
+
+Licences
+
+   LICENSE.txt is the project's licence. The licences of the code built
+   into the programs are in licenses/ (NOTICE.txt there says which is
+   whose, and quotes the terms of UNARJ, whose ARJ decoder adimport.exe
+   uses in a modified version).
+EOF
+else
 cat > "$DIST/README.txt" <<'EOF'
 Long After Dark
 ===============
@@ -272,7 +503,9 @@ Licences
    whose, and quotes the terms of UNARJ, whose ARJ decoder adimport.exe
    uses in a modified version).
 EOF
-crlf "$DIST/README.txt" "$DIST/LICENSE.txt" "$L"/*.txt
+fi
+# Linux keeps its own line endings.
+if [ "$LINUX" -eq 0 ]; then crlf "$DIST/README.txt" "$DIST/LICENSE.txt" "$L"/*.txt; fi
 
 # Swap it in: the old folder aside first (refused while a program in it
 # runs, which leaves it as it was), then the new one in its place.
@@ -286,3 +519,12 @@ mv "$DIST" "$FINAL"
 trap - EXIT
 rm -rf "$FINAL.old-$$"
 ls -la "$FINAL" "$FINAL/licenses"
+
+# The Linux zip, made here where the player's mode is known (the release
+# publishes it unchanged): zip on Linux records each file's mode.
+if [ "$LINUX" -eq 1 ]; then
+  rm -f "$ZIP.tmp"
+  (cd "$(dirname "$FINAL")" && zip -qrX "$ZIP.tmp" "$(basename "$FINAL")")
+  mv "$ZIP.tmp" "$ZIP"
+  echo "package.sh: $ZIP"
+fi

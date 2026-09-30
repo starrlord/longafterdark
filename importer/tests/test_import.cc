@@ -4,7 +4,7 @@
 // lists the modules of exactly the installed tree, a re-import replaces the
 // tree atomically, and failures (bad source, missing engine, cancel,
 // known-file mismatch) leave the previous tree, record and catalog exactly
-// as they were. And the UTF-8 the records are written in: winutil.h's test
+// as they were. And the UTF-8 the records are written in: utf8.h's test
 // and repair of it against Windows' own decoder, and json_escape.
 #include <phosg/JSON.hh>
 
@@ -703,7 +703,7 @@ int main(int argc, char** argv) {
   }
 
   // ---- the records are UTF-8 whatever they are given ---------------------------
-  // winutil.h's utf8_sequence_length draws the line Windows' strict decoder
+  // utf8.h's utf8_sequence_length draws the line Windows' strict decoder
   // draws: every string of one or two bytes, every three-byte string that
   // starts past 0xBF, four-byte strings around every edge. to_valid_utf8
   // keeps UTF-8 as it is and makes U+FFFD of every other byte; json_escape

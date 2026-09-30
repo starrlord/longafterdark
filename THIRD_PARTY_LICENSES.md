@@ -2,19 +2,20 @@
 
 Long After Dark ships three programs: `LongAfterDark.scr` (the screen
 saver), `adhostwin.exe` (the emulation host) and `adimport.exe` (the
-importer). They build in some code this project did not write. This file
-says what it is, under what licence it is redistributed, and where to get
-its source.
+importer). The Linux zip adds a fourth, `longafterdark`, the Linux player
+([below](#the-linux-player-longafterdark-linux-zip-only)). They build in
+some code this project did not write. This file says what it is, under
+what licence it is redistributed, and where to get its source.
 
 Nothing here is an original After Dark or Star Wars Screen Entertainment
 file: those copyrighted modules are never shipped. The user imports them
 with `adimport.exe` from their own disc, image or folder, or from the
 Internet Archive.
 
-All three programs are linked statically, so they carry the code below
-inside them and need no DLLs of their own. `tools/bootstrap.sh` fetches the
-libraries at the revisions pinned in `tools/versions` into `third_party/win/`
-(gitignored) and builds them.
+The three Windows programs are linked statically, so they carry the code
+below inside them and need no DLLs of their own. `tools/bootstrap.sh`
+fetches the libraries at the revisions pinned in `tools/versions` into
+`third_party/win/` (gitignored) and builds them.
 
 ## Vendored in the repository: the x86 emulator (`adhostwin.exe`)
 
@@ -80,7 +81,7 @@ project's own code (the KWAJ reader written from the format's public
 description), and so is its ARJ reader apart from the decoder derived from
 UNARJ (above). No external extraction tools are used.
 
-## Toolchain runtime (all three programs)
+## Toolchain runtime (the three Windows programs)
 
 The programs are built with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw)
 `20260922` (UCRT, x86_64) and linked with `-static`, so each one contains the
@@ -92,6 +93,25 @@ parts of these runtimes it uses:
 | mingw-w64 runtime (C runtime start-up code, its helper library and import libraries) | the mingw-w64 runtime licence: BSD-style, with the notices of the parts it includes (gdtoa, parts of the math library and others) | [mingw-w64](https://www.mingw-w64.org/), as built by llvm-mingw; the toolchain's `x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt` |
 
 The toolchain's winpthreads library is not linked into any of them.
+
+## The Linux player (`longafterdark`, Linux zip only)
+
+`longafterdark` is this project's own code (`scr/linux/`, with the JSON
+reader in `importer/minijson.cc` that `adimport.exe` uses too), compiled
+with GCC by `tools/build-player.sh` (for a release, on Ubuntu 22.04). It is
+linked with `-static-libstdc++ -static-libgcc`, so it contains the parts of
+GCC's runtime libraries it uses:
+
+| Project | Licence | Source |
+|---|---|---|
+| GCC's runtime libraries: `libstdc++` (the C++ standard library) and `libgcc` | GPL-3.0-or-later WITH GCC-exception-3.1: the [GCC Runtime Library Exception](https://www.gnu.org/licenses/gcc-exception-3.1.html) lets a program compiled with GCC be distributed under its own terms | [GCC](https://gcc.gnu.org/), as the build machine's `g++` packages it |
+
+Everything else it uses comes with the Linux system it runs on and is used
+as installed, never included: the C library (glibc), the X11 libraries
+(libX11, libXext and libXrandr) and Wine, which runs `adhostwin.exe` and
+`adimport.exe`. The Linux zip holds the three Windows programs too, with
+the same licence files as the Windows release; its `NOTICE.txt` adds a
+paragraph on the player.
 
 ## In the release folder
 
@@ -108,6 +128,10 @@ The toolchain's winpthreads library is not linked into any of them.
 | `licenses\mingw-w64-runtime.COPYING.txt` | the toolchain's `COPYING.MinGW-w64-runtime.txt` |
 | `licenses\NOTICE.txt` | written by `package.sh`: which file covers which code, with the pinned revisions, and UNARJ's notice and terms (which come with no licence file of their own) |
 
+On Linux, `package.sh` stages the same files in `licenses/` (with Linux
+line endings) beside the four programs, and its `NOTICE.txt` names the
+player and GCC's runtime libraries as the section above does.
+
 ## Windows itself
 
 Everything else comes with Windows and is used as installed: the Universal C
@@ -122,6 +146,10 @@ and Microsoft ADPCM) and the MIDI file player are this project's own code.
 * The llvm-mingw toolchain and ninja, downloaded into `third_party/toolchains/`
   by `tools/bootstrap.sh` and checked against the sha256 pinned in
   `tools/versions`. CMake and Git for Windows' bash are used as installed.
+* On Linux, the Linux builds of the same toolchain and ninja, pinned and
+  checked the same way. The distribution's CMake, g++, X11 headers, Wine,
+  Xvfb, xdotool and python3 are used as installed (Wine runs the Windows
+  tests under Xvfb, and the player's smoke test uses all four).
 * phosg is also linked into the importer's tests, which use it to read the
   importer's JSON independently of the code that writes it.
 * The ARJ decoder derived from UNARJ is linked into the importer's tests

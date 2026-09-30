@@ -504,6 +504,82 @@ while a hold is pending. The decision logic is a pure function
   game.
 * Only the primary monitor plays; the others keep running on their own.
 
+### 4.5 The Linux player (`scr/linux`)
+
+`longafterdark` ([LINUX.md](LINUX.md)) keeps this section's rules with the
+same logic, ported: `decide()` with its stale rule and 300 ms hold, the
+exempt keys, the event table, Alt and F10 as the escape while playing, the
+10 px threshold from a fixed baseline (reset when play ends), the `MOUSE`
+button mask, input lines numbered as the host numbers them with `MOUSE`
+lines coalesced, the rotation waiting for a game, and the wake flag.
+`KEY 20` goes out with the Caps Lock key's own press and release, as any
+key's `KEY` line does. `CAPS` and `ADCAPS` come from the X keyboard's
+locked modifiers (Xkb): `ADCAPS` at every spawn, and the state is read
+again after every key but a system key (Alt, F10, a key while Alt is
+held), on Xkb state events and every 250 ms, a `CAPS` line going out when
+it differs from the last one sent, as §4.1 says. `NUMLOCK` lines go only
+to a host whose `--capabilities` answer (asked for in the background) says
+`numlock=1`, and `ADNUMLOCK` as §4.1 says. Where Linux differs:
+
+* **The status comes on stderr.** A process under Wine can't be handed the
+  section of §3.4 (`ADSTATUSHANDLE` names a Windows handle), so every host
+  runs with `ADSTATUSLOG=1` and the player parses its `STATUS` lines
+  (§3.1) strictly. The host prints a step's line before that step's frame,
+  so a status read when a frame arrives is that step's. An inherited
+  `ADSTATUSHANDLE` is removed.
+* **Switching away** is the window losing the keyboard focus, to another
+  window or to another program's grab (a screen locker, a window manager's
+  shortcut); there are no session events. The player takes the keyboard by
+  the focus and never grabs it, so a locker can always lock, and its grab
+  ends the saver as a lock ends the Windows one. In the window's first 3
+  seconds a plain focus change (not a grab) is taken back instead, up to
+  five times (a window manager placing the window).
+* **The cursor clip** (§4.2) is a pointer grab confined to an InputOnly
+  window over the frame, held only while a game plays.
+* **One host, black elsewhere.** `-f` plays on the primary monitor, in the
+  player's window, so its one host is the input owner, and covers each
+  other monitor (RandR) with a black override-redirect window, the pointer
+  hidden over it, as `/s` leaves them in **Primary monitor only**. Clicks
+  and moves there are judged like the player's window's own, their points
+  taken into its coordinates (off the frame, so clamped to the host's
+  screen). The pointer is also looked at every 250 ms against the fixed
+  baseline while no game plays, so a move past 10 px anywhere ends the
+  saver, even over another program's window above them. The black windows
+  go over the monitors the player's window doesn't overlap, from where it
+  really is (when it opens, when it is mapped, on every `ConfigureNotify`):
+  a window manager that puts it on another monitor never gets it covered.
+  The monitors are read once, when the player starts.
+* **Under XScreenSaver** (`--root`: one player per monitor, in
+  XScreenSaver's windows) no player takes keys, clicks or moves, since
+  XScreenSaver holds the keyboard and stops them all with SIGTERM: these
+  rules apply to `-f` alone. Nor does its host, or a preview's, get a
+  `CAPS` or `NUMLOCK` line when a lock changes: the Windows saver sends
+  those only to its input owner, and a `/p` saver has none. `ADCAPS` and
+  `ADNUMLOCK` still go at every spawn. Sound comes only from the player
+  whose window holds the centre of the primary monitor (RandR).
+* **A window of its own** (`-w`) forwards every key but the system keys
+  (Alt, F10 and any key while Alt is held, which go nowhere), every click
+  and every move, never the wheel, and decides nothing: Esc or `q` closes
+  it while no game plays (after its `KEY` line), the close button always,
+  and the wake flag as in `-f`.
+* **The preview** (`-window-id`, from xscreensaver-settings) is silent,
+  gets a 320×240 screen at 30 frames a second as `/p` does, takes no keys,
+  clicks or moves, ignores the wake flag, and ends when its window goes or
+  on a signal. Its host and its `--capabilities` probe run at nice 10 at
+  least (set in the child before `exec`, never raising a priority), and so
+  does every Wine process they start (a Wine server already running in the
+  prefix keeps its own), as the `/p` host runs at
+  `BELOW_NORMAL_PRIORITY_CLASS`.
+* **No buttons, seed or control values**: no `--configure` runs, and hosts
+  get no `ADSEEDIMG` (a black desktop) and no `ADCVSET` (each module's
+  defaults). `ADSTATE` is `$XDG_DATA_HOME/longafterdark/state`
+  (`AD_SCR_STATE` overrides), handed to the host in Windows form through
+  the Wine prefix's drives, as the module's path and `AD_ASSETS_DIR` are.
+* **The display's power**: while DPMS says the monitor is off, no `GO` goes
+  out, as the Windows saver pauses its hosts, and a host that ended starts
+  again only once the monitor is back on (`--test-display-off <ms>` plays
+  a power-off for the tests).
+
 ---
 
 ## 5. Lane obligations (input and status)
