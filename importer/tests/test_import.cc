@@ -4,8 +4,16 @@
 // lists the modules of exactly the installed tree, a re-import replaces the
 // tree atomically, and failures (bad source, missing engine, cancel,
 // known-file mismatch) leave the previous tree, record and catalog exactly
-// as they were. And the UTF-8 the records are written in: winutil.h's test
-// and repair of it against Windows' own decoder, and json_escape.
+// as they were. Install disks kept apart in DISK<n> folders (source.h, disk
+// sets): as a ZIP, a folder, an ISO or a FAT image, read as their union —
+// directories merge, one name in two disks must be one file (listed: its
+// size; read: its bytes), any disks may be there; a root holding anything
+// else beside its disks is read as it is (a folder, an image) or refused (a
+// ZIP), and a ZIP's disks are flat; then imported end to end (an AD 3.x
+// install over two disks, a Microsoft Setup one, a Presage one over five, a
+// plain CD tree split in two), one disk alone, and a note beside them never
+// opened. And the UTF-8 the records are written in: winutil.h's test and
+// repair of it against Windows' own decoder, and json_escape.
 #include <phosg/JSON.hh>
 
 #include <functional>
@@ -18,6 +26,8 @@
 #include "md5.h"
 #include "minijson.h"
 #include "module_builder.h"
+#include "pkg_fixture.h"
+#include "source.h"
 
 using namespace adw::import;
 namespace fs = std::filesystem;
@@ -153,6 +163,78 @@ bool no_leftovers(const fs::path& win) {
     }
   }
   return true;
+}
+
+// ---- disk sets ----------------------------------------------------------------------------
+
+// A fixture's root files split into its install disks: disk number -> tree.
+std::map<int, test::Tree> by_disk(const test::Tree& t, int (*disk_of)(const std::string&)) {
+  std::map<int, test::Tree> d;
+  for (const auto& [rel, data] : t) d[disk_of(rel)][rel] = data;
+  return d;
+}
+
+// The disks as folders DISK<n> (the folder name spelled `spell`, "DISK" or "Disk") under `root`.
+void write_disk_folders(const fs::path& root, const std::map<int, test::Tree>& disks,
+                        const std::string& spell = "DISK") {
+  for (const auto& [n, t] : disks) test::write_tree(root / to_wide(spell + std::to_string(n)), t);
+}
+
+// (The disks as one ZIP of DISK<n>/ folders: zip_builder.h test::zip_of_disks.)
+using test::zip_of_disks;
+
+// The names a source lists at `path`, sorted.
+std::vector<std::string> names_at(const SourceFs& fs, const std::string& path = "") {
+  std::vector<std::string> v;
+  auto d = fs.find(path);
+  if (!d) return {"(no such folder: " + path + ")"};
+  for (const SourceNode& n : fs.list(*d)) v.push_back(n.name + (n.is_dir ? "/" : ""));
+  std::sort(v.begin(), v.end());
+  return v;
+}
+
+std::vector<uint8_t> read_at(const SourceFs& fs, const std::string& path) {
+  auto n = fs.find(path);
+  return n ? fs.read_all(*n) : std::vector<uint8_t>{'?'};
+}
+
+// `f` throws ImportError(source_invalid) with `expect` in its message.
+bool source_refused(const char* what, const std::function<void()>& f, const std::string& expect) {
+  try {
+    f();
+    fprintf(stderr, "  %s: accepted, should have been refused\n", what);
+    return false;
+  } catch (const ImportError& e) {
+    fprintf(stderr, "  %s -> %s\n", what, e.what());
+    if (e.status() != Status::source_invalid) fprintf(stderr, "  %s: status %s\n", what, status_name(e.status()));
+    if (std::string(e.what()).find(expect) == std::string::npos) {
+      fprintf(stderr, "  %s: expected \"%s\"\n", what, expect.c_str());
+      return false;
+    }
+    return e.status() == Status::source_invalid;
+  }
+}
+
+// The installed files of a package (relative to <win>), import.json aside,
+// are exactly the fixture's.
+void check_package(const fs::path& win, const test::PkgFixture& f, const std::string& root) {
+  std::map<std::string, std::vector<uint8_t>> want, have;
+  for (auto& [rel, d] : f.expect)
+    if (rel.rfind(root + "/", 0) == 0) want[rel.substr(root.size() + 1)] = d;
+  const fs::path dir = test::path_under(win, root);
+  for (const std::string& rel : test::list_tree(dir))
+    if (rel != "import.json") have[rel] = test::read_bytes(test::path_under(dir, rel));
+  CHECK(!want.empty());
+  for (auto& [rel, d] : want)
+    if (!have.count(rel) || have[rel] != d) {
+      test::g_failures++;
+      fprintf(stderr, "  %s: %s\n", have.count(rel) ? "differs" : "missing", rel.c_str());
+    }
+  for (auto& [rel, d] : have)
+    if (!want.count(rel)) {
+      test::g_failures++;
+      fprintf(stderr, "  unexpected: %s\n", rel.c_str());
+    }
 }
 
 }  // namespace
@@ -787,6 +869,334 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "  json_escape: %zu strings read back, %zu wrong\n", strings, bad);
     CHECK_EQ(bad, size_t(0));
+  }
+
+  // ---- disk sets: install disks kept apart in DISK<n> folders (source.h) ------------
+  {
+    const fs::path ds = dir / L"disk-sets";
+    auto blob = [](const std::string& tag, size_t n = 300) { return test::blob(tag, n); };
+    // A ZIP: every member in a DISK<n>/ folder, the same file in two disks.
+    const std::map<int, test::Tree> two = {
+        {1, {{"A.TXT", blob("a")}, {"SAME.TXT", blob("same")}, {"SETUP.PKG", blob("pkg")}}},
+        {2, {{"B.TXT", blob("b")}, {"SAME.TXT", blob("same")}}}};
+    test::write_bytes(ds / L"two.zip", zip_of_disks(two));
+    {
+      std::string note;
+      auto z = open_image(ds / L"two.zip", &note);
+      fprintf(stderr, "  note: %s\n", note.c_str());
+      CHECK_EQ(note,
+               std::string("reading two.zip as the union of its folders Disk1 and Disk2 (one install disk each)"));
+      CHECK_EQ(z->format(), std::string("zip"));
+      CHECK((names_at(*z) == std::vector<std::string>{"A.TXT", "B.TXT", "SAME.TXT", "SETUP.PKG"}));
+      CHECK(read_at(*z, "b.txt") == blob("b"));
+      CHECK(read_at(*z, "SAME.TXT") == blob("same"));
+      CHECK(z->find("SETUP.PKG") && z->find("SETUP.PKG")->size == blob("pkg").size());
+      CHECK(!z->find("DISK1") && !z->find("Disk1/A.TXT"));
+    }
+    // Any case, no folder entries, gaps in the numbering, one disk alone.
+    test::write_bytes(ds / L"gaps.zip", zip_of_disks({{3, two.at(1)}, {12, two.at(2)}}, "disk", false));
+    CHECK((names_at(*open_image(ds / L"gaps.zip")) ==
+           std::vector<std::string>{"A.TXT", "B.TXT", "SAME.TXT", "SETUP.PKG"}));
+    test::write_bytes(ds / L"disk2.zip", zip_of_disks({{2, two.at(2)}}));
+    {
+      std::string note;
+      auto z = open_image(ds / L"disk2.zip", &note);
+      CHECK((names_at(*z) == std::vector<std::string>{"B.TXT", "SAME.TXT"}));
+      CHECK_EQ(note, std::string("reading disk2.zip as the union of its folders Disk2 (one install disk each)"));
+    }
+    // A flat ZIP is read as ever, and says nothing.
+    {
+      std::string note = "stale";
+      test::write_bytes(ds / L"flat.zip", test::zip_folder(two.at(1)));
+      auto z = open_image(ds / L"flat.zip", &note);
+      CHECK(note.empty());
+      CHECK((names_at(*z) == std::vector<std::string>{"A.TXT", "SAME.TXT", "SETUP.PKG"}));
+    }
+    // One name in two disks: another size is refused when listed, other
+    // bytes of the same size when read.
+    {
+      auto t = two;
+      t[2]["SAME.TXT"] = blob("same", 301);
+      test::write_bytes(ds / L"size.zip", zip_of_disks(t));
+      auto z = open_image(ds / L"size.zip");
+      CHECK(source_refused(
+          "a name of two sizes", [&] { z->list(z->root()); },
+          "SAME.TXT differs between Disk1 and Disk2 (size); they are not the disks of one release"));
+      t[2]["SAME.TXT"] = blob("SAME");
+      test::write_bytes(ds / L"bytes.zip", zip_of_disks(t));
+      auto y = open_image(ds / L"bytes.zip");
+      CHECK_EQ(names_at(*y).size(), size_t(4));
+      CHECK(y->read_all(*y->find("A.TXT")) == blob("a"));  // the others read as ever
+      CHECK(source_refused(
+          "a name with other bytes", [&] { y->read_all(*y->find("SAME.TXT")); },
+          "SAME.TXT differs between Disk1 and Disk2; they are not the disks of one release"));
+    }
+    // Files at the root beside DISK<n> folders; anything deeper; another folder.
+    {
+      test::ZipBuilder b;
+      b.password = "";
+      b.add("Disk1/A.TXT", blob("a"), true, false);
+      b.add("README.TXT", blob("readme"), true, false);
+      test::write_bytes(ds / L"mixed.zip", b.build());
+      CHECK(source_refused(
+          "a ZIP with files beside its disks", [&] { open_image(ds / L"mixed.zip"); },
+          "mixed.zip holds files at its root (README.TXT) beside DISK<n> folders (Disk1); a ZIP source "
+          "holds the install files at its root, or only DISK<n> folders"));
+      for (const char* deep : {"Disk1/SUB/B.TXT", "EXTRA/B.TXT", "Disk1/SUB/", "__MACOSX/Disk1/._A.TXT"}) {
+        test::ZipBuilder d;
+        d.password = "";
+        d.add("Disk1/A.TXT", blob("a"), true, false);
+        d.add(deep, {}, false, false);
+        test::write_bytes(ds / L"deep.zip", d.build());
+        CHECK(source_refused(
+            deep, [&] { open_image(ds / L"deep.zip"); },
+            "is not a bare file name or a file in a DISK<n> folder (a ZIP source holds the install "
+            "files at its root, or only DISK<n> folders)"));
+      }
+      test::ZipBuilder locked;
+      locked.add("Disk1/A.TXT", blob("a"));  // encrypted under the test password
+      test::write_bytes(ds / L"locked.zip", locked.build());
+      CHECK(source_refused(
+          "a password-protected member in a disk", [&] { open_image(ds / L"locked.zip"); },
+          "locked.zip!Disk1/A.TXT is password-protected"));
+    }
+    // A folder: the disks' folders merge, subfolders too.
+    {
+      test::write_tree(ds / L"folder" / L"DISK1",
+                       {{"A.TXT", blob("a")}, {"SUB/X.TXT", blob("x")}, {"SAME.TXT", blob("same")}});
+      test::write_tree(ds / L"folder" / L"disk2",
+                       {{"B.TXT", blob("b")}, {"SUB/Y.TXT", blob("y")}, {"SAME.TXT", blob("same")}});
+      std::string note;
+      auto f = open_folder(ds / L"folder", &note);
+      fprintf(stderr, "  note: %s\n", note.c_str());
+      CHECK(note.find("as the union of its folders DISK1 and DISK2 (one install disk each)") != std::string::npos);
+      CHECK_EQ(f->format(), std::string("folder"));
+      CHECK((names_at(*f) == std::vector<std::string>{"A.TXT", "B.TXT", "SAME.TXT", "SUB/"}));
+      CHECK((names_at(*f, "SUB") == std::vector<std::string>{"X.TXT", "Y.TXT"}));
+      CHECK(read_at(*f, "sub/y.txt") == blob("y"));
+      CHECK(!f->dir_key(f->root()).empty());
+    }
+    // A folder: a file in one disk and a folder in another; sizes; bytes.
+    {
+      test::write_tree(ds / L"clash" / L"DISK1", {{"X", blob("file")}});
+      test::write_tree(ds / L"clash" / L"DISK2", {{"X/Y.TXT", blob("y")}});
+      auto f = open_folder(ds / L"clash");
+      CHECK(source_refused(
+          "a file and a folder", [&] { f->list(f->root()); },
+          "X is a file in DISK1 and a folder in DISK2; they are not the disks of one release"));
+      test::write_tree(ds / L"clash2" / L"DISK1", {{"S.TXT", blob("s")}});
+      test::write_tree(ds / L"clash2" / L"DISK3", {{"S.TXT", blob("S")}});
+      auto g = open_folder(ds / L"clash2");
+      CHECK_EQ(names_at(*g).size(), size_t(1));
+      CHECK(source_refused(
+          "a folder's name with other bytes", [&] { g->read_all(*g->find("S.TXT")); },
+          "S.TXT differs between DISK1 and DISK3"));
+    }
+    // A folder that holds anything besides its DISK<n> folders is read as it
+    // is: the disks are ordinary folders then (and the note says why).
+    {
+      test::write_tree(ds / L"extra" / L"DISK1", {{"A.TXT", blob("a")}});
+      test::write_tree(ds / L"extra" / L"DISK2", {{"B.TXT", blob("b")}});
+      test::write_bytes(ds / L"extra" / L"After Dark - Something.zip", blob("the zip it came in"));
+      std::string note;
+      auto f = open_folder(ds / L"extra", &note);
+      fprintf(stderr, "  note: %s\n", note.c_str());
+      CHECK((names_at(*f) == std::vector<std::string>{"AFTER DARK - SOMETHING.ZIP", "DISK1/", "DISK2/"}));
+      CHECK(note.find("holds DISK1 and DISK2 beside other files or folders (AFTER DARK - SOMETHING.ZIP): reading it as "
+                      "it is") != std::string::npos);
+      test::write_tree(ds / L"extra-dir" / L"DISK1", {{"A.TXT", blob("a")}});
+      test::write_tree(ds / L"extra-dir" / L"EXTRAS", {{"B.TXT", blob("b")}});
+      CHECK((names_at(*open_folder(ds / L"extra-dir")) == std::vector<std::string>{"DISK1/", "EXTRAS/"}));
+      // Not disks: DISK0, DISK01, DISK 1 — the folder as it is, and nothing to say.
+      test::write_tree(ds / L"notdisks" / L"DISK0", {{"A.TXT", blob("a")}});
+      test::write_tree(ds / L"notdisks" / L"DISK01", {{"B.TXT", blob("b")}});
+      test::write_tree(ds / L"notdisks" / L"DISK 1", {{"C.TXT", blob("c")}});
+      note = "stale";
+      CHECK((names_at(*open_folder(ds / L"notdisks", &note)) ==
+             std::vector<std::string>{"DISK 1/", "DISK0/", "DISK01/"}));
+      CHECK(note.empty());
+    }
+    // An ISO and a FAT image whose root holds only DISK<n> folders read the same way.
+    {
+      test::IsoBuilder ib;
+      ib.volume_id = "DISKSETS";
+      ib.file("DISK1/A.TXT", blob("a"));
+      ib.file("DISK1/SUB/X.TXT", blob("x"));
+      ib.file("DISK2/B.TXT", blob("b"));
+      ib.file("DISK2/SUB/Y.TXT", blob("y"));
+      test::write_bytes(ds / L"disks.iso", ib.build());
+      std::string note;
+      auto iso = open_image(ds / L"disks.iso", &note);
+      CHECK_EQ(note,
+               std::string("reading disks.iso as the union of its folders DISK1 and DISK2 (one install disk each)"));
+      CHECK((names_at(*iso) == std::vector<std::string>{"A.TXT", "B.TXT", "SUB/"}));
+      CHECK(read_at(*iso, "SUB/X.TXT") == blob("x"));
+      CHECK_EQ(iso->volume_id(), std::string("DISKSETS"));
+      test::FatBuilder fb = test::FatBuilder::floppy144();
+      fb.file("DISK1/A.TXT", blob("a"));
+      fb.file("DISK2/B.TXT", blob("b"));
+      test::write_bytes(ds / L"disks.img", fb.build());
+      auto fat = open_image(ds / L"disks.img", &note);
+      CHECK_EQ(note,
+               std::string("reading disks.img as the union of its folders DISK1 and DISK2 (one install disk each)"));
+      CHECK((names_at(*fat) == std::vector<std::string>{"A.TXT", "B.TXT"}));
+      CHECK(read_at(*fat, "B.TXT") == blob("b"));
+    }
+  }
+
+  // ---- disk sets, imported ------------------------------------------------------------------
+  {
+    const fs::path ds = dir / L"disk-imports";
+    std::vector<std::string> logs;
+    auto opts = [&](const fs::path& assets) {
+      ImportOptions o = opts_for(assets);
+      logs.clear();
+      o.log = [&](const std::string& s) {
+        logs.push_back(s);
+        fprintf(stderr, "  log: %s\n", s.c_str());
+      };
+      return o;
+    };
+    auto logged = [&](const std::string& needle) {
+      return std::any_of(logs.begin(), logs.end(),
+                         [&](const std::string& l) { return l.find(needle) != std::string::npos; });
+    };
+    auto folder_source = [](const fs::path& p) {
+      Source s;
+      s.kind = Source::Kind::folder;
+      s.path = p;
+      return s;
+    };
+    auto image_source = [](const fs::path& p) {
+      Source s;
+      s.kind = Source::Kind::iso;
+      s.path = p;
+      return s;
+    };
+    // An AD 3.x install over two floppies: as a folder of DISK1 and DISK2, and
+    // as the ZIP of them (Disk1/, Disk2/). The owners' notes are never opened.
+    const test::PkgFixture simpsons = test::simpsons_fixture();
+    const auto sdisks = by_disk(simpsons.source, test::simpsons_disk);
+    CHECK_EQ(sdisks.size(), size_t(2));
+    write_disk_folders(ds / L"simpsons", sdisks);
+    {
+      HANDLE notes[2] = {CreateFileW((ds / L"simpsons" / L"DISK2" / L"SERIAL.TXT").c_str(), GENERIC_READ, 0, nullptr,
+                                     OPEN_EXISTING, 0, nullptr),
+                         CreateFileW((ds / L"simpsons" / L"DISK1" / L"CEREAL.TXT").c_str(), GENERIC_READ, 0, nullptr,
+                                     OPEN_EXISTING, 0, nullptr)};
+      CHECK(notes[0] != INVALID_HANDLE_VALUE && notes[1] != INVALID_HANDLE_VALUE);
+      ImportResult r = run_import(folder_source(ds / L"simpsons"), opts(ds / L"a-simpsons-folder"));
+      fprintf(stderr, "  simpsons DISK1 + DISK2 folders -> %s: %s\n", status_name(r.status), r.message.c_str());
+      CHECK_EQ(r.status, Status::ok);
+      CHECK_EQ(r.package_id, std::string("simpsons"));
+      CHECK_EQ(r.format, std::string("folder"));
+      CHECK(logged("as the union of its folders DISK1 and DISK2"));
+      check_package(ds / L"a-simpsons-folder" / L"win", simpsons, "packages/simpsons");
+      for (HANDLE h : notes) CloseHandle(h);
+    }
+    test::write_bytes(ds / L"simpsons.zip", zip_of_disks(sdisks));
+    {
+      ImportResult r = run_import(image_source(ds / L"simpsons.zip"), opts(ds / L"a-simpsons-zip"));
+      fprintf(stderr, "  simpsons Disk1/ + Disk2/ ZIP -> %s: %s\n", status_name(r.status), r.message.c_str());
+      CHECK_EQ(r.status, Status::ok);
+      CHECK_EQ(r.package_id, std::string("simpsons"));
+      CHECK_EQ(r.format, std::string("zip"));
+      check_package(ds / L"a-simpsons-zip" / L"win", simpsons, "packages/simpsons");
+      // The record names the files without their disk.
+      phosg::JSON j = phosg::JSON::parse(test::read_text(r.import_json));
+      std::set<std::string> from;
+      for (auto& f : j.at("files").as_list()) from.insert(f->get_string("from"));
+      CHECK(from.count("BURNS.ZIP!BURNS.AD") && from.count("ENGINE.ZIP!ADTASK.DLL"));
+    }
+    // One of the two disks alone: neither holds the whole installer (SETUP.PKG
+    // and MODMISC.ZIP are on disk 2, INSTALL.INS and ENGINE.ZIP on disk 1).
+    write_disk_folders(ds / L"simpsons-1", {{1, sdisks.at(1)}});
+    test::write_bytes(ds / L"simpsons-2.zip", zip_of_disks({{2, sdisks.at(2)}}));
+    for (const Source& s : {folder_source(ds / L"simpsons-1"), image_source(ds / L"simpsons-2.zip")}) {
+      ImportResult r = run_import(s, opts(ds / L"a-simpsons-alone"));
+      fprintf(stderr, "  simpsons, one disk alone -> %s: %s\n", status_name(r.status), r.message.c_str());
+      CHECK_EQ(r.status, Status::source_invalid);
+      CHECK(r.message.find("not a known release") != std::string::npos);
+      CHECK(!fs::exists(ds / L"a-simpsons-alone" / L"win" / L"packages" / L"simpsons"));
+    }
+    // The script on both disks: the same bytes are one file; other bytes are
+    // no release's disks (the recipe reads it).
+    {
+      auto d = sdisks;
+      d[2]["INSTALL.INS"] = d[1]["INSTALL.INS"];
+      write_disk_folders(ds / L"simpsons-dup", d);
+      CHECK_EQ(run_import(folder_source(ds / L"simpsons-dup"), opts(ds / L"a-simpsons-dup")).status, Status::ok);
+      d[2]["INSTALL.INS"].back() ^= 0x01;
+      test::write_bytes(ds / L"simpsons-clash.zip", zip_of_disks(d));
+      ImportResult r = run_import(image_source(ds / L"simpsons-clash.zip"), opts(ds / L"a-simpsons-clash"));
+      fprintf(stderr, "  INSTALL.INS differing -> %s: %s\n", status_name(r.status), r.message.c_str());
+      CHECK_EQ(r.status, Status::source_invalid);
+      CHECK(r.message.find("INSTALL.INS differs between Disk1 and Disk2; they are not the disks of one release") !=
+            std::string::npos);
+    }
+    // A folder holding something besides the disks is read as it is: no
+    // release at its root, and the log says why.
+    {
+      write_disk_folders(ds / L"simpsons-extra", sdisks);
+      test::write_bytes(ds / L"simpsons-extra" / L"After Dark - The Simpsons.zip", test::blob("the zip it came in"));
+      ImportResult r = run_import(folder_source(ds / L"simpsons-extra"), opts(ds / L"a-simpsons-extra"));
+      fprintf(stderr, "  DISK1 + DISK2 + a ZIP beside -> %s: %s\n", status_name(r.status), r.message.c_str());
+      CHECK_EQ(r.status, Status::source_invalid);
+      CHECK(r.message.find("not a known release") != std::string::npos);
+      CHECK(logged("holds DISK1 and DISK2 beside other files or folders"));
+    }
+    // A Microsoft Setup install over two floppies, as the ZIP of its disks.
+    {
+      const test::PkgFixture st = test::startrek_fixture();
+      test::write_bytes(ds / L"startrek.zip", zip_of_disks(by_disk(st.source, test::startrek_disk), "DISK"));
+      ImportResult r = run_import(image_source(ds / L"startrek.zip"), opts(ds / L"a-startrek"));
+      fprintf(stderr, "  startrek DISK1/ + DISK2/ ZIP -> %s: %s\n", status_name(r.status), r.message.c_str());
+      CHECK_EQ(r.status, Status::ok);
+      CHECK_EQ(r.package_id, std::string("startrek"));
+      check_package(ds / L"a-startrek" / L"win", st, "packages/startrek");
+    }
+    // A Presage install over five floppies, as a folder of DISK1..DISK5 (the
+    // ARJ volumes one per disk), given in any order on disk.
+    {
+      const test::PkgFixture sw = test::swse_fixture();
+      const auto disks = by_disk(sw.source, test::swse_disk);
+      CHECK_EQ(disks.size(), size_t(5));
+      write_disk_folders(ds / L"swse", disks, "Disk");
+      ImportResult r = run_import(folder_source(ds / L"swse"), opts(ds / L"a-swse"));
+      fprintf(stderr, "  swse Disk1..Disk5 folders -> %s: %s\n", status_name(r.status), r.message.c_str());
+      CHECK_EQ(r.status, Status::ok);
+      CHECK_EQ(r.package_id, std::string("swse"));
+      CHECK(logged("as the union of its folders DISK1, DISK2, DISK3, DISK4 and DISK5"));
+      check_package(ds / L"a-swse" / L"win", sw, "packages/swse");
+      // Disk 1 alone is that release without the rest of its disks; disks 2-5
+      // are no release at all.
+      write_disk_folders(ds / L"swse-1", {{1, disks.at(1)}});
+      r = run_import(folder_source(ds / L"swse-1"), opts(ds / L"a-swse-1"));
+      fprintf(stderr, "  swse DISK1 alone -> %s: %s\n", status_name(r.status), r.message.c_str());
+      CHECK_EQ(r.status, Status::source_invalid);
+      CHECK(r.message.find("missing SWSE2.ARJ, SWSE2.A01, SWSE2.A02, SWSE2.A03;") != std::string::npos);
+      CHECK(r.message.find("needs every install disk") != std::string::npos);
+      auto rest = disks;
+      rest.erase(1);
+      test::write_bytes(ds / L"swse-2345.zip", zip_of_disks(rest));
+      r = run_import(image_source(ds / L"swse-2345.zip"), opts(ds / L"a-swse-2345"));
+      fprintf(stderr, "  swse Disk2/..Disk5/ ZIP -> %s: %s\n", status_name(r.status), r.message.c_str());
+      CHECK_EQ(r.status, Status::source_invalid);
+      CHECK(r.message.find("not a known release") != std::string::npos);
+    }
+    // A plain CD tree split over two folders: the directories merge.
+    {
+      std::vector<test::FixtureFile> d1, d2;
+      for (const test::FixtureFile& f : fixture)
+        (f.iso_path.find("/AD40/") != std::string::npos || f.iso_path.find("/ENGINE/") != std::string::npos ? d1 : d2)
+            .push_back(f);
+      test::write_fixture_folder(ds / L"deluxe" / L"DISK1", d1, false);
+      test::write_fixture_folder(ds / L"deluxe" / L"DISK2", d2, false);
+      ImportResult r = run_import(folder_source(ds / L"deluxe"), opts(ds / L"a-deluxe"));
+      fprintf(stderr, "  deluxe tree over DISK1 + DISK2 -> %s: %s\n", status_name(r.status), r.message.c_str());
+      CHECK_EQ(r.status, Status::ok);
+      check_tree(r.files_dir, want);
+    }
   }
 
   // ---- the built-in manifest is well formed ----------------------------------

@@ -1,4 +1,4 @@
-// The six real package sources end to end (opt-in: AD_E2E_PKG=1; exit 77 =
+// The real package sources end to end (opt-in: AD_E2E_PKG=1; exit 77 =
 // skipped). PACKAGES.md §9.
 //
 //   test_import_pkg_real <adimport.exe> <scratch> [<image dir>]
@@ -8,16 +8,21 @@
 // directly in each (test_util.h image_dirs: <repo>/source_iso/Implemented
 // too); they are identified by size and md5, never by file name. Star Trek:
 // The Screen Saver's two install disks are two loose images, or the ZIP they
-// came in (test_util.h find_disk_set).
+// came in (test_util.h find_disk_set); Marvel Comics Screen Posters, Snoopy's
+// Screen Savers, the Looney Tunes, ScreamSavers and the Disney Collection are
+// the user's ZIPs of their install files, their known images.
 //   1. Each package's image(s) into a fresh root through adimport.exe: exit
 //      0, verified "image", nothing missing, every file matches the package
 //      manifest, the installed files are exactly the manifest (the §4 layout
-//      and counts), the invariants hold (the intermission and ad2kwaj
-//      recipes' own), and the catalog has 46 / 44 / 13 / 15 / 14 / 16 modules
-//      in the right lanes (swse: Intermission IMX entries with their registry
-//      names and one button; startrek: Classic entries with their fixed
-//      screen, trimmed names, the Planetary Atlas override and After Dark
-//      2.0's About rules).
+//      and counts), the invariants hold (the intermission, ad2kwaj and islib
+//      recipes' own), and the catalog has 46 / 44 / 13 / 15 / 14 / 16 / 1 /
+//      8 / 12 / 15 / 16 modules in the right lanes (swse: Intermission IMX
+//      entries with their registry names and one button; startrek: Classic
+//      entries with their fixed screen, trimmed names, the Planetary Atlas
+//      override and After Dark 2.0's About rules; marvel: its fixed screen
+//      and two buttons; snoopy: eight Classic entries, 27 controls; screams:
+//      the fixed screen; disney: its five names spelt out), and no owner's
+//      note is named.
 //   1b. The 10th Anniversary, Totally Twisted and Star Wars Screen
 //      Entertainment CDs mounted by Windows, imported --from the drive: the
 //      same files as from the image (skipped when mounting is refused, or for
@@ -35,11 +40,24 @@
 //      twice: the known disk set, verified "image", the files of step 1, and
 //      an import.json that is UTF-8 with the names decoded, also when the
 //      names differ only in a letter outside ASCII.
-//   2. All six plus Deluxe (imported --from the installed assets, which are
-//      only read: AD_ASSETS_DIR picks them, e.g.
+//   1f. The Looney Tunes' CD (LOONEY_T, known by md5, size and volume id),
+//      when an image folder holds it: verified "image", the ZIP's files.
+//   1g. Marvel Comics Screen Posters' and Snoopy's Screen Savers' baked
+//      tables against their disks, read from the user's ZIPs: each row's
+//      member is in its library with the manifest's size; every member the
+//      table leaves is one the recipe never installs; SETUP.PKG (parsed here,
+//      on its own) lists each library the table reads with exactly its
+//      members and sizes, the tag member in the tag library.
+//   1h. Their disks copied out of the user's ZIPs (the previous owners'
+//      notes skipped by name, never read): a flat folder, DISK1/DISK2
+//      folders and a flat ZIP verify "files" with the ZIP's files; disk 1
+//      alone needs every install disk (2); disk 2 alone is no release (2).
+//   2. Every package plus Deluxe (imported --from the installed assets, which
+//      are only read: AD_ASSETS_DIR picks them, e.g.
 //      <repo>/build/win-pkg-setup/assets, else the data folder's) in one root:
-//      232 modules, display names unique per lane, sameAs consistent, and
-//      every Deluxe entry's existing fields equal to the installed catalog's.
+//      284 modules (232 over the first seven), display names unique per lane,
+//      sameAs consistent (73), and every Deluxe entry's existing fields equal
+//      to the installed catalog's.
 //   3. Re-importing each package into that root changes nothing else.
 // Nothing is written outside <scratch>.
 #include <phosg/JSON.hh>
@@ -49,12 +67,14 @@
 #include <tuple>
 
 #include "importer.h"
+#include "isz.h"
 #include "kwaj.h"
 #include "md5.h"
 #include "names.h"
 #include "run_process.h"
 #include "source.h"
 #include "test_util.h"
+#include "zip.h"
 #include "zip_builder.h"
 
 using namespace adw::import;
@@ -88,7 +108,21 @@ const std::map<std::string, Expect> kExpect = {
     {"simpsons", {30, {{"SIMPSONS", 25}, {"ENGINE", 5}}, 15, 0}},
     {"swse", {29, {{"SAVER", 26}, {"ENGINE", 2}, {"WINDOWS", 1}}, 14, 0}},
     {"startrek", {27, {{"AFTERDRK", 25}, {"ENGINE", 2}}, 16, 0}},
+    {"marvel", {64, {{"AFTERDRK", 62}, {"ENGINE", 2}}, 1, 0}},
+    {"snoopy", {8, {{"AFTERDRK", 8}}, 8, 0}},
+    {"looney", {34, {{"LNYTUNES", 29}, {"ENGINE", 5}}, 12, 0}},
+    {"screams", {23, {{"SCREAMS", 18}, {"ENGINE", 5}}, 15, 0}},
+    {"disney", {31, {{"DISNEY", 26}, {"ENGINE", 5}}, 16, 0}},
 };
+// The catalog over every release with the Deluxe tree: 232 entries over the
+// first seven, 284 with Marvel Comics Screen Posters, Snoopy's Screen Savers,
+// the Looney Tunes, ScreamSavers and the Disney Collection; still 73 of them
+// the same bytes as an earlier entry.
+size_t combined_modules() {
+  size_t n = 84;
+  for (const auto& [id, e] : kExpect) n += e.modules;
+  return n;
+}
 
 Tree snapshot(const fs::path& dir, bool without_record = false) {
   Tree t;
@@ -141,8 +175,10 @@ void check_package_root(const fs::path& win, const Package& p) {
   CHECK_EQ(seen, e.files);
   CHECK(per_dir == e.per_dir);
   // §4.2: I1 and I3 (the importer checked all of them; these are cheap to
-  // re-check), the intermission and ad2kwaj recipes' own for their packages.
-  const bool imx = p.recipe == Recipe::intermission, ad2 = p.recipe == Recipe::ad2kwaj;
+  // re-check), the intermission, ad2kwaj and islib recipes' own for their
+  // packages.
+  const bool imx = p.recipe == Recipe::intermission, ad2 = p.recipe == Recipe::ad2kwaj,
+             isl = p.recipe == Recipe::islib;
   for (const char* dir : p.module_dirs) {
     if (std::string_view(dir) == "ENGINE") continue;
     for (const char* never : {"AD_SND.DLL", "OLDMOD16.DLL", "OLDMOD32.DLL", "ADTASK.DLL", "ADW30.EXE"})
@@ -158,6 +194,7 @@ void check_package_root(const fs::path& win, const Package& p) {
       // The sound database where After Dark 2.0's AD_MOD opens it.
       CHECK(fs::exists(root / to_wide(dir) / L"ST_RES" / L"ST_SND.DLL"));
     }
+    if (isl) CHECK(!fs::exists(root / to_wide(dir) / L"AD.EXE"));
   }
   if (imx) {
     CHECK(fs::exists(root / L"ENGINE" / L"IMIMXPLY.IMQ"));
@@ -167,6 +204,17 @@ void check_package_root(const fs::path& win, const Package& p) {
     CHECK(fs::exists(root / L"ENGINE" / L"AD_SND.DLL"));
     for (const char* n : {"OLDMOD16.DLL", "ADTASK.DLL", "AFTERDAR.SCR"}) CHECK(!fs::exists(root / L"ENGINE" / to_wide(n)));
     CHECK(!fs::exists(root / L"WINDOWS"));  // the lane's seeds are its settings
+  } else if (isl) {
+    // Marvel's AD_SND 1.0 and pristine AD.EXE in ENGINE; Snoopy's Screen
+    // Savers ship no engine at all; neither has a WINDOWS folder.
+    if (std::string_view(p.id) == "marvel") {
+      CHECK(fs::exists(root / L"ENGINE" / L"AD_SND.DLL") && fs::exists(root / L"ENGINE" / L"AD.EXE"));
+      for (const char* n : {"OLDMOD16.DLL", "ADTASK.DLL", "AFTERDAR.SCR"})
+        CHECK(!fs::exists(root / L"ENGINE" / to_wide(n)));
+    } else {
+      CHECK(!fs::exists(root / L"ENGINE"));
+    }
+    CHECK(!fs::exists(root / L"WINDOWS"));
   } else {
     CHECK(fs::exists(root / L"ENGINE" / L"AD_SND.DLL"));
     CHECK((fs::exists(root / L"ENGINE" / L"OLDMOD16.DLL") && fs::exists(root / L"ENGINE" / L"AFTERDAR.SCR")) ||
@@ -175,6 +223,16 @@ void check_package_root(const fs::path& win, const Package& p) {
   std::string text = test::read_text(root / L"import.json");
   CHECK(text.find("SERIAL") == std::string::npos && text.find("CEREAL") == std::string::npos);
   CHECK(text.find("README.TXT") == std::string::npos && text.find("WING.DL_") == std::string::npos);
+  // The owners' notes in the Looney Tunes', ScreamSavers', the Disney
+  // Collection's, Marvel Comics Screen Posters' and Snoopy's Screen Savers'
+  // copies, the archive the Disney Collection never opens, and what the
+  // islib recipe never reads (the installers' scripts, the libraries its
+  // table does not read, a disk copier's leftovers).
+  const std::string upper = ascii_upper(text);
+  for (const char* never : {"_SN.TXT", "REG'D", "DIZNY", "BEAUTYOL", "SERIAL", "REG#", "ADNEWS", "INSTALL.INS",
+                            "SETUP.INS", "WINSYS", "~INS0762", "CMOS.RAM", "DREAM.ON", "TXTSCR", "AD_CHANGES",
+                            "AD_MODS.LIS"})
+    CHECK(upper.find(never) == std::string::npos);
   if (ad2)  // what After Dark 2.0's installer copied that the recipe never reads
     for (const char* never : {"AD_PREFS", "AD_MPT", "SPALETTE", "AD_LIB", "AD_SB", "ST_NSTLL", "AD_MESG", "SETUP.EXE"})
       CHECK(text.find(never) == std::string::npos);
@@ -182,7 +240,8 @@ void check_package_root(const fs::path& win, const Package& p) {
 
 void check_catalog_of(const phosg::JSON& cat, const Package& p) {
   const Expect& e = kExpect.at(p.id);
-  const bool imx = p.recipe == Recipe::intermission, ad2 = p.recipe == Recipe::ad2kwaj;
+  const bool imx = p.recipe == Recipe::intermission, ad2 = p.recipe == Recipe::ad2kwaj,
+             isl = p.recipe == Recipe::islib;
   size_t n = 0, pe = 0, controls = 0;
   for (auto& m : cat.at("modules").as_list()) {
     if (m->get_string("package") != p.id) continue;
@@ -191,7 +250,61 @@ void check_catalog_of(const phosg::JSON& cat, const Package& p) {
     CHECK(m->get_string("id").rfind(std::string(p.id) + ".", 0) == 0);
     CHECK(m->get_string("path").rfind(std::string(p.root) + "/", 0) == 0);
     CHECK_EQ(m->contains("abi"), imx);
-    CHECK_EQ(m->contains("screen"), ad2);
+    CHECK_EQ(m->contains("screen"), p.screen != nullptr);  // startrek and screams
+    if (p.screen) CHECK_EQ(m->get_string("screen"), std::string(p.screen));
+    if (p.recipe == Recipe::ad3zip && std::string_view(p.id) != "ad32" && std::string_view(p.id) != "tt" &&
+        std::string_view(p.id) != "simpsons") {
+      // The Looney Tunes, ScreamSavers and the Disney Collection: Classic
+      // entries, their names trimmed (the Disney Collection's name resources
+      // start with two spaces) and the Disney Collection's five squeezed
+      // names spelt out; no file is another release's.
+      CHECK_EQ(m->get_string("lane"), std::string("ne16"));
+      CHECK_EQ(m->get_string("entry"), std::string("MODULE"));
+      CHECK(!m->contains("sameAs"));
+      const std::string name = m->get_string("moduleName"), id = m->get_string("id");
+      CHECK(!name.empty() && name.front() != ' ' && name.back() != ' ');
+      static const std::map<std::string, std::string> spelt = {
+          {"disney.dalm", "101 Dalmatians"},    {"disney.dsclocks", "Disney Clocks"}, {"disney.falling", "Falling Flower"},
+          {"disney.firewrk", "Magic Kingdom"},  {"disney.mermaid", "Little Mermaid"}, {"looney.ltmessgs", "Messages"},
+          {"looney.frog", "Michigan J. Frog"},  {"screams.twister", "Spin Out"}};
+      if (auto it = spelt.find(id); it != spelt.end()) CHECK_EQ(name, it->second);
+      const auto& needs = m->at("needs").as_list();
+      const std::string p_id = p.id;
+      if (p_id == "disney") CHECK_EQ(needs.size(), size_t(2));  // ADXPL100, AD_RSRC
+      if (p_id == "looney") CHECK(needs.size() == 1 && needs[0]->as_string() == "ADXPL41");
+      if (p_id == "screams") CHECK(needs.size() == 1 && needs[0]->as_string() == "AD_SND");
+    }
+    if (isl) {
+      // Classic entries, no file another release's; Marvel's at its fixed
+      // screen with its two buttons, needing its decoder; Snoopy's for any
+      // screen, six of them needing AD_SND, no buttons.
+      CHECK_EQ(m->get_string("lane"), std::string("ne16"));
+      CHECK_EQ(m->get_string("entry"), std::string("MODULE"));
+      CHECK(!m->contains("sameAs"));
+      const std::string id = m->get_string("id"), name = m->get_string("displayName");
+      CHECK(name == m->get_string("moduleName"));
+      const auto& needs = m->at("needs").as_list();
+      const auto& ctl = m->at("controls").as_list();
+      controls += ctl.size();
+      if (id == "marvel.marvel") {
+        CHECK_EQ(name, std::string("Marvel Comics"));
+        CHECK(needs.size() == 1 && needs[0]->as_string() == "DECO");
+        CHECK(ctl.size() == 4 && ctl[0]->get_string("type") == "button" && ctl[0]->get_string("name") == "Saver.." &&
+              ctl[1]->get_string("type") == "button" && ctl[1]->get_string("name") == "Posters...");
+      } else {
+        static const std::map<std::string, std::string> names = {
+            {"snoopy.is_colag", "Collage"},      {"snoopy.is_dance", "Dance"},          {"snoopy.is_faces", "Faces"},
+            {"snoopy.is_fly", "Flying Ace"},     {"snoopy.is_linus", "Linus & Snoopy"}, {"snoopy.is_litry", "Literary Ace"},
+            {"snoopy.is_sptlt", "Spotlights"},   {"snoopy.is_thrpy", "Therapy"}};
+        auto it = names.find(id);
+        CHECK(it != names.end() && it->second == name);
+        const bool silent = id == "snoopy.is_colag" || id == "snoopy.is_sptlt";
+        CHECK_EQ(needs.size(), size_t(silent ? 0 : 1));
+        if (!silent && needs.size() == 1) CHECK_EQ(needs[0]->as_string(), std::string("AD_SND"));
+        for (auto& c : ctl) CHECK(c->get_string("type") != "button");
+      }
+      continue;
+    }
     if (ad2) {
       // After Dark 2.0 modules: Classic entries with the release's fixed
       // 640x480 screen; the names trimmed (15 had a leading space),
@@ -250,6 +363,7 @@ void check_catalog_of(const phosg::JSON& cat, const Package& p) {
   CHECK_EQ(n, e.modules);
   CHECK_EQ(pe, e.pe32);
   if (ad2) CHECK_EQ(controls, size_t(40));
+  if (isl && std::string_view(p.id) == "snoopy") CHECK_EQ(controls, size_t(27));
 }
 
 // Star Wars Screen Entertainment's installer script, read from its image,
@@ -531,12 +645,211 @@ void check_cp437_zips(const std::wstring& exe, const fs::path& scratch, const st
   }
 }
 
+// InstallShield's package list SETUP.PKG, parsed here on its own (the format
+// survey's tools/setuppkg.py layout): each library's logical name with its
+// members' names and sizes, in order. Throws std::runtime_error when it does
+// not add up.
+std::vector<std::pair<std::string, std::vector<std::pair<std::string, uint32_t>>>> parse_package_list(
+    const std::vector<uint8_t>& d) {
+  size_t p = 0;
+  auto need = [&](size_t n) {
+    if (d.size() - p < n) throw std::runtime_error("SETUP.PKG ends early");
+  };
+  auto u8 = [&] {
+    need(1);
+    return uint32_t(d[p++]);
+  };
+  auto u16 = [&] {
+    need(2);
+    p += 2;
+    return uint32_t(d[p - 2] | d[p - 1] << 8);
+  };
+  auto u32 = [&] {
+    const uint32_t lo = u16();
+    return lo | u16() << 16;
+  };
+  auto text = [&](size_t n) {
+    need(n);
+    p += n;
+    return std::string(d.begin() + ptrdiff_t(p - n), d.begin() + ptrdiff_t(p));
+  };
+  if (u16() != 0xA34A) throw std::runtime_error("SETUP.PKG: no magic");
+  const uint32_t table = u32();
+  u32();
+  std::map<uint32_t, std::vector<std::pair<std::string, uint32_t>>> groups;
+  while (p < table) {
+    const uint32_t at = uint32_t(p), size = u32(), end = uint32_t(p) + size;
+    std::vector<std::pair<std::string, uint32_t>> files;
+    for (uint32_t dirs = u16(); dirs; dirs--) {
+      text(u16());
+      if (u8()) throw std::runtime_error("SETUP.PKG: a directory name without its NUL");
+      for (uint32_t n = u16(); n; n--) {
+        u16();
+        const uint32_t usize = u32();
+        std::string name = text(u8());
+        if (u8()) throw std::runtime_error("SETUP.PKG: a file name without its NUL");
+        files.push_back({name, usize});
+      }
+    }
+    if (p != end) throw std::runtime_error("SETUP.PKG: a group of another size");
+    groups[at] = files;
+  }
+  std::vector<std::pair<std::string, std::vector<std::pair<std::string, uint32_t>>>> out;
+  while (p < d.size()) {
+    u16();
+    u16();
+    for (uint32_t n = u16(); n; n--) {
+      std::string name = text(u16());
+      u16();
+      const uint32_t group = u32();
+      if (!groups.count(group)) throw std::runtime_error("SETUP.PKG: a library pointing at no group");
+      out.push_back({name, groups[group]});
+    }
+  }
+  return out;
+}
+
+// What Marvel Comics Screen Posters' libraries hold besides the table's
+// members, which the recipe never installs: the rest of engine.lib (the
+// drivers, AD_LIB, ADINIT, the manual and readme texts) and of win.lib (the
+// help file, the DOS wrapper, the PC-speaker palette library, the disk's
+// AD_PREFS.INI).
+const std::set<std::string> kIslibNeverInstalled = {"ADINIT.EXE",   "AD_LIB.DLL",  "MRVLREAD.TXT", "MARVEL.TXT",
+                                                    "AD_MPT.DRV",   "AD_SB.DRV",   "AD_MME.DRV",   "MRVL.WRI",
+                                                    "EDITFILE.TXT", "MARVELAD.TXT", "AD.HLP",      "AD_WRAP.COM",
+                                                    "SPALETTE.DLL", "AD_PREFS.INI"};
+
+// The previous owners' notes in the user's Marvel and Snoopy ZIPs: never
+// extracted, read or hashed (only their names, to skip them).
+const std::set<std::string> kIslibNotes = {"SERIAL#.DOC", "REG#.TXT", "SERIAL.NFO", "ADNEWS.TXT"};
+
+// 1g. The islib packages' tables against their disks (the user's ZIP, read
+// as the union of its disk folders): every row's member is in its library
+// with the manifest's size; every member the table leaves is one the recipe
+// never installs; SETUP.PKG lists each library the table reads with exactly
+// its members and sizes, and the tag member in the tag library.
+void check_islib_tables(const std::string& id, const fs::path& zip) {
+  const Package& p = *find_package(id);
+  auto src = open_image(zip);
+  auto pkg_node = src->find("SETUP.PKG");
+  CHECK(pkg_node.has_value());
+  if (!pkg_node) return;
+  const auto list = parse_package_list(src->read_all(*pkg_node, 64 * 1024));
+  std::map<std::string, uint64_t> manifest;
+  for (const KnownFile& k : p.manifest) manifest[k.path] = k.size;
+  std::map<std::string, std::unique_ptr<IszLibrary>> libs;
+  std::set<std::string> taken;  // library!member
+  for (const LibraryMember& row : p.library_members) {
+    auto& lib = libs[row.library];
+    if (!lib) {
+      std::vector<IszVolume> volumes;
+      for (unsigned k = 1;; k++) {
+        const std::string name = k == 1 ? std::string(row.library) : isz_volume_name(row.library, k).value_or("");
+        auto node = name.empty() ? std::nullopt : src->find(name);
+        if (!node) break;
+        volumes.push_back({name, std::make_shared<const std::vector<uint8_t>>(src->read_all(*node))});
+        const IszHeader h = isz_header(*volumes.front().data, volumes.front().name);
+        if (!h.split || k >= h.volumes) break;
+      }
+      lib = std::make_unique<IszLibrary>(std::move(volumes));
+      fprintf(stderr, "  %s: %s, %zu members over %zu volume(s)\n", id.c_str(), row.library, lib->members().size(),
+              lib->volumes().size());
+    }
+    const IszMember* m = lib->find(row.member);
+    CHECK(m != nullptr);
+    if (!m) continue;
+    CHECK_EQ(uint64_t(m->size), manifest[std::string(p.root) + "/" + row.to]);
+    taken.insert(std::string(row.library) + "!" + ascii_upper(m->name));
+  }
+  for (const auto& [name, lib] : libs) {
+    for (const IszMember& m : lib->members())
+      if (!taken.count(name + "!" + ascii_upper(m.name)) && !kIslibNeverInstalled.count(ascii_upper(m.name))) {
+        test::g_failures++;
+        fprintf(stderr, "  %s!%s: neither in the table nor listed as never installed\n", name.c_str(), m.name.c_str());
+      }
+    // The package list's entry for this library: the same members, sizes and order.
+    std::vector<std::pair<std::string, uint32_t>> members;
+    for (const IszMember& m : lib->members()) members.push_back({m.name, m.size});
+    bool listed = false;
+    for (const auto& [logical, files] : list) listed = listed || files == members;
+    CHECK(listed);
+  }
+  bool tag = false;
+  for (const auto& [logical, files] : list)
+    if (iequals(logical, p.tag_library))
+      for (const auto& [name, size] : files) tag = tag || iequals(name, p.tag_member);
+  CHECK(tag);
+  fprintf(stderr, "  %s: SETUP.PKG lists %zu libraries; the table's %zu rows checked\n", id.c_str(), list.size(),
+          p.library_members.size());
+}
+
+// 1h. The islib packages' disks copied out of the user's ZIP (every file but
+// the previous owners' notes, which are skipped by name and never read) as a
+// flat folder, DISK1/DISK2 folders and a flat ZIP (verified "files", the
+// ZIP's files), and each disk alone (disk 1: every install disk is needed;
+// disk 2: no release).
+void check_islib_forms(const std::wstring& exe, const fs::path& scratch, const std::string& id, const fs::path& zip) {
+  const Package& p = *find_package(id);
+  auto bytes = std::make_shared<std::vector<uint8_t>>(test::read_bytes(zip));
+  ZipArchive z(bytes, to_utf8(zip.filename().wstring()), ZipNames::disk_folders);
+  std::map<int, Tree> disks;
+  Tree flat;
+  for (const ZipMember& m : z.members()) {
+    if (m.directory) continue;
+    const std::string name = m.file_name();
+    if (kIslibNotes.count(ascii_upper(name))) continue;  // never extracted
+    std::vector<uint8_t> data;
+    z.extract(m, "", [&](const uint8_t* d, size_t n) { data.insert(data.end(), d, d + n); });
+    disks[int(m.disk)][name] = data;
+    flat[name] = data;
+  }
+  CHECK_EQ(disks.size(), size_t(2));
+  const fs::path base = scratch / to_wide("forms-" + id);
+  for (const auto& [rel, d] : flat) test::write_bytes(base / L"flat" / to_wide(rel), d);
+  for (const auto& [n, files] : disks)
+    for (const auto& [rel, d] : files) {
+      test::write_bytes(base / L"disks" / (L"DISK" + std::to_wstring(n)) / to_wide(rel), d);
+      test::write_bytes(base / (L"disk" + std::to_wstring(n)) / to_wide(rel), d);
+    }
+  test::ZipBuilder zb;
+  zb.password = "";
+  for (const auto& [rel, d] : flat) zb.add(rel, d, /*deflate=*/true, /*encrypt=*/false);
+  test::write_bytes(base / L"flat.zip", zb.build());
+  const Tree want = snapshot(scratch / to_wide("alone-" + id) / L"win" / L"packages" / to_wide(id), true);
+  for (const auto& [what, args] : std::vector<std::pair<std::string, std::vector<std::wstring>>>{
+           {"a flat folder", {L"--from", (base / L"flat").wstring()}},
+           {"DISK1/DISK2 folders", {L"--from", (base / L"disks").wstring()}},
+           {"a flat ZIP", {L"--image", (base / L"flat.zip").wstring()}}}) {
+    const fs::path root = base / to_wide("root-" + what.substr(what.find(' ') + 1));
+    std::vector<std::wstring> a = {L"--no-cover-download"};
+    a.insert(a.end(), args.begin(), args.end());
+    a.insert(a.end(), {L"--dest", root.wstring()});
+    const int code = adimport(exe, a, (std::string(p.title) + " as " + what).c_str());
+    CHECK_EQ(code, 0);
+    if (code) continue;
+    const fs::path pkg = root / L"win" / L"packages" / to_wide(id);
+    phosg::JSON j = load(pkg / L"import.json");
+    CHECK_EQ(j.get_string("verified"), std::string("files"));
+    CHECK(j.at("missingKnown").as_list().empty());
+    CHECK(snapshot(pkg, true) == want);
+  }
+  const int d1 = adimport(exe, {L"--no-cover-download", L"--from", (base / L"disk1").wstring(), L"--dest",
+                                (base / L"root-disk1").wstring()},
+                          (std::string(p.title) + ", disk 1 alone").c_str());
+  CHECK_EQ(d1, 2);
+  const int d2 = adimport(exe, {L"--no-cover-download", L"--from", (base / L"disk2").wstring(), L"--dest",
+                                (base / L"root-disk2").wstring()},
+                          (std::string(p.title) + ", disk 2 alone").c_str());
+  CHECK_EQ(d2, 2);
+  CHECK(!fs::exists(base / L"root-disk1" / L"win" / L"packages" / to_wide(id)));
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
   const char* on = getenv("AD_E2E_PKG");
   if (!on || std::string(on) != "1") {
-    fprintf(stderr, "import.pkg_real: skipped (set AD_E2E_PKG=1 to import the six real package sources)\n");
+    fprintf(stderr, "import.pkg_real: skipped (set AD_E2E_PKG=1 to import the real package sources)\n");
     return 77;
   }
   if (argc < 3) {
@@ -580,10 +893,11 @@ int main(int argc, char** argv) {
     fprintf(stderr, "%-9s %s\n", p.id, where.empty() ? "(image not found)" : where.c_str());
     if (where.empty()) images_of.erase(p.id);
   }
-  if (images_of.size() != 6) {
+  const size_t sources = builtin_packages().size() - 1;  // every package but Deluxe (from the installed assets)
+  if (images_of.size() != sources) {
     std::string where;
     for (const fs::path& d : dirs) where += (where.empty() ? "" : "; ") + to_utf8(d.wstring());
-    fprintf(stderr, "SKIP: needs all six package sources in %s\n", where.c_str());
+    fprintf(stderr, "SKIP: needs all %zu package sources in %s\n", sources, where.c_str());
     return 77;
   }
   // "--image <each image>" for a package.
@@ -673,7 +987,59 @@ int main(int argc, char** argv) {
   // ---- 1e. Star Trek: The Screen Saver's disks in a ZIP under code page 437 names ---------------
   check_cp437_zips(exe, scratch, images_of["startrek"]);
 
-  // ---- 2. all six in one root ------------------------------------------------------------------
+  // ---- 1f. the releases known by a ZIP, and the Looney Tunes' CD ---------------------------------
+  // The user's ZIPs of the Looney Tunes, ScreamSavers and the Disney
+  // Collection are their known images (step 1 imported them: verified
+  // "image"). The Looney Tunes' CD (LOONEY_T), when one of the image folders
+  // holds it, is its other known image: the same files.
+  for (const char* id : {"looney", "screams", "disney"}) {
+    const Package& p = *find_package(id);
+    CHECK(images_of[id].size() == 1 && md5_file_hex(images_of[id].front()) == p.images[0].md5);
+    const fs::path record = scratch / (L"alone-" + to_wide(id)) / L"win" / L"packages" / to_wide(id) / L"import.json";
+    if (fs::exists(record)) {
+      phosg::JSON j = load(record);
+      CHECK_EQ(j.at("source").get_string("format"), std::string("zip"));
+      CHECK_EQ(j.at("source").get_string("imageMd5"), std::string(p.images[0].md5));
+    }
+  }
+  {
+    const Package& lt = *find_package("looney");
+    const fs::path cd = lt.images.size() > 1 ? test::find_image(dirs, lt.images[1].size, lt.images[1].md5) : fs::path();
+    if (cd.empty()) {
+      fprintf(stderr, "---- the Looney Tunes' CD: not in the image folders; step skipped\n");
+    } else {
+      const fs::path root = scratch / L"looney-cd";
+      CHECK_EQ(adimport(exe, {L"--no-cover-download", L"--image", cd.wstring(), L"--dest", root.wstring()},
+                        "the Looney Tunes' CD (LOONEY_T)"),
+               0);
+      const fs::path pkg = root / L"win" / L"packages" / L"looney";
+      if (fs::exists(pkg / L"import.json")) {
+        phosg::JSON j = load(pkg / L"import.json");
+        CHECK_EQ(j.get_string("verified"), std::string("image"));
+        CHECK_EQ(j.at("source").get_string("volumeId"), std::string("LOONEY_T"));
+        CHECK(snapshot(pkg, true) == snapshot(scratch / L"alone-looney" / L"win" / L"packages" / L"looney", true));
+      }
+    }
+  }
+
+  // ---- 1g, 1h. the islib packages: their tables against their disks, and every form -----------------
+  for (const char* id : {"marvel", "snoopy"}) {
+    const Package& p = *find_package(id);
+    const fs::path zip = images_of[id].front();
+    // The user's ZIP is one of the package's known images (step 1: verified "image").
+    bool known = false;
+    for (const KnownImage& k : p.images) known = known || md5_file_hex(zip) == k.md5;
+    CHECK(known);
+    try {
+      check_islib_tables(id, zip);
+      check_islib_forms(exe, scratch, id, zip);
+    } catch (const std::exception& e) {
+      test::g_failures++;
+      fprintf(stderr, "  %s: %s\n", id, e.what());
+    }
+  }
+
+  // ---- 2. every package in one root ------------------------------------------------------------
   fs::path installed = installed_root.empty() ? fs::path() : win_assets_dir(installed_root);
   if (installed.empty() || !fs::is_directory(installed / L"FILES" / L"AD40") ||
       !fs::exists(installed / L"catalog-win.json")) {
@@ -686,29 +1052,45 @@ int main(int argc, char** argv) {
   CHECK_EQ(adimport(exe, {L"--no-cover-download", L"--from", installed.wstring(), L"--dest", all.wstring()},
                     "Deluxe from the installed assets"),
            0);
-  for (const char* id : {"simpsons", "startrek", "tt", "ad32", "swse", "ad10"})
-    CHECK_EQ(adimport(exe, with(with({L"--no-cover-download"}, image_args(id)), {L"--dest", all.wstring(), L"--quiet"}),
-                      id),
-             0);
+  // Every other package, out of registry order on purpose.
+  const auto reg = builtin_packages();
+  for (size_t i = reg.size(); i-- > 0;)
+    if (!reg[i].is_deluxe())
+      CHECK_EQ(adimport(exe,
+                        with(with({L"--no-cover-download"}, image_args(reg[i].id)), {L"--dest", all.wstring(), L"--quiet"}),
+                        reg[i].id),
+               0);
   fs::path win = all / L"win";
   phosg::JSON cat = load(win / L"catalog-win.json");
   const auto& mods = cat.at("modules").as_list();
   fprintf(stderr, "combined catalog: %zu modules\n", mods.size());
-  CHECK_EQ(mods.size(), size_t(232));
-  CHECK_EQ(cat.at("packages").as_list().size(), size_t(7));
+  CHECK_EQ(mods.size(), combined_modules());
+  CHECK_EQ(cat.at("packages").as_list().size(), reg.size());
   for (const Package& p : builtin_packages())
     if (!p.is_deluxe()) {
       check_package_root(win, p);
       check_catalog_of(cat, p);
     }
   // The packages list: oldest release first (Star Trek: The Screen Saver,
-  // 1992-11); swse ties with the Simpsons (1994-08) and follows it, as in the
-  // registry.
+  // 1992-11, then Marvel Comics Screen Posters, 1993-12); swse ties with the
+  // Simpsons (1994-08) and follows it, as in the registry, and Snoopy's
+  // Screen Savers (1994-10) follow them; ScreamSavers ties with the Looney
+  // Tunes (1995-04) the same way; the Disney Collection (1995-09) comes after
+  // Totally Twisted.
   {
     std::vector<std::string> order;
     for (auto& pk : cat.at("packages").as_list()) order.push_back(pk->get_string("id"));
-    CHECK((order == std::vector<std::string>{"startrek", "simpsons", "swse", "ad32", "tt", "deluxe", "ad10"}));
+    CHECK((order == std::vector<std::string>{"startrek", "marvel", "simpsons", "swse", "snoopy", "looney", "screams",
+                                             "ad32", "tt", "disney", "deluxe", "ad10"}));
   }
+  // The Looney Tunes' Messages comes after 3.2's: it is told apart by its
+  // short title.
+  if (const phosg::JSON* m = [&]() -> const phosg::JSON* {
+        for (auto& x : mods)
+          if (x->get_string("id") == "looney.ltmessgs") return x.get();
+        return nullptr;
+      }())
+    CHECK_EQ(m->get_string("displayName"), std::string("Messages (Looney Tunes)"));
   // Display names unique per lane; sameAs names an earlier entry with the same md5.
   std::set<std::string> names;
   std::map<std::string, std::string> md5_of;
@@ -759,15 +1141,17 @@ int main(int argc, char** argv) {
       if (rel.rfind("packages/" + id + "/", 0) != 0 && rel != "catalog-win.json") t[rel] = d;
     return t;
   };
-  for (const char* id : {"ad10", "ad32", "tt", "simpsons", "swse", "startrek"}) {
+  for (const Package& p : builtin_packages()) {
+    if (p.is_deluxe()) continue;
+    const std::string id = p.id;
     Tree others = everything_but(id);
     Tree mine = snapshot(win / L"packages" / to_wide(id), true);
     CHECK_EQ(adimport(exe, with(with({L"--no-cover-download"}, image_args(id)), {L"--dest", all.wstring(), L"--quiet"}),
-                      (std::string("re-import ") + id).c_str()),
+                      ("re-import " + id).c_str()),
              0);
     CHECK(everything_but(id) == others);
     CHECK(snapshot(win / L"packages" / to_wide(id), true) == mine);
   }
-  CHECK_EQ(load(win / L"catalog-win.json").at("modules").as_list().size(), size_t(232));
+  CHECK_EQ(load(win / L"catalog-win.json").at("modules").as_list().size(), combined_modules());
   return test::finish("import.pkg_real");
 }

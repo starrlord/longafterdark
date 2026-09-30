@@ -55,6 +55,13 @@ class SourcesPage : public Page {
   std::vector<std::string> cover_ids;         // get_covers: the releases with no cover picture yet
   // A caution under the cards ("That is not a disc Long After Dark knows…").
   void show_caution(const std::wstring& text);
+  // The installed list as last laid out, in px (the screenshot hook's
+  // report): the height that shows, the whole list's, and a row's; all 0 when
+  // nothing is installed.
+  struct ListHeights {
+    int shown = 0, whole = 0, row = 0;
+  };
+  ListHeights list_heights() const { return list_heights_; }
 
  protected:
   std::wstring header_tagline() const override { return L"From your discs or the Internet Archive"; }
@@ -77,6 +84,7 @@ class SourcesPage : public Page {
   std::vector<HWND> row_title_, row_detail_, row_link_;
   RECT list_card_{};
   int row_h_ = 0;
+  ListHeights list_heights_;
 };
 
 // ---- Downloads ------------------------------------------------------------------------
@@ -152,7 +160,6 @@ class ProgressPage : public Page {
   std::mutex m_;
   Progress progress_;
   bool have_progress_ = false;
-  std::string last_log_;
   size_t step_ = 0;
   std::atomic<bool> cancel_{false}, finished_{false};
   std::vector<ImportResult> results_;

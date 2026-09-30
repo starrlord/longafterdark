@@ -1,10 +1,11 @@
 # adw_import + adimport.exe — the Windows asset importer (DESIGN.md §6,
-# PACKAGES.md) and the catalog generator (§6a), for the seven releases of its
+# PACKAGES.md) and the catalog generator (§6a), for the twelve releases of its
 # registry (packages.h). The library depends on Win32 (WinHTTP, CNG, shell),
 # on adw_loader, whose PE/NE readers the catalog uses, and on zlib (raw
 # inflate for the AD 3.x installers' PKZIP archives, CRC-32 for them and for
 # Presage's ARJ archives); its own readers expand the ARJ, SZDD and KWAJ files
-# of the floppy-based installers. phosg is used by the tests alone, to parse
+# and the InstallShield 2 compressed libraries (PKWARE DCL implode) of the
+# floppy-based installers. phosg is used by the tests alone, to parse
 # import.json and the catalog independently of the code writing them.
 enable_language(RC)
 
@@ -27,6 +28,7 @@ add_library(adw_import STATIC
   arj.cc
   szdd.cc
   kwaj.cc
+  isz.cc
   source.cc
   packages.cc
   download.cc
@@ -72,8 +74,9 @@ target_link_libraries(adimport PRIVATE adw_import adw_import_gui)
 # only runs with AD_E2E=1, import.download_real, which fetches every
 # package's Internet Archive copy (or reuses a verified local copy) and also
 # only runs with AD_E2E=1, import.covers_real, which fetches every registry
-# cover (AD_E2E=1), and import.pkg_real, which imports the five real package
-# images and only runs with AD_E2E_PKG=1 (exit 77 = skipped otherwise).
+# cover (AD_E2E=1), and import.pkg_real, which imports the real sources of the
+# eleven packages besides Deluxe and only runs with AD_E2E_PKG=1 (exit 77 =
+# skipped otherwise).
 function(adw_import_test name)
   add_executable(test_import_${name} tests/test_${name}.cc)
   # test_util.h finds the installed data read-only and sandboxes the data
@@ -93,6 +96,7 @@ adw_import_test(zip)
 adw_import_test(arj)
 adw_import_test(szdd)
 adw_import_test(kwaj)
+adw_import_test(isz)
 adw_import_test(fat)
 adw_import_test(packages)
 adw_import_test(pkg_real)
@@ -116,6 +120,17 @@ add_test(NAME import.zip COMMAND test_import_zip ${_scratch}/zip)
 add_test(NAME import.arj COMMAND test_import_arj ${_scratch}/arj)
 add_test(NAME import.szdd COMMAND test_import_szdd ${_scratch}/szdd)
 add_test(NAME import.kwaj COMMAND test_import_kwaj ${_scratch}/kwaj)
+# InstallShield 2 compressed libraries and PKWARE DCL explode (Marvel Comics
+# Screen Posters, Snoopy's Screen Savers): InstallShield's own ICOMP vectors
+# of made-up data, streams and split sets written token by token, every
+# container rule broken, every single-bit flip of the small vectors.
+add_test(NAME import.isz COMMAND test_import_isz ${_scratch}/isz)
+# The same reader on the libraries of the user's Marvel and Snoopy ZIPs (found
+# by md5 in AD_SOURCE_ISO_DIR or <repo>/source_iso, read as DISK<n> sources),
+# every member against the InstallShield survey's md5s: skipped (77) unless
+# AD_E2E_PKG=1 and one of them is present.
+add_test(NAME import.isz_real COMMAND test_import_isz real ${_scratch}/isz-real ${AD_REPO_ROOT}/source_iso)
+set_tests_properties(import.isz_real PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 add_test(NAME import.fat COMMAND test_import_fat ${_scratch}/fat)
 add_test(NAME import.packages COMMAND test_import_packages $<TARGET_FILE:adimport> ${_scratch}/packages)
 add_test(NAME import.pkg_download COMMAND test_import_pkg_download $<TARGET_FILE:adimport> ${_scratch}/pkg-download)
@@ -133,9 +148,11 @@ add_test(NAME import.covers_real COMMAND test_import_covers_real $<TARGET_FILE:a
 add_test(NAME import.catalog_real COMMAND test_import_catalog real ${_scratch}/catalog-real
          $<TARGET_FILE:adimport> ${AD_REPO_ROOT}/research/win/catalog-win.json)
 add_test(NAME import.e2e COMMAND test_import_e2e $<TARGET_FILE:adimport> ${CMAKE_CURRENT_BINARY_DIR}/e2e-assets)
-# The five package images (AD_SOURCE_ISO_DIR, default <repo>/source_iso, and
-# the folders directly in it; or a ';'-separated list), identified by md5;
-# skipped (77) unless AD_E2E_PKG=1 and they are present.
+# Every package's real source (AD_SOURCE_ISO_DIR, default <repo>/source_iso,
+# and the folders directly in it; or a ';'-separated list): the disc and
+# floppy images and the known ZIPs of install files, identified by md5; the
+# islib packages' tables checked against their disks and every form of them;
+# skipped (77) unless AD_E2E_PKG=1 and they are all present.
 add_test(NAME import.pkg_real COMMAND test_import_pkg_real $<TARGET_FILE:adimport> ${_scratch}/pkg-real
          ${AD_REPO_ROOT}/source_iso)
 # Every package's Internet Archive copy into a scratch downloads folder and a

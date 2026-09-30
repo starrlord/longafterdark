@@ -2,15 +2,17 @@
 // members (zlib), optionally encrypted with traditional PKWARE encryption
 // ("ZipCrypto") under a test-only password, laid out as the AD 3.x
 // installers' archives are (local header, data, central directory, end
-// record; bare 8.3 names, made by 2.0/FAT, flag bits 0 and 1, bit 3 clear).
-// Knobs let a test produce the damaged and foreign shapes the reader must
-// refuse. No After Dark bytes, and never the real archive password.
+// record; bare 8.3 names, made by 2.0/FAT, flag bits 0 and 1, bit 3 clear),
+// and ZIPs of install disks kept apart in DISK<n> folders. Knobs let a test
+// produce the damaged and foreign shapes the reader must refuse. No After
+// Dark bytes, and never the real archive password.
 #pragma once
 
 #include <zlib.h>
 
 #include <cstdint>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -187,6 +189,22 @@ inline std::vector<uint8_t> zip_of(const std::vector<std::pair<std::string, std:
   ZipBuilder b;
   b.password = password;
   for (const auto& [n, d] : files) b.add(n, d);
+  return b.build();
+}
+
+// A ZIP of install disks kept apart, as the Internet Archive's copies of
+// ScreamSavers, Marvel Comics Screen Posters and Snoopy's Screen Savers are:
+// disk n's files (bare names) as "<spell><n>/<name>", deflated, unencrypted,
+// each folder's own entry after its files (`folder_entries`).
+inline std::vector<uint8_t> zip_of_disks(const std::map<int, std::map<std::string, std::vector<uint8_t>>>& disks,
+                                         const std::string& spell = "Disk", bool folder_entries = true) {
+  ZipBuilder b;
+  b.password = "";
+  for (const auto& [n, files] : disks) {
+    const std::string folder = spell + std::to_string(n) + "/";
+    for (const auto& [name, data] : files) b.add(folder + name, data, /*deflate=*/true, /*encrypt=*/false);
+    if (folder_entries) b.add(folder, {}, /*deflate=*/false, /*encrypt=*/false);
+  }
   return b.build();
 }
 

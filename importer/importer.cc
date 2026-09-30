@@ -8,6 +8,7 @@
 #include <cstring>
 #include <ctime>
 #include <cwctype>
+#include <deque>
 #include <map>
 #include <memory>
 #include <set>
@@ -21,6 +22,7 @@
 #include "covers_internal.h"
 #include "download.h"
 #include "install.h"
+#include "isz.h"
 #include "kwaj.h"
 #include "loader/image.hh"
 #include "loader/ne.hh"
@@ -167,14 +169,15 @@ std::optional<Identified> tree_location(const SourceFs& fs, const Package& p) {
 }
 
 // ad3zip: an install dir (INSTALL, or the root of a floppy or a copy of one)
-// holding the InstallShield script, its package list and the two archives
-// every AD 3.x install has.
+// holding the InstallShield script, its package list and the three archives
+// every AD 3.x install has (the engine, the engine library's MODMISC.ZIP and
+// the folder files' AFI.ZIP, whose names identify the package).
 std::optional<Identified> install_location(const SourceFs& fs) {
   for (const char* c : {"INSTALL", ""}) {
     auto d = fs.find(c);
     if (!d || !d->is_dir) continue;
     bool ok = true;
-    for (const char* f : {"INSTALL.INS", "SETUP.PKG", "ENGINE.ZIP", "MODMISC.ZIP"}) {
+    for (const char* f : {"INSTALL.INS", "SETUP.PKG", "ENGINE.ZIP", "MODMISC.ZIP", "AFI.ZIP"}) {
       auto x = fs.child(*d, f);
       if (!x || x->is_dir) ok = false;
     }
@@ -237,6 +240,126 @@ std::optional<std::string> mssetup_title(const SourceFs& fs) {
   auto n = fs.child(fs.root(), "SETUP.LST");
   if (!n || n->is_dir || n->size > kMaxSetupLst) return std::nullopt;
   return ini_value(fs.read_all(*n, kMaxSetupLst), "Params", "WndTitle");
+}
+
+// InstallShield's package list SETUP.PKG is small: the real ones are 194 and
+// 1,650 bytes.
+constexpr uint64_t kMaxSetupPkg = 64 * 1024;
+
+// One library a package list names: the script's logical name for it
+// ("images.lib", "AD_MODS.z"), as the file holds it, and its members' names.
+struct PkgLibrary {
+  std::string name;
+  std::vector<std::string> members;
+};
+
+// SETUP.PKG, InstallShield 2's package list (research/win/pkg/installshield
+// SURVEY_REPORT.md): u16 A34A, u32 the disk table's offset, u32 the install
+// disks; then one group per library up to the disk table (u32 its body's size;
+// u16 directories, each u16 name length, the name, NUL, u16 files, each u16
+// reserved, u32 uncompressed size, u8 name length, the name, NUL); then the
+// disk table to the end of the file (u16 reserved, u16 the disk, u16
+// libraries, each u16 name length, the logical name, two bytes, u32 its
+// group's offset). The installer read it for its disk-space arithmetic; here
+// it names the release. Everything must add up — each group's body its size,
+// the groups ending at the disk table, every library pointing at a group and
+// every group pointed at —, else it is no package list (nullopt), which
+// identifies nothing.
+std::optional<std::vector<PkgLibrary>> parse_setup_pkg(const std::vector<uint8_t>& d) {
+  size_t p = 0;
+  bool ok = true;
+  // Each read takes bytes that are there, or marks the list bad (and reads 0).
+  auto take = [&](size_t n) -> const uint8_t* {
+    if (!ok || d.size() - p < n) {
+      ok = false;
+      return nullptr;
+    }
+    const uint8_t* q = d.data() + p;
+    p += n;
+    return q;
+  };
+  auto u8 = [&]() -> uint32_t {
+    const uint8_t* q = take(1);
+    return q ? q[0] : 0;
+  };
+  auto u16 = [&]() -> uint32_t {
+    const uint8_t* q = take(2);
+    return q ? uint32_t(q[0] | q[1] << 8) : 0;
+  };
+  auto u32 = [&]() -> uint32_t {
+    const uint8_t* q = take(4);
+    return q ? uint32_t(q[0] | q[1] << 8 | q[2] << 16 | uint32_t(q[3]) << 24) : 0;
+  };
+  auto text = [&](size_t n) -> std::string {
+    const uint8_t* q = take(n);
+    return q ? std::string(reinterpret_cast<const char*>(q), n) : std::string();
+  };
+  auto nul = [&] {
+    if (u8() != 0) ok = false;
+  };
+  if (u16() != 0xA34A) return std::nullopt;
+  const uint32_t table = u32();
+  u32();  // the install disks
+  if (!ok || table > d.size()) return std::nullopt;
+  std::map<uint32_t, std::vector<std::string>> groups;  // by offset
+  while (ok && p < table) {
+    const uint32_t at = uint32_t(p);
+    const uint32_t size = u32();
+    if (!ok || p > table || size > table - p) return std::nullopt;
+    const size_t end = p + size;
+    std::vector<std::string> files;
+    for (uint32_t dirs = u16(); ok && dirs; dirs--) {
+      text(u16());
+      nul();
+      for (uint32_t n = u16(); ok && n; n--) {
+        u16();  // reserved
+        u32();  // the member's size
+        files.push_back(text(u8()));
+        nul();
+      }
+    }
+    if (!ok || p != end) return std::nullopt;
+    groups[at] = std::move(files);
+  }
+  if (!ok || p != table) return std::nullopt;
+  std::vector<PkgLibrary> libraries;
+  std::set<uint32_t> used;
+  while (ok && p < d.size()) {
+    u16();  // reserved
+    u16();  // the disk
+    for (uint32_t n = u16(); ok && n; n--) {
+      PkgLibrary lib;
+      lib.name = text(u16());
+      u16();  // two bytes, 1 and 1 in every known list
+      const uint32_t group = u32();
+      auto g = groups.find(group);
+      if (!ok || g == groups.end()) return std::nullopt;
+      used.insert(group);
+      lib.members = g->second;
+      libraries.push_back(std::move(lib));
+    }
+  }
+  if (!ok || used.size() != groups.size()) return std::nullopt;
+  return libraries;
+}
+
+// islib: the package list at the source's root (disk 1, the disks together,
+// or a flat folder or ZIP of their files); only a plain file of plausible
+// size is read. nullopt when there is none, or it is no package list.
+std::optional<std::vector<PkgLibrary>> setup_pkg(const SourceFs& fs) {
+  auto n = fs.child(fs.root(), "SETUP.PKG");
+  if (!n || n->is_dir || n->size > kMaxSetupPkg) return std::nullopt;
+  return parse_setup_pkg(fs.read_all(*n, kMaxSetupPkg));
+}
+
+// islib: the package list names the package — it lists the tag member in
+// the tag library.
+bool lists_tag(const std::vector<PkgLibrary>& list, const Package& p) {
+  for (const PkgLibrary& lib : list)
+    if (iequals(lib.name, p.tag_library))
+      for (const std::string& m : lib.members)
+        if (iequals(m, p.tag_member)) return true;
+  return false;
 }
 
 // What the images' md5s say (PACKAGES.md §3, step 1): the package a known
@@ -323,16 +446,28 @@ std::shared_ptr<ZipArchive> load_zip(const SourceFs& fs, const SourceNode& n, co
   }
 }
 
+// ad3zip (PACKAGES.md §3): the package's engine library in MODMISC.ZIP, its
+// folder file in AFI.ZIP, and its marker, when it has one, in MODMISC.ZIP.
+// Neither archive alone tells the releases of this installer apart: every
+// AFI.ZIP carries other products' folder files (DISNEY.AFI is on all six
+// known releases' disks, AD3.AFI on three), and ScreamSavers ships 3.2's own
+// ADXPL300.DLL, so 3.2 wants a second MODMISC.ZIP member as well.
+bool ad3zip_fingerprint(const Package& p, const ZipArchive& modmisc, const ZipArchive& afi) {
+  return p.engine_dll && p.folder_afi && modmisc.find(p.engine_dll) && afi.find(p.folder_afi) &&
+         (!p.marker || modmisc.find(p.marker));
+}
+
 // `image`: what the source's images' md5s say (by_image; nothing for a
 // folder); `images`: how many there are (for the wording).
 Identified identify(const SourceFs& fs, std::span<const Package> registry, const ImageMatch& image, size_t images,
                     const std::string& want) {
   std::vector<Identified> matches;
   auto inst = install_location(fs);
-  std::shared_ptr<ZipArchive> modmisc;
+  std::shared_ptr<ZipArchive> modmisc, afi;
   if (inst) {
     // Central-directory names are not encrypted: no password needed here.
     modmisc = load_zip(fs, *fs.child(inst->dir, "MODMISC.ZIP"), inst->dir_path);
+    afi = load_zip(fs, *fs.child(inst->dir, "AFI.ZIP"), inst->dir_path);
   }
   auto uses = [&](Recipe r) {
     return std::any_of(registry.begin(), registry.end(), [r](const Package& p) { return p.recipe == r; });
@@ -340,6 +475,10 @@ Identified identify(const SourceFs& fs, std::span<const Package> registry, const
   std::optional<std::string> shortname, setup_title;
   if (uses(Recipe::intermission)) shortname = presage_shortname(fs);
   if (uses(Recipe::ad2kwaj)) setup_title = mssetup_title(fs);
+  // islib: SETUP.PKG is read once, and only beside a package's first library
+  // volume (another installer's package list is never opened).
+  bool pkg_read = false;
+  std::optional<std::vector<PkgLibrary>> pkg_list;
   for (const Package& p : registry) {
     if (p.recipe == Recipe::tree) {
       if (auto loc = tree_location(fs, p)) matches.push_back(std::move(*loc));
@@ -359,7 +498,19 @@ Identified identify(const SourceFs& fs, std::span<const Package> registry, const
       SourceNode root = fs.root();
       auto first = fs.child(root, p.required_archives[0]);
       if (first && !first->is_dir) matches.push_back(Identified{&p, std::move(root), ""});
-    } else if (inst && modmisc && p.engine_dll && modmisc->find(p.engine_dll)) {
+    } else if (p.recipe == Recipe::islib) {
+      // The package list names the product (its tag member in its tag
+      // library); disk 1's library volume must be beside it.
+      if (!p.tag_library || !p.tag_member || p.required_archives.empty()) continue;
+      SourceNode root = fs.root();
+      auto first = fs.child(root, p.required_archives[0]);
+      if (!first || first->is_dir) continue;
+      if (!pkg_read) {
+        pkg_list = setup_pkg(fs);
+        pkg_read = true;
+      }
+      if (pkg_list && lists_tag(*pkg_list, p)) matches.push_back(Identified{&p, std::move(root), ""});
+    } else if (inst && modmisc && afi && ad3zip_fingerprint(p, *modmisc, *afi)) {
       Identified id = *inst;
       id.pkg = &p;
       matches.push_back(std::move(id));
@@ -408,11 +559,15 @@ Identified identify(const SourceFs& fs, std::span<const Package> registry, const
 }  // namespace
 
 const Package* identify_folder(const fs::path& dir, std::string* why, std::span<const Package> registry) {
+  // open_folder's note comes first in the reason: it alone says why a
+  // folder's DISK<n> folders were not read together (something else is
+  // beside them), which the error ("not a known release") never does.
+  std::string note;
   try {
-    auto src = open_folder(dir);
+    auto src = open_folder(dir, &note);
     return identify(*src, registry_or_builtin(registry), ImageMatch{}, 0, "").pkg;
   } catch (const std::exception& e) {
-    if (why) *why = e.what();
+    if (why) *why = note.empty() ? std::string(e.what()) : note + "; " + e.what();
     return nullptr;
   }
 }
@@ -581,11 +736,19 @@ class Importer {
       std::string name;  // upper case
       std::shared_ptr<ZipArchive> zip;
     };
-    // Only the archives and the script are read (I5): the Simpsons floppy's
-    // CEREAL.TXT and SERIAL.TXT, the owner's notes, are never opened.
+    // Only the archives and the script are read (I5): the owners' notes (the
+    // Simpsons floppy's CEREAL.TXT and SERIAL.TXT, the notes in the Disney,
+    // Looney Tunes and ScreamSavers copies) are never opened, and neither is
+    // an archive the registry lists as never opened.
     std::vector<Zip> zips;
-    for (SourceNode& n : fs.list(id.dir))
-      if (!n.is_dir && ends_with_i(n.name, ".ZIP")) zips.push_back({ascii_upper(n.name), load_zip(fs, n, id.dir_path)});
+    for (SourceNode& n : fs.list(id.dir)) {
+      if (n.is_dir || !ends_with_i(n.name, ".ZIP")) continue;
+      if (std::any_of(p.never_opened.begin(), p.never_opened.end(), [&](const char* a) { return iequals(n.name, a); })) {
+        log("skipped " + join(id.dir_path, n.name) + " (never opened: not in the recipe of " + p.title + ")");
+        continue;
+      }
+      zips.push_back({ascii_upper(n.name), load_zip(fs, n, id.dir_path)});
+    }
     std::sort(zips.begin(), zips.end(), [](const Zip& a, const Zip& b) { return a.name < b.name; });
     auto find_zip = [&](std::string_view name) -> const Zip* {
       for (const Zip& z : zips)
@@ -773,6 +936,110 @@ class Importer {
     }
     if (!missing.empty()) needs_every_disk(p, missing);
     plan_loose_files(fs, id);
+  }
+
+  // ---- recipe "islib": InstallShield 2's compressed libraries, the placement baked in (PACKAGES.md) ----
+  // Every volume the registry lists (every install disk's) must be there;
+  // each library the table names is read whole (a split set: its first
+  // volume and the others its header names, only through the registry's
+  // volumes: one it does not list is damaged or foreign, and the file it
+  // names is never opened); the table's members are expanded where it puts
+  // them. A member the table does not name is listed, never decoded. Only
+  // SETUP.PKG (read to identify) and the registry's volumes are ever opened
+  // (I5): the installer and its script, the readme and info texts, the
+  // libraries the table does not read, and what a copy of the disks holds
+  // besides (the previous owners' notes, a disk copier's files) are never
+  // read.
+  void plan_islib(const SourceFs& fs, const Identified& id) {
+    const Package& p = *pkg_;
+    std::string missing;
+    for (const char* a : p.required_archives) {
+      auto n = fs.child(id.dir, a);
+      if (!n || n->is_dir) missing += std::string(missing.empty() ? "" : ", ") + a;
+    }
+    if (!missing.empty()) needs_every_disk(p, missing);
+    auto listed = [&](std::string_view name) {
+      for (const char* a : p.required_archives)
+        if (iequals(name, a)) return true;
+      return false;
+    };
+
+    // The libraries, each read once, in the order the table first names them.
+    struct Library {
+      std::string name;  // as the table names it
+      std::shared_ptr<const IszLibrary> lib;
+      std::set<std::string> taken;  // name_key of the members the table installs
+    };
+    std::deque<Library> libraries;
+    auto library = [&](const char* first) -> Library& {
+      for (Library& l : libraries)
+        if (iequals(l.name, first)) return l;
+      std::vector<IszVolume> volumes;
+      auto load = [&](const std::string& name) {
+        auto n = fs.child(id.dir, name);
+        if (!n || n->is_dir) needs_every_disk(p, name);
+        const std::string where = join(id.dir_path, n->name);
+        volumes.push_back({where, std::make_shared<const std::vector<uint8_t>>(fs.read_all(*n, 64ull << 20))});
+        return where;
+      };
+      try {
+        const std::string where = load(first);
+        const IszHeader h = isz_header(*volumes.front().data, where);
+        // The table names a set by its first volume: a file of that name
+        // holding another volume (the disks' files swapped, or another set's)
+        // is there, so it is never said to be missing.
+        if (h.split && h.volume != 1)
+          invalid(where + " is volume " + std::to_string(h.volume) +
+                  " of its set, not volume 1 (a mislabelled or foreign volume?)");
+        for (unsigned k = 2; h.split && k <= h.volumes; k++) {
+          const auto next = isz_volume_name(first, k);
+          if (!next) invalid(where + " is the first of " + std::to_string(h.volumes) + " volumes, but names no others");
+          if (!listed(*next))
+            invalid(where + " says the library continues on " + *next + ", which is not one of the install disks of " +
+                    p.title + " (a damaged or foreign volume?)");
+          load(*next);
+        }
+        libraries.push_back({first, std::make_shared<const IszLibrary>(std::move(volumes)), {}});
+      } catch (const IszError& e) {
+        invalid(e.what());  // a damaged library is a corrupt source, never a verify failure
+      }
+      return libraries.back();
+    };
+
+    for (const LibraryMember& row : p.library_members) {
+      Library& l = library(row.library);
+      const IszMember* m = l.lib->find(row.member);
+      if (!m) {
+        // The package list says this library holds the tag member: libraries
+        // without it are not the disks of this release.
+        if (iequals(row.member, p.tag_member))
+          invalid(std::string("SETUP.PKG lists ") + p.tag_member + " in " + p.tag_library + ", but " +
+                  l.lib->volumes().front().name + " holds no such member (not the disks of one release?)");
+        log("the source's " + l.lib->volumes().front().name + " has no " + row.member);
+        continue;
+      }
+      l.taken.insert(name_key(m->name));
+      Planned pl;
+      pl.rel = root_ + "/" + row.to;
+      pl.size = m->size;
+      pl.from = m->volumes + "!" + m->name;
+      std::shared_ptr<const IszLibrary> lib = l.lib;
+      pl.read = [lib, m](const Sink& sink) {
+        try {
+          lib->extract(*m, sink);
+        } catch (const IszError& e) {
+          invalid(e.what());  // a damaged member is a corrupt source, never a verify failure
+        }
+      };
+      if (auto t = dos_filetime(uint16_t(m->dos_datetime >> 16), uint16_t(m->dos_datetime & 0xFFFF)))
+        pl.has_mtime = true, pl.mtime = *t;
+      add(std::move(pl));
+    }
+    std::string skipped;
+    for (const Library& l : libraries)
+      for (const IszMember& m : l.lib->members())
+        if (!l.taken.count(name_key(m.name))) skipped += std::string(skipped.empty() ? "" : ", ") + m.volumes + "!" + m.name;
+    if (!skipped.empty()) log("skipped " + skipped + " (not in the recipe of " + p.title + ")");
   }
 
   // The registry's loose files (intermission, ad2kwaj), under the names the
@@ -1033,11 +1300,13 @@ class Importer {
   // and every MIDI directly beside the modules in I4; for After Dark 2.0
   // packages (ad2kwaj) AD.EXE out of the module folders in I1, their own I3,
   // the DLLs' and drivers' imports in I2, and the sound database in ST_RES\
-  // in I4.
+  // in I4; for the InstallShield 2 packages (islib) AD.EXE out of the module
+  // folders in I1, the DLLs' and drivers' imports in I2, and their own I3.
   void check_invariants(const fs::path& stage) const {
     const Package& p = *pkg_;
     const bool imx = p.recipe == Recipe::intermission;
     const bool ad2 = p.recipe == Recipe::ad2kwaj;
+    const bool isl = p.recipe == Recipe::islib;
     std::set<std::string> have;  // upper case, relative to the package root
     for (const ImportedFile& f : r_.files) have.insert(ascii_upper(f.path.substr(root_.size() + 1)));
     std::vector<std::string> folders;
@@ -1067,7 +1336,7 @@ class Importer {
         for (const std::string& n : names_in(d))
           if (n == "INTERMIS.EXE" || ends_with_i(n, ".IMQ")) fail("I1", d + "\\" + n + " belongs in ENGINE");
       // After Dark 2.0's own host too (the host replaces it; nothing loads it).
-      if (ad2 && have.count(d + "/AD.EXE")) fail("I1", d + "\\AD.EXE belongs in ENGINE");
+      if ((ad2 || isl) && have.count(d + "/AD.EXE")) fail("I1", d + "\\AD.EXE belongs in ENGINE");
     }
     if (imx) {
       // The IMX reader and the installer's C:\WINDOWS files; and nothing that
@@ -1090,6 +1359,21 @@ class Importer {
           fail("I3", std::string("ENGINE\\") + n + " belongs to After Dark 3.x and 4.x");
       for (const std::string& f : have)
         if (f.rfind("WINDOWS/", 0) == 0) fail("I3", f + ": an After Dark 2.0 package has no WINDOWS folder");
+    } else if (isl) {
+      // AD_SND where the release ships one (Marvel's AD_SND 1.0, which the
+      // native bridge loads; Snoopy's Screen Savers ship none, being modules
+      // for an After Dark already installed); nothing that would make the
+      // 16-bit lane take the package for an After Dark 3.x or 4.x one; and no
+      // WINDOWS folder: what the installer put in C:\WINDOWS (Marvel's
+      // AD_PREFS.INI, whose PC-speaker driver hangs the emulator) is never
+      // installed.
+      for (const LibraryMember& lm : p.library_members)
+        if (iequals(lm.to, "ENGINE/AD_SND.DLL") && !have.count("ENGINE/AD_SND.DLL")) fail("I3", "no ENGINE\\AD_SND.DLL");
+      for (const char* n : {"OLDMOD16.DLL", "ADTASK.DLL", "AFTERDAR.SCR"})
+        if (have.count(std::string("ENGINE/") + n))
+          fail("I3", std::string("ENGINE\\") + n + " belongs to After Dark 3.x and 4.x");
+      for (const std::string& f : have)
+        if (f.rfind("WINDOWS/", 0) == 0) fail("I3", f + ": an InstallShield 2 package has no WINDOWS folder");
     } else {
       if (!have.count("ENGINE/AD_SND.DLL")) fail("I3", "no ENGINE\\AD_SND.DLL");
       if (!(have.count("ENGINE/OLDMOD16.DLL") && have.count("ENGINE/AFTERDAR.SCR")) && !have.count("ENGINE/ADTASK.DLL"))
@@ -1111,11 +1395,12 @@ class Importer {
     // Intermission's DLLs load theirs from beside the modules too
     // (INTRMLIB.DLL imports ANTSW), and so do After Dark 2.0's DLLs and sound
     // drivers (AD_MOD.DLL imports AD_RSRC; AD_SND, as for the modules, is
-    // ENGINE's). A file that is no NE image has nothing to check.
-    if (imx || ad2)
+    // ENGINE's), and the InstallShield 2 packages' (Marvel's DECO.DLL). A file
+    // that is no NE image has nothing to check.
+    if (imx || ad2 || isl)
       for (const std::string& d : folders)
         for (const std::string& n : names_in(d)) {
-          if (!ends_with_i(n, ".DLL") && !(ad2 && ends_with_i(n, ".DRV"))) continue;
+          if (!ends_with_i(n, ".DLL") && !((ad2 || isl) && ends_with_i(n, ".DRV"))) continue;
           auto data = read_staged(stage / to_wide(d + "/" + n));
           if (!data || loader::detect_format(*data) != loader::Format::ne) continue;
           std::vector<std::string> refs;
@@ -1126,7 +1411,7 @@ class Importer {
           }
           for (const std::string& ref : refs) {
             std::string r = ascii_upper(loader::latin1_to_utf8(ref));
-            if (lane16_system_dll(r) || (ad2 && r == "AD_SND") || have.count(d + "/" + r) ||
+            if (lane16_system_dll(r) || ((ad2 || isl) && r == "AD_SND") || have.count(d + "/" + r) ||
                 have.count(d + "/" + r + ".DLL"))
               continue;
             fail("I2", d + "/" + n + " needs " + r + ", which is not beside it");
@@ -1134,7 +1419,9 @@ class Importer {
         }
     for (const std::string& f : have) {
       std::string name = f.substr(f.rfind('/') + 1);
-      if (ends_with_i(name, "_SND.DLL") && name != "AD_SND.DLL") {
+      // A sound database: a *_SND.DLL other than AD_SND (TT_SND, SIMP_SND,
+      // ST_SND, DIS_SND), or a *_SOUND.DLL (the Looney Tunes' LT_SOUND).
+      if ((ends_with_i(name, "_SND.DLL") && name != "AD_SND.DLL") || ends_with_i(name, "_SOUND.DLL")) {
         if (ad2) {
           // After Dark 2.0's AD_MOD.DLL opens it from <Path>ST_RES\ only.
           bool in_res = false;
@@ -1387,10 +1674,11 @@ Fetched fetch_download(const Source& src, std::span<const Package> registry, Imp
 
   // Progress over the whole copy: a part's bytes come after the earlier
   // parts' (`base`), out of every part's published size when all are known.
-  auto report = [&imp](Progress::Phase ph, uint64_t base, uint64_t whole) {
-    return [&imp, ph, base, whole](uint64_t done, uint64_t total) {
+  // The item is the part's file, as a copy names the file it copies.
+  auto report = [&imp](Progress::Phase ph, uint64_t base, uint64_t whole, const std::string& item) {
+    return [&imp, ph, base, whole, item](uint64_t done, uint64_t total) {
       try {
-        imp.progress(ph, base + done, whole ? whole : total ? base + total : 0);
+        imp.progress(ph, base + done, whole ? whole : total ? base + total : 0, item);
         return true;
       } catch (const ImportError&) {
         return false;
@@ -1421,10 +1709,10 @@ Fetched fetch_download(const Source& src, std::span<const Package> registry, Imp
         d.expected_size = q.size;
         d.cancel = imp.options().cancel;
         d.log = [&imp](const std::string& s) { imp.log(s); };
-        d.progress = report(Progress::Phase::download, base, whole);
+        d.progress = report(Progress::Phase::download, base, whole, to_utf8(q.file_name));
         // Hashing an already-downloaded file (or the finished transfer) is the
         // same work as checking a local image, and should read that way.
-        d.hash_progress = report(Progress::Phase::check_image, base, whole);
+        d.hash_progress = report(Progress::Phase::check_image, base, whole, to_utf8(q.file_name));
         DownloadResult dr = download(d);
         imp.log(dr.reused ? "using the already-downloaded " + to_utf8(d.dest.wstring())
                           : "downloaded " + std::to_string(dr.size) + " bytes from " + q.url + " to " +
@@ -1571,7 +1859,9 @@ ImportResult run_import(const Source& src, const ImportOptions& opts) {
             part.size = z.bytes->size();
             part.md5 = md5_hex(z.bytes->data(), z.bytes->size());
             if (already(part)) continue;
-            parts.push_back(open_fat_image(z.bytes, part.path));
+            std::string note;
+            parts.push_back(open_fat_image(z.bytes, part.path, &note));
+            if (!note.empty()) imp.log(note);
             r.parts.push_back(std::move(part));
           }
           base += fs::file_size(p, ec);
@@ -1595,7 +1885,11 @@ ImportResult run_import(const Source& src, const ImportOptions& opts) {
         }
         base += part.size;
         if (already(part)) continue;
-        parts.push_back(open_image(p));
+        // A disk set (a ZIP or an image whose root holds only DISK<n>
+        // folders) is read as their union, and says so.
+        std::string note;
+        parts.push_back(open_image(p, &note));
+        if (!note.empty()) imp.log(note);
         r.parts.push_back(std::move(part));
       }
       if (r.parts.size() > 1) {
@@ -1648,7 +1942,9 @@ ImportResult run_import(const Source& src, const ImportOptions& opts) {
     // A known image of the release, or every one of its install disks.
     r.iso_md5_known = image.complete && image.pkg == &pkg;
     imp.log("identified " + std::string(pkg.title) + (id.dir_path.empty() ? "" : " (" + id.dir_path + ")"));
-    if (r.format == "zip")
+    if (r.format == "zip" && r.iso_md5_known)
+      imp.log("a ZIP of install files, the known copy of " + std::string(pkg.title) + " (by its md5)");
+    else if (r.format == "zip")
       imp.log("a ZIP of install files, not an image of the original disks" +
               std::string(opts.check_known ? ": checking every file against the release" : ""));
     else if (r.iso_md5_known && r.parts.size() > 1)
@@ -1669,6 +1965,7 @@ ImportResult run_import(const Source& src, const ImportOptions& opts) {
     if (pkg.recipe == Recipe::tree) imp.plan_tree(*sfs, id);
     else if (pkg.recipe == Recipe::ad3zip) imp.plan_ad3zip(*sfs, id);
     else if (pkg.recipe == Recipe::intermission) imp.plan_intermission(*sfs, id);
+    else if (pkg.recipe == Recipe::islib) imp.plan_islib(*sfs, id);
     else imp.plan_ad2kwaj(*sfs, id);
     imp.check_required();
     imp.check_sizes();
@@ -1815,9 +2112,11 @@ ImportResult run_import(const Source& src, const ImportOptions& opts) {
     uint64_t bytes = 0;
     for (auto& f : r.files) bytes += f.size;
     r.status = Status::ok;
+    // "1 module": Marvel Comics Screen Posters has one.
     r.message = "imported " + std::to_string(r.files.size()) + " files (" + std::to_string(bytes) + " bytes) of " +
-                r.package_title + ", verified: " + r.verified + ", " + std::to_string(r.package_modules) +
-                " modules; catalog: " + std::to_string(r.catalog_modules) + " modules";
+                r.package_title + ", verified: " + r.verified + ", " + std::to_string(r.package_modules) + " module" +
+                (r.package_modules == 1 ? "" : "s") + "; catalog: " + std::to_string(r.catalog_modules) + " module" +
+                (r.catalog_modules == 1 ? "" : "s");
   } catch (const ImportError& e) {
     r.status = e.status();
     r.message = e.what();

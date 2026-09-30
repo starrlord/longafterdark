@@ -192,13 +192,9 @@ void SourcesPage::build() {
   // card first.
   body_ = std::make_unique<ScrollPanel>(*this, &t_, ui::Surface::base);
   HWND body = body_->hwnd();
-  std::wstring releases;  // "A, B, C, D and E"
-  const auto known = builtin_packages();
-  for (size_t i = 0; i < known.size(); ++i)
-    releases += std::wstring(i == 0 ? L"" : i + 1 == known.size() ? L" and " : L", ") + to_wide(known[i].title);
-  intro_ = add_text(L"Long After Dark runs the original Windows modules of " + releases +
-                        L". Choose where to copy them from.",
-                    Face::body, Ink::text2, body);
+  // Every release by name until some are imported; then how many, the list
+  // below naming what is here (ten and more names would crowd it out).
+  intro_ = add_text(sources_intro(!rows_.empty()), Face::body, Ink::text2, body);
   if (!rows_.empty()) {
     installed_label_ = add_text(L"Installed", Face::body_strong, Ink::text, body, true);
     list_ = std::make_unique<ScrollPanel>(*this, &t_, ui::Surface::card, body);
@@ -235,8 +231,8 @@ void SourcesPage::build() {
   }
   from_label_ = add_text(L"Import from", Face::body_strong, Ink::text, body, true);
   card_image_ = add_button(kIdImage,
-                           L"A disc image…\nAn ISO image of a CD, or floppy images (.img), zipped or not; select every "
-                           L"disk of a set.",
+                           L"A disc image…\nAn ISO image of a CD or floppy images (.img), or a ZIP of them or of the "
+                           L"install files; select every disk of a set.",
                            ui::ButtonRole::card, L'', body);
   card_folder_ = add_button(kIdFolder, L"A drive or folder…\nThe CD drive, or a folder holding a copy of the disc or floppies.",
                             ui::ButtonRole::card, L'', body);
@@ -313,16 +309,22 @@ int SourcesPage::layout(int w, int max_h) {
     }
     return y + px(16);
   };
-  // Too tall for the work area: the installed list scrolls in its card (two
-  // rows showing) when that makes the page fit; when even that does not, the
-  // whole body scrolls instead, with the list at its full height, so only one
-  // thing ever scrolls.
+  // Too tall for the work area: the installed list scrolls in its card,
+  // showing as many whole rows as fit (two at the least) when that makes the
+  // page fit, else as many as fit down to one (the part of a row that shows
+  // says there are more: ten releases and more at 150% on a 1080p screen);
+  // when even one row does not fit, the whole body scrolls instead, with the
+  // list at its full height, so only one thing ever scrolls.
   const int top = header_h(), footer = px(kFooter);
   int list_h = natural;
   if (top + content(natural, false) + footer > max_h) {
     const int shrunk = std::min(natural, 2 * row_h_);
-    if (top + content(shrunk, false) + footer <= max_h) list_h = shrunk;
+    // The content grows with the list's height one for one.
+    const int room = max_h - top - footer - content(0, false);
+    if (room >= shrunk) list_h = std::max(shrunk, room / row_h_ * row_h_);
+    else if (room >= std::min(natural, row_h_)) list_h = room;
   }
+  list_heights_ = list_ ? ListHeights{list_h, natural, row_h_} : ListHeights{};
   const int content_h = content(list_h, true);
   const int view_h = std::max(px(96), std::min(content_h, max_h - top - footer));
   if (list_) {
@@ -374,7 +376,11 @@ void SourcesPage::command(int id, int, HWND) {
       if (p.empty()) return;
       std::string why;
       if (!identify_folder(p.front(), &why)) {
-        show_caution(L"That is not a disc Long After Dark knows. " + p.front().wstring() + L": " + to_wide(why) +
+        // The reason may start with the folder itself ("<folder> holds DISK1
+        // and DISK2 beside other files or folders …"): then it is not named twice.
+        const std::wstring where = p.front().wstring(), reason = to_wide(why);
+        show_caution(L"That is not a disc Long After Dark knows. " +
+                     (reason.rfind(where, 0) == 0 ? reason : where + L": " + reason) +
                      L". Choose the CD drive itself (for example E:\\) or a copy of the disc or floppies.");
         return;
       }
@@ -539,10 +545,6 @@ void ProgressPage::build() {
         have_progress_ = true;
         return !cancel_.load();
       };
-      o.log = [this](const std::string& line) {
-        std::lock_guard<std::mutex> lock(m_);
-        last_log_ = line;
-      };
       std::vector<CoverResult> rs = refresh_covers(job_.covers, o);
       {
         std::lock_guard<std::mutex> lock(m_);
@@ -565,17 +567,21 @@ void ProgressPage::build() {
       have_progress_ = true;
       return !cancel_.load();
     };
-    o.log = [this](const std::string& line) {
-      std::lock_guard<std::mutex> lock(m_);
-      last_log_ = line;
-    };
     std::vector<ImportResult> rs;
     if (job_.all.empty()) {
       rs.push_back(run_import(job_.source, o));
     } else {
       rs = import_downloads(job_.all, job_.source, o, [this](size_t i) {
+        // Each release starts from nothing, as the first one did: its download
+        // with no bytes yet ("Starting…"), not the last report of the one
+        // before ("Finishing <previous>") until its first bytes come.
+        const Package* next = find_package(job_.all[i]);
         std::lock_guard<std::mutex> lock(m_);
         step_ = i;
+        progress_ = Progress{};
+        progress_.phase = Progress::Phase::download;
+        progress_.package = next ? next->title : job_.all[i];
+        have_progress_ = true;
       });
     }
     {
@@ -628,13 +634,11 @@ void ProgressPage::show_progress(const Progress& p, size_t step, bool cancelling
 
 void ProgressPage::refresh() {
   Progress p;
-  std::string log;
   size_t step = 0;
   {
     std::lock_guard<std::mutex> lock(m_);
     if (!have_progress_) return;
     p = progress_;
-    log = last_log_;
     step = step_;
   }
   const ULONGLONG now = GetTickCount64();
@@ -664,10 +668,18 @@ void ProgressPage::refresh() {
     set_text(amount_, L"Cancelling\u2026");
     set_text(item_, L"");
   } else {
-    // A cover taken from the disc has no size to count ("0.0 MB" would say nothing).
-    const bool no_amount = p.phase == Progress::Phase::cover && p.total == 0 && p.done == 0;
-    set_text(amount_, no_amount ? std::wstring() : amount_line(p.done, p.total, speed_));
-    set_text(item_, to_wide(p.item.empty() ? log : p.item));
+    // A cover taken from the disc has no size to count ("0.0 MB" would say
+    // nothing), nor has the finishing step (one step, not bytes); a download
+    // with no bytes yet is starting, as the window says when it opens.
+    const bool no_amount =
+        (p.phase == Progress::Phase::cover && p.total == 0 && p.done == 0) || p.phase == Progress::Phase::finalize;
+    const bool starting = p.phase == Progress::Phase::download && p.total == 0 && p.done == 0;
+    set_text(amount_, no_amount ? std::wstring()
+                      : starting ? std::wstring(L"Starting\u2026")
+                                 : amount_line(p.done, p.total, speed_));
+    // What the step itself names (the file copied or downloaded, the cover's
+    // source), else nothing: the last log line may be about another step.
+    set_text(item_, to_wide(p.item));
   }
 }
 

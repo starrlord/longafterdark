@@ -1,6 +1,7 @@
-// adimport — puts the original Windows modules of the known releases (six
-// After Dark releases and Star Wars Screen Entertainment) in place (DESIGN.md
-// §6, PACKAGES.md) and keeps each release's box cover (COVERS.md §2).
+// adimport — puts the original Windows modules of the known releases (the
+// After Dark releases of the registry, packages.h, and Star Wars Screen
+// Entertainment) in place (DESIGN.md §6, PACKAGES.md) and keeps each
+// release's box cover (COVERS.md §2).
 //
 //   adimport --image <image> [--image <image2> …] | --iso <image> | --from <drive or folder>
 //            | --download [<id> | all]
@@ -503,11 +504,13 @@ void print_result(const ImportResult& r, bool quiet) {
       printf("  record  %s\n", to_utf8(r.import_json.wstring()).c_str());
       printf("  catalog %s\n", to_utf8(r.catalog.wstring()).c_str());
       if (!r.url.empty()) printf("  from    %s\n", r.url.c_str());
-      if (!r.iso_md5.empty())
-        printf("  %s md5 %s (%s)\n", r.format == "zip" ? "zip  " : "image", r.iso_md5.c_str(),
-               r.iso_md5_known           ? ("the known image of " + r.package_title).c_str()
+      if (!r.iso_md5.empty()) {
+        const bool zip = r.format == "zip";
+        printf("  %s md5 %s (%s)\n", zip ? "zip  " : "image", r.iso_md5.c_str(),
+               r.iso_md5_known           ? ((zip ? "the known ZIP of " : "the known image of ") + r.package_title).c_str()
                : r.download_md5_checked  ? "the expected md5 of the download"
                                          : "not a known image");
+      }
       std::string installed;
       for (const std::string& t : r.installed) installed += (installed.empty() ? "" : ", ") + t;
       printf("  installed %s\n", installed.c_str());
@@ -559,7 +562,7 @@ int run_cli(const Args& a) {
 int run_list_packages(const Args& a) {
   fs::path root = a.dest.empty() ? default_assets_root() : a.dest;
   printf("packages in %s\n", to_utf8(win_assets_dir(root).wstring()).c_str());
-  // The title column fits the longest title ("Star Wars Screen Entertainment").
+  // The title column fits the longest title ("The Disney Collection Screen Saver").
   int title_w = 0;
   for (const Package& p : builtin_packages()) title_w = std::max(title_w, int(strlen(p.title)));
   for (const PackageState& s : list_packages(root)) {

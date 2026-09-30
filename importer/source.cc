@@ -286,13 +286,18 @@ class FolderFs : public SourceFs {
 
 // A ZIP of an install folder (the Internet Archive's Simpsons copies): a flat
 // archive whose members are the files at the source's root. It is held in
-// memory (the known ones are under 3 MB), and a member is inflated and its
+// memory (the known ones are under 4 MB), and a member is inflated and its
 // size and CRC-32 checked as it is read. The outer archive is only a
 // container, so a password-protected member is refused rather than guessed
 // at; the installer's own encrypted archives are members like any other file.
+// One view shows the archive's root, or the files of one of its DISK<n>
+// folders (a disk set: one view per disk, unioned).
 class ZipFs : public SourceFs {
  public:
-  explicit ZipFs(std::unique_ptr<ZipArchive> zip) : zip_(std::move(zip)) {}
+  ZipFs(std::shared_ptr<const ZipArchive> zip, unsigned disk) : zip_(std::move(zip)), disk_(disk) {
+    for (const ZipMember& m : zip_->members())
+      if (m.disk == disk_ && !m.directory) files_.push_back(&m);
+  }
 
   SourceNode root() const override {
     SourceNode n;
@@ -303,12 +308,12 @@ class ZipFs : public SourceFs {
   std::vector<SourceNode> list(const SourceNode& dir) const override {
     std::vector<SourceNode> out;
     if (!dir.is_dir) return out;
-    for (const ZipMember& m : zip_->members()) {
+    for (const ZipMember* m : files_) {
       SourceNode n;
-      n.name = ascii_upper(m.name);
-      n.size = m.usize;
-      n.mtime = dos_filetime(m.mod_date, m.mod_time);
-      n.impl = std::make_shared<ZipMember>(m);
+      n.name = ascii_upper(m->file_name());
+      n.size = m->usize;
+      n.mtime = dos_filetime(m->mod_date, m->mod_time);
+      n.impl = std::make_shared<ZipMember>(*m);
       out.push_back(std::move(n));
     }
     return out;
@@ -323,11 +328,15 @@ class ZipFs : public SourceFs {
   }
 
   std::string format() const override { return "zip"; }
-  // Flat: the root is the only directory.
-  std::string dir_key(const SourceNode& dir) const override { return dir.is_dir ? "root" : ""; }
+  // Flat: the root (or the disk's folder) is the only directory.
+  std::string dir_key(const SourceNode& dir) const override {
+    return !dir.is_dir ? "" : disk_ ? "disk" + std::to_string(disk_) : "root";
+  }
 
  private:
-  std::unique_ptr<ZipArchive> zip_;
+  std::shared_ptr<const ZipArchive> zip_;
+  unsigned disk_;
+  std::vector<const ZipMember*> files_;  // the members it shows, in archive order (zip_ keeps them)
 };
 
 bool starts_with_zip_signature(const fs::path& path) {
@@ -360,26 +369,118 @@ std::shared_ptr<std::vector<uint8_t>> read_zip_bytes(const fs::path& path) {
   return data;
 }
 
-std::unique_ptr<SourceFs> open_zip(const fs::path& path) {
+// "DISK1, DISK2 and DISK3".
+std::string disks_named(const std::vector<std::string>& names) {
+  std::string s;
+  for (size_t i = 0; i < names.size(); i++) s += (i == 0 ? "" : i + 1 == names.size() ? " and " : ", ") + names[i];
+  return s;
+}
+
+// A ZIP of install files: flat, or a disk set of flat DISK<n> folders (every
+// member in one of them), read as the union of one view per disk.
+std::unique_ptr<SourceFs> open_zip(const fs::path& path, std::string* note) {
   const std::string name = to_utf8(path.filename().wstring());
   auto data = read_zip_bytes(path);
   if (!data) invalid(name + " is too large for a ZIP of install files");
-  std::unique_ptr<ZipArchive> zip;
+  std::shared_ptr<ZipArchive> zip;
   try {
-    zip = std::make_unique<ZipArchive>(std::move(data), name);
+    zip = std::make_shared<ZipArchive>(std::move(data), name, ZipNames::disk_folders);
   } catch (const ZipError& e) {
-    invalid(std::string(e.what()) + " (a ZIP source must hold the install files at its root)");
+    invalid(std::string(e.what()) + " (a ZIP source holds the install files at its root, or only DISK<n> folders)");
   }
   for (const ZipMember& m : zip->members())
     if (m.encrypted()) invalid(name + "!" + m.name + " is password-protected");
-  return std::make_unique<ZipFs>(std::move(zip));
+  // Each disk once, in disk order, under the folder name it first appears as.
+  std::map<unsigned, std::string> disks;
+  const ZipMember* at_root = nullptr;
+  for (const ZipMember& m : zip->members()) {
+    if (m.disk)
+      disks.emplace(m.disk, m.name.substr(0, m.name.find('/')));
+    else if (!at_root)
+      at_root = &m;
+  }
+  if (disks.empty()) return std::make_unique<ZipFs>(std::move(zip), 0);
+  std::vector<std::string> labels;
+  for (const auto& [n, folder] : disks) labels.push_back(folder);
+  if (at_root)
+    invalid(name + " holds files at its root (" + at_root->name + ") beside DISK<n> folders (" + disks_named(labels) +
+            "); a ZIP source holds the install files at its root, or only DISK<n> folders");
+  std::vector<std::unique_ptr<SourceFs>> parts;
+  for (const auto& [n, folder] : disks) parts.push_back(std::make_unique<ZipFs>(zip, n));
+  if (note)
+    *note = "reading " + name + " as the union of its folders " + disks_named(labels) + " (one install disk each)";
+  return union_of(std::move(parts), std::move(labels));
+}
+
+// ---- disk sets ----------------------------------------------------------------------------
+
+// One folder of another source, seen as a source of its own: a disk of a disk
+// set. Its entries are the other source's, read through it.
+class SubtreeFs : public SourceFs {
+ public:
+  SubtreeFs(std::shared_ptr<const SourceFs> base, SourceNode dir) : base_(std::move(base)), dir_(std::move(dir)) {}
+
+  SourceNode root() const override {
+    SourceNode n = dir_;
+    n.name.clear();  // a root has no name
+    n.alt_name.clear();
+    return n;
+  }
+  std::vector<SourceNode> list(const SourceNode& dir) const override { return base_->list(dir); }
+  void read(const SourceNode& file, const Sink& sink) const override { base_->read(file, sink); }
+  std::string format() const override { return base_->format(); }
+  std::string volume_id() const override { return base_->volume_id(); }
+  std::string dir_key(const SourceNode& dir) const override { return base_->dir_key(dir); }
+
+ private:
+  std::shared_ptr<const SourceFs> base_;
+  SourceNode dir_;
+};
+
+// A root that holds nothing but DISK<n> folders is read as their union;
+// any other root as it is (source.h). `where` names the source in `note`.
+std::unique_ptr<SourceFs> disk_set(std::unique_ptr<SourceFs> fs, const std::string& where, std::string* note) {
+  std::map<unsigned, SourceNode> disks;
+  std::vector<std::string> others;
+  for (SourceNode& e : fs->list(fs->root())) {
+    const unsigned n = e.is_dir ? disk_folder_number(e.name) : 0;
+    if (!n) {
+      others.push_back(e.name);
+      continue;
+    }
+    // Two folders for one disk ("DISK1" and "disk1" on a case-sensitive
+    // volume, or a crafted image): no release's disks.
+    if (disks.count(n))
+      invalid(where + " holds two folders for disk " + std::to_string(n) + " (" + disks[n].name + " and " + e.name +
+              ")");
+    disks.emplace(n, std::move(e));
+  }
+  if (disks.empty()) return fs;
+  std::vector<std::string> labels;
+  for (const auto& [n, node] : disks) labels.push_back(node.name);
+  auto add_note = [&](const std::string& s) {
+    if (note) *note += (note->empty() ? "" : "; ") + s;
+  };
+  if (!others.empty()) {
+    add_note(where + " holds " + disks_named(labels) + " beside other files or folders (" + others.front() +
+             (others.size() > 1 ? ", …" : "") +
+             "): reading it as it is (install disks kept apart are read together "
+             "only from a folder that holds nothing else)");
+    return fs;
+  }
+  std::shared_ptr<const SourceFs> base(std::move(fs));
+  std::vector<std::unique_ptr<SourceFs>> parts;
+  for (auto& [n, node] : disks) parts.push_back(std::make_unique<SubtreeFs>(base, std::move(node)));
+  add_note("reading " + where + " as the union of its folders " + disks_named(labels) + " (one install disk each)");
+  return union_of(std::move(parts), std::move(labels));
 }
 
 // ---- union ------------------------------------------------------------------------------
 
 class UnionFs : public SourceFs {
  public:
-  explicit UnionFs(std::vector<std::unique_ptr<SourceFs>> parts) : parts_(std::move(parts)) {}
+  UnionFs(std::vector<std::unique_ptr<SourceFs>> parts, std::vector<std::string> labels)
+      : parts_(std::move(parts)), labels_(std::move(labels)) {}
 
   SourceNode root() const override {
     auto copies = std::make_shared<Copies>();
@@ -404,8 +505,17 @@ class UnionFs : public SourceFs {
           continue;
         }
         SourceNode& u = out[it->second];
-        if (u.is_dir != c.is_dir) invalid(c.name + " is a file in one image and a folder in another; they are not the disks of one release");
-        if (!u.is_dir && u.size != c.size) invalid(c.name + " differs between the images (size); they are not the disks of one release");
+        const size_t first = copies(u).front().first;
+        if (u.is_dir != c.is_dir) {
+          auto kind = [](bool dir) { return std::string(dir ? "a folder in " : "a file in "); };
+          invalid(c.name + " is " +
+                  (labels_.empty() ? std::string("a file in one image and a folder in another")
+                                   : kind(u.is_dir) + labels_[first] + " and " + kind(c.is_dir) + labels_[part]) +
+                  "; they are not the disks of one release");
+        }
+        if (!u.is_dir && u.size != c.size)
+          invalid(c.name + " differs between " + between(first, part) +
+                  " (size); they are not the disks of one release");
         const_cast<Copies&>(copies(u)).push_back({part, std::move(c)});
       }
     }
@@ -421,7 +531,9 @@ class UnionFs : public SourceFs {
       Md5 h;
       parts_[c[i].first]->read(c[i].second, [&](const uint8_t* p, size_t n) { h.update(p, n); });
       std::string m = h.finish_hex();
-      if (!other.empty() && m != other) invalid(file.name + " differs between the images; they are not the disks of one release");
+      if (!other.empty() && m != other)
+        invalid(file.name + " differs between " + between(c[1].first, c[i].first) +
+                "; they are not the disks of one release");
       other = m;
     }
     if (other.empty()) {
@@ -433,7 +545,9 @@ class UnionFs : public SourceFs {
       h.update(p, n);
       sink(p, n);
     });
-    if (h.finish_hex() != other) invalid(file.name + " differs between the images; they are not the disks of one release");
+    if (h.finish_hex() != other)
+      invalid(file.name + " differs between " + between(c[0].first, c[1].first) +
+              "; they are not the disks of one release");
   }
 
   std::string format() const override {
@@ -458,7 +572,13 @@ class UnionFs : public SourceFs {
  private:
   using Copies = std::vector<std::pair<size_t, SourceNode>>;
   std::vector<std::unique_ptr<SourceFs>> parts_;
+  std::vector<std::string> labels_;  // one per part, or none
   static const Copies& copies(const SourceNode& n) { return *static_cast<const Copies*>(n.impl.get()); }
+
+  // "DISK1 and DISK3", or "the images" without labels.
+  std::string between(size_t a, size_t b) const {
+    return labels_.empty() ? std::string("the images") : labels_[a] + " and " + labels_[b];
+  }
 };
 
 }  // namespace
@@ -478,28 +598,34 @@ std::optional<FILETIME> dos_filetime(uint16_t date, uint16_t time) {
   return ft;
 }
 
-std::unique_ptr<SourceFs> open_image(const fs::path& path) {
+std::unique_ptr<SourceFs> open_image(const fs::path& path, std::string* note) {
   std::error_code ec;
+  if (note) note->clear();
   if (!fs::is_regular_file(path, ec)) invalid("no such image file: " + to_utf8(path.wstring()));
+  const std::string name = to_utf8(path.filename().wstring());
   std::string iso_why;
+  std::unique_ptr<SourceFs> image;
   try {
-    return std::make_unique<IsoFs>(std::make_unique<IsoImage>(path));
+    image = std::make_unique<IsoFs>(std::make_unique<IsoImage>(path));
   } catch (const IsoError& e) {
     iso_why = e.what();
   }
+  if (image) return disk_set(std::move(image), name, note);
   // A local file header at byte 0: a ZIP of install files, never a floppy
   // (whose boot sector starts with a jump).
-  if (starts_with_zip_signature(path)) return open_zip(path);
+  if (starts_with_zip_signature(path)) return open_zip(path, note);
   try {
-    return std::make_unique<FatFs>(std::make_unique<FatImage>(path));
+    image = std::make_unique<FatFs>(std::make_unique<FatImage>(path));
   } catch (const FatError& e) {
-    invalid(to_utf8(path.filename().wstring()) + " is neither an ISO-9660 disc image (" + iso_why +
-            "), a FAT floppy image (" + e.what() + ") nor a ZIP of install files");
+    invalid(name + " is neither an ISO-9660 disc image (" + iso_why + "), a FAT floppy image (" + e.what() +
+            ") nor a ZIP of install files");
   }
+  return disk_set(std::move(image), name, note);
 }
 
 std::unique_ptr<SourceFs> open_folder(const fs::path& dir, std::string* note) {
   std::error_code ec;
+  if (note) note->clear();
   if (!fs::is_directory(dir, ec)) invalid("no such folder: " + to_utf8(dir.wstring()));
   // The root of a CD drive (a disc, or an image Windows mounted) is read as
   // the disc itself: Windows lists a Joliet disc by its long names
@@ -510,21 +636,23 @@ std::unique_ptr<SourceFs> open_folder(const fs::path& dir, std::string* note) {
   if (s.size() == 2 && s[1] == L':' && iswalpha(s[0])) {
     std::wstring root = s + L"\\";
     if (GetDriveTypeW(root.c_str()) == DRIVE_CDROM) {
+      std::unique_ptr<SourceFs> iso;
       try {
-        auto iso = std::make_unique<IsoFs>(std::make_unique<IsoImage>(L"\\\\.\\" + s));
+        iso = std::make_unique<IsoFs>(std::make_unique<IsoImage>(L"\\\\.\\" + s));
         if (note) *note = "reading " + to_utf8(root) + " as a disc (" + iso->format() + ")";
-        return iso;
       } catch (const IsoError& e) {
         if (note) *note = "cannot read " + to_utf8(root) + " as a disc (" + e.what() + "); reading it as a folder";
       }
+      if (iso) return disk_set(std::move(iso), to_utf8(root), note);
     }
   }
-  return std::make_unique<FolderFs>(dir);
+  return disk_set(std::make_unique<FolderFs>(dir), to_utf8(dir.wstring()), note);
 }
 
-std::unique_ptr<SourceFs> union_of(std::vector<std::unique_ptr<SourceFs>> parts) {
+std::unique_ptr<SourceFs> union_of(std::vector<std::unique_ptr<SourceFs>> parts, std::vector<std::string> labels) {
   if (parts.size() == 1) return std::move(parts.front());
-  return std::make_unique<UnionFs>(std::move(parts));
+  if (!labels.empty() && labels.size() != parts.size()) labels.clear();  // one per part, or none
+  return std::make_unique<UnionFs>(std::move(parts), std::move(labels));
 }
 
 std::vector<ZippedImage> floppy_images_in_zip(const fs::path& path, std::vector<std::string>* ignored,
@@ -592,12 +720,16 @@ std::vector<ZippedImage> floppy_images_in_zip(const fs::path& path, std::vector<
   return out;
 }
 
-std::unique_ptr<SourceFs> open_fat_image(std::shared_ptr<const std::vector<uint8_t>> bytes, const std::string& name) {
+std::unique_ptr<SourceFs> open_fat_image(std::shared_ptr<const std::vector<uint8_t>> bytes, const std::string& name,
+                                         std::string* note) {
+  if (note) note->clear();
+  std::unique_ptr<SourceFs> image;
   try {
-    return std::make_unique<FatFs>(std::make_unique<FatImage>(std::move(bytes)));
+    image = std::make_unique<FatFs>(std::make_unique<FatImage>(std::move(bytes)));
   } catch (const FatError& e) {
     invalid(name + " is not a FAT floppy image (" + e.what() + ")");
   }
+  return disk_set(std::move(image), name, note);
 }
 
 }  // namespace adw::import

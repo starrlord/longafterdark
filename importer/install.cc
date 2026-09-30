@@ -125,6 +125,8 @@ ImportRecord read_import_record(const fs::path& import_json) {
   r.version = j->int_in("version");
   r.verified = j->str("verified");
   r.imported_utc = j->str("importedUtc");
+  if (const JsonValue* s = j->get("source"); s && s->kind == JsonValue::Kind::object)
+    r.image_md5 = s->str(r.version == 1 ? "isoMd5" : "imageMd5");
   r.file_count = uint64_t(std::max<int64_t>(0, j->integer("fileCount")));
   return r;
 }
@@ -269,7 +271,10 @@ void recover(const fs::path& win, std::span<const Package> registry, const LogFn
   if (regen) {
     try {
       CatalogDoc doc = rewrite_catalog(win, registry, log);
-      if (log) log("rewrote the catalog after an interrupted operation (" + std::to_string(doc.modules.size()) + " modules)");
+      if (log) {
+        const size_t n = doc.modules.size();
+        log("rewrote the catalog after an interrupted operation (" + std::to_string(n) + (n == 1 ? " module)" : " modules)"));
+      }
     } catch (const std::exception& e) {
       if (log) log(std::string("could not rewrite the catalog: ") + e.what());
     }
@@ -301,8 +306,9 @@ CatalogResult regenerate_catalog(const fs::path& assets_root, const LogFn& log, 
     r.modules = doc.modules.size();
     for (const auto& m : doc.modules) r.controls += m.controls.size();
     r.status = Status::ok;
-    r.message = "wrote " + to_utf8(r.path.wstring()) + ": " + std::to_string(r.modules) + " modules, " +
-                std::to_string(r.controls) + " controls";
+    r.message = "wrote " + to_utf8(r.path.wstring()) + ": " + std::to_string(r.modules) + " module" +
+                (r.modules == 1 ? "" : "s") + ", " + std::to_string(r.controls) + " control" +
+                (r.controls == 1 ? "" : "s");
   } catch (const ImportError& e) {
     r.status = e.status();
     r.message = e.what();
@@ -331,6 +337,7 @@ std::vector<PackageState> list_packages(const fs::path& assets_root, std::span<c
       ImportRecord rec = read_import_record(import_record_path(win, p));
       s.verified = rec.present ? rec.verified : "unknown";
       s.imported_utc = rec.imported_utc;
+      s.image_md5 = rec.image_md5;
       s.file_count = rec.file_count;
     }
     out.push_back(std::move(s));
@@ -366,7 +373,8 @@ RemoveResult remove_package(const std::string& id, const fs::path& assets_root, 
     remove_quietly(removing);
     r.catalog_modules = doc.modules.size();
     r.status = Status::ok;
-    r.message = "removed " + std::string(p->title) + "; catalog: " + std::to_string(r.catalog_modules) + " modules";
+    r.message = "removed " + std::string(p->title) + "; catalog: " + std::to_string(r.catalog_modules) + " module" +
+                (r.catalog_modules == 1 ? "" : "s");
   } catch (const ImportError& e) {
     r.status = e.status();
     r.message = e.what();

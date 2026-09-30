@@ -36,6 +36,26 @@ const KnownFile kStartrekKnown[] = {
 #include "known_files_startrek.inc"
     {nullptr, 0, nullptr},
 };
+const KnownFile kMarvelKnown[] = {
+#include "known_files_marvel.inc"
+    {nullptr, 0, nullptr},
+};
+const KnownFile kSnoopyKnown[] = {
+#include "known_files_snoopy.inc"
+    {nullptr, 0, nullptr},
+};
+const KnownFile kLooneyKnown[] = {
+#include "known_files_looney.inc"
+    {nullptr, 0, nullptr},
+};
+const KnownFile kScreamsKnown[] = {
+#include "known_files_screams.inc"
+    {nullptr, 0, nullptr},
+};
+const KnownFile kDisneyKnown[] = {
+#include "known_files_disney.inc"
+    {nullptr, 0, nullptr},
+};
 
 template <size_t N>
 std::span<const KnownFile> manifest(const KnownFile (&a)[N]) {
@@ -113,6 +133,10 @@ const Download kAd32Downloads[] = {
      L"After Dark 3.2 (1995)(Berkeley Systems)[Mac-PC].iso", 61693952, "8b8be6977375fbf4d54146b9d505aa1c", "image"},
 };
 const char* const kAd32Required[] = {"AD32/ADXPL300.DLL", "ENGINE/AD_SND.DLL", "ENGINE/ADTASK.DLL"};
+// ScreamSavers' MODMISC.ZIP holds the same ADXPL300.DLL and its AFI.ZIP an
+// AD3.AFI too: of every known AD 3.x install, only 3.2's MODMISC.ZIP also
+// holds AD30RSDB.DLL (research/win/pkg/more/i2/members.json).
+constexpr char kAd32Marker[] = "AD30RSDB.DLL";
 
 // ---- tt ----------------------------------------------------------------------------------
 
@@ -311,6 +335,263 @@ const NameOverride kStartrekNames[] = {
     {"AFTERDRK/PLANETS.AD", "Planetary Atlas"},
 };
 
+// ---- marvel ------------------------------------------------------------------------------
+//
+// Marvel Comics Screen Posters (Berkeley Systems, December 1993, under
+// licence from Marvel): one After Dark 2.0 module, MARVEL.AD, a slide show of
+// 36 posters in Iterated Systems' fractal format, which its DECO.DLL decodes,
+// on After Dark 2.0d. Two floppies installed by InstallShield 2.00: every
+// file in compressed libraries (isz.h), the images in one split over both
+// disks, IMAGES.1 + IMAGES.2 (research/win/pkg/marvel, gitignored). No image
+// of the floppies exists online: its known copies are two ZIPs of their
+// files on the Internet Archive, one of them the user's copy byte for byte.
+
+// The module's folder: the installer's C:\AFTERDRK, which the 16-bit lane
+// mounts there (the module opens its images from <[After Dark] Path>\MRVLIMAG).
+const char* const kMarvelModuleDirs[] = {"AFTERDRK"};
+// The flat ZIP of the twelve install files (item afterdarkmarvelscreenposters,
+// without the previous owners' notes), and the ZIP of both disks in Disk1 and
+// Disk2 folders (item after-dark-collection): each file of the one is the
+// other's, byte for byte.
+const KnownImage kMarvelImages[] = {
+    {"4c608dbbeb34108b30ede88304912c94", 2039771,
+     "ZIP of the install files of both floppies (the Internet Archive's afterdarkmarvelscreenposters copy)", ""},
+    {"6981b36abb04779a076466fabad3721c", 2046286,
+     "ZIP of both install floppies' files, in Disk1 and Disk2 folders (the Internet Archive's after-dark-collection "
+     "copy)",
+     ""},
+};
+// The flat ZIP first (the item that also holds the box photo); other bytes,
+// other names. Neither item's serial number file is ever fetched.
+const Download kMarvelDownloads[] = {
+    {"https://archive.org/download/afterdarkmarvelscreenposters/After%20Dark%20-%20Marvel%20Screen%20Posters.zip",
+     L"After Dark - Marvel Screen Posters.zip", 2039771, "4c608dbbeb34108b30ede88304912c94", "zip"},
+    {"https://archive.org/download/after-dark-collection/After%20Dark%20-%20Marvel%20Comics.zip",
+     L"After Dark - Marvel Comics.zip", 2046286, "6981b36abb04779a076466fabad3721c", "zip"},
+};
+// What the module cannot run without: the decoder it imports, the image
+// catalog it refuses to start without, and the sound library the native
+// bridge loads.
+const char* const kMarvelRequired[] = {"AFTERDRK/DECO.DLL", "AFTERDRK/MRVLIMAG/MRVLIMAG.ADC", "ENGINE/AD_SND.DLL"};
+// Every library the recipe reads, every install disk's: images.lib (IMAGES.1
+// on disk 1, beside SETUP.PKG; IMAGES.2 on disk 2), modules.lib, engine.lib
+// and win.lib (disk 2).
+const char* const kMarvelLibraries[] = {"IMAGES.1", "IMAGES.2", "MODULES.LIB", "ENGINE.LIB", "WIN.LIB"};
+// INSTALL.INS's full install, flattened: the module and its decoder in the
+// module folder (C:\AFTERDRK), every image and the image catalog in MRVLIMAG\
+// below it (C:\AFTERDRK\MRVLIMAG), AD_SND 1.0 (which the installer put in
+// C:\WINDOWS) and the pristine AD.EXE in ENGINE (the host replaces AD.EXE,
+// which is kept for reference as Star Trek's is; nothing loads it). Never
+// installed: the rest of engine.lib (the PC-speaker and Sound Blaster
+// drivers, AD_MME.DRV, AD_LIB.DLL, ADINIT.EXE, the manual MRVL.WRI and the
+// four readme texts), the rest of win.lib (the disk's AD_PREFS.INI, whose
+// PC-speaker driver would hang the emulator, AD.HLP, AD_WRAP.COM,
+// SPALETTE.DLL), winsys.lib (AD.386) and the installer's own ~INS0762.LIB.
+const LibraryMember kMarvelTable[] = {
+    {"MODULES.LIB", "MARVEL.AD", "AFTERDRK/MARVEL.AD"},
+    {"MODULES.LIB", "DECO.DLL", "AFTERDRK/DECO.DLL"},
+    {"ENGINE.LIB", "AD.EXE", "ENGINE/AD.EXE"},
+    {"WIN.LIB", "AD_SND.DLL", "ENGINE/AD_SND.DLL"},
+    {"IMAGES.1", "AV2.FTT", "AFTERDRK/MRVLIMAG/AV2.FTT"},
+    {"IMAGES.1", "AVENGE#4.FIF", "AFTERDRK/MRVLIMAG/AVENGE#4.FIF"},
+    {"IMAGES.1", "CABLE.FIF", "AFTERDRK/MRVLIMAG/CABLE.FIF"},
+    {"IMAGES.1", "CABLE.FTT", "AFTERDRK/MRVLIMAG/CABLE.FTT"},
+    {"IMAGES.1", "CAPT.FIF", "AFTERDRK/MRVLIMAG/CAPT.FIF"},
+    {"IMAGES.1", "CAPT.FTT", "AFTERDRK/MRVLIMAG/CAPT.FTT"},
+    {"IMAGES.1", "CAPTAINA.FIF", "AFTERDRK/MRVLIMAG/CAPTAINA.FIF"},
+    {"IMAGES.1", "CAPTAINA.FTT", "AFTERDRK/MRVLIMAG/CAPTAINA.FTT"},
+    {"IMAGES.1", "CAPTAINW.FIF", "AFTERDRK/MRVLIMAG/CAPTAINW.FIF"},
+    {"IMAGES.1", "CLOBBERI.FIF", "AFTERDRK/MRVLIMAG/CLOBBERI.FIF"},
+    {"IMAGES.1", "COVER.FTT", "AFTERDRK/MRVLIMAG/COVER.FTT"},
+    {"IMAGES.1", "DAREDEVI.FIF", "AFTERDRK/MRVLIMAG/DAREDEVI.FIF"},
+    {"IMAGES.1", "DAREDEVI.FTT", "AFTERDRK/MRVLIMAG/DAREDEVI.FTT"},
+    {"IMAGES.1", "FAN4#1.FIF", "AFTERDRK/MRVLIMAG/FAN4#1.FIF"},
+    {"IMAGES.1", "FAN4#1.FTT", "AFTERDRK/MRVLIMAG/FAN4#1.FTT"},
+    {"IMAGES.1", "FANT0A.FTT", "AFTERDRK/MRVLIMAG/FANT0A.FTT"},
+    {"IMAGES.1", "FANT0WFB.FIF", "AFTERDRK/MRVLIMAG/FANT0WFB.FIF"},
+    {"IMAGES.1", "FANTAST0.FTT", "AFTERDRK/MRVLIMAG/FANTAST0.FTT"},
+    {"IMAGES.1", "GAMBWOLV.FIF", "AFTERDRK/MRVLIMAG/GAMBWOLV.FIF"},
+    {"IMAGES.1", "GHOST.FTT", "AFTERDRK/MRVLIMAG/GHOST.FTT"},
+    {"IMAGES.1", "GHOSTID.FIF", "AFTERDRK/MRVLIMAG/GHOSTID.FIF"},
+    {"IMAGES.1", "HULK#1.FIF", "AFTERDRK/MRVLIMAG/HULK#1.FIF"},
+    {"IMAGES.1", "HULK#1.FTT", "AFTERDRK/MRVLIMAG/HULK#1.FTT"},
+    {"IMAGES.1", "HULKFACE.FIF", "AFTERDRK/MRVLIMAG/HULKFACE.FIF"},
+    {"IMAGES.1", "HUMANTOR.FIF", "AFTERDRK/MRVLIMAG/HUMANTOR.FIF"},
+    {"IMAGES.1", "IRONMAN.FIF", "AFTERDRK/MRVLIMAG/IRONMAN.FIF"},
+    {"IMAGES.1", "IRONMAN2.FTT", "AFTERDRK/MRVLIMAG/IRONMAN2.FTT"},
+    {"IMAGES.1", "MRVLIMAG.ADC", "AFTERDRK/MRVLIMAG/MRVLIMAG.ADC"},
+    {"IMAGES.1", "PUNISHER.FIF", "AFTERDRK/MRVLIMAG/PUNISHER.FIF"},
+    {"IMAGES.1", "PUNISHER.FTT", "AFTERDRK/MRVLIMAG/PUNISHER.FTT"},
+    {"IMAGES.1", "PUNISHLA.FIF", "AFTERDRK/MRVLIMAG/PUNISHLA.FIF"},
+    {"IMAGES.1", "PUNISHLO.FTT", "AFTERDRK/MRVLIMAG/PUNISHLO.FTT"},
+    {"IMAGES.1", "SABRETOO.FIF", "AFTERDRK/MRVLIMAG/SABRETOO.FIF"},
+    {"IMAGES.1", "SHE-HULK.FIF", "AFTERDRK/MRVLIMAG/SHE-HULK.FIF"},
+    {"IMAGES.1", "SHE-HULK.FTT", "AFTERDRK/MRVLIMAG/SHE-HULK.FTT"},
+    {"IMAGES.1", "SILVERSA.FIF", "AFTERDRK/MRVLIMAG/SILVERSA.FIF"},
+    {"IMAGES.1", "SILVERSU.FIF", "AFTERDRK/MRVLIMAG/SILVERSU.FIF"},
+    {"IMAGES.1", "SILVERSU.FTT", "AFTERDRK/MRVLIMAG/SILVERSU.FTT"},
+    {"IMAGES.1", "SILVRSU2.FIF", "AFTERDRK/MRVLIMAG/SILVRSU2.FIF"},
+    {"IMAGES.1", "SILVRSU2.FTT", "AFTERDRK/MRVLIMAG/SILVRSU2.FTT"},
+    {"IMAGES.1", "SPIDATTA.FIF", "AFTERDRK/MRVLIMAG/SPIDATTA.FIF"},
+    {"IMAGES.1", "SPIDERCO.FIF", "AFTERDRK/MRVLIMAG/SPIDERCO.FIF"},
+    {"IMAGES.1", "SPIDEY#1.FTT", "AFTERDRK/MRVLIMAG/SPIDEY#1.FTT"},
+    {"IMAGES.1", "SPIDEY1W.FIF", "AFTERDRK/MRVLIMAG/SPIDEY1W.FIF"},
+    {"IMAGES.1", "SPIDEYAT.FTT", "AFTERDRK/MRVLIMAG/SPIDEYAT.FTT"},
+    {"IMAGES.1", "SPIDEYID.FIF", "AFTERDRK/MRVLIMAG/SPIDEYID.FIF"},
+    {"IMAGES.1", "SPIDEYSW.FTT", "AFTERDRK/MRVLIMAG/SPIDEYSW.FTT"},
+    {"IMAGES.1", "SPIDEYVE.FIF", "AFTERDRK/MRVLIMAG/SPIDEYVE.FIF"},
+    {"IMAGES.1", "SPIDEYVE.FTT", "AFTERDRK/MRVLIMAG/SPIDEYVE.FTT"},
+    {"IMAGES.1", "SPIDSWIN.FIF", "AFTERDRK/MRVLIMAG/SPIDSWIN.FIF"},
+    {"IMAGES.1", "THORA.FIF", "AFTERDRK/MRVLIMAG/THORA.FIF"},
+    {"IMAGES.1", "THORA.FTT", "AFTERDRK/MRVLIMAG/THORA.FTT"},
+    {"IMAGES.1", "WOLNSAB.FIF", "AFTERDRK/MRVLIMAG/WOLNSAB.FIF"},
+    {"IMAGES.1", "WOLVIE.FIF", "AFTERDRK/MRVLIMAG/WOLVIE.FIF"},
+    {"IMAGES.1", "WOLVRIP.FIF", "AFTERDRK/MRVLIMAG/WOLVRIP.FIF"},
+    {"IMAGES.1", "WOMENFX.FIF", "AFTERDRK/MRVLIMAG/WOMENFX.FIF"},
+    {"IMAGES.1", "WOMENFX.FTT", "AFTERDRK/MRVLIMAG/WOMENFX.FTT"},
+    {"IMAGES.1", "X-MENVS.FIF", "AFTERDRK/MRVLIMAG/X-MENVS.FIF"},
+    {"IMAGES.1", "XMEN2099.FIF", "AFTERDRK/MRVLIMAG/XMEN2099.FIF"},
+    {"IMAGES.1", "XMENATTA.FIF", "AFTERDRK/MRVLIMAG/XMENATTA.FIF"},
+};
+
+// ---- snoopy ------------------------------------------------------------------------------
+//
+// Snoopy's Screen Savers 1.0 (Image Smith, 1994; the Peanuts characters under
+// licence from United Feature Syndicate): eight After Dark modules for an
+// After Dark 2.0 or 3.0 already installed, with no engine, no AD_SND and no
+// palettes of their own. Two floppies installed by InstallShield 2.00: the
+// modules in one compressed library split over both disks, AD_MODS.1 +
+// AD_MODS.2 (research/win/pkg/snoopy, gitignored). No image of the floppies
+// exists online: its known copy is the Internet Archive's ZIP of their files,
+// the user's copy byte for byte.
+
+// The modules' folder: the directory of the After Dark they were installed
+// into (the installer's default C:\AFTERDRK).
+const char* const kSnoopyModuleDirs[] = {"AFTERDRK"};
+const KnownImage kSnoopyImages[] = {
+    {"a712447e1c957767bdbca884cead02dc", 1993700,
+     "ZIP of both install floppies' files, in Disk1 and Disk2 folders (the Internet Archive's after-dark-collection "
+     "copy)",
+     ""},
+};
+const Download kSnoopyDownloads[] = {
+    {"https://archive.org/download/after-dark-collection/After%20Dark%20-%20Snoopy.zip", L"After Dark - Snoopy.zip",
+     1993700, "a712447e1c957767bdbca884cead02dc", "zip"},
+};
+// Both volumes of the library, one per install disk (AD_MODS.1 beside
+// SETUP.PKG on disk 1).
+const char* const kSnoopyLibraries[] = {"AD_MODS.1", "AD_MODS.2"};
+// SETUP.INS copies every member of AD_MODS.z into the After Dark directory,
+// and nothing else.
+const LibraryMember kSnoopyTable[] = {
+    {"AD_MODS.1", "IS_COLAG.AD", "AFTERDRK/IS_COLAG.AD"}, {"AD_MODS.1", "IS_DANCE.AD", "AFTERDRK/IS_DANCE.AD"},
+    {"AD_MODS.1", "IS_FACES.AD", "AFTERDRK/IS_FACES.AD"}, {"AD_MODS.1", "IS_FLY.AD", "AFTERDRK/IS_FLY.AD"},
+    {"AD_MODS.1", "IS_LINUS.AD", "AFTERDRK/IS_LINUS.AD"}, {"AD_MODS.1", "IS_LITRY.AD", "AFTERDRK/IS_LITRY.AD"},
+    {"AD_MODS.1", "IS_SPTLT.AD", "AFTERDRK/IS_SPTLT.AD"}, {"AD_MODS.1", "IS_THRPY.AD", "AFTERDRK/IS_THRPY.AD"},
+};
+
+// ---- looney ------------------------------------------------------------------------------
+//
+// The Looney Tunes Screen Saver (Berkeley Systems, April 1995, under licence
+// from Warner Bros.): 12 AD 3.x Classic modules on their own engine,
+// ADXPL41.DLL, with a sound database, LT_SOUND.DLL, and the After Dark 3.0
+// host of early 1995; the same InstallShield install of encrypted ZIPs as
+// 3.2's (research/win/pkg/looney, gitignored). Build A, the April release:
+// the Internet Archive's ZIP of its install files is the user's copy byte for
+// byte, and the LOONEY_T CD holds the same 30 files. (Build B, the August CD
+// LTW320CD, has the same modules on 3.2's engine files: identified as this
+// package, it fails verification, and --no-verify imports it.)
+
+const char* const kLooneyModuleDirs[] = {"LNYTUNES"};
+// The ZIP, and the CD of the same files. The CD's only copy online is named
+// (in its URL too) after what another item publishes as the product's serial
+// number: it is known by md5, size and volume id only, and never downloaded.
+const KnownImage kLooneyImages[] = {
+    {"642b358a4854c481fe99984b8452ceb5", 2900525,
+     "ZIP of the install files of both floppies (the Internet Archive's after-dark-collection copy)", ""},
+    {"6ad72e19b2cf6fcb9e67427f8e600449", 6625280, "ISO-9660 CD of the install files of both floppies", "LOONEY_T"},
+};
+const Download kLooneyDownloads[] = {
+    {"https://archive.org/download/after-dark-collection/After%20Dark%20-%20Looney%20Tunes.zip",
+     L"After Dark - Looney Tunes.zip", 2900525, "642b358a4854c481fe99984b8452ceb5", "zip"},
+};
+const char* const kLooneyRequired[] = {"LNYTUNES/ADXPL41.DLL", "LNYTUNES/LT_SOUND.DLL", "ENGINE/AD_SND.DLL",
+                                       "ENGINE/ADTASK.DLL"};
+// The 12 module archives and MUSIC.ZIP, over both install floppies.
+const char* const kLooneyArchives[] = {"ACMESHOP.ZIP", "CART101.ZIP", "CONDUCKT.ZIP", "FROG.ZIP",  "LTMESSGS.ZIP",
+                                       "MARVIN.ZIP",   "PEPE.ZIP",    "PUTTYTAT.ZIP", "RABBITRN.ZIP", "SAM.ZIP",
+                                       "TAZ.ZIP",      "WOCKETS.ZIP", "MUSIC.ZIP"};
+
+// ---- screams -----------------------------------------------------------------------------
+//
+// ScreamSavers ("Stephen Blickenstaff's ScreamSavers", Binary Software, 1995):
+// 15 AD 3.x Classic modules on After Dark 3.0.6, which Binary Software
+// licensed from Berkeley, on three floppies with the same InstallShield
+// install as 3.2's (research/win/pkg/scream, gitignored). The modules import
+// only AD_SND; MODMISC.ZIP holds 3.2's ADXPL300.DLL, installed as the
+// installer did though nothing loads it. The only copy online is the
+// Internet Archive's ZIP of the three disks' files in DISK1-DISK3 folders,
+// the user's copy byte for byte.
+
+const char* const kScreamsModuleDirs[] = {"SCREAMS"};
+const KnownImage kScreamsImages[] = {
+    {"37a47b25dd35b214f94f57b6a0c2bd02", 3453163,
+     "ZIP of the three install floppies' files, in DISK1-DISK3 folders (the Internet Archive's after-dark-collection "
+     "copy)",
+     ""},
+};
+const Download kScreamsDownloads[] = {
+    {"https://archive.org/download/after-dark-collection/After%20Dark%20-%20Scream%20Savers.zip",
+     L"After Dark - Scream Savers.zip", 3453163, "37a47b25dd35b214f94f57b6a0c2bd02", "zip"},
+};
+const char* const kScreamsRequired[] = {"ENGINE/AD_SND.DLL", "ENGINE/ADTASK.DLL"};
+// The 15 module archives, over the three install floppies.
+const char* const kScreamsArchives[] = {"AMPHIBO.ZIP", "BELCHO.ZIP",   "BUGZAP.ZIP",   "GRISTLE.ZIP",  "HEADBUTT.ZIP",
+                                        "INFECTO.ZIP", "LOCKJAW.ZIP",  "MALIGNO.ZIP",  "MELTICOR.ZIP", "MOONBITE.ZIP",
+                                        "PUPPY.ZIP",   "SNAPPY.ZIP",   "SPEWER.ZIP",   "STICKY.ZIP",   "TWISTER.ZIP"};
+
+// ---- disney ------------------------------------------------------------------------------
+//
+// The Disney Collection Screen Saver (Berkeley Systems, 1995): the 1993
+// Disney modules re-released on the After Dark 3.2 engine, 16 Classic modules
+// on the After Dark 2.0-era library ADXPL100.DLL with a sound library,
+// DIS_SND.DLL, in the same InstallShield install as 3.2's
+// (research/win/pkg/disney, gitignored). No image of its disks exists online:
+// its known copy is the Internet Archive's ZIP of the three disks' files, the
+// user's copy byte for byte. (The 1993 edition, on After Dark 2.0 and
+// InstallShield libraries, is another release.)
+
+const char* const kDisneyModuleDirs[] = {"DISNEY"};
+const KnownImage kDisneyImages[] = {
+    {"2f38df15494728b5bc20d26c36ba84c7", 3560012,
+     "ZIP of the install files of the three floppies (the Internet Archive's after-dark-collection copy)", ""},
+};
+const Download kDisneyDownloads[] = {
+    {"https://archive.org/download/after-dark-collection/After%20Dark%20-%20Disney%20Collection.zip",
+     L"After Dark - Disney Collection.zip", 3560012, "2f38df15494728b5bc20d26c36ba84c7", "zip"},
+};
+// The library the modules import and the one it loads by name from the AD
+// Data Files root (AD_PREFS.INI's [After Dark] Path).
+const char* const kDisneyRequired[] = {"DISNEY/ADXPL100.DLL", "DISNEY/DIS_SND.DLL", "ENGINE/AD_SND.DLL",
+                                       "ENGINE/ADTASK.DLL"};
+// The 16 module archives, over the three install floppies.
+const char* const kDisneyArchives[] = {"BEAUTY.ZIP",  "CHECAT.ZIP",  "DALM.ZIP",    "DONDUK.ZIP",
+                                       "DSCLOCKS.ZIP", "FALLING.ZIP", "FIREWRK.ZIP", "GOOFY.ZIP",
+                                       "HAUNTED.ZIP", "HOOK.ZIP",    "INKWELL.ZIP", "JUNGLE.ZIP",
+                                       "MERMAID.ZIP", "PINOCCHI.ZIP", "SCROOGE.ZIP", "SORCERER.ZIP"};
+// The 1993 build of BEAUTY.AD, which only the installer's last function
+// names (beside "CopyFile failed for"): the release installs BEAUTY.ZIP's
+// 1995 build, the one Berkeley's checksum list (CHEKSUMS.NEW) names. Two
+// archives holding one name would otherwise be two files for one path.
+const char* const kDisneyNeverOpened[] = {"BEAUTYOL.ZIP"};
+// Five names lost their space to the name resource's 16 bytes; each
+// module's own description (and Berkeley's product page) spells it out.
+const NameOverride kDisneyNames[] = {
+    {"DISNEY/DALM.AD", "101 Dalmatians"}, {"DISNEY/DSCLOCKS.AD", "Disney Clocks"},
+    {"DISNEY/FALLING.AD", "Falling Flower"}, {"DISNEY/FIREWRK.AD", "Magic Kingdom"},
+    {"DISNEY/MERMAID.AD", "Little Mermaid"},
+};
+
 // ---- box covers (COVERS.md §2.3) ------------------------------------------------------------
 //
 // Only URLs, md5s, sizes, paths and crops: the pictures are fetched (md5- and
@@ -444,6 +725,63 @@ const CoverSource kStartrekCovers[] = {
                    "dbda3bc66b809f446a17138073579b53", 569964, L"afterdark-20b_startrek_disk1.jpg"),
 };
 
+// Marvel Comics Screen Posters: the Internet Archive's photo of the Windows
+// box front (the item of the flat ZIP; 1200x1505, cropped to the box: the
+// camera's date stamp inside it stays), else the 1993 magazine advertisement
+// showing the same box, drawn as a picture. Marvel's and Berkeley's art:
+// fetched onto the user's machine only, never bundled. The disks have no
+// picture a disc source can reach (every one is inside the libraries).
+const CoverSource kMarvelCovers[] = {
+    cover_download("box", "Box front", "Internet Archive",
+                   "https://archive.org/download/afterdarkmarvelscreenposters/box.jpg",
+                   "1b9294c6bd03c5b14ed366cc652c8e7c", 903667, L"afterdarkmarvelscreenposters_box.jpg",
+                   Crop{28, 64, 1132, 1390}),
+    cover_download("panel", "Advertisement", "Internet Archive",
+                   "https://archive.org/download/marval-computer/MarvalComputer.jpg",
+                   "f2644bb771fd8cbba1c88e77937b5572", 3229147, L"marval-computer_MarvalComputer.jpg"),
+};
+// Snoopy's Screen Savers: no box, label or manual scan of the Windows release
+// exists online; the picture its installer shows beside the readme on disk 1
+// (AD_MODS.BMP, Image Smith's logo, 79x175), drawn as a picture.
+const CoverSource kSnoopyCovers[] = {
+    cover_disc("panel", "Setup art", "your disks", "AD_MODS.BMP", "9befcefa9fafbb5e7c36ccfe325c607d"),
+};
+
+// The Looney Tunes Screen Saver: the box front from Berkeley Systems' product
+// page (1997, through the Wayback Machine; 127x162, as Totally Twisted's),
+// else the installer splash, cropped above its warning text, else the scan
+// of the CD label (of the August CD of the same release). Warner Bros.' and
+// Berkeley's art: fetched onto the user's machine only, never bundled.
+const CoverSource kLooneyCovers[] = {
+    cover_download("box", "Box front", "Wayback Machine",
+                   "https://web.archive.org/web/19970720113529id_/"
+                   "http://www.berksys.com:80/products/afterdark/box.looneytunesL.jpg",
+                   "e9fa28ed00032bb04a436132a724e98c", 29771, L"berksys_box.looneytunesL.jpg"),
+    cover_disc("splash", "Installer art", "your disks", "SETUP.BMP", "32af5fcb5add7fc88de7b03b5c531563",
+               Crop{0, 0, 387, 161}),
+    cover_download("disc", "Disc label", "Internet Archive",
+                   "https://archive.org/download/berkeley_systems_looney_tunes/16_looney_tunes_CD.jpg",
+                   "8b168e0679d2661889092fc6280d509a", 369574, L"berkeley_systems_looney_tunes_16_looney_tunes_CD.jpg"),
+};
+// ScreamSavers: no box or label scan exists online; the installer's title
+// art in SETUP.EXE (bitmap 7500, 350x179), cropped above its copyright block.
+const CoverSource kScreamsCovers[] = {
+    cover_disc("splash", "Installer art", "your disks", "SETUP.EXE", "e348fb48b89102903a3b26a3c8aedab3",
+               Crop{0, 0, 350, 119}, 2, 7500),
+};
+// The Disney Collection Screen Saver: the box front from Berkeley Systems'
+// product page (1997, through the Wayback Machine; 128x162), else the
+// installer splash, cropped above its warning text. Disney's and Berkeley's
+// art: fetched onto the user's machine only, never bundled.
+const CoverSource kDisneyCovers[] = {
+    cover_download("box", "Box front", "Wayback Machine",
+                   "https://web.archive.org/web/19970720111656id_/"
+                   "http://www.berksys.com:80/lite/products/afterdark/box.disneyL.jpg",
+                   "ffcd41dd737b125af0a4e4a1bfee6610", 20983, L"berksys_box.disneyL.jpg"),
+    cover_disc("splash", "Installer art", "your disks", "SETUP.BMP", "39e1bfb21fdf7fe2396525d13798cf50",
+               Crop{0, 0, 387, 172}),
+};
+
 const Package kPackages[] = {
     {"deluxe", "After Dark 4.0 Deluxe", "Deluxe", Recipe::tree, "FILES", kDeluxeModuleDirs, kDeluxeImages,
      kDeluxeRequired, kDeluxeCopy, nullptr, {}, nullptr, nullptr, nullptr, {}, {}, {}, manifest(kDeluxeKnown),
@@ -452,7 +790,7 @@ const Package kPackages[] = {
      kAd10Images, kAd10Required, kAd10Copy, "AD10TH/ADXPL40.DLL", kAd10Absent, nullptr, nullptr, nullptr, {},
      kAd10Fixups, kAd10Names, manifest(kAd10Known), kAd10Downloads, kAd10Covers, "1999-09"},  // disc mastered 1999-09-06
     {"ad32", "After Dark 3.2", "After Dark 3.2", Recipe::ad3zip, "packages/ad32", kAd32ModuleDirs, kAd32Images,
-     kAd32Required, {}, nullptr, {}, "AD32", "ADXPL300.DLL", "AD3.AFI", {}, {}, {}, manifest(kAd32Known),
+     kAd32Required, {}, kAd32Marker, {}, "AD32", "ADXPL300.DLL", "AD3.AFI", {}, {}, {}, manifest(kAd32Known),
      kAd32Downloads, kAd32Covers, "1995-08-02"},  // newest file on the disc (its PVD date is a bogus 1993)
     {"tt", "Totally Twisted After Dark", "Totally Twisted", Recipe::ad3zip, "packages/tt", kTtModuleDirs, kTtImages,
      kTtRequired, {}, nullptr, {}, "TWISTED", "ADXPL40.DLL", "PHLEM.AFI", {}, {}, {}, manifest(kTtKnown),
@@ -467,9 +805,10 @@ const Package kPackages[] = {
     {"swse", "Star Wars Screen Entertainment", "Star Wars", Recipe::intermission, "packages/swse", kSwseModuleDirs,
      kSwseImages, kSwseRequired, {}, nullptr, {}, "SAVER", nullptr, nullptr, kSwseArchives, {}, kSwseNames,
      manifest(kSwseKnown), kSwseDownloads, kSwseCovers, "1994-08", "SWSE", kSwseLoose},
-    // The newest files on the disks are dated 1992-11-16 (the modules). Last in
-    // the registry, so the first six keep their places (the GUI's per-release
-    // command ids go by registry index); first in the catalog's packages list.
+    // The newest files on the disks are dated 1992-11-16 (the modules). After
+    // the first six in the registry, so they keep their places (the GUI's
+    // per-release command ids go by registry index); first in the catalog's
+    // packages list.
     // Some of its modules compose a fixed 640x480 scene (at larger screens
     // The Mission sits top-left with a band; Final Exam and Sickbay sit small
     // in the middle), and the others lay out for whatever screen they get:
@@ -479,6 +818,41 @@ const Package kPackages[] = {
      kStartrekModuleDirs, kStartrekImages, kStartrekRequired, {}, nullptr, {}, "AFTERDRK", nullptr, nullptr,
      kStartrekDiskTags, {}, kStartrekNames, manifest(kStartrekKnown), kStartrekDownloads, kStartrekCovers, "1992-11",
      nullptr, kStartrekLoose, "Star Trek\xAE: The Screen Saver", "640x480", Package::About::ad20},
+    // The releases added after Star Trek: The Screen Saver follow it, so the
+    // first seven keep their places (and the GUI's command ids).
+    // The libraries and MARVEL.AD are dated 1993-12-13 (its readme, December
+    // 15, 1993). Each poster is a fixed 640x480 picture, drawn in the middle
+    // of a larger screen with its caption at the bottom of the whole screen:
+    // the catalog gives it that screen, as for Star Trek: The Screen Saver.
+    {"marvel", "Marvel Comics Screen Posters", "Marvel", Recipe::islib, "packages/marvel", kMarvelModuleDirs,
+     kMarvelImages, kMarvelRequired, {}, nullptr, {}, "AFTERDRK", nullptr, nullptr, kMarvelLibraries, {}, {},
+     manifest(kMarvelKnown), kMarvelDownloads, kMarvelCovers, "1993-12", nullptr, {}, nullptr, "640x480",
+     Package::About::as_is, {}, "modules.lib", "MARVEL.AD", kMarvelTable},
+    // The library is dated 1994-10-19, the newest modules 1994-10-13. The
+    // modules lay out for any screen.
+    {"snoopy", "Snoopy's Screen Savers", "Snoopy", Recipe::islib, "packages/snoopy", kSnoopyModuleDirs, kSnoopyImages,
+     {}, {}, nullptr, {}, "AFTERDRK", nullptr, nullptr, kSnoopyLibraries, {}, {}, manifest(kSnoopyKnown),
+     kSnoopyDownloads, kSnoopyCovers, "1994-10", nullptr, {}, nullptr, nullptr, Package::About::as_is, {}, "AD_MODS.z",
+     "IS_FLY.AD", kSnoopyTable},
+    // Every file of the April build is dated 1995-04-11/12; Berkeley
+    // announced it on 1995-04-25. It ties with ScreamSavers and comes first.
+    {"looney", "The Looney Tunes Screen Saver", "Looney Tunes", Recipe::ad3zip, "packages/looney", kLooneyModuleDirs,
+     kLooneyImages, kLooneyRequired, {}, nullptr, {}, "LNYTUNES", "ADXPL41.DLL", "LNYTUNES.AFI", kLooneyArchives, {},
+     {}, manifest(kLooneyKnown), kLooneyDownloads, kLooneyCovers, "1995-04"},
+    // The newest file on the disks is ENGINE.ZIP, 1995-04-11 (its SETUP.PKG
+    // lists an earlier one: disk 1 was remastered with the 3.0.6 engine).
+    // Four modules paint a 640x480 scene and one composes one 640 wide, drawn
+    // small in the middle of a larger screen: the catalog gives all 15 that
+    // screen, as for Star Trek: The Screen Saver.
+    {"screams", "ScreamSavers", "ScreamSavers", Recipe::ad3zip, "packages/screams", kScreamsModuleDirs,
+     kScreamsImages, kScreamsRequired, {}, nullptr, {}, "SCREAMS", "ADXPL300.DLL", "SCREAMS.AFI", kScreamsArchives, {},
+     {}, manifest(kScreamsKnown), kScreamsDownloads, kScreamsCovers, "1995-04", nullptr, {}, nullptr, "640x480"},
+    // The newest files (the script, the package list, AFI.ZIP) are dated
+    // 1995-09-13.
+    {"disney", "The Disney Collection Screen Saver", "Disney", Recipe::ad3zip, "packages/disney", kDisneyModuleDirs,
+     kDisneyImages, kDisneyRequired, {}, nullptr, {}, "DISNEY", "ADXPL100.DLL", "DISNEY.AFI", kDisneyArchives, {},
+     kDisneyNames, manifest(kDisneyKnown), kDisneyDownloads, kDisneyCovers, "1995-09", nullptr, {}, nullptr, nullptr,
+     Package::About::as_is, kDisneyNeverOpened},
 };
 
 }  // namespace
@@ -491,6 +865,7 @@ const char* recipe_name(Recipe r) {
     case Recipe::ad3zip: return "ad3zip";
     case Recipe::intermission: return "intermission";
     case Recipe::ad2kwaj: return "ad2kwaj";
+    case Recipe::islib: return "islib";
   }
   return "?";
 }

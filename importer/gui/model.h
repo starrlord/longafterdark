@@ -27,6 +27,14 @@ std::wstring phase_instruction(Progress::Phase p, const std::string& package, si
 // "123.4 MB of 400.0 MB (5.0 MB/s)"; `speed` is "" or "5.0 MB/s".
 std::wstring amount_line(uint64_t done, uint64_t total, const std::string& speed);
 
+// ---- the Sources page ---------------------------------------------------------------------
+
+// Its first line: before anything is imported, "Long After Dark runs the original Windows
+// modules of A, B, … and L. Choose where to copy them from." (every release of the registry,
+// what a newcomer with a disc wants to know); once some are, and listed below it, the count
+// in words instead ("… of twelve releases. …"), so the page keeps room for the list.
+std::wstring sources_intro(bool any_installed, std::span<const Package> registry = {});
+
 // ---- installed releases ---------------------------------------------------------------
 
 // catalog-win.json's packages[] module counts (id -> modules); empty when the catalog is
@@ -34,9 +42,11 @@ std::wstring amount_line(uint64_t done, uint64_t total, const std::string& speed
 std::map<std::string, int> catalog_module_counts(const std::filesystem::path& win_dir);
 
 // How an import was checked, for people: "verified against the original disc" ("disks" for a
-// floppy set; import.json's "image"), "every file verified" ("files"), "partly verified",
-// "not verified".
-std::wstring verified_words(const std::string& verified, const std::string& package);
+// floppy set; "the known ZIP" for a release known by the ZIP of its install files; import.json's
+// "image"), "every file verified" ("files"), "partly verified", "not verified". `image_md5`, when
+// set, is the image or ZIP the import came from (import.json's imageMd5): the known image with
+// that md5 is the one named, else the package's first.
+std::wstring verified_words(const std::string& verified, const std::string& package, const std::string& image_md5 = "");
 
 struct InstalledRow {
   std::string id;

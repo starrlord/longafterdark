@@ -37,6 +37,7 @@ struct ImportRecord {
   bool present = false;
   int version = 0;
   std::string verified, imported_utc;
+  std::string image_md5;  // source.imageMd5 (version 2) or isoMd5 (1): one image or ZIP; "" for any other source
   uint64_t file_count = 0;
 };
 ImportRecord read_import_record(const std::filesystem::path& import_json);

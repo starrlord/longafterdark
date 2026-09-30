@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 
 #include "minijson.h"
@@ -56,13 +57,30 @@ std::wstring installed_list(const std::vector<std::string>& titles) {
   return s;
 }
 
+// The known image of `package` an import came from: the one with its md5,
+// else the package's first (a folder of its files, a set of its disks).
+const KnownImage* known_image_of(const std::string& package, const std::string& image_md5) {
+  const Package* p = package.empty() ? nullptr : find_package(package);
+  if (!p || p->images.empty()) return nullptr;
+  for (const KnownImage& k : p->images)
+    if (!image_md5.empty() && image_md5 == k.md5) return &k;
+  return &p->images[0];
+}
+
+// A known image that is a ZIP of the install files (packages.h KnownImage::medium).
+bool is_zip_image(const KnownImage* k) { return k && std::string_view(k->medium).rfind("ZIP", 0) == 0; }
+
 }  // namespace
 
-std::wstring verified_words(const std::string& verified, const std::string& package) {
+std::wstring verified_words(const std::string& verified, const std::string& package, const std::string& image_md5) {
   if (verified == "image") {
-    // The Simpsons and Star Trek came on floppies, not a disc.
-    const Package* p = package.empty() ? nullptr : find_package(package);
-    const bool floppy = p && !p->images.empty() && std::string_view(p->images[0].medium).find("floppy") != std::string_view::npos;
+    // The Simpsons and Star Trek came on floppies, not a disc; Marvel Comics
+    // Screen Posters (by either of two), Snoopy's Screen Savers, the Disney
+    // Collection, ScreamSavers and the Looney Tunes (but from its CD) are
+    // known by the ZIP of their install files.
+    const KnownImage* k = known_image_of(package, image_md5);
+    if (is_zip_image(k)) return L"verified against the known ZIP";
+    const bool floppy = k && std::string_view(k->medium).find("floppy") != std::string_view::npos;
     return floppy ? L"verified against the original disks" : L"verified against the original disc";
   }
   if (verified == "files") return L"every file verified";
@@ -101,6 +119,26 @@ std::wstring amount_line(uint64_t done, uint64_t total, const std::string& speed
   return s;
 }
 
+// ---- the Sources page ---------------------------------------------------------------------
+
+std::wstring sources_intro(bool any_installed, std::span<const Package> registry) {
+  const auto known = registry_or_builtin(registry);
+  std::wstring releases;
+  if (any_installed) {
+    // A count in words, as the settings dialog says "(twelve releases are supported)".
+    static const wchar_t* const kWords[] = {L"no",     L"one",     L"two",      L"three",    L"four",    L"five",
+                                            L"six",    L"seven",   L"eight",    L"nine",     L"ten",     L"eleven",
+                                            L"twelve", L"thirteen", L"fourteen", L"fifteen", L"sixteen", L"seventeen",
+                                            L"eighteen", L"nineteen", L"twenty"};
+    const size_t n = known.size();
+    releases = (n < std::size(kWords) ? std::wstring(kWords[n]) : std::to_wstring(n)) + (n == 1 ? L" release" : L" releases");
+  } else {
+    for (size_t i = 0; i < known.size(); ++i)
+      releases += std::wstring(i == 0 ? L"" : i + 1 == known.size() ? L" and " : L", ") + to_wide(known[i].title);
+  }
+  return L"Long After Dark runs the original Windows modules of " + releases + L". Choose where to copy them from.";
+}
+
 // ---- installed releases ---------------------------------------------------------------
 
 std::map<std::string, int> catalog_module_counts(const fs::path& win_dir) {
@@ -133,7 +171,8 @@ std::vector<InstalledRow> installed_rows(const fs::path& assets, std::span<const
     r.title = to_wide(st.package->title);
     auto m = modules.find(r.id);
     if (m != modules.end()) r.detail = count(size_t(std::max(0, m->second)), L"module", L"modules");
-    if (!st.verified.empty()) r.detail += (r.detail.empty() ? L"" : L" · ") + verified_words(st.verified, r.id);
+    if (!st.verified.empty())
+      r.detail += (r.detail.empty() ? L"" : L" · ") + verified_words(st.verified, r.id, st.image_md5);
     r.cover = cover_info(r.id, root, registry);
     rows.push_back(std::move(r));
   }
@@ -167,7 +206,9 @@ std::vector<DownloadRow> download_rows(const fs::path& assets, const std::string
     r.title = to_wide(p.title);
     r.installed = st.installed;
     r.size = download_size(d);
-    std::wstring state = st.installed ? L"Imported" + (st.verified.empty() ? L"" : L" · " + verified_words(st.verified, p.id))
+    std::wstring state = st.installed ? L"Imported" + (st.verified.empty()
+                                                           ? L""
+                                                           : L" · " + verified_words(st.verified, p.id, st.image_md5))
                                       : L"Not imported yet";
     if (already_downloaded(p, download_dir)) state += L" · already downloaded";
     r.text = r.title + L"\n" + download_kind(d) + L" · " + to_wide(mb(r.size)) + L"\n" + state;
@@ -235,8 +276,12 @@ ResultText single_result(const ImportResult& r) {
     std::wstring title = to_wide(r.package_title);
     t.heading = L"Imported " + title + L": " + count(r.package_modules, L"module", L"modules");
     // "the known image of <title>": a title may start with "The", and a
-    // floppy image is not a disc.
-    std::wstring verified = r.verified == "image"   ? L"The image matched the known image of " + title + L"."
+    // floppy image is not a disc. A release known by the ZIP of its install
+    // files (the Disney Collection's, ScreamSavers') was matched as that ZIP.
+    const bool zip = r.verified == "image" && is_zip_image(known_image_of(r.package_id, r.iso_md5)) &&
+                     !r.iso_md5.empty();
+    std::wstring verified = zip                     ? L"The ZIP matched the known ZIP of " + title + L"."
+                            : r.verified == "image" ? L"The image matched the known image of " + title + L"."
                             : r.verified == "files" ? L"Every file matched the release of " + title + L"."
                                                     : L"Some files could not be checked against the known release.";
     // No sentence period after the path: "…\FILES." reads as part of it.
@@ -272,7 +317,7 @@ ResultText several_result(const std::vector<std::string>& ids, const std::vector
     if (r.status == Status::ok) {
       ok++;
       last_ok = &r;
-      const std::wstring v = verified_words(r.verified, r.package_id.empty() ? ids[i] : r.package_id);
+      const std::wstring v = verified_words(r.verified, r.package_id.empty() ? ids[i] : r.package_id, r.iso_md5);
       lines += L"\n" + title + L": " + count(r.package_modules, L"module", L"modules") + (v.empty() ? L"" : L" (" + v + L")");
     } else if (r.status == Status::cancelled) {
       lines += L"\n" + title + L": cancelled";

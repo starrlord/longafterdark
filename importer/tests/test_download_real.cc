@@ -16,14 +16,18 @@
 //      verify\ folder.
 //   1. adimport --download <id> --download-dir <scratch>/downloads --dest
 //      <scratch>/<id>, for every package: exit 0; the import record says kind
-//      "download", a registry URL, verified "image" (the disc images, and
-//      Star Trek: The Screen Saver's pair of disk images) or "files" (the
-//      Simpsons ZIP), nothing missing, every file a manifest match; the
-//      catalog lists the package's 84 / 46 / 44 / 13 / 15 / 14 / 16 modules.
+//      "download", a registry URL, verified "image" (the disc images, Star
+//      Trek: The Screen Saver's pair of disk images, and the ZIPs that are
+//      Marvel Comics Screen Posters', Snoopy's Screen Savers', the Looney
+//      Tunes', ScreamSavers' and the Disney Collection's known images) or
+//      "files" (the Simpsons ZIP), nothing missing, every file a manifest
+//      match; the catalog lists the package's 84 / 46 / 44 / 13 / 15 / 14 /
+//      16 / 1 / 8 / 12 / 15 / 16 modules.
 //   2. Every package's other copies with other bytes (another file name: the
 //      Simpsons' second ZIP; Star Wars Screen Entertainment's Redump BIN and
-//      flat ZIP) through --url/--md5, imported the same way (verified
-//      "image" for a known image, else "files"); a copy of several images
+//      flat ZIP; Marvel Comics Screen Posters' ZIP of both disks' folders)
+//      through --url/--md5, imported the same way (verified "image" for a
+//      known image, else "files"); a copy of several images
 //      (Star Trek: The Screen Saver's second pair) is fetched part by part
 //      with the library's download() and imported with an --image for each;
 //      so the layout of every copy is tested.
@@ -61,6 +65,9 @@ struct Expect {
 const std::map<std::string, Expect> kExpect = {
     {"deluxe", {84, "image"}}, {"ad10", {46, "image"}},     {"ad32", {44, "image"}},     {"tt", {13, "image"}},
     {"simpsons", {15, "files"}}, {"swse", {14, "image"}}, {"startrek", {16, "image"}},
+    // The ZIPs of these releases' install files are their known images.
+    {"marvel", {1, "image"}},    {"snoopy", {8, "image"}},   {"looney", {12, "image"}},
+    {"screams", {15, "image"}},  {"disney", {16, "image"}},
 };
 
 // Every file of a copy: its own, then the images of further install disks.

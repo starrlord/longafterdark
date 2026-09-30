@@ -8,7 +8,10 @@
 //   (no windows).
 // shots: every page x light/dark/hc x 100/150/200% through the screenshot
 //   hook (AD_IMPORT_TEST_SCREENSHOT): parked, cloaked windows that never show
-//   on the desktop; each PNG exists and its body margin is pal.base.
+//   on the desktop; each PNG exists and its body margin is pal.base. Every
+//   release of the registry is imported (fake records), so the Sources page
+//   lists them all; on work areas too short for the page its list shows as
+//   many whole rows as fit (eleven of twelve at 150% on a 2560x1440 monitor).
 // flow: real windows, pressed with TDM_CLICK_BUTTON as import.cli does:
 //   Sources -> 103 -> Back -> Cancel is exit 5 and writes nothing; then
 //   "Change cover" on a scratch install with a synthetic picture is exit 0
@@ -43,15 +46,21 @@ namespace {
 void write_text(const fs::path& p, const std::string& s) { test::write_bytes(p, std::vector<uint8_t>(s.begin(), s.end())); }
 
 // An assets tree that lists as installed without a real import: Deluxe's
-// FILES and import.json, the other packages' import.json, and a catalog
+// FILES and import.json, the other packages' import.json (with the md5 of
+// the image or ZIP it came from, when `image_md5` names one), and a catalog
 // with each package's module count (what the windows read).
-void fake_install(const fs::path& assets, const std::vector<std::string>& ids) {
+void fake_install(const fs::path& assets, const std::vector<std::string>& ids,
+                  const std::map<std::string, std::string>& image_md5 = {}) {
   const fs::path win = assets / L"win";
   std::string packages;
-  static const std::map<std::string, int> modules = {{"deluxe", 84}, {"ad10", 46},     {"ad32", 44},      {"tt", 13},
-                                                      {"simpsons", 15}, {"swse", 14}, {"startrek", 16}};
+  static const std::map<std::string, int> modules = {{"deluxe", 84},   {"ad10", 46},     {"ad32", 44},
+                                                      {"tt", 13},       {"simpsons", 15}, {"swse", 14},
+                                                      {"startrek", 16}, {"marvel", 1},    {"snoopy", 8},
+                                                      {"looney", 12},   {"screams", 15},  {"disney", 16}};
   for (const std::string& id : ids) {
-    const std::string record = "{\"version\": " + std::string(id == "deluxe" ? "1" : "2") +
+    auto md5 = image_md5.find(id);
+    const std::string source = md5 == image_md5.end() ? "" : ", \"source\": {\"imageMd5\": \"" + md5->second + "\"}";
+    const std::string record = "{\"version\": " + std::string(id == "deluxe" ? "1" : "2") + source +
                                ", \"verified\": \"image\", \"importedUtc\": \"2026-09-26T08:00:00Z\", \"fileCount\": 26}";
     if (id == "deluxe") {
       fs::create_directories(win / L"FILES" / L"AD40");
@@ -129,6 +138,29 @@ void test_model(const fs::path& dir) {
     CHECK_EQ(ok.exit_code(), 0);
   }
 
+  // The Sources page's first line: every release by name before any is
+  // imported; once some are (the list under it names them), how many.
+  {
+    const std::wstring first = gui::sources_intro(false);
+    CHECK(first.find(L"Long After Dark runs the original Windows modules of After Dark 4.0 Deluxe, After Dark 10th "
+                     L"Anniversary, ") == 0);
+    for (const Package& p : builtin_packages()) CHECK(first.find(to_wide(p.title)) != std::wstring::npos);
+    CHECK(first.find(L" and The Disney Collection Screen Saver. Choose where to copy them from.") != std::wstring::npos);
+    const std::wstring later = gui::sources_intro(true);
+    CHECK(later.find(L"After Dark 4.0 Deluxe") == std::wstring::npos);
+    CHECK(later.find(L" releases. Choose where to copy them from.") != std::wstring::npos);
+    const auto reg = builtin_packages();
+    CHECK(gui::sources_intro(true, std::span<const Package>(reg.data(), 3)) ==
+          L"Long After Dark runs the original Windows modules of three releases. Choose where to copy them from.");
+    CHECK(gui::sources_intro(true, std::span<const Package>(reg.data(), 1)).find(L" of one release. ") !=
+          std::wstring::npos);
+    CHECK(gui::sources_intro(false, std::span<const Package>(reg.data(), 2)) ==
+          L"Long After Dark runs the original Windows modules of After Dark 4.0 Deluxe and After Dark 10th "
+          L"Anniversary. Choose where to copy them from.");
+    if (reg.size() == 10) CHECK(later.find(L" of ten releases. ") != std::wstring::npos);
+    if (reg.size() == 12) CHECK(later.find(L" of twelve releases. ") != std::wstring::npos);
+  }
+
   // Nothing installed, and an assets folder that doesn't exist stays that way.
   const fs::path none = dir / L"none";
   CHECK(gui::installed_rows(none).empty());
@@ -155,7 +187,37 @@ void test_model(const fs::path& dir) {
   CHECK(gui::verified_words("image", "swse") == L"verified against the original disc");
   CHECK(gui::verified_words("files", "simpsons") == L"every file verified");
   CHECK(gui::verified_words("none", "deluxe") == L"not verified");
+  // The releases known by the ZIP of their install files; the Looney Tunes
+  // also by its CD, which the import's own md5 names.
+  CHECK(gui::verified_words("image", "disney") == L"verified against the known ZIP");
+  CHECK(gui::verified_words("image", "screams") == L"verified against the known ZIP");
+  CHECK(gui::verified_words("image", "looney") == L"verified against the known ZIP");
+  CHECK(gui::verified_words("image", "looney", "642b358a4854c481fe99984b8452ceb5") == L"verified against the known ZIP");
+  CHECK(gui::verified_words("image", "looney", "6ad72e19b2cf6fcb9e67427f8e600449") ==
+        L"verified against the original disc");
+  CHECK(gui::verified_words("image", "swse", "ce51614a3484b9269b5ed9e61510e971") == L"verified against the original disc");
+  CHECK(gui::verified_words("files", "disney", "2f38df15494728b5bc20d26c36ba84c7") == L"every file verified");
+  // Marvel Comics Screen Posters by either of its two ZIPs, Snoopy's Screen
+  // Savers by its one.
+  CHECK(gui::verified_words("image", "marvel") == L"verified against the known ZIP");
+  CHECK(gui::verified_words("image", "marvel", "6981b36abb04779a076466fabad3721c") == L"verified against the known ZIP");
+  CHECK(gui::verified_words("image", "marvel", "4c608dbbeb34108b30ede88304912c94") == L"verified against the known ZIP");
+  CHECK(gui::verified_words("image", "snoopy", "a712447e1c957767bdbca884cead02dc") == L"verified against the known ZIP");
   CHECK_EQ(gui::catalog_module_counts(assets / L"win").size(), size_t(2));
+  {
+    // The installed list words each import by the image or ZIP it came from.
+    const fs::path three = dir / L"assets-three";
+    fake_install(three, {"looney", "screams", "disney"},
+                 {{"looney", "6ad72e19b2cf6fcb9e67427f8e600449"}, {"disney", "2f38df15494728b5bc20d26c36ba84c7"}});
+    auto r3 = gui::installed_rows(three);
+    CHECK_EQ(r3.size(), size_t(3));
+    if (r3.size() == 3) {
+      CHECK(r3[0].id == "looney" && r3[0].detail == L"12 modules · verified against the original disc");
+      CHECK(r3[1].id == "screams" && r3[1].detail == L"15 modules · verified against the known ZIP");
+      CHECK(r3[2].id == "disney" && r3[2].detail == L"16 modules · verified against the known ZIP");
+      CHECK(r3[2].title == L"The Disney Collection Screen Saver");
+    }
+  }
 
   // The Internet Archive list: one card per release, "already downloaded" by
   // size, and the "every release not imported yet" card.
@@ -177,7 +239,7 @@ void test_model(const fs::path& dir) {
     fs::resize_file(downloads / d.file_name, d.size);
   }
   auto dl = gui::download_rows(assets, "", downloads);
-  CHECK_EQ(dl.size(), size_t(7));
+  CHECK_EQ(dl.size(), size_t(12));
   for (const auto& r : dl) {
     CHECK(r.text.find(r.title + L"\n") == 0);
     if (r.id == "deluxe" || r.id == "tt")
@@ -191,6 +253,11 @@ void test_model(const fs::path& dir) {
       CHECK(r.text == L"Star Trek: The Screen Saver\n2 floppy disk images \u00b7 2.8 MB\nNot imported yet");
       CHECK_EQ(r.size, uint64_t(2 * 1474560));
     }
+    if (r.id == "disney") CHECK(r.text == L"The Disney Collection Screen Saver\nInstall files (ZIP) \u00b7 3.4 MB\nNot imported yet");
+    if (r.id == "looney") CHECK(r.text == L"The Looney Tunes Screen Saver\nInstall files (ZIP) \u00b7 2.8 MB\nNot imported yet");
+    if (r.id == "screams") CHECK(r.text == L"ScreamSavers\nInstall files (ZIP) \u00b7 3.3 MB\nNot imported yet");
+    if (r.id == "marvel") CHECK(r.text == L"Marvel Comics Screen Posters\nInstall files (ZIP) \u00b7 1.9 MB\nNot imported yet");
+    if (r.id == "snoopy") CHECK(r.text == L"Snoopy's Screen Savers\nInstall files (ZIP) \u00b7 1.9 MB\nNot imported yet");
   }
   // With disk 2's image too, the pair is downloaded.
   if (startrek && !startrek->downloads.empty() && !startrek->downloads.front().more_images.empty()) {
@@ -204,8 +271,9 @@ void test_model(const fs::path& dir) {
   auto all = gui::all_missing_row(dl);
   CHECK(all.has_value());
   if (all) {
-    CHECK((all->ids == std::vector<std::string>{"ad10", "ad32", "simpsons", "swse", "startrek"}));
-    CHECK(all->text.find(L"Every release not imported yet\n5 releases") == 0);
+    CHECK((all->ids == std::vector<std::string>{"ad10", "ad32", "simpsons", "swse", "startrek", "marvel", "snoopy",
+                                                "looney", "screams", "disney"}));
+    CHECK(all->text.find(L"Every release not imported yet\n10 releases") == 0);
   }
   auto one = gui::download_rows(assets, "tt", downloads);
   CHECK_EQ(one.size(), size_t(1));
@@ -245,6 +313,33 @@ void test_model(const fs::path& dir) {
     CHECK(several.heading == L"Imported 1 of 2 releases");
     CHECK(several.body.find(L": 15 modules (every file verified)") != std::wstring::npos);
     CHECK(several.body.find(L"Totally Twisted After Dark: The files did not verify \u2014 1 file differs") != std::wstring::npos);
+    // A release known by the ZIP of its install files: its ZIP matched that
+    // one; the Looney Tunes' CD is an image, as any disc's.
+    ImportResult z;
+    z.status = Status::ok;
+    z.package_id = "disney";
+    z.package_title = "The Disney Collection Screen Saver";
+    z.package_modules = 16;
+    z.catalog_modules = 16;
+    z.verified = "image";
+    z.iso_md5 = "2f38df15494728b5bc20d26c36ba84c7";
+    z.format = "zip";
+    z.files.resize(31);
+    z.installed = {"The Disney Collection Screen Saver"};
+    CHECK(gui::single_result(z).body.find(L"The ZIP matched the known ZIP of The Disney Collection Screen Saver.") !=
+          std::wstring::npos);
+    ImportResult cd = z;
+    cd.package_id = "looney";
+    cd.package_title = "The Looney Tunes Screen Saver";
+    cd.iso_md5 = "6ad72e19b2cf6fcb9e67427f8e600449";
+    cd.format = "iso9660";
+    CHECK(gui::single_result(cd).body.find(L"The image matched the known image of The Looney Tunes Screen Saver.") !=
+          std::wstring::npos);
+    auto both = gui::several_result({"disney", "looney"}, {z, cd});
+    CHECK(both.body.find(L"The Disney Collection Screen Saver: 16 modules (verified against the known ZIP)") !=
+          std::wstring::npos);
+    CHECK(both.body.find(L"The Looney Tunes Screen Saver: 16 modules (verified against the original disc)") !=
+          std::wstring::npos);
     auto none_ok = gui::several_result({"ad10", "tt"}, {bad});
     CHECK(none_ok.kind == Outcome::failure);
     CHECK(none_ok.body.find(L"not started (cancelled)") != std::wstring::npos);
@@ -330,7 +425,11 @@ bool covers_are_stubs(const std::wstring& exe, const fs::path& dir) {
 
 void test_shots(const std::wstring& exe, const fs::path& dir) {
   const fs::path assets = dir / L"assets";
-  const std::vector<std::string> all_ids = {"deluxe", "ad10", "ad32", "tt", "simpsons"};
+  // Every release of the registry imported (ten and more): the Sources page's
+  // list of them must fit, or scroll inside its card.
+  std::vector<std::string> all_ids;
+  for (const Package& p : builtin_packages()) all_ids.push_back(p.id);
+  CHECK(all_ids.size() >= 10);
   fake_install(assets, all_ids);
   // Synthetic covers for two releases when C's covers are in (the others stay generated).
   if (!covers_are_stubs(exe, dir)) {
@@ -404,6 +503,46 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
       CHECK(fs::exists(png));
       n++;
     }
+  }
+  // The Sources page on common screens, twelve releases installed: at 150% on
+  // a 2560x1440 monitor (a 2560x1392 DIP work area) the page is too tall, and
+  // its installed list shows every whole row that fits (eleven), not two, and
+  // scrolls in its card; on a 1080-line screen at 100% too, as many whole rows
+  // as fit. On a very short work area (640x520) the list keeps its fallback:
+  // fewer than two rows, or its full height with the whole body scrolling.
+  // With cover downloads off there is no "Get the covers" line (most of these
+  // releases have no picture), so the page is the one of a root whose covers
+  // are all there.
+  struct Rows {
+    std::wstring state;
+    int at_least;   // whole rows that must show
+  };
+  const std::vector<Rows> rows = {{L"workarea=2560x1392;dpi=144", 11},
+                                  {L"workarea=1920x1032;dpi=96", 5},
+                                  {L"workarea=640x520;dpi=144", 0}};
+  for (const Rows& t : rows) {
+    std::wstring tag = t.state;
+    for (wchar_t& c : tag)
+      if (c == L'=' || c == L';') c = L'-';
+    const fs::path png = out / (L"sources_rows_" + tag + L".png"), report = out / (L"sources_rows_" + tag + L".txt");
+    SetEnvironmentVariableW(L"AD_IMPORT_TEST_SCREENSHOT", png.wstring().c_str());
+    SetEnvironmentVariableW(L"AD_IMPORT_TEST_SCREENSHOT_STATE",
+                            (L"page=sources;theme=light;" + t.state + L";report=" + report.wstring()).c_str());
+    test::ProcessResult r =
+        test::run_process(exe, {L"--gui", L"--dest", assets.wstring(), L"--no-cover-download"}, 60000);
+    CHECK_EQ(r.exit_code, 0);
+    int shown = -1, whole = -1, row = -1;
+    sscanf(read_report(report)["list"].c_str(), "%d,%d,%d", &shown, &whole, &row);
+    fprintf(stderr, "sources rows at %s: list %d of %d px, row %d px\n", to_utf8(t.state).c_str(), shown, whole, row);
+    CHECK(row > 0 && whole == row * int(all_ids.size()));
+    if (row <= 0) continue;
+    if (t.at_least) {
+      CHECK(shown >= t.at_least * row);
+      CHECK(shown < whole && shown % row == 0);
+    } else {
+      CHECK(shown < 2 * row || shown == whole);
+    }
+    n++;
   }
   // Live changes: the theme switched after opening, and a move to a monitor of
   // another scale (the page is laid out again at the new DPI).

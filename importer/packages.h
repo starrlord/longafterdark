@@ -1,17 +1,22 @@
 // The package registry (PACKAGES.md §2): every release the importer knows,
-// compiled in: six After Dark releases and Star Wars Screen Entertainment,
+// compiled in: the After Dark releases and Star Wars Screen Entertainment,
 // LucasArts' Intermission-based screen savers. Registry order is the
 // catalog's module order and the precedence order for display-name
 // disambiguation (§6); the catalog's packages list goes by `released`
 // instead.
 //
-//   deluxe    After Dark 4.0 Deluxe            tree          -> <win>\FILES\{AD40,CLASSIC,ENGINE,AFI}
-//   ad10      After Dark 10th Anniversary      tree          -> <win>\packages\ad10\{AD10TH,ENGINE,AFI}
-//   ad32      After Dark 3.2                   ad3zip        -> <win>\packages\ad32\{AD32,ENGINE}
-//   tt        Totally Twisted After Dark       ad3zip        -> <win>\packages\tt\{TWISTED,ENGINE}
-//   simpsons  The Simpsons Screen Saver        ad3zip        -> <win>\packages\simpsons\{SIMPSONS,ENGINE}
-//   swse      Star Wars Screen Entertainment   intermission  -> <win>\packages\swse\{SAVER,ENGINE,WINDOWS}
-//   startrek  Star Trek: The Screen Saver      ad2kwaj       -> <win>\packages\startrek\{AFTERDRK,ENGINE}
+//   deluxe    After Dark 4.0 Deluxe               tree          -> <win>\FILES\{AD40,CLASSIC,ENGINE,AFI}
+//   ad10      After Dark 10th Anniversary         tree          -> <win>\packages\ad10\{AD10TH,ENGINE,AFI}
+//   ad32      After Dark 3.2                      ad3zip        -> <win>\packages\ad32\{AD32,ENGINE}
+//   tt        Totally Twisted After Dark          ad3zip        -> <win>\packages\tt\{TWISTED,ENGINE}
+//   simpsons  The Simpsons Screen Saver           ad3zip        -> <win>\packages\simpsons\{SIMPSONS,ENGINE}
+//   swse      Star Wars Screen Entertainment      intermission  -> <win>\packages\swse\{SAVER,ENGINE,WINDOWS}
+//   startrek  Star Trek: The Screen Saver         ad2kwaj       -> <win>\packages\startrek\{AFTERDRK,ENGINE}
+//   marvel    Marvel Comics Screen Posters        islib         -> <win>\packages\marvel\{AFTERDRK,ENGINE}
+//   snoopy    Snoopy's Screen Savers              islib         -> <win>\packages\snoopy\AFTERDRK
+//   looney    The Looney Tunes Screen Saver       ad3zip        -> <win>\packages\looney\{LNYTUNES,ENGINE}
+//   screams   ScreamSavers                        ad3zip        -> <win>\packages\screams\{SCREAMS,ENGINE}
+//   disney    The Disney Collection Screen Saver  ad3zip        -> <win>\packages\disney\{DISNEY,ENGINE}
 //
 // Each entry carries what identifies the release (known image md5s — of one
 // image, or of every install disk of a set — and fingerprints), how to
@@ -22,9 +27,11 @@
 // copies `--download` fetches, and where its box cover comes from.
 //
 // A package root holds its module folders and ENGINE (never a module
-// folder). An optional WINDOWS folder holds the files the original installer
-// put in C:\WINDOWS (swse: SWSE.INI); it is never a module folder either,
-// and the 16-bit lane lays it under the guest's C:\WINDOWS.
+// folder; snoopy has none: Snoopy's Screen Savers are modules for an After
+// Dark already installed, and ship no engine). An optional WINDOWS folder
+// holds the files the original installer put in C:\WINDOWS (swse:
+// SWSE.INI); it is never a module folder either, and the 16-bit lane lays it
+// under the guest's C:\WINDOWS.
 #pragma once
 
 #include <cstdint>
@@ -44,11 +51,19 @@ struct KnownFile {
 };
 
 // A disc or floppy image whose md5 names the package (and makes an import
-// from it "verified": "image").
+// from it "verified": "image"). A ZIP of a release's install files whose
+// bytes never change (the Internet Archive's stored file, the user's own copy
+// byte for byte) is a known image the same way where no image of the original
+// disks exists, or none can be listed (marvel, snoopy, looney, screams,
+// disney; PACKAGES.md §3), as the Simpsons' is the owner's own merge of both
+// floppies.
 struct KnownImage {
   const char* md5;
   uint64_t size;
-  const char* medium;     // human-readable
+  // Human-readable. The windows word a verification by it (gui/model.cc):
+  // "floppy" in it, the original disks; starting "ZIP", the known ZIP of the
+  // install files; else the original disc.
+  const char* medium;
   const char* volume_id;  // "" when the medium has none
   // 0: the whole release on this one image. n: install disk n of a set that
   // is the release only together (PACKAGES.md §3): an import is identified by
@@ -80,9 +95,14 @@ struct NameOverride {
 // identify the release), its placement baked in too. ad2kwaj: the After Dark
 // 2.0 Microsoft Setup installs (KWAJ-compressed files on the install floppies,
 // SETUP.LST read only to identify the release), their placement baked in from
-// the installer's script (no INF or MS Test interpreter).
-enum class Recipe { tree, ad3zip, intermission, ad2kwaj };
-// "tree", "ad3zip", "intermission" or "ad2kwaj" (import.json's package.recipe).
+// the installer's script (no INF or MS Test interpreter). islib: the
+// InstallShield 2 installs of compressed libraries (isz.h: a library, or one
+// split over two install floppies; the package list SETUP.PKG read only to
+// identify the release), the placement of each member baked in from the
+// installer's script (no IS-script interpreter).
+enum class Recipe { tree, ad3zip, intermission, ad2kwaj, islib };
+// "tree", "ad3zip", "intermission", "ad2kwaj" or "islib" (import.json's
+// package.recipe).
 const char* recipe_name(Recipe r);
 
 // How a loose file is stored on the install medium: as it is, compressed by
@@ -99,6 +119,18 @@ struct LooseFile {
   const char* from;
   const char* to;
   Codec codec;
+};
+
+// A member of an InstallShield library the islib recipe installs (the baked
+// placement table): `library` names the library by its file, or a split set
+// by its first volume ("MODULES.LIB", "IMAGES.1"; the set's other volumes are
+// found from that one's header), `member` as the library lists it (compared
+// without ASCII case), `to` relative to the package root. A library member no
+// row names is never decoded.
+struct LibraryMember {
+  const char* library;
+  const char* member;
+  const char* to;
 };
 
 // A further file of a copy made of several (another install disk's image).
@@ -123,7 +155,9 @@ struct Download {
   // "image": a disc image, identified by its md5 like one the user gives
   // (verified: image). "zip": a ZIP of the install files (no image of the
   // original medium exists online); read as a folder and verified file by
-  // file against the manifest (verified: files).
+  // file against the manifest (verified: files), unless its md5 is one of
+  // the package's known images (the ZIP is the release's known copy:
+  // verified: image).
   const char* kind;
   // An "image" copy of a release on several install disks: the images of
   // the other disks (the first one's is the fields above). The copy is used
@@ -175,17 +209,23 @@ struct Package {
   // tree: the folders under the source's FILES dir that are copied. The
   // fingerprint (§3): a FILES dir (ADE\FILES, FILES or the root) holding the
   // first module dir and ENGINE, plus `marker` (relative to FILES) when set,
-  // and none of `absent`.
+  // and none of `absent`. ad3zip: `marker`, when set, is a second MODMISC.ZIP
+  // member the fingerprint wants beside `engine_dll` (ad32's AD30RSDB.DLL:
+  // ScreamSavers ships the same ADXPL300.DLL, and AD3.AFI in its AFI.ZIP).
   std::span<const char* const> copy_dirs;
   const char* marker;
   std::span<const char* const> absent;
   // ad3zip: the module folder, the MODMISC.ZIP member that identifies the
-  // package, the AFI.ZIP member installed as <module dir>\FOLDER.AFI, and
-  // the archives that must be present (so a split-floppy source is complete).
-  // intermission: the module folder and the archives (every volume: every
-  // install disk) too. ad2kwaj: the module folder, and every install disk's
-  // tag file (the Setup script's [Source Media Descriptions]; disk 1's is
-  // the fingerprint's), which must all be present.
+  // package, the AFI.ZIP member installed as <module dir>\FOLDER.AFI (which
+  // identifies it too: the fingerprint wants both, and `marker` when set),
+  // and the archives that must be present (so a split-floppy source is
+  // complete). intermission: the module folder and the archives (every
+  // volume: every install disk) too. ad2kwaj: the module folder, and every
+  // install disk's tag file (the Setup script's [Source Media Descriptions];
+  // disk 1's is the fingerprint's), which must all be present. islib: the
+  // module folder, and every volume of the libraries the recipe reads (every
+  // install disk's; disk 1's first, the fingerprint's), which must all be
+  // present.
   const char* module_dir;
   const char* engine_dll;
   const char* folder_afi;
@@ -220,6 +260,20 @@ struct Package {
   // How the catalog reads its Classic modules' About texts (catalog.h).
   enum class About { as_is, ad20 };
   About about = About::as_is;
+  // ad3zip: archives of the install dir the recipe never opens (I5), by name:
+  // the Disney Collection's BEAUTYOL.ZIP, the 1993 build of BEAUTY.AD beside
+  // the 1995 one in BEAUTY.ZIP, which the release installs (Berkeley's
+  // checksum list names it). The log says it was skipped; it is never read.
+  std::span<const char* const> never_opened = {};
+  // islib: what names the package, the fingerprint with required_archives[0]
+  // beside it: InstallShield's package list SETUP.PKG at the source's root
+  // lists `tag_member` in the library `tag_library` (the script's logical
+  // name for it, "modules.lib", "AD_MODS.z"; both compared without ASCII
+  // case). The tag member is one of `library_members`, the placement table:
+  // every file the recipe installs.
+  const char* tag_library = nullptr;
+  const char* tag_member = nullptr;
+  std::span<const LibraryMember> library_members = {};
 
   bool is_deluxe() const;
 };

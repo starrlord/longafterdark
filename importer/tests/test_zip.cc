@@ -2,8 +2,11 @@
 // derivation from an InstallShield script (PACKAGES.md §8.3, §8.4), on
 // archives from tests/zip_builder.h: round trips, the header check byte,
 // wrong passwords, damaged and foreign archives, hostile names, member names
-// as UTF-8 (bit 11, UTF-8 without it, else code page 437), and the
-// candidate order of the password search.
+// as UTF-8 (bit 11, UTF-8 without it, else code page 437), the candidate
+// order of the password search, and the DISK<n> folders a ZIP source may
+// keep its install disks in (ZipNames::disk_folders: one level, any case,
+// the folders' own entries; any other folder, anything deeper, a folder
+// entry with data refused; the installers' archives keep bare names).
 #include <memory>
 
 #include "test_util.h"
@@ -25,15 +28,28 @@ std::shared_ptr<const std::vector<uint8_t>> own(std::vector<uint8_t> v) {
   return std::make_shared<const std::vector<uint8_t>>(std::move(v));
 }
 
-bool refused(const std::vector<uint8_t>& archive, const char* what) {
+bool refused(const std::vector<uint8_t>& archive, const char* what, ZipNames names = ZipNames::bare,
+             const char* expect = "") {
   try {
-    ZipArchive z(own(archive), "T.ZIP");
+    ZipArchive z(own(archive), "T.ZIP", names);
     fprintf(stderr, "  %s: accepted, should have been refused\n", what);
     return false;
   } catch (const ZipError& e) {
     fprintf(stderr, "  %s -> %s\n", what, e.what());
+    if (!strstr(e.what(), expect)) {
+      fprintf(stderr, "  %s: expected \"%s\"\n", what, expect);
+      return false;
+    }
     return true;
   }
+}
+
+// An archive of unencrypted stored members with these names (and bytes).
+std::vector<uint8_t> named(const std::vector<std::pair<std::string, std::vector<uint8_t>>>& members) {
+  test::ZipBuilder b;
+  b.password = "";
+  for (const auto& [n, d] : members) b.add(n, d, /*deflate=*/false, /*encrypt=*/false);
+  return b.build();
 }
 
 bool extract_fails(const ZipArchive& z, const ZipMember& m, const std::string& pw, const char* what) {
@@ -310,6 +326,97 @@ int main(int argc, char** argv) {
     bad.add("X\xFE.AD", {2});
     for (auto& m : bad.members) m.extra_flags = 0x800;
     CHECK_EQ(refusal(bad.build()), std::string("T.ZIP: two members are named X\xEF\xBF\xBD.AD"));
+  }
+
+  // ---- DISK<n> folders (ZipNames::disk_folders) ------------------------------------------------
+  {
+    // The folder names: DISK1..DISK99, any case, no leading zero.
+    const std::pair<const char*, unsigned> folders[] = {
+        {"DISK1", 1},  {"Disk2", 2},  {"disk3", 3},   {"dIsK9", 9}, {"DISK10", 10}, {"DISK99", 99},
+        {"DISK0", 0},  {"DISK01", 0}, {"DISK100", 0}, {"DISK", 0},  {"DISKA", 0},   {"DISK 1", 0},
+        {"DISK1 ", 0}, {"DISK_1", 0}, {"XDISK1", 0},  {"DISC1", 0}, {"DISK-1", 0},  {"", 0}};
+    for (const auto& [name, n] : folders)
+      if (disk_folder_number(name) != n) {
+        test::g_failures++;
+        fprintf(stderr, "  disk_folder_number(\"%s\") = %u, not %u\n", name, disk_folder_number(name), n);
+      }
+    // The shape of the Internet Archive's ScreamSavers, Marvel and Snoopy
+    // ZIPs: files in DISK<n>/, each folder's own entry after its files.
+    const auto a = test::pattern(3000, 21), b2 = test::pattern(40, 22), c = test::pattern(7, 23);
+    test::ZipBuilder zb;
+    zb.password = "";
+    zb.add("Disk1/SETUP.PKG", a, true, false);
+    zb.add("Disk1/IMAGES.1", b2, false, false);
+    zb.add("Disk1/", {}, false, false);
+    zb.add("disk2/IMAGES.2", c, false, false);
+    zb.add("DISK2/DREAM.ON", {1, 2}, false, false);  // the same name in another disk: the source's business
+    zb.add("Disk1/DREAM.ON", {1, 2}, false, false);
+    zb.add("DISK12/X#1-A.AD", {9}, false, false);
+    zb.add("ROOT.TXT", {3}, false, false);  // a bare name reads as ever (the source refuses the mix)
+    const auto bytes = zb.build();
+    std::unique_ptr<ZipArchive> z;
+    try {
+      z = std::make_unique<ZipArchive>(own(bytes), "DISKS.ZIP", ZipNames::disk_folders);
+    } catch (const ZipError& e) {
+      fprintf(stderr, "  disk folders: refused, should have been read -> %s\n", e.what());
+    }
+    CHECK(z != nullptr);
+    if (z) {
+      struct Want {
+        const char* name;
+        unsigned disk;
+        bool directory;
+        const char* file;
+      };
+      const std::vector<Want> want = {{"Disk1/SETUP.PKG", 1, false, "SETUP.PKG"},
+                                      {"Disk1/IMAGES.1", 1, false, "IMAGES.1"},
+                                      {"Disk1/", 1, true, ""},
+                                      {"disk2/IMAGES.2", 2, false, "IMAGES.2"},
+                                      {"DISK2/DREAM.ON", 2, false, "DREAM.ON"},
+                                      {"Disk1/DREAM.ON", 1, false, "DREAM.ON"},
+                                      {"DISK12/X#1-A.AD", 12, false, "X#1-A.AD"},
+                                      {"ROOT.TXT", 0, false, "ROOT.TXT"}};
+      CHECK_EQ(z->members().size(), want.size());
+      for (size_t i = 0; i < want.size() && i < z->members().size(); i++) {
+        const ZipMember& m = z->members()[i];
+        CHECK_EQ(m.name, std::string(want[i].name));
+        CHECK_EQ(m.disk, want[i].disk);
+        CHECK_EQ(m.directory, want[i].directory);
+        CHECK_EQ(m.file_name(), std::string(want[i].file));
+      }
+      // Found by the stored name, case-insensitively; extracted as any member.
+      CHECK(z->find("DISK1/setup.pkg") && extract_all(*z, *z->find("DISK1/setup.pkg"), "") == a);
+      CHECK(z->find("DISK2/images.2") && extract_all(*z, *z->find("DISK2/images.2"), "") == c);
+      CHECK(!z->find("SETUP.PKG"));
+    }
+    // The installers' own archives, and a flat ZIP of install files, keep the
+    // bare names: the same archive is refused without disk_folders.
+    CHECK(refused(bytes, "DISK<n>/ in a bare-name archive", ZipNames::bare,
+                  "member \"Disk1/SETUP.PKG\" is not a bare file name"));
+    // Any other folder, anything deeper, other separators, hostile names in a
+    // disk, a folder entry holding data: refused.
+    for (const char* bad : {"SUB/X.AD", "DISK1/SUB/X.AD", "DISK1/SUB/", "DISK0/X.AD", "DISK01/X.AD", "DISK100/X.AD",
+                            "DISK/X.AD", "DISKA/X.AD", "DISK1\\X.AD", "/X.AD", "DISK1//X.AD", "DISK1/C:X.AD",
+                            "__MACOSX/DISK1/._X.AD", "DISK1/../X.AD"})
+      CHECK(refused(named({{"DISK2/OK.AD", {1}}, {bad, {1}}}), bad, ZipNames::disk_folders,
+                    "is not a bare file name or a file in a DISK<n> folder"));
+    for (const char* hostile : {"DISK1/..", "DISK1/.", "DISK1/CON", "DISK1/NUL.AD", "DISK1/TRAIL.", "DISK1/SPACE "})
+      CHECK(refused(named({{hostile, {1}}}), hostile, ZipNames::disk_folders, "unusable file name"));
+    CHECK(refused(named({{"DISK1/", {1}}}), "a folder entry with data", ZipNames::disk_folders,
+                  "member \"DISK1/\" is a folder entry that holds data"));
+    // One name, as Windows compares them: the folder's case does not make two.
+    CHECK(refused(named({{"DISK1/A.AD", {1}}, {"disk1/a.ad", {2}}}), "one file twice", ZipNames::disk_folders,
+                  "two members are named disk1/a.ad"));
+    CHECK(refused(named({{"DISK1/", {}}, {"Disk1/", {}}}), "one folder entry twice", ZipNames::disk_folders,
+                  "two members are named Disk1/"));
+    // Code page 437 names in a disk are UTF-8 afterwards, and fold as Windows folds them.
+    test::ZipBuilder cp;
+    cp.password = "";
+    cp.add("DISK1/M\x81SIK.AD", {1}, false, false);
+    ZipArchive zc(own(cp.build()), "CP.ZIP", ZipNames::disk_folders);
+    CHECK(zc.members()[0].file_name() == "M\xC3\xBCSIK.AD" && zc.members()[0].disk == 1);
+    CHECK(refused(named({{"DISK1/\x81.AD", {1}}, {"DISK1/\x9A.AD", {2}}}), "u-umlaut and U-umlaut in a disk",
+                  ZipNames::disk_folders, "two members are named DISK1/\xC3\x9C.AD"));
   }
 
   // ---- the password's candidates (§8.4) --------------------------------------------------------

@@ -5,6 +5,22 @@
 // Screen Saver's two disks), a host folder (a CD drive, a copy of a disc or
 // floppies), or several images unioned into one tree (split floppies).
 //
+// Disk sets. A source whose root holds nothing but folders named DISK<n>
+// (zip.h disk_folder_number: DISK1..DISK99, any case) is a release's install
+// disks kept apart — the Internet Archive's ZIPs of ScreamSavers (DISK1-3),
+// Marvel Comics Screen Posters and Snoopy's Screen Savers (Disk1-2), or a
+// folder they were unzipped into — and is read as the union of those folders
+// (union_of, in disk order): directories merge, and a name in two disks must
+// be the same file (the same size when listed, the same bytes when read),
+// else the source is invalid. Any disks may be there (disk 2 alone is a
+// source too; the recipe says whether the release is complete). A ZIP's
+// disks are flat: its members are then "DISK<n>/<bare name>" and the
+// folders' own entries, nothing deeper (zip.h ZipNames::disk_folders). A
+// root that holds anything besides its DISK<n> folders — a file, another
+// folder — is read as it is: a folder's or an image's DISK<n> folders are
+// then ordinary folders, and a ZIP is refused, since a ZIP of install files
+// holds its files at its root (a ZIP never nests them otherwise).
+//
 // Names are what the importer installs under: 8.3 upper case as the source
 // lists them (an ISO entry's primary-volume name when its Joliet name could
 // be paired with one; a folder entry's listed name, upper-cased — never the
@@ -73,9 +89,11 @@ std::optional<FILETIME> dos_filetime(uint16_t date, uint16_t time);
 
 // An image file, sniffed by content: ISO-9660 (cooked or raw sectors) first,
 // then a ZIP (a local file header at byte 0: its members are the root's
-// files; bare names only, none password-protected), then FAT12/16. Throws
+// files, bare names only, or a disk set's DISK<n>/<bare name>; none
+// password-protected), then FAT12/16. A disk set is read as its union (see
+// above), and `note`, when given, then says so ("" otherwise). Throws
 // ImportError(source_invalid) when it is none of them.
-std::unique_ptr<SourceFs> open_image(const std::filesystem::path& path);
+std::unique_ptr<SourceFs> open_image(const std::filesystem::path& path, std::string* note = nullptr);
 
 // A floppy image a ZIP holds: the member's name and its bytes.
 struct ZippedImage {
@@ -100,17 +118,24 @@ inline constexpr uint64_t kMaxZippedImageBytes = 64ull << 20;
 std::vector<ZippedImage> floppy_images_in_zip(const std::filesystem::path& path,
                                               std::vector<std::string>* ignored = nullptr,
                                               uint64_t max_bytes = kMaxZippedImageBytes);
-// A FAT12/16 image in memory (`name` for messages). Throws
-// ImportError(source_invalid) when it is not one.
-std::unique_ptr<SourceFs> open_fat_image(std::shared_ptr<const std::vector<uint8_t>> bytes, const std::string& name);
+// A FAT12/16 image in memory (`name` for messages); a disk set as its union
+// (`note` as for open_image). Throws ImportError(source_invalid) when it is
+// not one.
+std::unique_ptr<SourceFs> open_fat_image(std::shared_ptr<const std::vector<uint8_t>> bytes, const std::string& name,
+                                         std::string* note = nullptr);
 // A folder (or drive root). The root of a CD drive is read as the disc
 // itself (raw ISO-9660, so a Joliet disc keeps its 8.3 names), falling back
-// to the listing when the volume cannot be opened; `note`, when given, says
-// which. Throws ImportError(source_invalid) when it is not a directory.
+// to the listing when the volume cannot be opened. A disk set is read as its
+// union (see above). `note`, when given, says which of these happened, and
+// names the DISK<n> folders of a root that holds other things beside them
+// (read as it is); "" otherwise. Throws ImportError(source_invalid) when it
+// is not a directory.
 std::unique_ptr<SourceFs> open_folder(const std::filesystem::path& dir, std::string* note = nullptr);
 // Several sources seen as one tree: directories merge, a file present in
 // more than one must have the same size (checked when listed) and the same
-// bytes (checked when read), else the source is invalid.
-std::unique_ptr<SourceFs> union_of(std::vector<std::unique_ptr<SourceFs>> parts);
+// bytes (checked when read), else the source is invalid. `labels`, when
+// given (one per part: a disk set's folder names), name the two parts that
+// disagree in that message; otherwise it speaks of "the images".
+std::unique_ptr<SourceFs> union_of(std::vector<std::unique_ptr<SourceFs>> parts, std::vector<std::string> labels = {});
 
 }  // namespace adw::import

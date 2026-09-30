@@ -12,7 +12,13 @@
 //             install folder: verified "files" (and Star Wars Screen
 //             Entertainment's flat ZIP when its disc image is gone); the same
 //             ZIP given as an image; ZIPs that nest the files or are
-//             password-protected
+//             password-protected; the Looney Tunes, ScreamSavers (its disks
+//             in DISK1-DISK3 folders), the Disney Collection and Snoopy's
+//             Screen Savers (Disk1/Disk2 folders) as the one ZIP of their
+//             install files, and Marvel Comics Screen Posters as either of
+//             its two (flat, or in Disk1/Disk2 folders when the flat one is
+//             gone), whose md5s are the known images: verified "image", the
+//             owners' notes in them never read
 //   copies    a 404, a wrong size (refused before a byte is written, the
 //             .part kept for the next copy to resume) and a wrong md5 each
 //             fall back to the next copy; when every copy fails: 3 for a
@@ -28,7 +34,9 @@
 //             known image md5s and sizes, file names per content, the
 //             verified Simpsons ZIPs, Star Wars Screen Entertainment's ISO,
 //             Redump BIN and ZIP, Star Trek: The Screen Saver's two pairs of
-//             disk images (each pair a complete known disk set)
+//             disk images (each pair a complete known disk set), the five
+//             after-dark-collection ZIPs and Marvel Comics Screen Posters'
+//             flat ZIP, all known images
 //   adimport  --download <id> / all, their conflicts, --list-packages sizes
 //
 //   test_import_pkg_download <adimport.exe> <scratch>
@@ -41,6 +49,7 @@
 
 #include "importer.h"
 #include "md5.h"
+#include "names.h"
 #include "pkg_fixture.h"
 #include "run_process.h"
 
@@ -169,7 +178,9 @@ int main(int argc, char** argv) {
 
   const test::PkgFixture deluxe = test::deluxe_fixture(), ad10 = test::ad10_fixture(), ad32 = test::ad32_fixture(),
                          tt = test::tt_fixture(), simpsons = test::simpsons_fixture(), swse = test::swse_fixture(),
-                         startrek = test::startrek_fixture();
+                         startrek = test::startrek_fixture(), looney = test::looney_fixture(),
+                         screams = test::screams_fixture(), disney = test::disney_fixture();
+  const test::IslibFixture marvel = test::marvel_fixture(), snoopy = test::snoopy_fixture();
   test::TestRegistry reg;
   for (auto& [id, f] : std::map<std::string, const test::PkgFixture*>{{"deluxe", &deluxe},
                                                                      {"ad10", &ad10},
@@ -177,7 +188,12 @@ int main(int argc, char** argv) {
                                                                      {"tt", &tt},
                                                                      {"simpsons", &simpsons},
                                                                      {"swse", &swse},
-                                                                     {"startrek", &startrek}})
+                                                                     {"startrek", &startrek},
+                                                                     {"marvel", &marvel},
+                                                                     {"snoopy", &snoopy},
+                                                                     {"looney", &looney},
+                                                                     {"screams", &screams},
+                                                                     {"disney", &disney}})
     reg.manifest(id, test::manifest_of(f->expect));
 
   // What the server publishes. The disc images' md5s are their packages'
@@ -205,8 +221,30 @@ int main(int argc, char** argv) {
                                {md5_of(st2), st2.size(), 2},
                                {md5_of(st1b), st1b.size(), 1},
                                {md5_of(st2b), st2b.size(), 2}});
+  // The Looney Tunes, ScreamSavers and the Disney Collection: the one ZIP of
+  // their install files, owner's note and all (ScreamSavers' in DISK1-DISK3
+  // folders), whose md5 is the known image, as the real ones' are: a "zip"
+  // copy verified "image".
+  const auto looney_zip = test::zip_folder(looney.source), disney_zip = test::zip_folder(disney.source),
+             screams_zip = test::zip_disk_folders(screams.source, test::screams_disk, 3);
+  reg.image("looney", md5_of(looney_zip), looney_zip.size());
+  reg.image("screams", md5_of(screams_zip), screams_zip.size());
+  reg.image("disney", md5_of(disney_zip), disney_zip.size());
+  // Marvel Comics Screen Posters: a flat ZIP of the install files and a ZIP
+  // of both disks in Disk1/Disk2 folders, owners' notes and all, both known;
+  // Snoopy's Screen Savers: the ZIP of both disks.
+  const auto marvel_flat = test::zip_folder(marvel.source), marvel_disks = test::zip_of_disks(marvel.disks()),
+             snoopy_zip = test::zip_of_disks(snoopy.disks());
+  reg.zip_images("marvel", {{md5_of(marvel_flat), marvel_flat.size()}, {md5_of(marvel_disks), marvel_disks.size()}});
+  reg.zip_images("snoopy", {{md5_of(snoopy_zip), snoopy_zip.size()}});
 
   test::Server srv(test::pattern(1000, 1));
+  srv.serve("/marvel-flat.zip", marvel_flat);
+  srv.serve("/marvel-disks.zip", marvel_disks);
+  srv.serve("/snoopy.zip", snoopy_zip);
+  srv.serve("/looney.zip", looney_zip);
+  srv.serve("/screams.zip", screams_zip);
+  srv.serve("/disney.zip", disney_zip);
   srv.serve("/deluxe.iso", deluxe_iso);
   srv.serve("/ad10th.iso", ad10_iso);
   srv.serve("/ad32.iso", ad32_iso);
@@ -246,6 +284,18 @@ int main(int argc, char** argv) {
                      {{srv.url("/r/st2.img"), L"st2.img", st2.size(), md5_of(st2)}}};
   const Copy st_copy_b{srv.url("/r/st1b.img"), L"st1b.img", st1b.size(), md5_of(st1b), "image",
                        {{srv.url("/r/st2b.img"), L"st2b.img", st2b.size(), md5_of(st2b)}}};
+  const Copy looney_copy{srv.url("/r/looney.zip"), L"After Dark - Looney Tunes.zip", looney_zip.size(),
+                         md5_of(looney_zip), "zip"};
+  const Copy screams_copy{srv.url("/r/screams.zip"), L"After Dark - Scream Savers.zip", screams_zip.size(),
+                          md5_of(screams_zip), "zip"};
+  const Copy disney_copy{srv.url("/r/disney.zip"), L"After Dark - Disney Collection.zip", disney_zip.size(),
+                         md5_of(disney_zip), "zip"};
+  const Copy marvel_flat_copy{srv.url("/r/marvel-flat.zip"), L"After Dark - Marvel Screen Posters.zip",
+                              marvel_flat.size(), md5_of(marvel_flat), "zip"};
+  const Copy marvel_disks_copy{srv.url("/r/marvel-disks.zip"), L"After Dark - Marvel Comics.zip", marvel_disks.size(),
+                               md5_of(marvel_disks), "zip"};
+  const Copy snoopy_copy{srv.url("/r/snoopy.zip"), L"After Dark - Snoopy.zip", snoopy_zip.size(), md5_of(snoopy_zip),
+                         "zip"};
   // Shaped like the real registry: archive.org's hop to a storage node, and
   // a dead first copy for ad32 (its later copies are the fallbacks).
   auto good_registry = [&] {
@@ -256,6 +306,11 @@ int main(int argc, char** argv) {
     reg.downloads("simpsons", {simp_copy, simp94_copy});
     reg.downloads("swse", {swse_copy, swse_zip_copy});
     reg.downloads("startrek", {st_copy, st_copy_b});
+    reg.downloads("marvel", {marvel_flat_copy, marvel_disks_copy});
+    reg.downloads("snoopy", {snoopy_copy});
+    reg.downloads("looney", {looney_copy});
+    reg.downloads("screams", {screams_copy});
+    reg.downloads("disney", {disney_copy});
   };
   good_registry();
 
@@ -278,6 +333,13 @@ int main(int argc, char** argv) {
            {"simpsons", &simpsons, "packages/simpsons", L"SIMPSONS.zip", "/SIMPSONS.zip", "files", "zip"},
            {"swse", &swse, "packages/swse", L"AfterDarkStarWars.iso", "/AfterDarkStarWars.iso", "image", "iso9660"},
            {"startrek", &startrek, "packages/startrek", L"st1.img", "/st1.img", "image", "fat12"},
+           {"marvel", &marvel, "packages/marvel", L"After Dark - Marvel Screen Posters.zip", "/marvel-flat.zip", "image",
+            "zip"},
+           {"snoopy", &snoopy, "packages/snoopy", L"After Dark - Snoopy.zip", "/snoopy.zip", "image", "zip"},
+           {"looney", &looney, "packages/looney", L"After Dark - Looney Tunes.zip", "/looney.zip", "image", "zip"},
+           {"screams", &screams, "packages/screams", L"After Dark - Scream Savers.zip", "/screams.zip", "image", "zip"},
+           {"disney", &disney, "packages/disney", L"After Dark - Disney Collection.zip", "/disney.zip", "image",
+            "zip"},
        }) {
     fs::path root = dir / (L"alone-" + to_wide(o.id));
     srv.clear();
@@ -301,6 +363,11 @@ int main(int argc, char** argv) {
                                  : id == "tt"       ? tt_copy.url
                                  : id == "swse"     ? swse_copy.url
                                  : id == "startrek" ? st_copy.url
+                                 : id == "marvel"   ? marvel_flat_copy.url
+                                 : id == "snoopy"   ? snoopy_copy.url
+                                 : id == "looney"   ? looney_copy.url
+                                 : id == "screams"  ? screams_copy.url
+                                 : id == "disney"   ? disney_copy.url
                                                     : simp_copy.url;
     CHECK_EQ(r.url, want_url);
     if (id == "deluxe") {
@@ -352,6 +419,17 @@ int main(int argc, char** argv) {
       for (auto& l : g_log) CHECK(l.find(test::kTestZipPassword) == std::string::npos);
       CHECK(test::read_text(r.import_json).find(test::kTestZipPassword) == std::string::npos);
     }
+    if (id == "looney" || id == "screams" || id == "disney" || id == "marvel" || id == "snoopy") {
+      // A "zip" copy whose md5 is the known image: verified as that image,
+      // the owners' notes in it never read.
+      CHECK(logged("a ZIP of install files, the known copy of " + std::string(find_package(id)->title) + " (by its md5)"));
+      CHECK(!logged("checking every file"));
+      std::string text = test::read_text(r.import_json);
+      for (auto& l : g_log) text += l;
+      for (const char* note : {"_SN.TXT", "REG'D", "DIZNY", "SERIAL", "REG#", "ADNEWS"})
+        CHECK(ascii_upper(text).find(note) == std::string::npos);
+    }
+    if (id == "snoopy") CHECK(logged("reading After Dark - Snoopy.zip as the union of its folders Disk1 and Disk2"));
   }
 
   // ---- Star Wars Screen Entertainment from its flat ZIP when the disc image is gone ----------
@@ -371,6 +449,25 @@ int main(int argc, char** argv) {
     CHECK_EQ(j.at("source").get_string("kind"), std::string("download"));
     CHECK_EQ(j.at("source").get_bool("imageMd5Known"), false);
     CHECK_EQ(j.at("package").get_string("recipe"), std::string("intermission"));
+    good_registry();
+  }
+
+  // ---- Marvel Comics Screen Posters from its second copy when the first is gone -----------------
+  // The ZIP of both disks' folders is a known image too: verified "image".
+  {
+    const Copy gone{srv.url("/r/gone-marvel.zip"), L"After Dark - Marvel Screen Posters.zip", marvel_flat.size(),
+                    md5_of(marvel_flat), "zip"};
+    reg.downloads("marvel", {gone, marvel_disks_copy});
+    fs::path dlm = dir / L"downloads-marvel", root = dir / L"marvel-second";
+    g_log.clear();
+    ImportResult r = run("marvel, the flat ZIP gone: the disks' ZIP", download(dlm, "marvel"), opts_for(root, reg),
+                         Status::ok);
+    CHECK_EQ(r.url, marvel_disks_copy.url);
+    CHECK_EQ(r.verified, std::string("image"));
+    CHECK(logged("trying another copy: " + marvel_disks_copy.url));
+    CHECK(logged("reading After Dark - Marvel Comics.zip as the union of its folders Disk1 and Disk2"));
+    check_installed(root / L"win", marvel, "packages/marvel");
+    CHECK_EQ(json_at(r.import_json).at("package").get_string("recipe"), std::string("islib"));
     good_registry();
   }
 
@@ -644,19 +741,22 @@ int main(int argc, char** argv) {
   // ---- --download all -----------------------------------------------------------------------
   {
     const std::vector<std::string> ids = downloadable_packages(reg.span());
-    CHECK(ids == std::vector<std::string>({"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek"}));
+    CHECK(ids == std::vector<std::string>({"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek", "marvel",
+                                           "snoopy", "looney", "screams", "disney"}));
     fs::path root = dir / L"all";
     std::vector<size_t> started;
     Source base = download(dir / L"downloads-all", "");
     std::vector<ImportResult> rs = import_downloads(ids, base, opts_for(root, reg), [&](size_t i) { started.push_back(i); });
-    CHECK_EQ(rs.size(), size_t(7));
+    CHECK_EQ(rs.size(), size_t(12));
     for (auto& r : rs) CHECK_EQ(r.status, Status::ok);
-    CHECK(started == std::vector<size_t>({0, 1, 2, 3, 4, 5, 6}));
+    CHECK(started == std::vector<size_t>({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}));
     std::vector<std::string> want;
-    for (const auto* f : {&deluxe, &ad10, &ad32, &tt, &simpsons, &swse, &startrek})
+    for (const test::PkgFixture* f : std::vector<const test::PkgFixture*>{&deluxe, &ad10, &ad32, &tt, &simpsons, &swse,
+                                                                         &startrek, &marvel, &snoopy, &looney, &screams,
+                                                                         &disney})
       want.insert(want.end(), f->ids.begin(), f->ids.end());
     CHECK(catalog_ids(root / L"win") == want);
-    CHECK_EQ(rs.back().installed.size(), size_t(7));
+    CHECK_EQ(rs.back().installed.size(), size_t(12));
     CHECK_EQ(rs.back().verified, std::string("image"));
 
     // Cancelled during the second: the first stays imported, nothing after it starts.
@@ -675,8 +775,9 @@ int main(int argc, char** argv) {
 
   // ---- the built-in copies -------------------------------------------------------------------
   {
-    CHECK(downloadable_packages() ==
-          std::vector<std::string>({"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek"}));
+    CHECK(downloadable_packages() == std::vector<std::string>({"deluxe", "ad10", "ad32", "tt", "simpsons", "swse",
+                                                                "startrek", "marvel", "snoopy", "looney", "screams",
+                                                                "disney"}));
     for (const Package& p : builtin_packages()) {
       CHECK(!p.downloads.empty());
       std::map<std::string, std::wstring> name_of_md5;
@@ -700,12 +801,17 @@ int main(int argc, char** argv) {
           CHECK(q.size > 0);
           CHECK(!file.empty() && file.find_first_of(L"<>:\"/\\|?*") == std::wstring::npos);
           // An image is one of the package's known images (verified: image);
-          // a ZIP never is.
+          // a ZIP is too only when no image of the original media exists and
+          // that ZIP is the release's known copy (Marvel Comics Screen
+          // Posters' two, Snoopy's Screen Savers', the Looney Tunes',
+          // ScreamSavers', the Disney Collection's), which says so in its
+          // medium.
           const KnownImage* known = nullptr;
           for (const KnownImage& k : p.images)
             if (md5 == k.md5 && q.size == k.size) known = &k;
-          CHECK_EQ(known != nullptr, kind == "image");
-          if (known) disks.push_back(known->disk);
+          if (kind == "image") CHECK(known != nullptr);
+          if (kind == "zip" && known) CHECK(std::string_view(known->medium).rfind("ZIP", 0) == 0);
+          if (known && kind == "image") disks.push_back(known->disk);
           // Same bytes, same name (a transfer resumes across copies); other bytes, another name.
           if (name_of_md5.count(md5)) CHECK(name_of_md5[md5] == file);
           if (md5_of_name.count(file)) CHECK_EQ(md5_of_name[file], md5);
@@ -777,6 +883,74 @@ int main(int argc, char** argv) {
         CHECK(std::string_view(k.medium).find("floppy") != std::string_view::npos);
       }
     }
+    // The Looney Tunes, ScreamSavers and the Disney Collection (verified
+    // 2026-09-29, research/win/pkg/{looney,scream,disney}): each the one file
+    // of item after-dark-collection, the user's copy byte for byte, a "zip"
+    // copy whose md5 is the known image (so the GUI says "the known ZIP");
+    // the Looney Tunes' CD is a known image with no copy listed (its only one
+    // online is named after a product serial).
+    struct Collection {
+      const char* id;
+      const char* url;
+      const wchar_t* file;
+      uint64_t size;
+      const char* md5;
+    };
+    for (const Collection& c : std::vector<Collection>{
+             {"looney", "https://archive.org/download/after-dark-collection/After%20Dark%20-%20Looney%20Tunes.zip",
+              L"After Dark - Looney Tunes.zip", 2900525, "642b358a4854c481fe99984b8452ceb5"},
+             {"screams", "https://archive.org/download/after-dark-collection/After%20Dark%20-%20Scream%20Savers.zip",
+              L"After Dark - Scream Savers.zip", 3453163, "37a47b25dd35b214f94f57b6a0c2bd02"},
+             {"disney", "https://archive.org/download/after-dark-collection/After%20Dark%20-%20Disney%20Collection.zip",
+              L"After Dark - Disney Collection.zip", 3560012, "2f38df15494728b5bc20d26c36ba84c7"}}) {
+      const Package* p = find_package(c.id);
+      CHECK(p && p->downloads.size() == 1 && !p->images.empty());
+      if (!p || p->downloads.size() != 1 || p->images.empty()) continue;
+      const Download& d = p->downloads[0];
+      CHECK(std::string(d.url) == c.url && std::wstring(d.file_name) == c.file && d.size == c.size &&
+            std::string(d.md5) == c.md5 && std::string(d.kind) == "zip");
+      CHECK(std::string(p->images[0].md5) == c.md5 && p->images[0].size == c.size);
+      CHECK(std::string_view(p->images[0].medium).rfind("ZIP", 0) == 0);
+    }
+    const Package* lt = find_package("looney");
+    CHECK(lt && lt->images.size() == 2 && std::string(lt->images[1].volume_id) == "LOONEY_T" &&
+          std::string_view(lt->images[1].medium).find("floppy") == std::string_view::npos);
+    // Marvel Comics Screen Posters (verified 2026-09-29,
+    // research/win/pkg/marvel/ia/sources.json): the flat ZIP of item
+    // afterdarkmarvelscreenposters first, then the after-dark-collection
+    // copy, the user's file byte for byte; Snoopy's Screen Savers: the
+    // after-dark-collection copy. Each ZIP is a known image; no URL of either
+    // item's serial number file appears.
+    struct Zip {
+      const char* id;
+      size_t index;
+      const char* url;
+      const wchar_t* file;
+      uint64_t size;
+      const char* md5;
+    };
+    for (const Zip& z : std::vector<Zip>{
+             {"marvel", 0,
+              "https://archive.org/download/afterdarkmarvelscreenposters/After%20Dark%20-%20Marvel%20Screen%20Posters.zip",
+              L"After Dark - Marvel Screen Posters.zip", 2039771, "4c608dbbeb34108b30ede88304912c94"},
+             {"marvel", 1, "https://archive.org/download/after-dark-collection/After%20Dark%20-%20Marvel%20Comics.zip",
+              L"After Dark - Marvel Comics.zip", 2046286, "6981b36abb04779a076466fabad3721c"},
+             {"snoopy", 0, "https://archive.org/download/after-dark-collection/After%20Dark%20-%20Snoopy.zip",
+              L"After Dark - Snoopy.zip", 1993700, "a712447e1c957767bdbca884cead02dc"}}) {
+      const Package* p = find_package(z.id);
+      CHECK(p && z.index < p->downloads.size() && z.index < p->images.size());
+      if (!p || z.index >= p->downloads.size() || z.index >= p->images.size()) continue;
+      const Download& d = p->downloads[z.index];
+      CHECK(std::string(d.url) == z.url && std::wstring(d.file_name) == z.file && d.size == z.size &&
+            std::string(d.md5) == z.md5 && std::string(d.kind) == "zip");
+      CHECK(std::string(p->images[z.index].md5) == z.md5 && p->images[z.index].size == z.size);
+      CHECK(std::string_view(p->images[z.index].medium).rfind("ZIP", 0) == 0);
+    }
+    CHECK_EQ(find_package("marvel")->downloads.size(), size_t(2));
+    CHECK_EQ(find_package("snoopy")->downloads.size(), size_t(1));
+    for (const char* id : {"marvel", "snoopy"})
+      for (const Download& d : find_package(id)->downloads)
+        CHECK(ascii_upper(d.url).find("SERIAL") == std::string::npos);
   }
 
   // ---- adimport.exe ---------------------------------------------------------------------------
@@ -799,8 +973,16 @@ int main(int argc, char** argv) {
     CHECK(out.find("download 2.6 MB (ZIP of the install files)") != std::string::npos);
     CHECK(out.find("download 381.7 MB (disc image)") != std::string::npos);
     CHECK(out.find("download 6.9 MB (disc image)") != std::string::npos);  // swse
-    CHECK(out.find("  startrek  Star Trek: The Screen Saver    not installed; download 2.8 MB (2 floppy images)") !=
+    CHECK(out.find("  startrek  Star Trek: The Screen Saver        not installed; download 2.8 MB (2 floppy images)") !=
           std::string::npos);
+    CHECK(out.find("  looney    The Looney Tunes Screen Saver      not installed; download 2.8 MB (ZIP of the install "
+                   "files)") != std::string::npos);
+    CHECK(out.find("  screams   ScreamSavers                       not installed; download 3.3 MB (ZIP of the install "
+                   "files)") != std::string::npos);
+    CHECK(out.find("  marvel    Marvel Comics Screen Posters       not installed; download 1.9 MB (ZIP of the install "
+                   "files)") != std::string::npos);
+    CHECK(out.find("  snoopy    Snoopy's Screen Savers             not installed; download 1.9 MB (ZIP of the install "
+                   "files)") != std::string::npos);
     CHECK(!fs::exists(dir / L"cli-empty"));
 
     // The built-in manifests are the real ones: the synthetic files need --no-verify.

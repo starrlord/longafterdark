@@ -1,6 +1,6 @@
 // adw::import — puts the original Windows modules of the known releases
-// (six After Dark releases and Star Wars Screen Entertainment) where the
-// hosts look for them (DESIGN.md §6, PACKAGES.md):
+// (the After Dark releases of the registry, packages.h, and Star Wars Screen
+// Entertainment) where the hosts look for them (DESIGN.md §6, PACKAGES.md):
 //
 //   <assets>\win\FILES\{AD40,CLASSIC,ENGINE,AFI}\**   After Dark 4.0 Deluxe (8.3 upper-case names, as on the CD)
 //   <assets>\win\import.json                           Deluxe's record (version 1)
@@ -203,7 +203,10 @@ std::filesystem::path win_assets_dir(const std::filesystem::path& root);
 std::optional<std::filesystem::path> locate_files_dir(const std::filesystem::path& dir);
 
 // Which package a folder holds (the GUI's check before it starts an import).
-// nullptr with the reason in `why` when it is none, or more than one.
+// nullptr with the reason in `why` when it is none, or more than one; the
+// reason starts with what open_folder noted while reading the folder (DISK<n>
+// folders read as they are because something else is beside them), then the
+// error.
 const Package* identify_folder(const std::filesystem::path& dir, std::string* why = nullptr,
                                std::span<const Package> registry = {});
 
@@ -217,6 +220,10 @@ struct PackageState {
   bool installed = false;
   std::filesystem::path root;  // where it is (or would be) installed
   std::string verified, imported_utc;
+  // The md5 of the image (or ZIP) it was imported from, when it came from
+  // one ("": a folder, a set of disks): which known image "verified: image"
+  // means, for the windows' wording.
+  std::string image_md5;
   uint64_t file_count = 0;
 };
 // Every registry package with its installed state (adimport --list-packages).

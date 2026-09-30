@@ -1,19 +1,28 @@
-// Synthetic sources shaped like the seven known releases (PACKAGES.md §2–§4),
-// for the package tests: the Deluxe and 10th Anniversary CDs' plain FILES
-// trees; the AD 3.x InstallShield installs (AD 3.2, Totally Twisted, the
-// Simpsons floppies) with encrypted PKZIP archives under the test-only
-// password and an INSTALL.INS-like script that holds it among decoys; a
-// Presage install shaped like Star Wars Screen Entertainment's (INSTALL.DAT,
-// multi-volume ARJ archives with split members, SZDD loose files, decoys
-// that must never be read); and a Microsoft Setup install shaped like Star
-// Trek: The Screen Saver's (SETUP.LST, KWAJ files written by kwaj_builder.h,
-// two install disks, decoys). Each fixture is a tree (path -> bytes) that can
-// be written as a folder, an ISO image, a FAT floppy image (or several), a
-// flat ZIP or a ZIP of floppy images, plus exactly what an import must
-// install and the catalog ids it must list. Modules come from
-// module_builder.h: made-up resources, no bytes of any release.
+// Synthetic sources shaped like the known releases (PACKAGES.md §2–§4), for
+// the package tests: the Deluxe and 10th Anniversary CDs' plain FILES trees;
+// the AD 3.x InstallShield installs (AD 3.2, Totally Twisted, the Simpsons
+// floppies, the Looney Tunes, ScreamSavers and the Disney Collection) with
+// encrypted PKZIP archives under the test-only password and an
+// INSTALL.INS-like script that holds it among decoys, their MODMISC.ZIP and
+// AFI.ZIP holding what the real ones do (the names the fingerprint reads), and
+// the owners' notes that must never be read; a Presage install shaped like
+// Star Wars Screen Entertainment's (INSTALL.DAT, multi-volume ARJ archives
+// with split members, SZDD loose files, decoys that must never be read); a
+// Microsoft Setup install shaped like Star Trek: The Screen Saver's
+// (SETUP.LST, KWAJ files written by kwaj_builder.h, two install disks,
+// decoys); and InstallShield 2 installs of compressed libraries shaped like
+// Marvel Comics Screen Posters' and Snoopy's Screen Savers' (SETUP.PKG, a
+// library split over the two install disks and unsplit ones, written by
+// isz_builder.h, the installer's files, the owners' notes and a disk copier's
+// leftovers). Each fixture is a tree (path -> bytes) that can be written as a
+// folder, an ISO image, a FAT floppy image (or several), a flat ZIP or a ZIP
+// of floppy images, plus exactly what an import must install and the catalog
+// ids it must list. Modules come from module_builder.h: made-up resources, no
+// bytes of any release.
 #pragma once
 
+#include <algorithm>
+#include <cctype>
 #include <deque>
 #include <functional>
 #include <map>
@@ -24,6 +33,7 @@
 #include "fat_builder.h"
 #include "importer.h"
 #include "iso_builder.h"
+#include "isz_builder.h"
 #include "kwaj_builder.h"
 #include "md5.h"
 #include "module_builder.h"
@@ -224,6 +234,17 @@ struct Ad3Parts {
   }
 };
 
+// The folder files an AD 3.x AFI.ZIP carries besides the release's own: the
+// other products' folders, as on the real disks (every one has DISNEY.AFI,
+// three have AD3.AFI), so the fingerprint must tell them from the release's.
+// Made-up bytes, one blob per name and `tag`.
+inline std::vector<std::pair<std::string, std::vector<uint8_t>>> afi_members(const std::string& tag,
+                                                                             const std::vector<std::string>& names) {
+  std::vector<std::pair<std::string, std::vector<uint8_t>>> m;
+  for (const std::string& n : names) m.push_back({n, blob(tag + " " + n)});
+  return m;
+}
+
 inline PkgFixture ad32_fixture() {
   Ad3Parts p;
   p.install = "INSTALL";
@@ -231,9 +252,23 @@ inline PkgFixture ad32_fixture() {
   p.mdir = "AD32";
   p.installer_files({"DISK.1", "DISK.CD"});
   p.engine_zip();
-  auto xpl = blob("ad32 ADXPL300"), tool = blob("ad32 ADTOOL"), adc = blob("bitmaps adc"), rsrc = blob("AD_RSRC");
-  p.zip("MODMISC.ZIP", {{"ADXPL300.DLL", xpl}, {"ADTOOL.DLL", tool}, {"BITMAPS.ADC", adc}, {"EDITFILE.TXT", blob("edit")}});
+  auto xpl = blob("ad32 ADXPL300"), tool = blob("ad32 ADTOOL"), adc = blob("bitmaps adc"), rsrc = blob("AD_RSRC"),
+       rsdb = blob("ad32 AD30RSDB");
+  // What 3.2's MODMISC.ZIP holds (by name): AD30RSDB.DLL is its marker
+  // beside ADXPL300.DLL (ScreamSavers ships the same engine library).
+  std::vector<std::pair<std::string, std::vector<uint8_t>>> modmisc = {{"ADXPL300.DLL", xpl},
+                                                                       {"AD30RSDB.DLL", rsdb},
+                                                                       {"ADTOOL.DLL", tool},
+                                                                       {"BITMAPS.ADC", adc},
+                                                                       {"EDITFILE.TXT", blob("edit")}};
+  for (const char* n : {"DJPG.DLL", "DTARGA.DLL", "MESG_AD3.DAT", "NONSENSE.TXT", "READBMP.DLL", "READFILE.DLL",
+                        "READGIF.DLL", "READMMP.DLL", "READPCX.DLL", "STOIKDTH.DLL"}) {
+    modmisc.push_back({n, blob(std::string("ad32 ") + n)});
+    p.expect(std::string("AD32/") + n, modmisc.back().second);
+  }
+  p.zip("MODMISC.ZIP", modmisc);
   p.expect("AD32/ADXPL300.DLL", xpl);
+  p.expect("AD32/AD30RSDB.DLL", rsdb);
   p.expect("AD32/ADTOOL.DLL", tool);
   p.expect("AD32/BITMAPS.ADC", adc);
   p.zip("WIN.ZIP", {{"AD_RSRC.DLL", rsrc}, {"UNLINK.EXE", blob("unlink")}});
@@ -249,7 +284,9 @@ inline PkgFixture ad32_fixture() {
   p.zip("MUSIC.ZIP", {{"OMTW.MID", blob("omtw dual format")}});
   p.zip("MUSICG.ZIP", {{"OMTW.MID", mg}});
   p.expect("AD32/MUSIC/OMTW.MID", mg);
-  p.zip("AFI.ZIP", {{"MAD.AFI", blob("MAD.AFI")}, {"AD3.AFI", afi}});
+  auto afis = afi_members("ad32", {"AD2.AFI", "DISNEY.AFI", "MAD.AFI", "MARVEL.AFI", "STARTREK.AFI", "STUMP.AFI"});
+  afis.push_back({"AD3.AFI", afi});
+  p.zip("AFI.ZIP", afis);
   p.expect("AD32/FOLDER.AFI", afi);
   p.zip("HELP.ZIP", {{"ADW30.HLP", blob("help")}});
   p.zip("MULTIS.ZIP", {{"CLOCK_AT.AM3", blob("multi")}});
@@ -264,9 +301,11 @@ inline PkgFixture ad32_fixture() {
   p.module("SAME.ZIP", {{"SAME.AD", shared_classic()}});
   p.module("WMORPH.ZIP",
            {{"WMORPH.AD", ne_module("Draw Morph", {"KERNEL"})}, {"MORPH1.DAT", blob("m1")}, {"MORPH2.DAT", blob("m2")}});
+  // A name the Looney Tunes' Messages repeats (it becomes "Messages (Looney Tunes)").
+  p.module("MESSAGES.ZIP", {{"MESSAGES.AD", ne_module("Messages", {"KERNEL", "ADXPL300"})}});
   p.f.source["DEMOS/JACK/SETUP.EXE"] = blob("a demo");
-  p.f.ids = {"ad32.boris", "ad32.borisb", "ad32.guts", "ad32.guts2", "ad32.guts3", "ad32.same", "ad32.toilet",
-             "ad32.wmorph"};
+  p.f.ids = {"ad32.boris", "ad32.borisb", "ad32.guts",  "ad32.guts2", "ad32.guts3",
+             "ad32.messages", "ad32.same", "ad32.toilet", "ad32.wmorph"};
   return p.f;
 }
 
@@ -286,7 +325,9 @@ inline PkgFixture tt_fixture() {
   p.expect("TWISTED/TT_SND.DLL", snd);
   p.zip("WIN.ZIP", {{"AD_RSRC.DLL", rsrc}, {"UNLINK.EXE", blob("unlink")}});
   p.expect("TWISTED/AD_RSRC.DLL", rsrc);
-  p.zip("AFI.ZIP", {{"AD2.AFI", blob("AD2.AFI")}, {"PHLEM.AFI", afi}});
+  auto afis = afi_members("tt", {"AD2.AFI", "DISNEY.AFI", "MAD.AFI", "MARVEL.AFI", "STARTREK.AFI", "STUMP.AFI"});
+  afis.push_back({"PHLEM.AFI", afi});
+  p.zip("AFI.ZIP", afis);
   p.expect("TWISTED/FOLDER.AFI", afi);
   p.zip("WAVEMIX.ZIP", {{"MSACM.DLL", blob("msacm")}});
   p.zip("WINSYS.ZIP", {{"PLACE.TXT", pattern(30, 6)}});
@@ -345,7 +386,10 @@ inline PkgFixture simpsons_fixture() {
   p.zip("WIN.ZIP", {{"SPALETTE.DLL", blob("spalette")}, {"AD_RSRC.DLL", rsrc}});
   p.expect("SIMPSONS/AD_RSRC.DLL", rsrc);
   p.zip("WINSYS.ZIP", {{"SPMME.DRV", blob("spmme")}});
-  p.zip("AFI.ZIP", {{"SAX.AFI", afi}, {"AD3.AFI", blob("AD3.AFI 3.0")}});
+  auto afis = afi_members("simpsons", {"AD2.AFI", "AD3.AFI", "DISNEY.AFI", "MAD.AFI", "MARVEL.AFI", "STARTREK.AFI",
+                                       "STUMP.AFI"});
+  afis.push_back({"SAX.AFI", afi});
+  p.zip("AFI.ZIP", afis);
   p.expect("SIMPSONS/FOLDER.AFI", afi);
   p.zip("HELP.ZIP", {{"SIMPSONS.HLP", blob("help")}});
   for (const SimpsonsModule& m : simpsons_modules()) p.module(m.zip, {{m.file, ne_module(m.name, {"KERNEL", "ADXPL310"})}});
@@ -355,6 +399,242 @@ inline PkgFixture simpsons_fixture() {
              "simpsons.how2draw", "simpsons.ins",      "simpsons.krusty",   "simpsons.lisa",     "simpsons.objets",
              "simpsons.physics",  "simpsons.simpclok", "simpsons.simpfile", "simpsons.simptriv", "simpsons.snowball"};
   return p.f;
+}
+
+// ---- the AD 3.x releases known by the ZIP of their install files ----------------------------
+//
+// The Looney Tunes, ScreamSavers and the Disney Collection: the same
+// installer as the three above, each with its own engine library in
+// MODMISC.ZIP and folder file in AFI.ZIP (ScreamSavers' engine library is 3.2's
+// ADXPL300.DLL, and its AFI.ZIP holds an AD3.AFI too), every module archive
+// the registry lists, and the files a copy of the disks holds besides: the
+// installer's, and the owner's note the user's copy has, which the importer
+// must never read. The ids of a fixture's modules follow its module list.
+
+struct Ad3Module {
+  const char* zip;
+  const char* file;
+  const char* name;  // as the name resource holds it (spaces kept: the catalog trims them)
+};
+
+inline std::vector<std::string> module_ids(const char* package, const std::vector<Ad3Module>& modules) {
+  std::vector<std::string> ids;
+  for (const Ad3Module& m : modules) {
+    std::string stem = m.file;
+    stem = stem.substr(0, stem.find('.'));
+    for (char& c : stem) c = char(tolower((unsigned char)c));
+    ids.push_back(std::string(package) + "." + stem);
+  }
+  std::sort(ids.begin(), ids.end());
+  return ids;
+}
+
+// The Looney Tunes: 12 modules on ADXPL41, a sound database named LT_SOUND.DLL
+// in MUSIC.ZIP with the General MIDI files (no MUSICG.ZIP), both floppies'
+// files at the root, as the user's ZIP and the CD hold them.
+inline const std::vector<Ad3Module>& looney_modules() {
+  static const std::vector<Ad3Module> v = {
+      {"ACMESHOP.ZIP", "ACMESHOP.AD", "ACME Home Shopping"}, {"CART101.ZIP", "CART101.AD", "Cartoons 101"},
+      {"CONDUCKT.ZIP", "CONDUCKT.AD", "Conducktor"},        {"FROG.ZIP", "FROG.AD", "Michigan J. Frog "},
+      {"LTMESSGS.ZIP", "LTMESSGS.AD", "Messages"},          {"MARVIN.ZIP", "MARVIN.AD", "Marvin's Invasion"},
+      {"PEPE.ZIP", "PEPE.AD", "Desquetoppe D\x92" "amour"}, {"PUTTYTAT.ZIP", "PUTTYTAT.AD", "Putty Tat Splat!"},
+      {"RABBITRN.ZIP", "RABBITRN.AD", "Rabbitron"},         {"SAM.ZIP", "SAM.AD", "Yosemite Sam"},
+      {"TAZ.ZIP", "TAZ.AD", "Taz Desktop"},                 {"WOCKETS.ZIP", "WOCKETS.AD", "Wockets' Wed Gware "},
+  };
+  return v;
+}
+
+// Which of the two install floppies each root file was on (SETUP.PKG's split).
+inline int looney_disk(const std::string& name) {
+  for (const char* d2 : {"PUTTYTAT.ZIP", "MUSIC.ZIP", "MODMISC.ZIP", "ENGINE.ZIP", "DISK.2"})
+    if (name == d2) return 2;
+  return 1;
+}
+
+// The owner's note in the user's copy (a long name: no floppy holds it).
+inline constexpr char kLooneyNote[] = "looneyAD_sn.txt";
+
+inline PkgFixture looney_fixture() {
+  Ad3Parts p;
+  p.install = "";
+  p.root = "packages/looney";
+  p.mdir = "LNYTUNES";
+  p.installer_files({"DISK.1", "DISK.2", "DISK.CD"});
+  p.f.source["SETUP.BMP"] = blob("looney setup splash", 2000);
+  for (const char* f : {"CHANGES.TXT", "README.TXT", "DUNZIP.DLL", "INS0762.LIB"}) p.f.source[f] = blob(f, 300);
+  p.engine_zip();
+  auto xpl = blob("ADXPL41"), snd = blob("LT_SOUND", 3000), rsrc = blob("AD_RSRC"), afi = blob("LNYTUNES.AFI"),
+       m1 = blob("acme mid"), m2 = blob("gb&u mid");
+  p.zip("MODMISC.ZIP", {{"ADXPL41.DLL", xpl}});
+  p.expect("LNYTUNES/ADXPL41.DLL", xpl);
+  p.zip("MUSIC.ZIP", {{"ACME.MID", m1}, {"GB&U.MID", m2}, {"LT_SOUND.DLL", snd}});
+  p.expect("LNYTUNES/MUSIC/ACME.MID", m1);
+  p.expect("LNYTUNES/MUSIC/GB&U.MID", m2);
+  p.expect("LNYTUNES/LT_SOUND.DLL", snd);
+  p.zip("WIN.ZIP", {{"SPALETTE.DLL", blob("spalette")}, {"AD_RSRC.DLL", rsrc}, {"CLEANAD.BAT", blob("cleanad")},
+                    {"UNLINK.EXE", blob("unlink")}});
+  p.expect("LNYTUNES/AD_RSRC.DLL", rsrc);
+  p.zip("WINSYS.ZIP", {{"SPMME.DRV", blob("spmme")}});
+  auto afis = afi_members("looney", {"AD2.AFI", "DISNEY.AFI", "MAD.AFI", "MARVEL.AFI", "STARTREK.AFI", "STUMP.AFI"});
+  afis.push_back({"LNYTUNES.AFI", afi});
+  p.zip("AFI.ZIP", afis);
+  p.expect("LNYTUNES/FOLDER.AFI", afi);
+  p.zip("HELP.ZIP", {{"LNYTUNES.HLP", blob("help")}});
+  for (const Ad3Module& m : looney_modules()) p.module(m.zip, {{m.file, ne_module(m.name, {"KERNEL", "ADXPL41"})}});
+  p.f.source[kLooneyNote] = blob("the owner's note", 19);
+  p.f.ids = module_ids("looney", looney_modules());
+  return p.f;
+}
+
+// ScreamSavers: 15 modules that import only AD_SND, 3.2's ADXPL300.DLL in
+// MODMISC.ZIP (installed, used by nothing) and an AD3.AFI beside SCREAMS.AFI
+// in AFI.ZIP; three floppies (screams_disk), the owner's note on disk 1.
+inline const std::vector<Ad3Module>& screams_modules() {
+  static const std::vector<Ad3Module> v = {
+      {"AMPHIBO.ZIP", "AMPHIBO.AD", "Swamp Lunch"},   {"BELCHO.ZIP", "BELCHO.AD", "Wake Up"},
+      {"BUGZAP.ZIP", "BUGZAP.AD", "Bug Out"},         {"GRISTLE.ZIP", "GRISTLE.AD", "Gristle Slam"},
+      {"HEADBUTT.ZIP", "HEADBUTT.AD", "Head Butt"},   {"INFECTO.ZIP", "INFECTO.AD", "Infecto"},
+      {"LOCKJAW.ZIP", "LOCKJAW.AD", "All Tied Up"},   {"MALIGNO.ZIP", "MALIGNO.AD", "Melt Down"},
+      {"MELTICOR.ZIP", "MELTICOR.AD", "Big Mess"},    {"MOONBITE.ZIP", "MOONBITE.AD", "Rip Out"},
+      {"PUPPY.ZIP", "PUPPY.AD", "Bone Crunch"},       {"SNAPPY.ZIP", "SNAPPY.AD", "Blooming Chow"},
+      {"SPEWER.ZIP", "SPEWER.AD", "Slime Bath"},      {"STICKY.ZIP", "STICKY.AD", "Sticky Tongue"},
+      {"TWISTER.ZIP", "TWISTER.AD", "Spin Out"},
+  };
+  return v;
+}
+
+// Which install floppy each file is on: the installer, the shared archives
+// and two modules on disk 1, five modules on disk 2, eight on disk 3.
+inline int screams_disk(const std::string& name) {
+  for (const char* d2 : {"INFECTO.ZIP", "LOCKJAW.ZIP", "MALIGNO.ZIP", "MELTICOR.ZIP", "MOONBITE.ZIP", "DISK.2"})
+    if (name == d2) return 2;
+  for (const char* d3 : {"AMPHIBO.ZIP", "BUGZAP.ZIP", "GRISTLE.ZIP", "HEADBUTT.ZIP", "SNAPPY.ZIP", "SPEWER.ZIP",
+                         "STICKY.ZIP", "TWISTER.ZIP", "DISK.3"})
+    if (name == d3) return 3;
+  return 1;
+}
+
+// The owner's note on the user's disk 1.
+inline constexpr char kScreamsNote[] = "REG'D.TXT";
+
+// `ad32_marker`: MODMISC.ZIP also holds 3.2's marker (a crafted source that
+// is both releases).
+inline PkgFixture screams_fixture(bool ad32_marker = false) {
+  Ad3Parts p;
+  p.install = "";
+  p.root = "packages/screams";
+  p.mdir = "SCREAMS";
+  p.installer_files({"DISK.1", "DISK.2", "DISK.3"});
+  for (const char* f : {"CHANGES.TXT", "~INS0762.LIB"}) p.f.source[f] = blob(f, 300);
+  p.engine_zip();
+  auto xpl = blob("screams ADXPL300"), rsrc = blob("AD_RSRC"), afi = blob("SCREAMS.AFI");
+  std::vector<std::pair<std::string, std::vector<uint8_t>>> modmisc = {{"ADXPL300.DLL", xpl},
+                                                                       {"EDITFILE.TXT", blob("edit")}};
+  if (ad32_marker) {
+    modmisc.push_back({"AD30RSDB.DLL", blob("a marker")});
+    p.expect("SCREAMS/AD30RSDB.DLL", modmisc.back().second);
+  }
+  p.zip("MODMISC.ZIP", modmisc);
+  p.expect("SCREAMS/ADXPL300.DLL", xpl);
+  p.zip("WIN.ZIP", {{"AD_RSRC.DLL", rsrc}, {"SPALETTE.DLL", blob("spalette")}, {"AD_GRAPH.TXT", blob("ad graph")}});
+  p.expect("SCREAMS/AD_RSRC.DLL", rsrc);
+  p.zip("WINSYS.ZIP", {{"SPMME.DRV", blob("spmme")}});
+  auto afis = afi_members("screams", {"AD2.AFI", "AD3.AFI", "DISNEY.AFI", "MAD.AFI", "MARVEL.AFI", "STARTREK.AFI",
+                                      "STUMP.AFI"});
+  afis.push_back({"SCREAMS.AFI", afi});
+  p.zip("AFI.ZIP", afis);
+  p.expect("SCREAMS/FOLDER.AFI", afi);
+  p.zip("HELP.ZIP", {{"SCREAMS.HLP", blob("help")}});
+  for (const Ad3Module& m : screams_modules())
+    p.module(m.zip, {{m.file, ne_module(m.name, {"KERNEL", "GDI", "USER", "AD_SND"})}});
+  p.f.source[kScreamsNote] = blob("the owner's note", 16);
+  p.f.ids = module_ids("screams", screams_modules());
+  return p.f;
+}
+
+// The Disney Collection: 16 modules on ADXPL100 and AD_RSRC, whose name
+// resources hold two leading spaces (five of them squeezed a space out),
+// the sound library DIS_SND.DLL in MODMISC.ZIP, MUSIC.ZIP and MUSICG.ZIP, the
+// 1993 build of a module in BEAUTYOL.ZIP (never opened: were it read, its
+// BEAUTY.AD would be a second file for one path), and the copy's files in
+// mixed case, as the user's ZIP holds them.
+inline const std::vector<Ad3Module>& disney_modules() {
+  static const std::vector<Ad3Module> v = {
+      {"Beauty.zip", "BEAUTY.AD", "  Beauty"},          {"Checat.zip", "CHECAT.AD", "  Cheshire Cat"},
+      {"Dalm.zip", "DALM.AD", "  101Dalmatians"},       {"Donduk.zip", "DONDUK.AD", "  Donald Paints"},
+      {"Dsclocks.zip", "DSCLOCKS.AD", "  DisneyClocks"}, {"Falling.zip", "FALLING.AD", "  FallingFlower"},
+      {"Firewrk.zip", "FIREWRK.AD", "  MagicKingdom"},  {"Goofy.zip", "GOOFY.AD", "  Goofy"},
+      {"Haunted.zip", "HAUNTED.AD", "  Haunted"},       {"Hook.zip", "HOOK.AD", "  Captain Hook"},
+      {"Inkwell.zip", "INKWELL.AD", "  Digital Ink"},   {"Jungle.zip", "JUNGLE.AD", "  Jungle Book"},
+      {"Mermaid.zip", "MERMAID.AD", "  LittleMermaid"}, {"Pinocchi.zip", "PINOCCHI.AD", "  Pinocchio"},
+      {"Scrooge.zip", "SCROOGE.AD", "  Scrooge"},       {"Sorcerer.zip", "SORCERER.AD", "  The Sorcerer"},
+  };
+  return v;
+}
+
+// Which of the three install floppies each file was on (SETUP.PKG's split;
+// names compared without case).
+inline int disney_disk(const std::string& name) {
+  std::string n = name;
+  for (char& c : n) c = char(toupper((unsigned char)c));
+  for (const char* d2 : {"HELP.ZIP", "MODMISC.ZIP", "MUSIC.ZIP", "MUSICG.ZIP", "AFI.ZIP", "WIN.ZIP", "ENGINE.ZIP",
+                         "WINSYS.ZIP", "BEAUTY.ZIP", "INKWELL.ZIP", "SORCERER.ZIP", "DISK.2"})
+    if (n == d2) return 2;
+  for (const char* d3 : {"CHECAT.ZIP", "GOOFY.ZIP", "HAUNTED.ZIP", "MERMAID.ZIP", "BEAUTYOL.ZIP", "DISK.3"})
+    if (n == d3) return 3;
+  return 1;
+}
+
+// The owner's note in the user's copy.
+inline constexpr char kDisneyNote[] = "Dizny_sn.txt";
+
+inline PkgFixture disney_fixture() {
+  Ad3Parts p;
+  p.install = "";
+  p.root = "packages/disney";
+  p.mdir = "DISNEY";
+  // The installer's files, in the copy's mixed case.
+  p.f.source["Install.ins"] = install_ins(p.password);
+  p.f.source["Setup.pkg"] = vec("[Package]\r\nFiles=...\r\n");
+  p.f.source["Setup.exe"] = blob("installshield launcher");
+  p.f.source["Setup.bmp"] = blob("disney setup splash", 2000);
+  for (const char* f : {"Changes.txt", "Cheksums.new", "Disk.1", "Disk.2", "Disk.3", "Disk.cd", "Dunzip.dll",
+                        "Ins0762.lib", "Readme.txt", "Site.stp"})
+    p.f.source[f] = blob(f, 300);
+  p.engine_zip();
+  // engine_zip() wrote ENGINE.ZIP: as the copy spells it.
+  p.f.source["Engine.zip"] = p.f.source["ENGINE.ZIP"];
+  p.f.source.erase("ENGINE.ZIP");
+  auto xpl = blob("ADXPL100"), snd = blob("DIS_SND", 2000), rsrc = blob("AD_RSRC"), afi = blob("DISNEY.AFI"),
+       mg = blob("bandb gm");
+  p.zip("Modmisc.zip", {{"EDITFILE.TXT", blob("edit")}, {"ADXPL100.DLL", xpl}, {"DIS_SND.DLL", snd}});
+  p.expect("DISNEY/ADXPL100.DLL", xpl);
+  p.expect("DISNEY/DIS_SND.DLL", snd);
+  p.zip("Music.zip", {{"BANDB.MID", blob("bandb dual")}});
+  p.zip("Musicg.zip", {{"BANDB.MID", mg}});
+  p.expect("DISNEY/MUSIC/BANDB.MID", mg);
+  p.zip("Win.zip", {{"AD_RSRC.DLL", rsrc}, {"UNLINK.EXE", blob("unlink")}});
+  p.expect("DISNEY/AD_RSRC.DLL", rsrc);
+  p.zip("Winsys.zip", {{"PLACE.TXT", pattern(42, 7)}});
+  auto afis = afi_members("disney", {"MAD.AFI", "MARVEL.AFI", "STARTREK.AFI", "STUMP.AFI", "AD2.AFI"});
+  afis.push_back({"DISNEY.AFI", afi});
+  p.zip("Afi.zip", afis);
+  p.expect("DISNEY/FOLDER.AFI", afi);
+  p.zip("Help.zip", {{"DISNEY.HLP", blob("help")}});
+  for (const Ad3Module& m : disney_modules())
+    p.module(m.zip, {{m.file, ne_module(m.name, {"KERNEL", "ADXPL100", "AD_RSRC"})}});
+  p.zip("Beautyol.zip", {{"BEAUTY.AD", ne_module("  Beauty", {"KERNEL", "ADXPL100", "AD_RSRC", "USER"})}});
+  p.f.source[kDisneyNote] = blob("the owner's note", 40);
+  p.f.ids = module_ids("disney", disney_modules());
+  return p.f;
+}
+
+// A tree's files of one install disk (by `disk_of`), at the root.
+inline Tree disk_files(const Tree& t, int disk, int (*disk_of)(const std::string&)) {
+  Tree out;
+  for (const auto& [rel, d] : t)
+    if (disk_of(rel) == disk) out[rel] = d;
+  return out;
 }
 
 // ---- Star Wars Screen Entertainment: a Presage install of Intermission modules --------------
@@ -665,6 +945,276 @@ inline PkgFixture startrek_fixture(const std::function<void(Tree&)>& change = {}
   return f;
 }
 
+// ---- InstallShield 2 compressed libraries: Marvel Comics Screen Posters, Snoopy's Screen Savers ----
+
+// A member of a made-up library: its name, the bytes it holds (its recorded
+// size) and its DOS date and time; stored as DCL literals written token by
+// token (dcl_stream below; isz_builder.h: nothing compresses), or as `stream`
+// when that is set.
+struct IslibMember {
+  std::string name;
+  std::vector<uint8_t> data;
+  uint16_t date = 0x1B8D, time = 0;  // 1993-12-13 00:00
+  std::vector<uint8_t> stream = {};
+};
+
+// `data` as a DCL implode stream of literals and the end code (binary
+// literals, a 4096-byte window, as the releases' members are).
+inline std::vector<uint8_t> dcl_stream(const std::vector<uint8_t>& data) {
+  std::vector<DclToken> tokens = dcl_literals(data);
+  tokens.push_back(DclToken::end());
+  return dcl_write(tokens);
+}
+
+// A stream no decoder gets through (its 2-byte header, then no end code): a
+// member the import must never decode.
+inline std::vector<uint8_t> undecodable_stream() { return {0x00, 0x06}; }
+
+// One library of an install: the script's logical name for it (SETUP.PKG's),
+// its file (a split set: its first volume's, "IMAGES.1"; the second is
+// "IMAGES.2"), the disk it starts on, its members in table order, and for a
+// set split over that disk and the next, the member crossing the boundary.
+struct IslibLibrary {
+  std::string logical, file;
+  int disk = 1;
+  std::vector<IslibMember> members;
+  std::string crossing;  // "" = one unsplit library
+};
+
+inline std::string second_volume(const std::string& first) { return first.substr(0, first.size() - 1) + "2"; }
+
+// InstallShield's package list SETUP.PKG, laid out as the real ones are
+// (research/win/pkg/installshield SURVEY_REPORT.md; importer.cc reads it):
+// the magic, the disk table's offset and the number of disks, one group per
+// library (one unnamed directory with every member's size and name), then the
+// disk table: each disk's libraries by logical name, with their groups'
+// offsets.
+inline std::vector<uint8_t> setup_pkg(const std::vector<IslibLibrary>& libs, int disks) {
+  auto put16 = [](std::vector<uint8_t>& o, uint32_t x) {
+    o.push_back(uint8_t(x));
+    o.push_back(uint8_t(x >> 8));
+  };
+  auto put32 = [&](std::vector<uint8_t>& o, uint32_t x) {
+    put16(o, x & 0xFFFF);
+    put16(o, x >> 16);
+  };
+  std::vector<uint8_t> v = {0x4A, 0xA3};
+  put32(v, 0);  // the disk table's offset, set below
+  put32(v, uint32_t(disks));
+  std::vector<uint32_t> group_at;
+  for (const IslibLibrary& lib : libs) {
+    std::vector<uint8_t> body;
+    put16(body, 1);  // one directory, unnamed
+    put16(body, 0);
+    body.push_back(0);
+    put16(body, uint32_t(lib.members.size()));
+    for (const IslibMember& m : lib.members) {
+      put16(body, 0);
+      put32(body, uint32_t(m.data.size()));
+      body.push_back(uint8_t(m.name.size()));
+      body.insert(body.end(), m.name.begin(), m.name.end());
+      body.push_back(0);
+    }
+    group_at.push_back(uint32_t(v.size()));
+    put32(v, uint32_t(body.size()));
+    v.insert(v.end(), body.begin(), body.end());
+  }
+  const uint32_t table = uint32_t(v.size());
+  for (int k = 0; k < 4; k++) v[size_t(2 + k)] = uint8_t(table >> (8 * k));
+  for (int disk = 1; disk <= disks; disk++) {
+    std::vector<size_t> on;
+    for (size_t i = 0; i < libs.size(); i++)
+      if (libs[i].disk == disk) on.push_back(i);
+    if (on.empty()) continue;
+    put16(v, 0);
+    put16(v, uint32_t(disk));
+    put16(v, uint32_t(on.size()));
+    for (size_t i : on) {
+      put16(v, uint32_t(libs[i].logical.size()));
+      v.insert(v.end(), libs[i].logical.begin(), libs[i].logical.end());
+      v.push_back(1);
+      v.push_back(1);
+      put32(v, group_at[i]);
+    }
+  }
+  return v;
+}
+
+// A library's volumes: one, or the two of a set cut inside its crossing member.
+inline std::vector<std::vector<uint8_t>> islib_volumes(const IslibLibrary& lib) {
+  std::vector<IszSpec> specs;
+  size_t cut = 0, pos = 0;
+  for (const IslibMember& m : lib.members) {
+    IszSpec s;
+    s.name = m.name;
+    s.size = uint32_t(m.data.size());
+    s.stream = m.stream.empty() ? dcl_stream(m.data) : m.stream;
+    s.date = m.date;
+    s.time = m.time;
+    if (m.name == lib.crossing) cut = pos + s.stream.size() / 2;
+    pos += s.stream.size();
+    specs.push_back(std::move(s));
+  }
+  if (lib.crossing.empty()) return isz_library(specs).volumes;
+  return isz_split(specs, {cut ? cut : pos / 2}).volumes;
+}
+
+// An InstallShield 2 install: every disk's files at the root (`source`), the
+// disk each is on (0: on every disk), and the names an import must never
+// open or name — the installer's files and the libraries the recipe does not
+// read (`decoys`), and the previous owners' notes (`notes`).
+struct IslibFixture : PkgFixture {
+  std::map<std::string, int> disk;
+  std::vector<std::string> decoys, notes;
+
+  // The files of install disk `n`.
+  Tree disk_files(int n) const {
+    Tree t;
+    for (const auto& [rel, d] : source)
+      if (disk.at(rel) == n || disk.at(rel) == 0) t[rel] = d;
+    return t;
+  }
+  std::map<int, Tree> disks() const {
+    std::map<int, Tree> out;
+    for (int n = 1; n <= 2; n++) out[n] = disk_files(n);
+    return out;
+  }
+};
+
+// The fixture's libraries laid out, SETUP.PKG, and the expected files: each
+// row of the registry's table, its member's bytes.
+inline void islib_lay_out(IslibFixture& f, const char* id, const std::vector<IslibLibrary>& libs) {
+  for (const IslibLibrary& lib : libs) {
+    auto volumes = islib_volumes(lib);
+    f.source[lib.file] = volumes[0];
+    f.disk[lib.file] = lib.disk;
+    if (volumes.size() > 1) {
+      f.source[second_volume(lib.file)] = volumes[1];
+      f.disk[second_volume(lib.file)] = lib.disk + 1;
+    }
+  }
+  f.source["SETUP.PKG"] = setup_pkg(libs, 2);
+  f.disk["SETUP.PKG"] = 1;
+  const adw::import::Package* p = adw::import::find_package(id);
+  for (const adw::import::LibraryMember& row : p->library_members)
+    for (const IslibLibrary& lib : libs)
+      if (lib.file == row.library)
+        for (const IslibMember& m : lib.members)
+          if (m.name == row.member) f.expect[std::string(p->root) + "/" + row.to] = m.data;
+}
+
+// A file of an install that the recipe never opens, on `disk`.
+inline void islib_decoy(IslibFixture& f, const std::string& name, int disk, size_t n = 300) {
+  f.source[name] = blob("decoy " + name, n);
+  f.disk[name] = disk;
+  f.decoys.push_back(name);
+}
+
+// Marvel Comics Screen Posters: images.lib split over both disks (IMAGES.1
+// + IMAGES.2, XMEN2099.FIF crossing the boundary, as on the real disks) and
+// modules.lib, engine.lib and win.lib on disk 2, holding the registry
+// table's members (made-up: the module, its decoder, AD_SND and the host as
+// NE files and blobs, the images as blobs) and, in engine.lib and win.lib,
+// the members the recipe never decodes, as streams no decoder gets through;
+// winsys.lib and the installer's support library as bytes no library reader
+// takes; SETUP.PKG listing every library; the installer's files; and the
+// previous owners' notes on disk 1. `change`, when set, edits the libraries
+// before they are laid out; the expected files follow the edit.
+inline IslibFixture marvel_fixture(const std::function<void(std::vector<IslibLibrary>&)>& change = {}) {
+  IslibFixture f;
+  const adw::import::Package* p = adw::import::find_package("marvel");
+  IslibLibrary images{"images.lib", "IMAGES.1", 1, {}, "XMEN2099.FIF"};
+  size_t i = 0;
+  for (const adw::import::LibraryMember& row : p->library_members)
+    if (std::string_view(row.library) == "IMAGES.1")
+      images.members.push_back({row.member, blob(std::string("marvel ") + row.member, 150 + (i++ * 37) % 400)});
+  // The module (1993-12-13 23:18:44, as the real one's), importing its decoder.
+  IslibLibrary modules{"modules.lib", "MODULES.LIB", 2,
+                       {{"MARVEL.AD", ne_module("Marvel Comics", {"KERNEL", "USER", "GDI", "WIN87EM", "DECO"}), 0x1B8D,
+                         0xBA56},
+                        {"DECO.DLL", ne_dll("DECO", {"KERNEL", "GDI", "USER"})}}};
+  IslibLibrary engine{"engine.lib", "ENGINE.LIB", 2, {{"AD.EXE", blob("a made-up After Dark 2.0 host", 3000)}}};
+  for (const char* n : {"ADINIT.EXE", "AD_LIB.DLL", "MRVLREAD.TXT", "MARVEL.TXT", "AD_MPT.DRV", "AD_SB.DRV",
+                        "AD_MME.DRV", "MRVL.WRI", "EDITFILE.TXT", "MARVELAD.TXT"})
+    engine.members.push_back({n, blob(std::string("never decoded ") + n, 120), 0x1B8D, 0, undecodable_stream()});
+  IslibLibrary win{"win.lib", "WIN.LIB", 2, {}};
+  for (const char* n : {"AD.HLP", "AD_SND.DLL", "AD_WRAP.COM", "SPALETTE.DLL", "AD_PREFS.INI"}) {
+    if (std::string_view(n) == "AD_SND.DLL") win.members.push_back({n, ne_dll("AD_SND", {"KERNEL", "USER"})});
+    else win.members.push_back({n, blob(std::string("never decoded ") + n, 90), 0x1B8D, 0, undecodable_stream()});
+  }
+  std::vector<IslibLibrary> libs = {images, modules, engine, win};
+  if (change) change(libs);
+  islib_lay_out(f, "marvel", libs);
+  // SETUP.PKG lists winsys.lib too (AD.386); its file is no library at all.
+  libs.push_back({"winsys.lib", "WINSYS.LIB", 2, {{"AD.386", blob("a made-up VxD", 100)}}});
+  f.source["SETUP.PKG"] = setup_pkg(libs, 2);
+  for (const char* n : {"INSTALL.INS", "SETUP.EXE", "SETUP.BIN", "~INS0762.LIB"}) islib_decoy(f, n, 1);
+  for (const char* n : {"WINSYS.LIB", "CHANGES.TXT"}) islib_decoy(f, n, 2);
+  for (const char* n : {"SERIAL#.DOC", "reg#.txt"}) {
+    f.source[n] = blob(std::string("a previous owner's note ") + n, 41);
+    f.disk[n] = 1;
+    f.notes.push_back(n);
+  }
+  f.ids = {"marvel.marvel"};
+  return f;
+}
+
+// Snoopy's Screen Savers: one library, AD_MODS.z, split over both disks
+// (AD_MODS.1 + AD_MODS.2, IS_FLY.AD crossing the boundary, as on the real
+// disks), holding the eight modules (made-up: six import AD_SND); SETUP.PKG
+// listing it; the installer's files and the readme with its picture; and what
+// the user's copy holds besides: a previous owner's notes, another release's
+// readme and a disk copier's leftovers, DREAM.ON on both disks.
+inline IslibFixture snoopy_fixture(const std::function<void(std::vector<IslibLibrary>&)>& change = {}) {
+  IslibFixture f;
+  struct M {
+    const char* file;
+    const char* name;
+    bool sound;
+  };
+  const std::vector<M> modules = {{"IS_COLAG.AD", "Collage", false},       {"IS_DANCE.AD", "Dance", true},
+                                  {"IS_FACES.AD", "Faces", true},          {"IS_FLY.AD", "Flying Ace", true},
+                                  {"IS_LINUS.AD", "Linus & Snoopy", true}, {"IS_LITRY.AD", "Literary Ace", true},
+                                  {"IS_SPTLT.AD", "Spotlights", false},    {"IS_THRPY.AD", "Therapy", true}};
+  IslibLibrary lib{"AD_MODS.z", "AD_MODS.1", 1, {}, "IS_FLY.AD"};
+  for (const M& m : modules) {
+    std::vector<std::string> refs = {"KERNEL", "USER", "GDI"};
+    if (m.sound) refs.push_back("AD_SND");
+    lib.members.push_back({m.file, ne_module(m.name, refs), 0x1D4D, 0x7C00});  // 1994-10-13 15:32
+  }
+  std::vector<IslibLibrary> libs = {lib};
+  if (change) change(libs);
+  islib_lay_out(f, "snoopy", libs);
+  for (const char* n : {"SETUP.INS", "SETUP.EXE", "AD_MODS.LIS", "AD_MODS.BMP", "AD_Changes.txt", "CMOS.RAM",
+                        "TXTSCR.DAT"})
+    islib_decoy(f, n, 1);
+  islib_decoy(f, "DREAM.ON", 0);  // on both disks, the same bytes
+  for (const char* n : {"Serial.nfo", "ADnews.txt"}) {
+    f.source[n] = blob(std::string("a previous owner's note ") + n, 60);
+    f.disk[n] = 1;
+    f.notes.push_back(n);
+  }
+  f.ids = {"snoopy.is_colag", "snoopy.is_dance", "snoopy.is_faces", "snoopy.is_fly",
+           "snoopy.is_linus", "snoopy.is_litry", "snoopy.is_sptlt", "snoopy.is_thrpy"};
+  return f;
+}
+
+// An install disk's files as a 1.44 MB floppy image (8.3 names, upper case:
+// a copy's long names, which no floppy holds, are left out).
+inline std::vector<uint8_t> floppy_of(const Tree& t) {
+  FatBuilder b = FatBuilder::floppy144();
+  for (const auto& [rel, d] : t) {
+    const size_t dot = rel.find('.');
+    const bool short_name = rel.find('/') == std::string::npos &&
+                            (dot == std::string::npos ? rel.size() <= 8 : dot <= 8 && rel.size() - dot - 1 <= 3);
+    if (!short_name) continue;
+    std::string upper = rel;
+    for (char& c : upper) c = char(toupper((unsigned char)c));
+    b.file(upper, d);
+  }
+  return b.build();
+}
+
 // A ZIP of floppy images, as the Internet Archive serves an item's: stored
 // members, disk 2 first, and (`with_scan`) a label scan beside them.
 inline std::vector<uint8_t> zip_of_images(const std::vector<std::pair<std::string, std::vector<uint8_t>>>& images,
@@ -730,6 +1280,30 @@ inline std::vector<uint8_t> zip_folder(const Tree& t) {
   return b.build();
 }
 
+// A ZIP of the tree's root files in one DISK<n> folder per install disk
+// ("DISK1/SETUP.PKG", by `disk_of`), each folder's own entry first when
+// `folder_entries` (the Internet Archive's ScreamSavers copy has them).
+inline std::vector<uint8_t> zip_disk_folders(const Tree& t, int (*disk_of)(const std::string&), int disks,
+                                             bool folder_entries = true) {
+  ZipBuilder b;
+  b.password = "";
+  for (int k = 1; k <= disks; k++) {
+    const std::string dir = "DISK" + std::to_string(k) + "/";
+    if (folder_entries) b.add(dir, {}, /*deflate=*/false, /*encrypt=*/false);
+    for (const auto& [rel, d] : t)
+      if (disk_of(rel) == k) b.add(dir + rel, d, /*deflate=*/true, /*encrypt=*/false);
+  }
+  return b.build();
+}
+
+// The tree's root files in one DISK<n> folder per install disk, under `root`.
+inline void write_disk_folders(const std::filesystem::path& root, const Tree& t, int (*disk_of)(const std::string&),
+                               int disks) {
+  for (int k = 1; k <= disks; k++)
+    for (const auto& [rel, d] : t)
+      if (disk_of(rel) == k) write_bytes(path_under(root / (L"DISK" + std::to_wstring(k)), rel), d);
+}
+
 // ---- manifests and registries --------------------------------------------------------------
 
 // Stable storage for the KnownFile strings of synthetic manifests.
@@ -788,6 +1362,14 @@ struct TestRegistry {
   }
   void image(const std::string& id, const std::string& md5, uint64_t size) {
     images.push_back({{keep(md5), size, "synthetic", ""}});
+    get(id).images = images.back();
+  }
+  // Known ZIPs of the install files (several, as Marvel Comics Screen
+  // Posters has two): md5 and size each.
+  void zip_images(const std::string& id, const std::vector<std::pair<std::string, uint64_t>>& zips) {
+    std::vector<adw::import::KnownImage> v;
+    for (const auto& [md5, size] : zips) v.push_back({keep(md5), size, "ZIP of synthetic install files", ""});
+    images.push_back(std::move(v));
     get(id).images = images.back();
   }
   // Known images of install disks: md5, size, disk number (1..N).

@@ -58,7 +58,17 @@ bool printable(uint8_t c) { return c >= 0x20 && c < 0x7F; }
 
 }  // namespace
 
-ZipArchive::ZipArchive(std::shared_ptr<const std::vector<uint8_t>> data, std::string name)
+unsigned disk_folder_number(std::string_view name) {
+  if (name.size() < 5 || name.size() > 6 || !iequals(name.substr(0, 4), "DISK")) return 0;
+  unsigned n = 0;
+  for (char c : name.substr(4)) {
+    if (c < '0' || c > '9') return 0;
+    n = n * 10 + unsigned(c - '0');
+  }
+  return name[4] == '0' ? 0 : n;  // "DISK0", "DISK01": no disk
+}
+
+ZipArchive::ZipArchive(std::shared_ptr<const std::vector<uint8_t>> data, std::string name, ZipNames names)
     : data_(std::move(data)), name_(std::move(name)) {
   const std::vector<uint8_t>& d = *data_;
   if (d.size() < 22) throw ZipError(name_ + ": too small to be a ZIP archive");
@@ -113,12 +123,29 @@ ZipArchive::ZipArchive(std::shared_ptr<const std::vector<uint8_t>> data, std::st
     if (m.flags & 0x40) throw ZipError(name_ + "!" + m.name + ": strong encryption is not supported");
     if (m.method != 0 && m.method != 8)
       throw ZipError(name_ + "!" + m.name + ": compression method " + std::to_string(m.method) + " is not supported");
-    if (m.name.find_first_of("/\\:") != std::string::npos)
-      throw ZipError(name_ + ": member \"" + m.name + "\" is not a bare file name");
-    try {
-      check_component(m.name, name_);
-    } catch (const ImportError& ex) {
-      throw ZipError(ex.what());
+    // The file's own name: the whole name, or (disk_folders) what follows a
+    // DISK<n>/ folder, which must be a bare name too.
+    std::string file = m.name;
+    const size_t slash = m.name.find('/');
+    if (names == ZipNames::disk_folders && slash != std::string::npos)
+      m.disk = disk_folder_number(std::string_view(m.name).substr(0, slash));
+    if (m.disk) {
+      file = m.name.substr(slash + 1);
+      m.directory = file.empty();
+    }
+    if (file.find_first_of("/\\:") != std::string::npos)
+      throw ZipError(name_ + ": member \"" + m.name + "\" is not a bare file name" +
+                     (names == ZipNames::disk_folders ? " or a file in a DISK<n> folder" : ""));
+    if (m.directory) {
+      // A folder's own entry is never read; one that holds data is no
+      // folder entry at all.
+      if (m.usize != 0) throw ZipError(name_ + ": member \"" + m.name + "\" is a folder entry that holds data");
+    } else {
+      try {
+        check_component(file, m.disk ? name_ + "!" + m.name.substr(0, slash) : name_);
+      } catch (const ImportError& ex) {
+        throw ZipError(ex.what());
+      }
     }
     // One name as Windows compares them (non-ASCII letters too; names.h).
     if (!seen.insert(name_key(m.name)).second) throw ZipError(name_ + ": two members are named " + m.name);

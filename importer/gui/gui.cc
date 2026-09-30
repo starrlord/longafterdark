@@ -179,7 +179,8 @@ int run_flow(Session& s) {
 //     workarea=<w>x<h> (DIPs: the work area the window is fitted to; default unlimited)
 //     dpichange=<n> (without dpi=: WM_DPICHANGED as if dragged to a monitor at that DPI)
 //     themechange=light|dark|hc (after opening: a live theme change to that mode)
-//     report=<path> (where the client area is in the picture, and pal.base)
+//     report=<path> (where the client area is in the picture, and pal.base; on
+//       Sources also list=<shown>,<whole>,<row>: the installed list's heights in px)
 
 std::map<std::wstring, std::wstring> parse_state(const std::wstring& s) {
   std::map<std::wstring, std::wstring> kv;
@@ -233,10 +234,11 @@ int run_screenshot(Session& s, const std::wstring& png) {
   s.offscreen = true;
 
   std::unique_ptr<Page> pg;
+  SourcesPage* src = nullptr;   // page=sources (the report's list heights)
   std::vector<InstalledRow> installed = installed_rows(s.assets);
   if (page == L"sources") {
     auto sp = std::make_unique<SourcesPage>(s);
-    SourcesPage* src = sp.get();
+    src = sp.get();
     pg = std::move(sp);
     if (!pg->open(nullptr)) return 1;
     if (kv[L"caution"] == L"1")
@@ -281,7 +283,7 @@ int run_screenshot(Session& s, const std::wstring& png) {
     }
     p.item = job.covers_job                      ? "Box front from Wayback Machine"
              : p.phase == Progress::Phase::cover ? "Disc label from Internet Archive"
-             : p.phase == Progress::Phase::download ? "https://archive.org/download/ad10th/After_Dark_10th_Anniversary.iso"
+             : p.phase == Progress::Phase::download ? "ad10th.iso"   // the file a download saves
                                                     : "AD10TH/TOAST2K.AD";
     prog->show_progress(p, 0);
   } else if (page == L"result" || page == L"error") {
@@ -373,8 +375,14 @@ int run_screenshot(Session& s, const std::wstring& png) {
     snprintf(buf, sizeof(buf), "client=%ld,%ld,%ld,%ld\nprobe=%ld,%ld\nbase=%02X%02X%02X\ndpi=%d\n", client.x - origin.x,
              client.y - origin.y, cr.right, cr.bottom, client.x - origin.x + probe.x, client.y - origin.y + probe.y,
              GetRValue(base), GetGValue(base), GetBValue(base), pg->theme().dpi);
+    std::string report = buf;
+    if (src) {
+      const SourcesPage::ListHeights l = src->list_heights();
+      snprintf(buf, sizeof(buf), "list=%d,%d,%d\n", l.shown, l.whole, l.row);
+      report += buf;
+    }
     if (FILE* f = _wfopen(kv[L"report"].c_str(), L"wb")) {
-      fputs(buf, f);
+      fputs(report.c_str(), f);
       fclose(f);
     }
   }
