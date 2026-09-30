@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <bitset>
+#include <chrono>
 #include <cstring>
 #include <deque>
 #include <optional>
@@ -1422,18 +1423,29 @@ TEST(status_record_seqlock_round_trip) {
   CHECK(view != nullptr);
   AdwHostStatusV1 out{};
   CHECK(!read_status(view, &out));  // nothing published yet
-  std::atomic<bool> done{false};
+  // The writer starts once the reader is in its loop and writes on (at least
+  // 200000 records) until the reader has checked 1000 copies or 10 s pass: on
+  // a busy machine it could otherwise finish before the reader ever looked.
+  std::atomic<bool> done{false}, reading{false}, enough{false};
+  std::atomic<uint64_t> written{0};
   std::thread writer([&] {
-    for (uint64_t i = 1; i <= 200000; i++) {
+    while (!reading.load()) std::this_thread::yield();
+    const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    uint64_t i = 0;
+    for (;;) {
+      i++;
       LaneStatus s;
       s.interactive = (i & 1) != 0;
       s.eaten = i;
       s.source = uint32_t(i & 0xFFFF);
       pub.publish(s, i, i, uint32_t(i & 0xFFFF));
+      if (i >= 200000 && (enough.load() || std::chrono::steady_clock::now() > give_up)) break;
     }
+    written = i;
     done = true;
   });
   uint64_t reads = 0, torn = 0, last = 0, backwards = 0;
+  reading = true;
   while (!done.load()) {
     if (!read_status(view, &out)) continue;
     reads++;
@@ -1442,10 +1454,11 @@ TEST(status_record_seqlock_round_trip) {
       torn++;
     if (out.frames < last) backwards++;
     last = out.frames;
+    if (reads >= 1000) enough = true;
   }
   writer.join();
   CHECK(read_status(view, &out));
-  CHECK_EQ(out.frames, uint64_t(200000));
+  CHECK_EQ(out.frames, written.load());
   CHECK_EQ(torn, uint64_t(0));
   CHECK_EQ(backwards, uint64_t(0));
   CHECK(reads > 0);
