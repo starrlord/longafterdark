@@ -81,9 +81,9 @@ settings window or the modules' own options (see [On Linux](#on-linux)).
 ## What you need
 
 - **A 64-bit Windows PC** with an x64 (Intel or AMD) processor. Long After
-  Dark is developed on Windows 11. It also runs on 64-bit Linux with glibc
-  2.35 or newer (Ubuntu 22.04, Debian 12 or later), under Wine, with a
-  player of its own for X11 and XScreenSaver: see [On Linux](#on-linux).
+  Dark is developed on Windows 11. It also runs on x64 Linux with glibc
+  2.35 or newer (Ubuntu 22.04, Debian 12 or later), under 64-bit Wine, with
+  a player of its own for X11 and XScreenSaver: see [On Linux](#on-linux).
 - **The screen savers themselves.** They aren't included, and you're
   responsible for sourcing them legally. The importer copies a release from
   any of these:
@@ -183,28 +183,32 @@ After Dark 3.2's engine files in place of the April release's.
 ## On Linux
 
 On Linux the emulator and the importer are the same Windows programs, run
-under 64-bit Wine, and `longafterdark`, a Linux program, shows the modules:
-full screen, in a window, or as one of XScreenSaver's display modes, with
-the same rules for ending it and for the games. Download
+under 64-bit Wine, and `longafterdark`, a Linux program, shows the modules
+full screen (with the Windows screen saver's rules for ending it and for
+the games), in a window, or as one of XScreenSaver's display modes. Download
 `LongAfterDark-<version>-linux-x64.zip` from the
 [releases](https://github.com/starrlord/longafterdark/releases) (1.1.0 and
-older are for Windows only; the newest build of `main` is on the
+older are for Windows only; the newest build of `main`,
+`LongAfterDark-linux-x64.zip`, is on the
 [latest-main](https://github.com/starrlord/longafterdark/releases/tag/latest-main)
 pre-release), then:
 
 ```bash
-sudo apt install wine wine64 libx11-6 libxext6 libxrandr2 ca-certificates   # Debian, Ubuntu
+sudo apt install wine wine64 libx11-6 libxext6 libxrandr2 ca-certificates unzip   # Debian, Ubuntu
 unzip LongAfterDark-<version>-linux-x64.zip && cd LongAfterDark
 ./longafterdark --import --download simpsons   # or --image <disc image>; --import alone opens its window
-./longafterdark                                # full screen, every module in turn; a key ends it
+./longafterdark                                # full screen, every module in random order; most keys end it
 ```
 
 What differs from Windows: there is no settings window (you choose with
 `longafterdark`'s options, or in XScreenSaver's settings), and the modules'
 own options and buttons aren't there, so each module runs with its
 defaults. On its own it plays on the primary monitor and keeps the others
-black; XScreenSaver runs it on every monitor. What the modules save is
-kept, in `~/.local/share/longafterdark/state`.
+black; XScreenSaver runs it on every monitor, but ends it on any key or
+mouse move, so no game can be played there. The modules' music needs a
+MIDI synthesizer, such as FluidSynth. What the modules save is kept, in
+`~/.local/share/longafterdark/state` (`$XDG_DATA_HOME/longafterdark/state`
+when that is set).
 [docs/LINUX.md](docs/LINUX.md) has the rest: what you need (fonts, MIDI
 music), importing, the options, XScreenSaver and where the files are.
 
@@ -240,7 +244,7 @@ From the repository folder:
 
 ```bash
 bash tools/bootstrap.sh   # once: fetches the compiler and libraries into third_party/
-bash tools/package.sh     # builds the programs into build/dist/LongAfterDark/ (on Linux also the player, zipped)
+bash tools/package.sh     # builds the programs into build/dist/LongAfterDark/ (on Linux with the player, and zips that folder)
 ```
 
 [docs/BUILDING.md](docs/BUILDING.md) covers the rest: how the pieces fit
