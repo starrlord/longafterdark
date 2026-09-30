@@ -10,8 +10,8 @@
 # source gives the same bytes. The new folder is staged beside the old one
 # and swapped in only when complete; if the old one is in use (a running
 # screen saver or settings window), nothing is replaced.
-# No After Dark or Star Wars Screen Entertainment file is ever staged: the
-# user imports their own discs (or the Internet Archive copies) with adimport.
+# No file of any of the releases is ever staged: the user imports their own
+# copies with adimport.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="${AD_BUILD_DIR:-$ROOT/build/win-release}"
@@ -74,8 +74,9 @@ which have no file of their own, are quoted below).
   zlib.LICENSE.txt                zlib
     zlib (https://zlib.net/), commit
     $ZLIB_REV,
-    in adimport.exe (the After Dark 3.x installers' archives, and the
-    CRC-32 of Star Wars Screen Entertainment's).
+    in adimport.exe (PKZIP archives: the After Dark 3.x installers' own
+    and the ZIPs releases come in; and the CRC-32 of Star Wars Screen
+    Entertainment's archives).
 
   (no file: the terms are here)   UNARJ's terms
     The ARJ decoder in adimport.exe, which reads Star Wars Screen
@@ -107,8 +108,8 @@ which have no file of their own, are quoted below).
     in all three programs.
 
 Apart from the code above and this project's own, everything the programs
-use comes with Windows. No After Dark or Star Wars Screen Entertainment file
-is included.
+use comes with Windows. No file of any of the releases the programs run
+(After Dark and the others) is included.
 EOF
 
 cat > "$DIST/README.txt" <<'EOF'
@@ -117,25 +118,33 @@ Long After Dark
 
 Long After Dark is a screen saver for Windows that runs the original modules
 of After Dark and of LucasArts' Star Wars Screen Entertainment, unchanged,
-under x86 emulation. It knows seven releases:
+under x86 emulation. It knows twelve releases, 284 modules:
 
-  id        Release                                Internet Archive download
-  deluxe    After Dark 4.0 Deluxe (1996)           CD image, 381.7 MB
-  ad10      After Dark 10th Anniversary (1999)     CD image, 143.3 MB
-  ad32      After Dark 3.2 (1995)                  CD image, 58.8 MB
-  tt        Totally Twisted After Dark (1995)      CD image, 37.9 MB
-  simpsons  The Simpsons Screen Saver (1994)       install files (ZIP), 2.6 MB
-  swse      Star Wars Screen Entertainment (1994)  CD image, 6.9 MB
-  startrek  Star Trek: The Screen Saver (1992)     two floppy images, 2.8 MB
+  id        Release                                    Internet Archive download
+  deluxe    After Dark 4.0 Deluxe (1996)               CD image, 381.7 MB
+  ad10      After Dark 10th Anniversary (1999)         CD image, 143.3 MB
+  ad32      After Dark 3.2 (1995)                      CD image, 58.8 MB
+  tt        Totally Twisted After Dark (1995)          CD image, 37.9 MB
+  simpsons  The Simpsons Screen Saver (1994)           install files (ZIP), 2.6 MB
+  swse      Star Wars Screen Entertainment (1994)      CD image, 6.9 MB
+  startrek  Star Trek: The Screen Saver (1992)         two floppy images, 2.8 MB
+  marvel    Marvel Comics Screen Posters (1993)        install files (ZIP), 1.9 MB
+  snoopy    Snoopy's Screen Savers (1994)              install files (ZIP), 1.9 MB
+  looney    The Looney Tunes Screen Saver (1995)       install files (ZIP), 2.8 MB
+  screams   ScreamSavers (1995)                        install files (ZIP), 3.3 MB
+  disney    The Disney Collection Screen Saver (1995)  install files (ZIP), 3.4 MB
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
 Trek modules. Star Wars Screen Entertainment is not an After Dark release
 (it is sometimes listed as "After Dark Star Wars"): its modules were made
-for Delrina's Intermission screen saver engine.
+for Delrina's Intermission screen saver engine. ScreamSavers (Binary
+Software) and Snoopy's Screen Savers (Image Smith) are other companies'
+modules for After Dark; Snoopy's were made to run in an After Dark already
+installed, so Long After Dark supplies the sound library they found there.
 
-No After Dark or Star Wars Screen Entertainment files are included: you
-import them from your own copies (and are responsible for sourcing them
-legally). Requires 64-bit Windows on an x64 PC.
+No file of any of these releases is included: you import them from your
+own copies (and are responsible for sourcing them legally). Requires 64-bit
+Windows on an x64 PC.
 
 This folder holds three programs. Keep them together: the screen saver looks
 for the other two next to itself.
@@ -152,9 +161,13 @@ for the other two next to itself.
      - A disc or floppy image: .iso, .bin, .img, .ima, .vfd or .flp, or a
        .zip of the install files or of the floppy images. For a release on
        several floppies, select every image (the Simpsons' two, Star Trek's
-       two), or the ZIP they came in.
-     - A drive or folder: the CD itself, or a folder copied from it.
-     - A download from the Internet Archive: the seven releases with their
+       two), or the ZIP they came in. A .zip that keeps each disk's files
+       in a folder of its own (DISK1, DISK2, ...) is read as all its disks
+       together.
+     - A drive or folder: the CD itself, or a folder copied from it (for
+       floppies, one folder of every disk's files, or one holding a DISK1,
+       DISK2, ... folder per disk).
+     - A download from the Internet Archive: the twelve releases with their
        sizes, plus one entry that fetches every release not imported yet.
        Downloads resume if interrupted, and each one is checked against its
        published MD5 before it is used.
@@ -172,13 +185,23 @@ for the other two next to itself.
    together, in either order, the ZIP they came in, a folder of both disks'
    files, or "adimport --download startrek". One disk alone is refused.
 
+   Marvel Comics Screen Posters, Snoopy's Screen Savers, the Looney Tunes,
+   ScreamSavers and the Disney Collection verify as the known ZIP of their
+   install files (the one the download fetches), or file by file as a
+   folder or ZIP of those files. Every install disk is needed. The Looney
+   Tunes' August CD (LTW320CD, or LOONEY.zip) carries After Dark 3.2's
+   engine files and fails verification unless imported with
+   "adimport --no-verify".
+
    From a command prompt, with the ids above:
      adimport --image "C:\Images\After Dark 3.2.iso"
      adimport --image disk1.img --image disk2.img
      adimport --image afterdark-20b_startrek.zip
+     adimport --image "After Dark - Scream Savers.zip"
      adimport --from E:\
      adimport --download ad10
      adimport --download swse
+     adimport --download disney
      adimport --download all
      adimport --list-packages
      adimport --remove tt
@@ -219,9 +242,12 @@ for the other two next to itself.
    what you set there is saved at once (Star Trek's Sounder finds your own
    drives under [-h-] in its "Sounds.." window, as After Dark's Globe does
    in its "Map..." window; pick a folder near a drive's root: as in DOS, its
-   short path must fit in 63 characters). The resolution applies to
-   the other modules: the Star Wars and Star Trek modules always draw at
-   their original 640x480, scaled up to fit the screen.
+   short path must fit in 63 characters). Marvel's module has "Saver.." to
+   choose its posters and "Posters..." to make one a wallpaper, which stays
+   inside the emulated PC: your own desktop never changes. The resolution
+   applies to the other modules: the Star Wars, Star Trek, ScreamSavers and
+   Marvel modules always draw at their original 640x480, scaled up to fit
+   the screen.
 
    Sound is on by default. Only the primary monitor's screen saver plays
    it, at the default volume (50): the modules' wave effects, their MIDI
@@ -256,11 +282,14 @@ Updating
 
 Status
 
-   232 modules from the seven releases, with their sound, their Caps Lock
+   284 modules from the twelve releases, with their sound, their Caps Lock
    games, Final Exam's Num Lock exam and their own option buttons. Still
    being finished:
      - Speed: each module's pace follows a model of a mid-1990s PC; not
-       every module has been compared with the original yet.
+       every module has been compared with the original yet. Marvel's
+       poster transitions show at once where the original swept them.
+     - Chameleon (Totally Twisted, 10th Anniversary): after about half a
+       minute a stray icon covers the "Accessories" label.
    There is no installer or code signing yet. "adimport --version" says
    which version you have (and so does each program's Properties -> Details
    in Explorer).

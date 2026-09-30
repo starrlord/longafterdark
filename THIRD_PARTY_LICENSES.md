@@ -6,10 +6,11 @@ importer). They build in some code this project did not write. This file
 says what it is, under what licence it is redistributed, and where to get
 its source.
 
-Nothing here is an original After Dark or Star Wars Screen Entertainment
-file: those copyrighted modules are never shipped. The user imports them
-with `adimport.exe` from their own disc, image or folder, or from the
-Internet Archive.
+Nothing here is an original file of any of the releases Long After Dark
+runs (After Dark, the modules other companies made for it, and Star Wars
+Screen Entertainment): those copyrighted modules are never shipped. The
+user imports them with `adimport.exe` from their own disc, image, ZIP or
+folder, or from the Internet Archive.
 
 All three programs are linked statically, so they carry the code below
 inside them and need no DLLs of their own. `tools/bootstrap.sh` fetches the
@@ -69,16 +70,17 @@ folder's `licenses\NOTICE.txt` repeats this notice beside the program.
 | Project | Built into | Licence | Source |
 |---|---|---|---|
 | [phosg](https://github.com/fuzziqersoftware/phosg) (resource_dasm's support library), commit `782785d14d5fe19dda3af71d21d2792e71c5df1d` | `adhostwin.exe`, `LongAfterDark.scr` | MIT, © Martin Michelsen | `third_party/win/phosg` (licence text: `src/LICENSE`) |
-| [zlib](https://zlib.net/), commit `767c4c947852e143f582c85f14cf573411df1b35` | `adimport.exe` (raw inflate for the After Dark 3.x installers' PKZIP archives; CRC-32 for them and for Star Wars Screen Entertainment's ARJ archives) | zlib, © Jean-loup Gailly and Mark Adler | `third_party/win/zlib` (licence text: `LICENSE`) |
+| [zlib](https://zlib.net/), commit `767c4c947852e143f582c85f14cf573411df1b35` | `adimport.exe` (raw inflate for PKZIP archives: the After Dark 3.x installers' own, and the ZIPs releases are imported or downloaded in; CRC-32 for them and for Star Wars Screen Entertainment's ARJ archives) | zlib, © Jean-loup Gailly and Mark Adler | `third_party/win/zlib` (licence text: `LICENSE`) |
 
 phosg is built against zlib too, but none of zlib's code ends up in the
 programs that link phosg: only `adimport.exe` contains it.
 
 The PKZIP decryption in `adimport.exe` ("ZipCrypto", from PKWARE's published
-APPNOTE) and its ISO-9660, FAT, ZIP, SZDD and KWAJ readers are this
-project's own code (the KWAJ reader written from the format's public
-description), and so is its ARJ reader apart from the decoder derived from
-UNARJ (above). No external extraction tools are used.
+APPNOTE) and its ISO-9660, FAT, ZIP, SZDD, KWAJ and InstallShield 2 library
+readers are this project's own code (the KWAJ reader, and the InstallShield
+reader with its PKWARE DCL "explode" decoder, written from the formats'
+public descriptions), and so is its ARJ reader apart from the decoder
+derived from UNARJ (above). No external extraction tools are used.
 
 ## Toolchain runtime (all three programs)
 

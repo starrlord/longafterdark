@@ -1,11 +1,15 @@
 # host/core — `adw_core` and `adhostwin.exe`
 
 `adhostwin.exe` is the host process of **Long After Dark**. It runs one
-module of any of the seven releases the importer takes: the six After Dark
-releases (After Dark 4.0 Deluxe, After Dark 3.2, Totally Twisted, After Dark
-10th Anniversary, The Simpsons Screen Saver and Star Trek: The Screen Saver,
-the After Dark 2.0 one) and LucasArts' Star Wars Screen Entertainment, whose
-modules run on Delrina's Intermission engine (232 modules). Modules built as
+module of any of the twelve releases the importer takes (284 modules): the
+nine After Dark releases (After Dark 4.0 Deluxe, After Dark 3.2, Totally
+Twisted, After Dark 10th Anniversary, The Simpsons Screen Saver, Star Trek:
+The Screen Saver and Marvel Comics Screen Posters, the After Dark 2.0 ones,
+The Looney Tunes Screen Saver and The Disney Collection Screen Saver), two
+releases of other companies' modules for After Dark (Image Smith's Snoopy's
+Screen Savers and Binary Software's ScreamSavers) and LucasArts' Star Wars
+Screen Entertainment, whose modules run on Delrina's Intermission engine.
+Modules built as
 32-bit PE images go to the `pe32` lane, and 16-bit NE modules go to the
 `ne16` (Classic) lane, which speaks both After Dark 2.x/3.x's module
 protocol and Intermission's (`host/ne16/lane.hh`).

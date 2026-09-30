@@ -21,10 +21,12 @@ files together in either of these places:
 Screen Saver Settings lists it as "Long After Dark": the `.scr`'s string
 resource 1 (`IDS_DESCRIPTION`), which Windows shows instead of the file name.
 
-The modules come from your own discs: any of the seven releases (six of After
-Dark: After Dark 4.0 Deluxe, After Dark 3.2, Totally Twisted After Dark, After
-Dark 10th Anniversary, The Simpsons Screen Saver and Star Trek: The Screen
-Saver, which is After Dark 2.0b on two floppies; and LucasArts' Star Wars
+The modules come from your own discs: any of the twelve releases (eleven of
+After Dark modules: After Dark 4.0 Deluxe, After Dark 3.2, Totally Twisted
+After Dark, After Dark 10th Anniversary, The Simpsons Screen Saver, Star Trek:
+The Screen Saver, which is After Dark 2.0b on two floppies, Marvel Comics
+Screen Posters, Snoopy's Screen Savers, The Looney Tunes Screen Saver,
+ScreamSavers and The Disney Collection Screen Saver; and LucasArts' Star Wars
 Screen Entertainment, whose modules run on Delrina's Intermission engine), from
 the disc (or the floppies), an image of it, a copy of its files, or the
 Internet Archive download. Click **Import…** in the settings dialog (or run `adimport.exe`) to
@@ -53,7 +55,8 @@ and `/p` windows), `LongAfterDarkLivePreview` and
 `%TEMP%\LongAfterDark-seed-<pid>-<window>.ppm` for a window that may start
 with a module that follows the display (an After Dark module) and
 `…-<window>-640x480.ppm` for one that may start with a module that has a
-640×480 screen of its own (an Intermission or a Star Trek module; the first
+640×480 screen of its own (an Intermission, Star Trek, ScreamSavers or
+Marvel module; the first
 file serves both where the two pictures are the same: **Starting from the
 desktop**).
 
@@ -155,14 +158,20 @@ column at most 1240 DIP wide, centred.
 
 * **The box-cover strip** (`docs/COVERS.md` §1), when two or more
   releases (packages) are imported: one 4:5 box cover per release across the
-  top, oldest release first (Star Trek, Simpsons, Star Wars, 3.2, Totally
-  Twisted, Deluxe, 10th Anniversary; all seven fit the first-open window, and
-  the smallest one with its compact covers, without scrolling; a window as
-  narrow but 760 DIP or more tall fits five of its regular tiles whole at a
-  time beside a chevron (unscrolled, the sixth's cover shows too, only its
-  focus margin under the chevron), and its row scrolls by at most two
-  tiles, to the third), each with its short title under it (64×80 DIP
-  covers; 48×60 without captions when the window is under 760 DIP tall). A
+  top, oldest release first (Star Trek, Marvel, Simpsons, Star Wars, Snoopy,
+  Looney Tunes, ScreamSavers, 3.2, Totally Twisted, Disney, Deluxe, 10th
+  Anniversary), each with its short title under it (64×80 DIP covers; 48×60
+  without captions when the window is under 760 DIP tall). Seven fit the
+  first-open window side by side, and eight compact ones the smallest. The
+  twelve's regular covers never all fit side by side (they need 1240 DIP;
+  the tiles area stops growing at 1024, with the column at 1240), so in a
+  window 760 DIP or more tall their row scrolls: seven covers at a time in
+  the first-open window, five in one as narrow, nine in a large one. Their
+  compact covers scroll in a window under 1120 DIP wide: eight at a time in
+  the smallest, nine from 960 DIP wide, ten from 1032 (so in a first-open
+  window whose height the screen's work area clamps under 760 DIP, as on
+  1920×1080 at 125% or 150%, or 1366×768), eleven from 1104; from 1120 DIP
+  wide all twelve show side by side. A
   caption may use its cover's whole window (the cell and its focus margins),
   so every release's short title fits whole at every scale; a longer one
   would be drawn at 11 or 10 DIP before it is ellipsized.
@@ -185,7 +194,21 @@ column at most 1240 DIP wide, centred.
   **Show only …**, **Show all releases** and **Change cover…** (runs
   `adimport.exe --gui --change-cover <id>` the way Import… runs; exit 0
   reloads the catalog, keeping every check, the filter and unsaved values). With more releases than fit, the row scrolls by whole
-  covers (chevrons at the ends, the wheel, or the keyboard focus). The
+  covers (chevrons at the ends, the wheel, or the keyboard focus): every stop
+  shows as many whole covers, as many as fit between the two chevrons, and
+  nothing of the others, so no cover or caption is ever cut and nothing lies
+  under a chevron. Covers that all fit start at the column's edge; a row
+  that scrolls starts after the left chevron's place at every stop (empty
+  while the row is unscrolled), so each stop shows its covers in the same
+  places. Each chevron keeps one place whatever the scroll position (the
+  left one at the strip's left edge, the right one just past the last cover
+  a stop shows, 4 DIP clear of the covers and their focus rings), so
+  repeated clicks keep scrolling, and its place is empty at the stop where
+  it hides (the left one's unscrolled, the right one's at the last stop): a
+  click too many lands on no cover. A cover that takes the keyboard focus, or that
+  Space toggles while the chevrons have scrolled it away, comes into view,
+  and with a filter saved (or kept through a reload) the row opens scrolled
+  to the first selected cover. The
   window opens at 1040×800 DIP with the strip (at least 680 tall).
 * **Single module / Random** at the top left chooses what the saver plays.
   Below it, the **module list**, grouped by release (the release's title and
@@ -193,7 +216,9 @@ column at most 1240 DIP wide, centred.
   space before each group after the first. A title too long for the list
   beside its count, and beside the "Coming soon" pill when the group has one,
   is ellipsized ("Star Wars Screen Entertain… 14" in the narrowest window, in
-  Random): the count and the pill always show whole, the whole title is the
+  Random; The Looney Tunes Screen Saver's title there too, and The Disney
+  Collection Screen Saver's there and, in Random, in the first-open window):
+  the count and the pill always show whole, the whole title is the
   header's tooltip, and screen readers hear it whole. Rows show the
   module's own name; a module several
   releases ship is listed under each of them. Only when one release has two
@@ -242,8 +267,9 @@ column at most 1240 DIP wide, centred.
   its own `adhostwin.exe` at a real screen's size (an After Dark module at
   480 lines at the preview box's own 16:9 aspect — 856x480, or 848x480
   where the box's whole pixels come out a little taller — whatever the
-  Resolution setting; a module with a screen of its own, an Intermission or
-  a Star Trek module, at its 640x480, pillarboxed in the wide preview as on
+  Resolution setting; a module with a screen of its own, an Intermission,
+  Star Trek, ScreamSavers or Marvel module, at its 640x480, pillarboxed in
+  the wide preview as on
   a widescreen monitor: see **Emulated screen**),
   shown scaled down, with the dialog's current,
   unsaved values; changing a value restarts it. Pointing at it shows the
@@ -270,8 +296,9 @@ column at most 1240 DIP wide, centred.
   catalog's default.
 * **Resolution** and **Monitors**, each at the start of its half of the card
   (dropdowns at most 280 DIP wide; Resolution, 480 or 720 lines, is for the
-  modules that follow the display alone: an Intermission or a Star Trek
-  module always runs at its own 640×480, see **Emulated screen**), and under
+  modules that follow the display alone: an Intermission, Star Trek,
+  ScreamSavers or Marvel module always runs at its own 640×480, see
+  **Emulated screen**), and under
   them **Sound** ("Primary
   monitor" / "Off") and **Volume** (a 0–100 slider with its value at the end
   of its label row; screen readers call it "Volume"; greyed, with its label,
@@ -279,8 +306,8 @@ column at most 1240 DIP wide, centred.
   screen saver." (`docs/AUDIO.md` §9; see **Sound** below). The
   slider is adw_ui's `init_slider`: Right and Up raise it by 1, Left and
   Down lower it, Page Up / Page Down by 10, Home / End to 0 / 100.
-* The footer: **Import…** with a line saying what is imported ("232
-  modules from 7 releases", or "84 modules from After Dark 4.0 Deluxe"),
+* The footer: **Import…** with a line saying what is imported ("284
+  modules from 12 releases", or "84 modules from After Dark 4.0 Deluxe"),
   then the credit, then **Preview** (full screen, of the module the details show; greyed for
   a module this host can't run yet, or whose file is missing, and while the
   details show none), **OK** and **Cancel**. The credit, "Made With Love by
@@ -293,11 +320,11 @@ column at most 1240 DIP wide, centred.
   hover cue high contrast keeps, whose hover fill is the window colour). It
   sits in the free space between the assets line's text and Preview, centred
   there and on the buttons, and shows only when its whole box fits with
-  24 DIP clear of both: beside "232 modules from 7 releases" it fits the
-  first-open window at every scale, and the narrowest one at most of them
-  (100, 125, 175, 225 and 250%, by a few pixels at some; at 150% and 200% it
-  gives way there, as it did not beside the six releases' "216 modules from
-  6 releases", whose digits are narrower), while an assets
+  24 DIP clear of both: beside "284 modules from 12 releases" it fits the
+  first-open window at every scale, and the narrowest one at 100% only (at
+  the other scales it gives way there: the line is a digit longer than the
+  seven releases' "232 modules from 7 releases", beside which it fitted at
+  five of the seven scales), while an assets
   line too long for the room (files missing; one release's long title in the
   narrowest window) hides it, never clipped. If it had the focus, the
   keyboard moves on to the next control (Preview) as Tab would, and the
@@ -315,15 +342,16 @@ column at most 1240 DIP wide, centred.
 Until the modules are imported the details card is one welcome: a picture
 across its top (the night sky, the moon and two flying toasters), "Welcome to
 Long After Dark", what importing does (the original modules of After Dark and
-Star Wars Screen Entertainment, from any of the seven releases' discs, an image,
+Star Wars Screen Entertainment, from any of the twelve releases' discs, an image,
 or the Internet Archive; `welcome_text` in `ui_model.h`) and an **Import a
 release…** button (the importer's window is "Import a release"). The
 footer's Import is hidden meanwhile (it is the same command), its line reads
 "Nothing imported yet" (the credit beside it as ever), Single/Random are greyed, and the list shows a few
 faint placeholder rows and "Your modules appear here after import". "Long
-After Dark" stays the product's name; the words for the releases fit all seven
-(not every one is After Dark's, and Star Trek: The Screen Saver came on
-floppies, which "discs" covers).
+After Dark" stays the product's name; the words for the releases fit all twelve
+(not every one is After Dark's, and Star Trek, the Simpsons, Marvel, Snoopy's
+Screen Savers, the Looney Tunes (also on a CD), ScreamSavers and the Disney
+Collection came on floppies, which "discs" covers).
 
 **Thumbnails.** A module with no icon of its own is shown by a square of one
 of its own frames: a third of the screen's height around the busiest part of
@@ -466,7 +494,7 @@ Module=random            ; a catalog id, or random
 Randomize=ad40.toasters,ad40.fish   ; Random's subset (empty = every module)
 RandomizeSaved=ad40.fish ; the dialog's Random checklist kept while Module names one module ("-" = none checked)
 DurationMin=5            ; Random switches module this often; 0 = never
-Scale=1.0                ; 1.0 = 480-line emulated screen, 1.5 = 720-line (modules that follow the display; Intermission and Star Trek modules: always 640x480)
+Scale=1.0                ; 1.0 = 480-line emulated screen, 1.5 = 720-line (modules that follow the display; Intermission, Star Trek, ScreamSavers and Marvel modules: always 640x480)
 Monitors=all             ; or primary (the other monitors stay black)
 StartFromDesktop=1       ; 0: /s starts every module on black (no desktop capture); no UI
 Collections=simpsons,tt  ; the strip's filter: release ids; empty or missing = every release
@@ -570,8 +598,9 @@ running. Only files named that way are ever deleted.
   * Modules with a screen of their own: that screen on every monitor,
     whatever the Resolution setting. Intermission modules (Star Wars Screen
     Entertainment, `"abi": "intermission"`) have 640×480 by their ABI; a
-    catalog entry gives any module one with `"screen": "WxH"` (Star Trek:
-    The Screen Saver's modules, `"640x480"`), which comes first (a catalog
+    catalog entry gives any module one with `"screen": "WxH"` (`"640x480"`
+    for Star Trek: The Screen Saver's, ScreamSavers' and Marvel Comics Screen
+    Posters' modules, After Dark modules all), which comes first (a catalog
     without the field keeps the ABI's rule). Such modules compose fixed
     scenes: the Intermission modules centre theirs on a larger screen, and
     of the Star Trek modules The Mission draws its scene at the top left
@@ -616,8 +645,9 @@ running. Only files named that way are ever deleted.
   `geometry.h`). A window whose monitor is unchanged stays as it is. One whose
   monitor changed mode or position but kept its aspect ratio (so the host's
   emulated screen size is the same) is moved, and its host carries on; so is
-  one whose host runs a module with a screen of its own (an Intermission or
-  a Star Trek module), whose 640×480 is the same on every monitor (such
+  one whose host runs a module with a screen of its own (an Intermission,
+  Star Trek, ScreamSavers or Marvel module), whose 640×480 is the same on
+  every monitor (such
   windows go last, after the ones whose size matches a monitor, so neither
   kind restarts for the other). A
   monitor that is new, or whose aspect changed under an After Dark module,
@@ -667,12 +697,13 @@ running. Only files named that way are ever deleted.
   capture, and the first host takes the one of its own screen. For an After
   Dark module (one that follows the display) it is the whole monitor at its
   After Dark size, in `LongAfterDark-seed-<pid>-<window>.ppm`, as ever; for a
-  module with a screen of its own (an Intermission or a Star Trek module),
-  the part of the monitor its 640×480 frame will cover, shrunk to 640×480,
+  module with a screen of its own (an Intermission, Star Trek, ScreamSavers
+  or Marvel module), the part of the monitor its 640×480 frame will cover, shrunk to 640×480,
   in `…-<window>-640x480.ppm`, one picture for both (a screen of another size
   would have its own, `…-<window>-<W>x<H>.ppm`). A window that can only
-  start with such a module (it chosen alone, or Star Wars Screen
-  Entertainment or Star Trek: The Screen Saver the only release imported)
+  start with such a module (it chosen alone, or the only releases imported
+  among Star Wars Screen Entertainment, Star Trek: The Screen Saver,
+  ScreamSavers and Marvel Comics Screen Posters)
   gets just `…-<window>-640x480.ppm`, and one that can only start with an
   After Dark module just `…-<window>.ppm`. On a 4:3 monitor at 480 lines the
   two pictures are the same (the whole monitor at 640×480), so a window that
@@ -767,7 +798,7 @@ with `AD_HOST_EXE` pointing at its `adhostwin.exe`.
 | `AD_SCR_TEST_MONITORS` | `x,y,w,h[,p];…` monitors to use instead of the real ones (`,p` marks the primary). `\|` separates the layouts reported after each successive display change |
 | `AD_SCR_TEST_OPEN_LOG=<file>` | the settings dialog's credit link appends `open<TAB><url>` here. The test build never opens a page itself, whatever its environment (it logs `dialog: open <url> (the test build opens nothing)`); only `LongAfterDark.scr` calls `ShellExecuteW` |
 | `AD_SCR_TEST_SCREENSHOT=<png>` | `/c` renders the settings dialog to this PNG and exits (0, or 1 if it couldn't). The window is created hidden, parked off every monitor and cloaked, never activated or focused (`WS_EX_NOACTIVATE`: no keystroke meant for another window can reach it), and drawn with `PrintWindow`: it never appears on screen. |
-| `AD_SCR_TEST_SCREENSHOT_STATE` | `key=value;…` for the screenshot: `theme=light\|dark\|hc`, `module=<id>`, `mode=single\|random`, `dpi=<n>` (lay out at that DPI), `dpichange=<n>` (send `WM_DPICHANGED` as if dragged to such a monitor), `size=<w>x<h>` (client, DIPs), `focus=list\|slider\|ok\|single\|random\|duration\|preview\|strip\|sound\|volume\|credit` (draw that control's focus ring; `strip`: the first selected cover, else the first, scrolled into view), `sound=off` (the Sound dropdown at Off: Volume greyed), `volume=<0..100>`, `wait=<ms>` and `frames=<n>` (how long to let the live preview run), `hover=preview` (the pointer over the live preview), `hover=strip:<id>` (that release's cover hovered), `hover=credit` and `pressed=credit` (the footer's credit under the pointer, and held down), `collections=<id>,…` (the strip's filter, as if those covers had been clicked), `thumbgen=1\|wait` (take missing thumbnails in the background; `wait`: until all are taken, within `wait`), `report=<file>` (write where the list shows in the picture, the card's colour and whether anything straddles the list's top edge; `strip=x,y,w,h` where the strip's tiles area shows, `strip_mode=regular\|compact\|hidden`, the base colour and how many rows the list shows; each group's accessible name, `group<g>=`, and its title as the header drew it, `drawn<g>=` (whole, or ellipsized); what the host said, `caps=`, the modules "Coming soon", `soon=`, and the module the details show, `details=`, with its chip, `badge=`, whether its buttons are live, `button_live=`, and Preview enabled, `preview_enabled=`; the footer's credit, `credit=x,y,w,h` (its link's box, or `hidden`), `credit_lead=` and `credit_name=` (its two texts), with the assets line's text, `assets_text=`, and Preview, `preview_button=`, all in the picture's pixels). A `size=` taller or wider than this machine's screen is honoured (the window's maximum tracking size is lifted off screen), so the regular strip can be captured at 150% and up. With `theme=hc`, `AD_UI_TEST_HC_SCHEME=nightsky\|aquatic\|desert\|dusk` stands one of Windows 11's contrast themes in for the system colours (the hook passes it to adw_ui's `set_test_hc_scheme`; the library itself reads no environment) |
+| `AD_SCR_TEST_SCREENSHOT_STATE` | `key=value;…` for the screenshot: `theme=light\|dark\|hc`, `module=<id>`, `mode=single\|random`, `dpi=<n>` (lay out at that DPI), `dpichange=<n>` (send `WM_DPICHANGED` as if dragged to such a monitor), `size=<w>x<h>` (client, DIPs), `focus=list\|slider\|ok\|single\|random\|duration\|preview\|strip\|sound\|volume\|credit` (draw that control's focus ring; `strip`: the first selected cover, else the first, scrolled into view), `sound=off` (the Sound dropdown at Off: Volume greyed), `volume=<0..100>`, `wait=<ms>` and `frames=<n>` (how long to let the live preview run), `hover=preview` (the pointer over the live preview), `hover=strip:<id>` (that release's cover hovered), `hover=credit` and `pressed=credit` (the footer's credit under the pointer, and held down), `collections=<id>,…` (the strip's filter, as if those covers had been clicked), `thumbgen=1\|wait` (take missing thumbnails in the background; `wait`: until all are taken, within `wait`), `report=<file>` (write where the list shows in the picture, the card's colour and whether anything straddles the list's top edge; `strip=x,y,w,h` where the strip's tiles area shows, `strip_mode=regular\|compact\|hidden`, the base colour and how many rows the list shows; the strip's scroll position, `strip_first=`, its last stop, `strip_max_first=`, and how many covers a stop shows, `strip_slots=`, each cover's window, `tile<i>=x,y,w,h` (or `hidden` while it lies outside the strip, not shown), the chevrons, `chevron_left=` and `chevron_right=`, and the status line, `strip_status=`; each group's accessible name, `group<g>=`, and its title as the header drew it, `drawn<g>=` (whole, or ellipsized); what the host said, `caps=`, the modules "Coming soon", `soon=`, and the module the details show, `details=`, with its chip, `badge=`, whether its buttons are live, `button_live=`, and Preview enabled, `preview_enabled=`; the footer's credit, `credit=x,y,w,h` (its link's box, or `hidden`), `credit_lead=` and `credit_name=` (its two texts), with the assets line's text, `assets_text=`, and Preview, `preview_button=`, all in the picture's pixels). A `size=` taller or wider than this machine's screen is honoured (the window's maximum tracking size is lifted off screen), so the regular strip can be captured at 150% and up. With `theme=hc`, `AD_UI_TEST_HC_SCHEME=nightsky\|aquatic\|desert\|dusk` stands one of Windows 11's contrast themes in for the system colours (the hook passes it to adw_ui's `set_test_hc_scheme`; the library itself reads no environment) |
 
 ## Build and test
 
@@ -806,8 +837,10 @@ only reads it.
   outside 1..8192 or more than 4096×4096 pixels is none; the catalog's size
   before the ABI's), the six-release fixture's 14 Intermission modules, the
   seven-release fixture's four Star Trek modules (After Dark's ABI, lane
-  `ne16`, 640x480 each), and a check of this machine's generated catalog
-  when there is one), geometry (with each module's emulated screen,
+  `ne16`, 640x480 each), the twelve-release fixture's ScreamSavers and
+  Marvel modules (the same, as a ScreamSavers module's entry will be) and
+  the other new releases' without a screen, and a check of this machine's
+  generated catalog when there is one), geometry (with each module's emulated screen,
   `module_screen` over `own_screen`: an After Dark module's exactly as
   before, an Intermission module's 640x480 on every display at every
   Resolution setting and a Star Trek module's catalog 640x480 the same, a
@@ -846,7 +879,7 @@ only reads it.
   and on the buttons, the phrase on one line inside its box; hidden only
   without room, which one release's long title or the assets line at its
   longest leaves none of in the narrowest window; shown at the first-open
-  size with seven releases, "232 modules from 7 releases"), the settings panel's rows (whole-row extents, read-only and
+  size with twelve releases, "284 modules from 12 releases"), the settings panel's rows (whole-row extents, read-only and
   unlabelled rows), string-slider stops with repeated labels (and
   `boldStop`), the thumbnail crop and quality gate, the names shown whole
   (every package's copy, `moduleName`-keyed, suffix kept), `--capabilities`
@@ -866,11 +899,18 @@ only reads it.
   the list by release with "(Classic)" and file stems, counts and "Also on";
   what the details show after a filter change (`details_after_filter`);
   the strip's words and the assets line; `layout_strip` at every scale
-  100–250% with 1 to 12 releases, both forms, every scroll stop, chevrons,
-  the 4-DIP grid and 200% = 100% doubled; `layout_window` with the strip:
+  100–250% with 1 to 12 releases, both forms, seven widths, every scroll
+  stop: whole tiles only, as many at every stop (all of them, or the slots
+  between the chevrons), none of them, focus ring included, under a chevron
+  or outside the strip, the first one shown at the area's edge, or in a row
+  that scrolls just past the left chevron's zone at every stop, the chevrons
+  beside the tiles and each at one place across the stops, its place empty
+  where it hides (the left one's unscrolled, the right one's at the last
+  stop), every step one pitch, the 4-DIP grid
+  and 200% = 100% doubled; `layout_window` with the strip:
   compact under 760 DIP, the status box clear of the tiles, and the columns
   keeping today's heights; the captions' shrink rule, and every registry
-  short title ("Star Wars" and "Star Trek" included) measured in the real caption face at
+  short title ("Star Wars", "Star Trek", "Looney Tunes" and "ScreamSavers" included) measured in the real caption face at
   100–250%, each fitting whole; six releases (`tests/fixtures/catalog-six.json`:
   the order, the Star Wars group, what Random plays on a host that can't run
   their modules (none of them, a lead of theirs left out, a list of only
@@ -887,8 +927,27 @@ only reads it.
   their 640x480, `first_module_screens` with them (theirs and Star Wars'
   one screen, one seed picture), and seven covers: whole in the first-open
   window and in the smallest one (compact covers) at 100–250%, scrolling in
-  a window as narrow but 760 DIP or more tall: five tiles whole at each
-  stop, the sixth's cover shown too unscrolled, the last stop the third);
+  a window as narrow but 760 DIP or more tall: five tiles at each stop, the
+  last stop the third); twelve releases (`tests/fixtures/catalog-twelve.json`:
+  the seven and Marvel Comics Screen Posters, Snoopy's Screen Savers, The
+  Looney Tunes Screen Saver, ScreamSavers and The Disney Collection Screen
+  Saver among them by date, their groups, "46 modules from 12 releases",
+  "Showing 11 of 12 releases", Random over them without waiting for the
+  host, ScreamSavers' and Marvel's modules at their catalog 640x480 on every
+  display at every Resolution setting and the other new releases' following
+  the display, `first_module_screens` and a monitor's seed pictures with
+  them; twelve covers at 100–250%: regular ones never all side by side, the
+  first-open window seven at a time over six stops, one as narrow but 760
+  DIP or more tall five over eight, a large one nine over four; compact ones
+  eight over five in the smallest window, nine from 960 DIP wide, ten from
+  1032 (the first-open width, its height clamped under 760 DIP), eleven
+  from 1104, and all twelve side by side from 1120, left-aligned, with no
+  chevron; each stop clear of the status box; and
+  every release's title in the group header of the narrowest and the
+  first-open list, measured in the real faces: the count and the pill always
+  whole, and without a pill only the long titles ellipsized, never the
+  After Dark ones or the short ones, and none in the first-open list in
+  Single);
   a catalog whose 66 modules each give a screen of their own, all one
   file: every screen a first module may have, three seed pictures (a
   window's After Dark one, 640x480, the smallest other), a lead of the
@@ -1052,7 +1111,28 @@ only reads it.
   each logging a line taken or not, a line counting the nine left out, the
   first host started without a seed; where the desktop can be read back,
   the three pictures' sizes and parts and that host's `none taken` line),
-  `config-credit` (the footer's credit
+  `config-twelve` (twelve releases, `tests/fixtures/catalog-twelve.json`:
+  seven off-screen renders at the first-open size, the smallest and one as
+  narrow but 760 DIP tall, at 100% and 150%, light, dark and high contrast,
+  unscrolled, at a stop in the middle and at the last: as many covers shown
+  as the layout says, each wholly in the strip and clear of the chevrons
+  (unscrolled, of the left one's place too) and the status line, the others
+  outside the strip, and nothing else drawn in the strip, checked on the
+  picture's pixels; the dialog driven by control ID at its first-open size
+  (clamped to the monitor's work area), as many covers at a time as
+  `layout_window` gives its client: the last cover, not shown, takes the
+  focus and scrolls into view, the left chevron takes it away a stop a
+  click, Space on it filters the list to its release and brings it back,
+  **Show all** shows all twelve, the left chevron back to the first stop
+  leaves its place empty, reopened with that filter saved the row opens at
+  its last stop, and from seven releases an import (`fakeimport.exe`
+  leaving the twelve-release catalog) turns seven covers side by side into
+  twelve, unscrolled beside a right chevron, "46 modules from 12 releases";
+  a ScreamSavers and a Marvel module, After Dark modules with `"screen":
+  "640x480"`, previewed at 640x480 where the others get the box's 16:9 480
+  lines, and `/s` at the 720-line setting on a 16:9 monitor rotating
+  between a ScreamSavers and a Disney module, 640x480 and 1280x720 host by
+  host), `config-credit` (the footer's credit
   in the dialog driven by control ID: shown, named "Made With Love by
   StarrLord" for UI Automation with the address as its help text, after
   Import… and before Preview in the tab order; a click, Enter and Space each

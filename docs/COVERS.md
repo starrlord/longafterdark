@@ -39,8 +39,11 @@ authoritative for how each part behaves.
 
 Terms. A **release** is a package in the importer's registry (PACKAGES.md
 §2): `deluxe`, `ad10`, `ad32`, `tt`, `simpsons`, since the sixth release
-`swse` (Star Wars Screen Entertainment), and since the seventh `startrek`
-(Star Trek: The Screen Saver). The UI calls a release by
+`swse` (Star Wars Screen Entertainment), since the seventh `startrek`
+(Star Trek: The Screen Saver), and, added together as the eighth to the
+twelfth, `marvel`, `snoopy`, `looney`, `screams` and `disney` (Marvel
+Comics Screen Posters, Snoopy's Screen Savers, The Looney Tunes Screen
+Saver, ScreamSavers, The Disney Collection Screen Saver). The UI calls a release by
 its `title`, or by its `shortTitle` where space is tight. A **cover** is the
 art that stands for a release. A **tile** is the cover rendered as a 4:5
 portrait PNG for display. The **filter** is the set of releases whose tiles
@@ -106,8 +109,11 @@ control and the details card) moves down by the band's height.
   `packages[]` order, which is release-date order, oldest first: Simpsons
   (1994), 3.2, Totally Twisted (1995), Deluxe (1996), 10th Anniversary
   (1999); Star Wars (1994) comes second, after the Simpsons, since the sixth
-  release, and Star Trek (1992) first, before them, since the seventh. A
-  release without a date comes last.
+  release, and Star Trek (1992) first, before them, since the seventh. With
+  all twelve: Star Trek, Marvel, Simpsons, Star Wars, Snoopy, Looney Tunes,
+  ScreamSavers, 3.2, Totally Twisted, Disney, Deluxe, 10th Anniversary. A
+  release without a date comes last. (As built for twelve: a row that
+  scrolls starts after the left chevron's place, §1.3.)
 * **Status box.** A status box 200 DIP wide sits at the column's right
   edge, vertically centred on the tile art (§1.6). The tiles area is the
   column minus that box minus 16 DIP.
@@ -121,7 +127,7 @@ control and the details card) moves down by the band's height.
   200% and 120×150 at 250%. The 640×800 tile PNG (§2.6) is always scaled
   down (by 4 or more), never up.
 * **Room.** At the minimum content width (852 DIP) the tiles area holds 6
-  regular or 8 compact tiles, so today's five releases always fit without
+  regular or 8 compact tiles, so the first five releases always fit without
   scrolling, and so do the six of the sixth release (checked on off-screen
   renders; a seventh would scroll). The seventh release's seven fit the
   first-open window (1040 × 800) and, compact, the smallest one (900 × 680)
@@ -131,6 +137,20 @@ control and the details card) moves down by the band's height.
   (`scr_unit_releases`, and the seven-release renders). When the
   tiles need more room than the tiles area has (future releases), the strip
   scrolls (§1.3). It never overlaps the status box.
+
+  **Twelve releases** (as built). Regular covers (a client 760 DIP tall or
+  more) never all fit: twelve need 1240 DIP, and the tiles area is at most
+  1024 (the column stops at 1240). By window width they show 5 at a time at
+  900–935 DIP (8 stops), 6 at 936–1039, 7 at 1040–1143 (the first-open
+  window: 6 stops), 8 at 1144–1247 and 9 from 1248 (4 stops). Compact covers
+  (a client under 760 DIP tall) show 8 at 900–959 DIP (5 stops), 9 at
+  960–1031, 10 at 1032–1103, 11 at 1104–1119, and all twelve side by side
+  from 1120 DIP wide, left-aligned, with no chevrons. The 10 is also the
+  first-open window whose height the work area clamps under 760 DIP
+  (1920×1080 at 125% or 150%, 1366×768 and 1536×864 at 100%, 1920×1200 at
+  150%, 2560×1440 at 175%). Seven releases scroll only with regular covers
+  in a window under 984 DIP wide (5 or 6 at a time; the first-open window
+  still shows all seven with no chevron).
 
 ### 1.3 Overflow and scrolling
 
@@ -147,6 +167,33 @@ When the tiles need more width than the tiles area has:
   per 120 units of delta.
 * A tile that takes keyboard focus is scrolled fully into view.
 * The status box never scrolls.
+
+**As built for twelve releases** (the fades and part-shown tiles above are
+gone): no window holds twelve regular covers, so the strip scrolls in the
+first-open window, and the design above left a part-shown cover under the
+chevron's box with its caption cut ("After D"). Now:
+
+* **Only whole covers show**, the same number at every stop: as many as fit
+  between the two chevrons (`StripLayout::slots`; a chevron's zone is 24
+  DIP plus a 4-DIP gap, `kStripChevronGap`), every step exactly one cover
+  wide. Covers that do not fit are moved just outside the strip window;
+  they stay real windows, so the dialog manager and screen readers still
+  reach them, and one that takes the focus, or that Space toggles while
+  scrolled away, comes into view.
+* **Nothing lies under a chevron, and the chevrons stay put.** The left one
+  sits at the strip's left edge and the right one just past the last slot,
+  4 DIP clear of the covers and their focus rings, in one place at every
+  stop; each one's place is empty at the stop where it hides (the left one
+  unscrolled, the right one at the last stop), so a click too many lands on
+  no cover.
+* **A row that scrolls starts after the left chevron's zone** (24 + 4 DIP)
+  at every stop, the unscrolled one included, so each slot keeps its place;
+  covers that all fit stay left-aligned at the column's edge as before (so
+  seven releases in the first-open window look as they did).
+* With a saved filter (or one kept through an import reload) the strip
+  opens scrolled to the first selected cover.
+* The fades are gone: nothing is cut, so nothing fades (`adw_ui`'s
+  `fade_in_left` and `fade_in_right` are no longer used by the scr).
 
 ### 1.4 Tile visuals
 
@@ -424,6 +471,21 @@ Collections=simpsons,tt     ; the strip's filter: release (package) ids; empty o
   * `list-top`: extended to the strip at each size, both modes and high
     contrast.
   * A saver `rotate` case with `Collections`.
+* **As built for twelve releases:** the report gains `strip_first=`,
+  `strip_max_first=`, `strip_slots=`, each cover's window `tile<i>=x,y,w,h`
+  (or `hidden` while it lies outside the strip), `chevron_left=`,
+  `chevron_right=` and `strip_status=`, all in the picture's pixels; a
+  twelve-release fixture (`tests/fixtures/catalog-twelve.json`) with its
+  unit suite, whose strip checks pin every count of §1.2 at every scale (the
+  same number of covers at every stop, none under a chevron, chevrons that
+  do not move, each step one cover, the left chevron's place empty
+  unscrolled); and a smoke test, `config-twelve`: off-screen renders at
+  several sizes, then the dialog driven by keyboard and chevrons, expecting
+  the covers at a time `layout_window` gives its real client size and DPI
+  (7 at 1040×800; 10 when the height is clamped), the left chevron's place
+  empty after clicking back to the first stop, a saved filter, an import
+  going from seven releases to twelve, and ScreamSavers' and Marvel's
+  catalog screen.
 
 ## 2. Covers: the importer pipeline
 
@@ -510,6 +572,11 @@ photos are those two releases' covers of choice, through `--set-cover`).
 | `simpsons` | download `https://static.simpsonswiki.com/images/7/72/The_Simpsons_Screen_Saver.png`, md5 `47f4619da9e79b126a4fb45770f0e649`, 1011608 B, art `box` ("Box front", Wikisimpsons) | download `https://web.archive.org/web/20250715075938id_/https://www.whipassgaming.com/images/deadsections/mac/simpsonsfullbox.jpg`, md5 `94db22db1e89b3ff2fdb97e610056602`, 484234 B, **crop 0,0,600,776**, art `box` ("Box front", Wayback Machine) | disc `SETUP.EXE` RT_BITMAP **7500**, file md5 `980867b7ab5394b09adad725d375ba95`, **crop 0,0,387,172** (measured: the art ends at row 171, the first black row before the warning text is 172), art `splash` ("Installer art", your disks) | — |
 | `swse` (added with the sixth release) | download `https://web.archive.org/web/19970310054846id_/http://www.presage.com:80/images/pimages/box-starwars.JPEG` (the box front from Presage's own 1997 product page, 150×200), md5 `8b84792a21f3a21e09cc2809d263d9c1`, 30600 B, art `box` ("Box front", Wayback Machine) | download `https://web.archive.org/web/20221205171117id_/https://static.wikia.nocookie.net/starwars/images/9/9a/SWScreenEntertainment.jpg/revision/latest` (Wookieepedia's photo of the same US box, 713×847: the Wayback Machine's byte-exact capture of the stored original), md5 `dc4e541d1a79a46747caf0cb6f425c0a`, 190239 B, art `box` ("Box front", Wayback Machine) | download `https://archive.org/download/swse1/1.jpg` (a scan of the disc label, 1416×1416), md5 `a40d11a61ee0288048bdfdd28e48e57c`, 2156659 B, art `disc` ("Disc label", Internet Archive) | download `https://archive.org/download/cd_AfterDark_Star_Wars_ScreenSaver_for_Win3.1/AfterDark%20Star%20Wars%20-%20CD.jpg` (an older scan of the label, in the exact ISO's item, 1452×1464), md5 `b8ac25eb20a87f44e47ff8ed097698d7`, 948614 B, **crop 20,14,1424,1424** (the disc on white paper), art `disc` ("Disc label", Internet Archive) |
 | `startrek` (added with the seventh release) | download `https://archive.org/download/afterdark-20b_startrek_box/Aaa_itemimage.jpg` (the Windows retail box front from the Internet Archive's box scans, 1180×1525: it fills the tile), md5 `157eb04fcc9bdc0d4a831148ca6cc260`, 577239 B, art `box` ("Box front", Internet Archive) | download `https://archive.org/download/afterdark-20b_startrek_box/After%20Dark%202.0b%20-%20Star%20Trek%20-%20Box%20-%20Front.jpg` (the same front at 600 dpi, 4720×6100, normalized to 1585×2048), md5 `f41d1dbdaadaeeb0f9bc0a6aa76754ce`, 9277274 B, art `box` ("Box front", Internet Archive) | download `https://archive.org/download/afterdark-20b_startrek/afterdark-20b_startrek_disk1.jpg` (a scan of disk 1's label, 1090×1145, in the disk images' own item), md5 `dbda3bc66b809f446a17138073579b53`, 569964 B, art `panel` ("Disk label", Internet Archive) | — |
+| `marvel` (added with the five of the twelve-release registry) | download `https://archive.org/download/afterdarkmarvelscreenposters/box.jpg` (a photo of the shrink-wrapped Windows box front, 1200×1505, in the item of the flat ZIP), md5 `1b9294c6bd03c5b14ed366cc652c8e7c`, 903667 B, **crop 28,64,1132,1390** (the box, w/h 0.814: it fills the 4:5 tile; the camera's date stamp inside it stays), art `box` ("Box front", Internet Archive) | download `https://archive.org/download/marval-computer/MarvalComputer.jpg` (the 1993 magazine advertisement showing the same box, 2675×4192, normalized to 1307×2048), md5 `f2644bb771fd8cbba1c88e77937b5572`, 3229147 B, art `panel` ("Advertisement", Internet Archive) | — | — |
+| `snoopy` (the same) | disc `AD_MODS.BMP` (the picture beside the readme on disk 1 that its installer shows: Image Smith's logo, black and white, 79×175), md5 `9befcefa9fafbb5e7c36ccfe325c607d`, art `panel` ("Setup art", your disks) | — | — | — |
+| `looney` (the same) | download `https://web.archive.org/web/19970720113529id_/http://www.berksys.com:80/products/afterdark/box.looneytunesL.jpg` (the box front from Berkeley Systems' 1997 product page, 127×162, like Totally Twisted's from the same page), md5 `e9fa28ed00032bb04a436132a724e98c`, 29771 B, art `box` ("Box front", Wayback Machine) | disc `SETUP.BMP` (the installer splash, 387×221, the same in both builds), md5 `32af5fcb5add7fc88de7b03b5c531563`, **crop 0,0,387,161** (the art ends at row 160; the warning and copyright text start at 164), art `splash` ("Installer art", your disks) | download `https://archive.org/download/berkeley_systems_looney_tunes/16_looney_tunes_CD.jpg` (a scan of the label of the August CD of the same release, 750×734), md5 `8b168e0679d2661889092fc6280d509a`, 369574 B, art `disc` ("Disc label", Internet Archive) | — |
+| `screams` (the same) | disc `SETUP.EXE` RT_BITMAP **7500** (the installer's title art, "Stephen Blickenstaff's ScreamSavers", 350×179 at 4 bpp), file md5 `e348fb48b89102903a3b26a3c8aedab3`, **crop 0,0,350,119** (the logo ends at row 114, black to 122, the copyright block from 123), art `splash` ("Installer art", your disks) | — | — | — |
+| `disney` (the same) | download `https://web.archive.org/web/19970720111656id_/http://www.berksys.com:80/lite/products/afterdark/box.disneyL.jpg` (the box front from Berkeley Systems' 1997 product page, the only capture, 128×162), md5 `ffcd41dd737b125af0a4e4a1bfee6610`, 20983 B, art `box` ("Box front", Wayback Machine) | disc `SETUP.BMP` (the installer splash, 387×220), md5 `39e1bfb21fdf7fe2396525d13798cf50`, **crop 0,0,387,172** (the warning text band starts at row 172), art `splash` ("Installer art", your disks) | — | — |
 
 Notes:
 * **ad32** starts with its disc art because the user chose it: no box scan
@@ -546,6 +613,29 @@ Notes:
   is a floppy's, so it takes the art `panel`, drawn as a picture (contained
   on bands, §2.6), not `disc`, which would cut it to a circle: no new art
   value was needed.
+* **The five of the twelve-release registry.** Their art belongs to their
+  owners and Berkeley Systems (Marvel's, Warner Bros.' for the Looney Tunes,
+  Disney's, United Feature Syndicate's Peanuts and Image Smith's, Binary
+  Software's and IMPart's for ScreamSavers) and is handled like the
+  Simpsons': fetched onto the user's machine at import time, or read from
+  the user's own disks, and never bundled, committed or redistributed. No
+  new cover-source kind was needed: ScreamSavers' title art is a bitmap
+  resource of `SETUP.EXE`, as the Simpsons' is. **marvel**'s disks have no
+  picture a disc source can reach (every one is inside its InstallShield
+  libraries), so an offline import shows the generated cover until
+  `--refresh-covers` fetches one; Berkeley's archived site has no Marvel
+  box, and the ad comes second, drawn as a picture. **snoopy**: no box,
+  label or manual scan of the Windows release was found online; the Image
+  Smith logo on disk 1 is a plain file, and a source reading the Flying
+  Ace's About picture out of the installed module (which is compressed on
+  the disks) was not built. **looney** and **disney** start with Berkeley's
+  small box fronts, like Totally Twisted's, and fall back to their installer
+  splashes; the Looney Tunes' third source is the label of its August CD
+  (build B, PACKAGES.md §12), the same release's art. **screams**: no box or
+  label scan exists online (the Internet Archive, the Wayback Machine's
+  captures of Berkeley's and Binary Software's sites, IMPart's later site,
+  MobyGames), so its only source is the title art on the user's own disks,
+  contained on black bands (aspect 2.94).
 
 ### 2.4 Capture during an import
 
@@ -950,7 +1040,9 @@ server from `tests/http_server.h`.
   `source_iso` (identified by md5) into a scratch root with
   `--no-cover-download`, so that every disc source is extracted. It checks
   the sizes after cropping (`ad32` 387×183, `simpsons` 387×172, `tt`
-  387×204, `ad10` 118×226).
+  387×204, `ad10` 118×226; as built also `deluxe` 118×226, and with the
+  twelve releases `looney` 387×161, `screams` 350×119, `disney` 387×172 and
+  `snoopy` 79×175, from the known ZIPs of their install files).
 * It writes `covers-sheet.png` (every tile side by side) into the build
   directory for a person to look at.
 * It never writes under `%LOCALAPPDATA%`. The scratch tree is deleted
@@ -1407,6 +1499,8 @@ sections above stay the contract; this records the differences.
 * Added at integration, for the strip: `fade_in_left`, and `fill_round` and
   `stroke_ellipse` overloads with an alpha. They are the strip's former local
   helpers moved as they were; the settings dialog renders pixel-identical.
+  (Since the strip shows only whole covers, for twelve releases, the scr no
+  longer uses `fade_in_left` or `fade_in_right`, §1.3.)
 * `ButtonRole::card` has a 4-DIP corner radius (WinUI's SettingsCard uses the
   control radius); `paint_card` cards keep 8 DIP.
 
@@ -1421,7 +1515,15 @@ sections above stay the contract; this records the differences.
   `AD_IMPORT_TEST_PICK=<path>[|<path>…]` answers the file dialogs.
 * On a very short work area the Sources page first shrinks its installed
   list to two scrolling rows, then scrolls its whole body; the header and the
-  footer (Cancel) stay put.
+  footer (Cancel) stay put. Since the twelve releases the list shrinks
+  further first, to as many rows as fit, down to one, so that ten releases
+  and more at 150% on a 1080-line screen keep the import choices in view;
+  only when even one row does not fit does the whole body scroll. The
+  Sources intro names every release only while nothing is imported, and
+  then gives their number ("… of twelve releases."). A release known by
+  the ZIP of its install files is "verified against the known ZIP", and
+  its result reads "The ZIP matched the known ZIP of …". The Downloads page
+  has twelve cards.
 * Integration fixes: a page the system clamps below the size it asked for
   (the maximum tracking size) is laid out again for the client it got, so the
   footer stays in view; off screen the hook lifts that limit, so a 200%

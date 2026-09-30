@@ -5,11 +5,14 @@ the Intermission modules of LucasArts' Star Wars Screen Entertainment, on
 Windows 11 by executing their x86 code under emulation: it loads the *real*
 engine and the module into one emulated address space, traps every call
 they make into the operating system, and supplies that OS surface from the
-host. A Windows screen saver (`LongAfterDark.scr`) presents the frames. Seven
+host. A Windows screen saver (`LongAfterDark.scr`) presents the frames. Twelve
 releases are supported (§7): After Dark 4.0 Deluxe, After Dark 10th
 Anniversary, After Dark 3.2, Totally Twisted After Dark, The Simpsons
-Screen Saver, Star Trek: The Screen Saver (After Dark 2.0b) and Star Wars
-Screen Entertainment, 232 modules in all. Star Wars Screen Entertainment is
+Screen Saver, Star Trek: The Screen Saver (After Dark 2.0b), Marvel Comics
+Screen Posters, The Looney Tunes Screen Saver, The Disney Collection Screen
+Saver, two other companies' modules for After Dark (Binary Software's
+ScreamSavers and Image Smith's Snoopy's Screen Savers) and Star Wars
+Screen Entertainment, 284 modules in all. Star Wars Screen Entertainment is
 not an After Dark release: its 14 modules were written for Delrina's
 Intermission screen saver engine, and speak their own protocol (ABI.md
 §3.8).
@@ -19,7 +22,10 @@ Nothing here is a reimplementation of After Dark. The engine DLLs
 (`OLDMOD16.DLL`) run as real code; the host provides only what sits
 *beneath* them — KERNEL/USER/GDI/MMSYSTEM. After Dark 2.0's module library
 (`AD_MOD.DLL`) and sound library (`AD_SND.DLL` 1.0) run as real code too,
-under a host that stands in for its `AD.EXE` (ABI.md §3.9). The same goes
+under a host that stands in for its `AD.EXE` (ABI.md §3.9). One package,
+Snoopy's Screen Savers, was made to run in an After Dark the user already
+had and ships no sound library: for it alone the host supplies AD_SND, our
+own code (§7). The same goes
 for Intermission: its IMX reader (`IMIMXPLY.IMQ`), its library
 (`INTRMLIB.DLL`, `ANTSW.DLL`), the modules' framework (`SWSE.DLL`) and the
 modules run as real code, and the host stands in only for Intermission's
@@ -28,7 +34,7 @@ engine application, `INTERMIS.EXE`, as it stands in for After Dark's
 
 ## The corpus
 
-The work started from one release; the other six came later (§7,
+The work started from one release; the other eleven came later (§7,
 `PACKAGES.md`), and the same host runs them all. The first corpus, the PC
 side of a hybrid Mac/PC CD,
 `After Dark 4.0 Deluxe (1996)(Berkeley Systems)[Mac-PC].iso`
@@ -96,7 +102,7 @@ LongAfterDark.scr (x64)     ── spawns ──►  adhostwin.exe (x64)   one p
   docs/DESIGN.md          this file
   docs/ABI.md             module/engine ABI as we verify it (our own findings)
   docs/API_SURFACE.md     every function the Deluxe disc's binaries import, counted and classified
-  docs/PACKAGES.md        the seven releases: registry, import, catalog merge, lane rules (§7)
+  docs/PACKAGES.md        the twelve releases: registry, import, catalog merge, lane rules (§7)
   docs/INTERACTION.md     input, module buttons, per-user state, desktop seed (§8)
   docs/COVERS.md          the box-cover strip, the cover pipeline, the shared UI library (§9)
   docs/AUDIO.md           sound: census, engine, lane mappings, saver settings (§10)
@@ -350,7 +356,16 @@ As implemented, the points that decide whether the original binaries run
   the guest's `C:\WINDOWS`, under the state overlay (PACKAGES.md §7.5). An
   After Dark 2.0 module (ne16) finds its folder as `C:\AFTERDRK`, as any
   After Dark module does; its `AD_PREFS.INI` settings are profile seeds
-  (PACKAGES.md §7.3).
+  (PACKAGES.md §7.3), and so are the keys After Dark 3.x's host wrote there
+  for an After Dark 3.x package.
+* **A selector freed under its caller.** A call (or software interrupt)
+  that frees a selector the caller still holds in DS, ES, FS or GS returns
+  with that register null, as Windows 3.1's `GlobalFree` did for DS and
+  DPMI 1.0 and Wine's relay do for any of them; a later reload of the
+  register from the stack then loads null instead of faulting. It fixes no
+  load, and it is one check as every API call and interrupt returns
+  (`host/win16/README.md`, ABI.md §3.14): Marvel's decoder and Snoopy's
+  modules need it.
 
 ### 5a. Time and pacing
 
@@ -451,9 +466,12 @@ the file holds it (PACKAGES.md §6).
 
 `screen` (optional, since the seventh release, under the same `adimport
 1.3`) is a fixed screen, `"WxH"`, that the module gets whatever the display:
-`"640x480"` on every Star Trek: The Screen Saver entry, written last and on
-no other (several of its modules compose a fixed 640×480 scene, and all 16
-get that screen so the release looks as it did at 640×480). A front-end gives such a module that screen whatever the
+`"640x480"` on every Star Trek: The Screen Saver entry, written last
+(several of its modules compose a fixed 640×480 scene, and all 16 get that
+screen so the release looks as it did at 640×480), and with the twelve
+releases on every ScreamSavers entry and on Marvel Comics Screen Posters'
+one (five ScreamSavers modules compose a fixed 640×480 scene, and all 15
+get it; Marvel's posters are 640×480 pictures); on no other. A front-end gives such a module that screen whatever the
 Resolution setting, scaled to fit, as it gives an Intermission module its
 640×480 by its ABI; the catalog's screen comes first. Absent, or not of
 that form, the module has no screen of its own (PACKAGES.md §6).
@@ -495,7 +513,8 @@ Each `packages[]` entry also carries `cover` (COVERS.md §2.7):
 `RandomizeSaved=<id>,…|-` (the Random checklist kept while a single module is
 chosen, `-` = nothing checked; the saver ignores it), `DurationMin=<n>|0` (0 = forever),
 `Scale=1.0|1.5` (the Resolution setting, 480 or 720 lines, for the other
-modules; an Intermission or a Star Trek module always gets 640×480, scaled
+modules; an Intermission module, and one whose catalog entry gives a
+`screen` — Star Trek, ScreamSavers, Marvel —, always gets 640×480, scaled
 to fit the monitor in its 4:3 shape: `scr/README.md`), `Monitors=all|primary`, `StartFromDesktop=1|0` (no UI;
 INTERACTION.md §8), `Collections=<package id>,…` (the box-strip filter;
 empty or missing = every release), `Sound=1|0` (default 1), `Volume=0..100`
@@ -539,6 +558,7 @@ import.json                          Deluxe's import record (version 1, unchange
 packages\<id>\<MODDIR>\…              every other package (§7): its modules and what sits beside them
 packages\<id>\ENGINE\…                that package's engine support files (never a module folder)
 packages\<id>\WINDOWS\…               optional: what its installer put in C:\WINDOWS (Star Wars Screen Entertainment's SWSE.INI)
+                                      (Snoopy's Screen Savers has no ENGINE: it shipped only modules)
 packages\<id>\import.json             that package's import record (version 2)
 covers\<id>\{original,user,tile}.png  each release's cover (§9, COVERS.md §2.5); cover.json beside them
 catalog-win.json                      merged over every installed package (§6a)
@@ -549,17 +569,21 @@ Produced by `adimport.exe` from any known package source: an ISO image, a
 floppy image (or several: every disk of a set), a ZIP of the install
 files, a mounted disc or folder, or a download of the release's Internet
 Archive copy, and a ZIP of floppy images (as the Internet Archive serves
-a release's disks together). Inside a source, the installers' own archives
-are read too: encrypted PKZIP (After Dark 3.x), multi-volume ARJ and
-COMPRESS'd SZDD files (Star Wars Screen Entertainment), and Microsoft
-Setup's KWAJ-compressed files (Star Trek: The Screen Saver). Each package is
-verified against its own manifest and image md5s (for a release on several
-floppies, every disk's). The host and the importer take `<root>\win` when
+a release's disks together), or a ZIP or folder that keeps a release's
+disks in `DISK<n>` folders (read as their union). Inside a source, the
+installers' own archives are read too: encrypted PKZIP (After Dark 3.x),
+multi-volume ARJ and COMPRESS'd SZDD files (Star Wars Screen
+Entertainment), Microsoft Setup's KWAJ-compressed files (Star Trek: The
+Screen Saver), and InstallShield 2's compressed libraries (Marvel Comics
+Screen Posters, Snoopy's Screen Savers). Each package is verified against
+its own manifest and image md5s (for a release on several floppies, every
+disk's; for a release known by the ZIP of its install files, that ZIP's).
+The host and the importer take `<root>\win` when
 it holds `FILES`, `packages` or `catalog-win.json`; otherwise they take
 `<root>` itself when that holds one of them; otherwise `<root>\win`. The
 front-end's check, which looks only at `catalog-win.json`, agrees. So an
 install that holds only non-Deluxe packages (no `FILES`) still resolves.
-**No After Dark or Star Wars Screen Entertainment file is ever committed**;
+**No file of any supported release is ever committed**;
 reverse-engineering dumps go under `research/` (gitignored).
 
 Each `import.json` records the source (kind, path or URL, image size and
@@ -587,14 +611,17 @@ is, and for every user the three programs are copied together to
 
 ### 7. Packages
 
-The host runs modules from seven releases: six of After Dark, and LucasArts'
-Star Wars Screen Entertainment. The full specification is `docs/PACKAGES.md`: registry,
+The host runs modules from twelve releases: nine of Berkeley Systems' After
+Dark, two of other companies' modules for After Dark (ScreamSavers,
+Snoopy's Screen Savers), and LucasArts' Star Wars Screen Entertainment.
+The full specification is `docs/PACKAGES.md`: registry,
 identification, extraction formats, per-package layouts, the catalog merge,
 the lane contract, and the three work packages that implement it. The
 contract in brief:
 
 * **A package** is one release in the importer's built-in registry: an id
-  (`deluxe`, `ad10`, `ad32`, `tt`, `simpsons`, `swse`, `startrek`), a title,
+  (`deluxe`, `ad10`, `ad32`, `tt`, `simpsons`, `swse`, `startrek`,
+  `marvel`, `snoopy`, `looney`, `screams`, `disney`), a title,
   identification data (image md5s, volume id, file fingerprints) and an
   extraction recipe. Only the Windows half of each disc is read; the Mac
   half of a hybrid disc is skipped (`PACKAGES.md` §12).
@@ -608,6 +635,11 @@ contract in brief:
   | `simpsons` | The Simpsons Screen Saver (1994) | two floppies merged into one FAT12 image, InstallShield 2 + encrypted PKZIP | `ad3zip` → `packages\simpsons\` | 15 ne16 |
   | `swse` | Star Wars Screen Entertainment (LucasArts, 1994; not After Dark) | plain ISO-9660 CD copy of five install floppies, Presage installer: multi-volume ARJ + SZDD | `intermission` → `packages\swse\` | 14 ne16 (Intermission IMX) |
   | `startrek` | Star Trek: The Screen Saver (1992; After Dark 2.0b) | two 1.44 MB floppies (FAT12), Microsoft Setup 2.0: KWAJ-compressed files | `ad2kwaj` → `packages\startrek\` | 16 ne16 |
+  | `marvel` | Marvel Comics Screen Posters (1993; After Dark 2.0d) | two floppies, InstallShield 2: compressed libraries, one split over both (known by the ZIP of their files) | `islib` → `packages\marvel\` | 1 ne16 |
+  | `snoopy` | Snoopy's Screen Savers (Image Smith, 1994; modules for an installed After Dark) | two floppies, InstallShield 2: one library split over both (known by the ZIP of their files) | `islib` → `packages\snoopy\` | 8 ne16 |
+  | `looney` | The Looney Tunes Screen Saver (1995) | two floppies or their CD copy, InstallShield 3 + encrypted PKZIP (known by the ZIP of their files, and the CD) | `ad3zip` → `packages\looney\` | 12 ne16 |
+  | `screams` | ScreamSavers (Binary Software, 1995; on After Dark 3.0.6) | three floppies, InstallShield 3 + encrypted PKZIP (known by the ZIP of their files, in `DISK1`–`DISK3` folders) | `ad3zip` → `packages\screams\` | 15 ne16 |
+  | `disney` | The Disney Collection Screen Saver (1995) | three floppies, InstallShield 3 + encrypted PKZIP (known by the ZIP of their files) | `ad3zip` → `packages\disney\` | 16 ne16 |
 
 * **Every package owns exactly one directory**, its *package root*: `FILES`
   for Deluxe and `packages\<id>` for the others. Importing a package stages
@@ -619,7 +651,8 @@ contract in brief:
   modules, plus an `ENGINE` folder with the AD_SND build the package shipped
   and its host-side files (for Star Wars Screen Entertainment, Intermission's
   reader), and, where the installer put files in `C:\WINDOWS`, a `WINDOWS`
-  folder. **A module inside a package never resolves a file
+  folder. (Snoopy's Screen Savers shipped no engine and has no `ENGINE`:
+  the host supplies its AD_SND, below.) **A module inside a package never resolves a file
   from another package**, so a module's output does not depend on which other
   discs are imported, and a user who owns only one disc can run it.
 * **How a lane finds a module's package** (no environment variable, no
@@ -631,8 +664,9 @@ contract in brief:
   outside the assets tree) keeps exactly today's search order.
 * **16-bit host for AD 3.x packages.** OLDMOD16 was Berkeley's own bridge by
   which AD 4 ran AD 3.x modules, so running AD 3.x modules under it is
-  faithful. But AD 3.2, Totally Twisted and The Simpsons ship no OLDMOD16:
-  their host was `ADW30.EXE` + `ADTASK.DLL`. The ne16 lane therefore picks
+  faithful. But AD 3.2, Totally Twisted, The Simpsons and the later AD 3.x
+  collections (the Looney Tunes, ScreamSavers, the Disney Collection) ship
+  no OLDMOD16: their host was `ADW30.EXE` + `ADTASK.DLL`. The ne16 lane therefore picks
   its bridge per package. It runs the real `OLDMOD16.DLL` when the engine dir
   holds one (Deluxe, `ad10`). Otherwise it uses a **host-native AD3 bridge**:
   a C++ implementation of the OLDMOD16 behaviour verified in ABI.md §3.3/§3.4.
@@ -673,19 +707,39 @@ contract in brief:
   lane's other rules for them are rules by file, keyed on `AD_MOD.DLL` in
   the module folder: `AD_PREFS.INI` profile seeds (the After Dark
   directory, and Windows' multimedia sound driver in place of the PC
-  speaker's, which would hang the emulator), DRAWFRAME's result 5 taken as
-  the module's wake (how Final Exam ends), and no AD palettes (none is
-  asked for). Every catalog entry carries `"screen": "640x480"` (§6a).
-  (`PACKAGES.md` §7.3, §7.4.)
-* **Status: implemented.** All seven releases import (from a disc, an
-  image, a folder or the Internet Archive) into self-contained package
-  roots (232 catalog modules). The 218 modules of the six After Dark
-  releases run headless and deterministically, each release on its own;
-  Star Wars Screen Entertainment's run through the Intermission protocol
-  above. The
+  speaker's, which would hang the emulator) and DRAWFRAME's result 5 taken
+  as the module's wake (how Final Exam ends). Its four AD palettes, which
+  `AD.EXE` built in code when a module asked, are computed the same way
+  (none of its modules asks). Every catalog entry carries `"screen":
+  "640x480"` (§6a). (`PACKAGES.md` §7.3, §7.4.)
+* **The five later releases.** Marvel Comics Screen Posters and Snoopy's
+  Screen Savers came as InstallShield 2 libraries, which the importer reads
+  with a strict reader of its own and places by a table baked from their
+  installers' scripts (the `islib` recipe); the Looney Tunes, ScreamSavers
+  and the Disney Collection use the AD 3.x installer (`ad3zip`), whose
+  identification now wants each package's own folder file too, since
+  ScreamSavers ships 3.2's engine DLL. All run through the native bridge,
+  with rules by file again: the keys After Dark 3.x's `ADW30.EXE` wrote into
+  `AD_PREFS.INI` at every start are profile seeds for a package whose
+  engine dir holds it (the Disney Collection's library needs them); a
+  package whose engine dir holds no `AD_SND.DLL` (Snoopy's, modules made for
+  an After Dark already installed) gets the host's own AD_SND, our code
+  with AD_SND 3.0.3's entries, byte-identical in frames and sound to After
+  Dark 3.2's real one with instruction timing off; and one whose engine dir
+  holds neither `ADTASK.DLL` nor `AFTERDAR.SCR` gets After Dark 2.0's four
+  palettes, generated in code as `AD.EXE` 2.0 generated them, never copied
+  from Berkeley's files, handed over at the first palette request (Snoopy's
+  Collage asks for one). A package that ships its own files runs exactly as
+  before. (`PACKAGES.md` §3, §4.3, §7.3, §7.4.)
+* **Status: implemented.** All twelve releases import (from a disc, an
+  image, a ZIP, a folder or the Internet Archive) into self-contained
+  package roots (284 catalog modules, 73 of them `sameAs` an earlier one).
+  The 270 modules of the eleven After Dark releases run headless and
+  deterministically, each release on its own; Star Wars Screen
+  Entertainment's run through the Intermission protocol above. The
   survey-time numbers (before this work, with every AD 3.x module leaning on
-  Deluxe's `ENGINE` files, and before the sixth and seventh releases) are
-  in `PACKAGES.md` §1.
+  Deluxe's `ENGINE` files, and before each later release) are in
+  `PACKAGES.md` §1.
 
 ### 8. Interaction
 
@@ -750,7 +804,8 @@ modules in our host. In brief:
   module it may start with, three at most whatever the catalog says (a
   module whose screen got none starts on black): the whole monitor for an After Dark module,
   the part its 640×480 frame covers for one with a screen of its own, an
-  Intermission or a Star Trek module (INTERACTION.md §8). Respawns,
+  Intermission module or one whose catalog entry gives a screen (Star
+  Trek, ScreamSavers, Marvel) (INTERACTION.md §8). Respawns,
   rotations, `/p` and headless runs start black.
 * **Also.** DOS Shell's early end does not reproduce on the current build;
   the saver has an always-on last-exit log (`logs\saver-last.log`) and a
@@ -843,6 +898,11 @@ and the work split. The contract in brief:
     lane's seed that is Windows' multimedia driver, `AD_MME.DRV`, and so
     `sndPlaySound(SND_MEMORY)` of `ST_SND.DLL`'s resources (AUDIO.md
     §2.12). No MIDI: Final Frontier's theme is one of those recordings.
+  * The five later releases, outside it too (AUDIO.md §10.8): the Looney
+    Tunes' and the Disney Collection's effects through their AD_SND and
+    their songs through the MCI sequencer strings, as the AD 3.x engines
+    do; ScreamSavers' effects through its AD_SND 3.1.4; Snoopy's through
+    the host's own AD_SND (AUDIO.md §2.10); Marvel's module is silent.
   * CD audio and `waveIn` stay without a device.
 * **One engine in `adw_core`**: a deterministic integer PCM mixer (voices
   over buffers, streams of chunks), a Standard MIDI File player, and the

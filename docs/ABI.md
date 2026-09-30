@@ -16,7 +16,16 @@ native AD3 bridge that stands in for OLDMOD16 where a disc has none) is in
 `AD.EXE`, recovered from its own floppies (§3.9). The sixth release,
 LucasArts' Star Wars Screen Entertainment, is not After Dark: its modules
 are Delrina's Intermission modules, with their own protocol, recovered the
-same way from that disc's binaries (§3.8). Input, module buttons and the
+same way from that disc's binaries (§3.8). The five releases added after
+them (Marvel Comics Screen Posters, Snoopy's Screen Savers, The Looney Tunes
+Screen Saver, ScreamSavers, The Disney Collection Screen Saver) take the
+same AD3 entry; what their modules and libraries need beyond it, recovered
+from their own disks, is in §3.10–§3.14: Snoopy's modules (a non-resident
+`MODULE`, their own About pictures, Collage's palette request, Borland's
+far-heap free), Marvel's `DECO.DLL` (selector calls, a freed DS), the keys
+After Dark 3.x's host wrote and the Disney Collection's library reads, the
+entries of AD_SND 3.0.3 that the host's own AD_SND carries, and what
+Windows did with a selector freed under its caller. Input, module buttons and the
 modules' saved state are in `INTERACTION.md`; how every module makes sound,
 and how the host plays it, is in `AUDIO.md`.
 
@@ -730,7 +739,9 @@ Hard Rain refuses to run unless `+0x14 >= 200 && +0x2C == 'B' && +0x34 ==
    `adwSetVolume`, `adwSetSoundMute`, `adwStopSound` (else error 3; load
    failure = 1); `adwSoundInit(0, buf)`; `adwGetSystemVolumes(&saved)`. A
    non-zero `err` is returned through `*errId` and the load fails — **AD_SND.DLL
-   is mandatory for every Classic module.**
+   is mandatory for every Classic module.** (The native bridge needs one
+   too; for a package that ships none, Snoopy's Screen Savers, the lane
+   registers the host's own, §3.13.)
 2. keep `hdc`, `hwnd`; `lstrcpyn(path)`; `LoadLibrary(path)` (≥ 32) +
    `GetProcAddress(h, "MODULE")` (`1:0512`).
 3. `saved = SaveDC(hdc)`; build `AD_SYSTEM`; build `AD_MODULE`;
@@ -775,7 +786,9 @@ bit 4; button = `MODULE(7 + button)` unless SELECTED returned 1 or 7.
 ### 3.4 The AD3 module entry — VERIFIED
 
 `int FAR PASCAL MODULE(int iMessage, HDC hDC, HGLOBAL hADSystem)` — exported
-by resident name `MODULE`; **VERIFIED** by OLDMOD16's calls (`1:0ff2..1:0ffc`:
+by resident name `MODULE` (Snoopy's Screen Savers export it from the
+non-resident names table, which `GetProcAddress` by name searches too,
+§3.10); **VERIFIED** by OLDMOD16's calls (`1:0ff2..1:0ffc`:
 `push msg; push hdc; push hADSystem; call far [0x1304]`) and Hard Rain's
 prologue (`CLASSIC/RAIN.AD 1:003e..1:0055`: `[bp+0xa]`=msg, `[bp+8]`=hdc,
 `[bp+6]`=hADSystem, `retf 6`). Modules `GlobalLock(hADSystem)` and
@@ -788,7 +801,7 @@ prologue (`CLASSIC/RAIN.AD 1:003e..1:0055`: `[bp+0xa]`=msg, `[bp+8]`=hdc,
 | 2 | DRAWFRAME | host, once per loop (`ModuleMessage3216(2)`) | host `0x401fd0` |
 | 3 | CLOSE | UNLOADADMODULE16 | `1:0e5e` |
 | 5 | MODULESELECTED | first, at load / button / visibility | `1:0ff2` |
-| 6 | ABOUT | none of the Deluxe disc's hosts; After Dark 2.0's `AD.EXE` does (§3.9) | `AD.EXE 13:07c4`; handled by the After Dark 2.0 modules (`TRIBBLE.AD`'s table `5:05e9`) |
+| 6 | ABOUT | none of the Deluxe disc's hosts; After Dark 2.0's `AD.EXE` does (§3.9) | `AD.EXE 13:07c4`; handled by the After Dark 2.0 modules (`TRIBBLE.AD`'s table `5:05e9`), and by Snoopy's, which draw their own About picture (§3.10) |
 | 7–10 | BUTTON (control 0–3) | BUTTONPUSHED16 | `1:0b01` |
 | 12 | PREINITIALIZE | after MODULESELECTED | `1:107b` |
 
@@ -1344,7 +1357,15 @@ ramps, six of 34 entries and a last one of 31 (`13:2002`); then
 byte ADTASK.DLL's 5000/1..4 and AFTERDAR.SCR's `AD_PALETTE` 102/104/101/103,
 so the mapping of §3.3 holds for After Dark 2.0 too. No module of the
 release makes a palette request (each builds its own palettes through
-`AD_RSRC.DLL`; 0 requests in every traced run), so the host computes none.
+`AD_RSRC.DLL`; 0 requests in every traced run). Since the five later
+releases the lane computes the four all the same, by this algorithm (our
+own code, `host/ne16/package.hh` `palettes_after_dark2`; nothing copied
+from Berkeley's files), for any package whose engine dir holds neither
+ADTASK.DLL nor AFTERDAR.SCR, in `SETADPALETTE16` order (requests 12, 10,
+13, 11), and hands them to the bridge at the first palette request, as
+`AD.EXE` built one when a module asked (`PACKAGES.md` §7.4): Star Trek's
+and Marvel's modules ask for none, and run as before; Snoopy's Collage
+asks for 12 (§3.10).
 
 **Sound: AD_SND 1.0.** The release's `AD_SND.DLL` ("AfterDark Sound DLL
 Module"; `adwSoundDllVer`, ordinal 32, answers "V1.0"; 44 entries, 33 of
@@ -1370,6 +1391,233 @@ number into three 128-byte slots of `AD.EXE` (resource type 3000, ids 1–3),
 which it showed after "Serial# %s registered to"; the modules' About texts
 end with the stand-in for that line, "Berkeley Systems Authorized User."
 (`PACKAGES.md` §6).
+
+### 3.10 Snoopy's Screen Savers (Image Smith, 1994) — VERIFIED
+
+Eight modules of Image Smith's (1994; "Copyright 1993, ImageSmith and
+Typhoon Software"), made to be installed into an After Dark 2.0 or 3.0 the
+user already had, and to run on its host and its AD_SND: the release ships
+no engine, no AD_SND and no palettes. Verified on the release's own files
+(the Snoopy survey's `research/win/nedis.py` listings in
+`research/win/pkg/snoopy/lane/dis/` and `identity/neinfo.json`, gitignored).
+All are Borland C++ NE libraries: `IS_COLAG` and `IS_LITRY` are Windows
+3.00 builds of 1994-02-22, the other six 3.10 builds of 1994-10-12/13 with
+CodeView debug information appended.
+
+* **A non-resident `MODULE`.** Each exports `MODULE` (ordinal 1) and `WEP`
+  from the NE **non-resident** names table, not the resident one;
+  `GetProcAddress` by name finds it there, as the Win16 runtime's loader
+  and the catalog do.
+* **ABOUT (6) draws a picture.** Sent message 6, each draws its own About
+  picture, a 224×215 8-bit BMP stored as resource type 258, id 1000 ("©
+  1993 IMAGE SMITH, Inc." and "PEANUTS Characters ©1993 United Feature
+  Syndicate"): `IS_FLY`'s `MODULE` jump table (`1:27a5`) sends 6 to
+  `1:2774`, which draws resource 1000 at `1:27bf`. Their 2000/30 About texts
+  are only blank lines, and their 2000/10 credits break after "and" with 28
+  spaces. None of the hosts sends 6 (§3.4).
+* **Collage's palette request.** `IS_COLAG` asks for palette 12 at
+  INITIALIZE and selects `hpal[0]` (`USER.282 SelectPalette`): After Dark
+  2.0's grey ramp, which is ADTASK's 5000/3 and AFTERDAR.SCR's `AD_PALETTE`
+  101. It then animates entries 0 and 1 (`GDI.367 AnimatePalette`) to fade
+  its line art in and out, 9 of its 10 bitmaps being 1 bpp (up to 681×858).
+  With no palette to select, the request answers 7 and Collage does not
+  load. The lane computes After Dark 2.0's four for it (§3.9).
+* **Sprite masks by flood fill.** Seven modules (all but Collage) make each
+  sprite's mask in a 116×116 8-bit scratch bitmap: filled white, the sprite
+  blitted in at (8, 8), `BLACK_BRUSH` selected, `GetPixel(2, 2)` white, then
+  `ExtFloodFill(hdc, 2, 2, 0xFFFFFF, FLOODFILLSURFACE)`, which turns the
+  outside black, and two blits (`SRCCOPY`, `SRCINVERT`) derive the 1-bit
+  mask (`IS_FLY 1:3b4c..1:3bd2`). Without the fill every sprite is drawn in
+  a white box. The calls are few (18 to 64 per 900 frames, all while a
+  module loads).
+* **Borland C++'s far-heap free.** In six modules (Dance, Flying Ace, Linus
+  & Snoopy, Literary Ace, Spotlights, Therapy) the far heap's free, at
+  CLOSE, calls `GlobalHandle`, `GlobalUnlock` and `GlobalFree` on the
+  segment in ES (`IS_FLY 1:6B71`), then does `push es` … `pop es` with the
+  freed selector (`1:6B16..1:6B20`): a #GP "no descriptor", unless ES came
+  back from `GlobalFree` null. The modules shipped and ran, so on Windows it
+  did (§3.14).
+* **Sound.** Six import AD_SND by name: Dance, Faces, Linus & Snoopy and
+  Literary Ace eight entries (`ADWOPENSOUND`, `ADWCLOSESOUND`,
+  `ADWLOADSOUNDRESOURCE`, `ADWPLAYSOUND`, `ADWSTOPSOUND`, `ADWFREESOUND`,
+  `ADWSETSOUNDMODE`, `ADWSOUNDASYNCCAP`), Flying Ace seven (no
+  `ADWSTOPSOUND`), Therapy six (neither that nor `ADWSOUNDASYNCCAP`); every
+  one exists in AD_SND 1.0, 3.0.3, 3.2 and 4.0. Their sounds are type-3000
+  WAV resources of their own; Therapy plays synchronously (flags 0x06).
+  Collage and Spotlights import no AD_SND, but OLDMOD16 and the native
+  bridge load AD_SND before any module (§3.3), so all eight need one.
+* **Nothing else.** No `GetKeyState`, `GetAsyncKeyState` or `GetCursorPos`
+  (no Caps Lock, Num Lock or mouse behaviour), no INI read and no file
+  opened.
+
+### 3.11 Marvel Comics Screen Posters (`MARVEL.AD`, `DECO.DLL`) — VERIFIED
+
+One After Dark 2.0d module (Berkeley Systems, December 1993), a slide show
+of 36 posters in Iterated Systems' fractal format, decoded by Iterated's
+Colorbox III library `DECO.DLL` (Borland C++). Verified on the release's
+own files (the Marvel survey's listings, `research/win/pkg/marvel/dis/`,
+gitignored).
+
+* **`MARVEL.AD`** ("Graphics Module Library") exports `MODULE`, `WEP`,
+  `CONFIGUREDLGPROC`, `IMAGEWNDPROC`, `WPAPERDLGPROC`, `INFODLGPROC` and
+  `FIFCALLBACKPROC`, and imports `DECO`, `WIN87EM`, KERNEL, GDI and USER:
+  no AD_SND, no MMSYSTEM, no `GetKeyState` or `GetAsyncKeyState`, so it is
+  silent and has no keyboard behaviour. Its INITIALIZE (`3:0014`) refuses in
+  MultiModule (`AD_MODULE+0x20` = 2), compares `[After Dark] MemRequired`
+  (default 4096 KB) with `GetFreeSpace`, refuses without `MRVLIMAG.ADC`,
+  and looks up `KERNEL!GETHEAPSPACES` with `GetProcAddress`, calls it for
+  USER and GDI (`3:3CAC`) and computes 100 × free ÷ size with MSVC's long
+  division (`5:0678`), refusing below 20% free ("Not enough system
+  resources available."). Its only other profile reads are `[After Dark]
+  Path` (default `c:\afterdrk`, to which it appends `\mrvlimag\`) and
+  `[Palette] SwapPalette` (default 1). It makes no palette request and
+  returns no special result.
+* **`MRVLIMAG.ADC`**, the image catalog: 36 records of 0x859 bytes from
+  0x135 (file, caption, description, then at +0x84D the poster's selection
+  word, 1 when it is in the show and 0 when it is left out, and its
+  thumbnail's offset and size), thumbnails from 0x12DB9, and in the header
+  a word of display flags at 0x12B (1 a poster on wakeup, 2 captions, 4
+  random) and at 0x131 the poster last made into wallpaper (0xFFFF for
+  none; Uninstall leaves it). As installed every poster is selected and
+  0x131 is 25.
+* **Saver..** (button 0) chooses the posters (the Images window's nine
+  thumbnails, All and None) and the display options. Its OK (refused with
+  a message box when no poster is chosen) rewrites the header, with the
+  display flags at 0x12B, and every record, with the dialog's selection in
+  its word at +0x84D, but not the thumbnails (the save routine `3:2BFA`):
+  an OK that changes only the display options changes only the 0x12B word;
+  after All, None or a thumbnail, those records' words change too.
+  **Posters...** (button 1) installs a poster as `MARVEL.BMP` beside it and
+  writes `WIN.INI [Desktop] TileWallPaper` (`INTERACTION.md` §1.6); its
+  Done after an Install, and CLOSE with Create Poster On Wakeup set
+  (`3:0746`), rewrite the header alone, 0x131 among it (the Marvel survey's
+  wake run changed it from 25 to 22). Checked with the host on seeded
+  copies of the catalog (`research/win/pkg/more/fix-docs/adc_check.txt`,
+  gitignored).
+* **`DECO.DLL`** is real-mode-style code: it locks its decoder with
+  `LockSegment(GetCodeHandle(6:18B2))` (`5:0B85`) and gives up (error 0x6A)
+  when that is 0; takes a writable alias of its own code segment
+  (`AllocCStoDSAlias`, `7:0016`) and patches its code through it; allocates
+  eight selectors copied from a template (`AllocSelector`), bases them at
+  paragraph offsets into its buffers (`Get/SetSelectorBase`,
+  `6:3A8E..6:3BAF`) and patches them into its code; and frees them after
+  each decode (`FreeSelector`). It frees its 0xA100-byte work buffer
+  (`GlobalFree`, `6:A0F2`) while DS still holds it (loaded at `6:9FB0`),
+  and later restores that DS from the stack (`push ds` at `7:002D`, `pop ds`
+  at `7:008A`): a #GP "no descriptor" unless DS came back from `GlobalFree`
+  null (§3.14).
+* **Pacing.** A poster's decode and its transition happen inside one
+  DRAWFRAME call, about half a second of virtual time for the decode. The
+  region transitions (Radial among them, about 87,000 instructions) take few
+  instructions but up to 27 million blit pixels; Dissolve is
+  instruction-bound (`PACKAGES.md` §12).
+
+### 3.12 After Dark 3.x's host and the Disney Collection's library — VERIFIED
+
+* **`ADW30.EXE` writes `AD_PREFS.INI` at every start.** The After Dark 3.x
+  host, which the lane replaces, calls `3:0166` unconditionally from
+  start-up (`1:0100`): it takes its own directory (`GetModuleFileName`, cut
+  at the last `\`) and writes `WIN.INI [Berkeley Systems] After Dark=<dir>`
+  (`3:0220`), `AD_PREFS.INI [After Dark] Path=<dir>` (through the helper
+  `3:1e34`, `3:02d6`) and `AD_PREFS.INI [Sound] SoundDriver=AD_MME.DRV`
+  (`3:02fa`). Verified in 3.2's build (the Disney Collection's, After Dark
+  3.2's and Totally Twisted's, byte for byte); the 3.01 build (the
+  Simpsons') and the 3.06 one (ScreamSavers', the Looney Tunes') hold the
+  same write code (`research/win/pkg/more/l2/evidence/adw30_builds.txt`).
+  `ADTASK.DLL` names both `AD_MOD.DLL` and `ADXPL100.DLL`: the AD 3.x host
+  knew both older module libraries. The lane seeds these keys
+  (`PACKAGES.md` §7.3).
+* **`ADXPL100.DLL`** ("AfterDark Cross Platform Library Code (Version
+  GM3.0)", Borland C++, 1991) is the library the Disney Collection's 16
+  modules import, one of the After Dark 2.0 generation (the 1993 Disney
+  edition shipped it byte for byte on After Dark 2.0). It reads
+  `AD_PREFS.INI [After Dark] PATH` (`4:00FB`) and appends a backslash
+  (`4:014E`), then loads `<PATH>DIS_SND.DLL` and opens `music\<song>.mid`;
+  it reads `[Sound] SoundDriver` in `IsSoundLame()` (lame only when empty or
+  `AD_MPT.DRV`) and `[Palette] SafeSetPixel`; it writes nothing. Without
+  `Path` every Disney module stopped at load with "File not found.". Of the
+  results only `WantRestart` writes one (3); `WantEvents` is empty; only
+  Pinocchio returns 0x0E (its Caps Lock game, `INTERACTION.md` §1.5); no
+  module returns 5. Its `lock_sequencer_down_hard_now` walks TOOLHELP's
+  global heap list (`7:09BF..7:0BB1`, `AUDIO.md` §2.9). Listings:
+  `research/win/pkg/disney/dis/` (gitignored).
+
+### 3.13 AD_SND 3.0.3's entries (the host's own AD_SND) — VERIFIED
+
+The host's own AD_SND (`AUDIO.md` §2.10), which the lane registers for a
+package without an `AD_SND.DLL`, carries the entries of AD_SND 3.0.3, the
+Simpsons package's (version resource 3.0.3; its internal strings say
+3.0.4), with their ordinals, names and argument sizes, each read from its
+export's `retf` (the Snoopy survey's listing, `AD_SND_303.asm`); 3.2 exports
+the same set and one stub more. All are PASCAL, 16-bit results but
+`ADWSOUNDDLLVER`'s far pointer:
+
+| Ord | Name | Arg bytes | Ord | Name | Arg bytes |
+|---:|---|---:|---:|---|---:|
+| 1 | `WEP` | 2 | 20 | `ADWSAVEPREVIOUSVOLUME` | 0 |
+| 2 | `ADWFREESOUND` | 2 | 21 | `ADWISSOUNDDONE` | 2 |
+| 3 | `ADWRESUMESOUND` | 0 | 22 | `ADWCLOSESOUND` | 2 |
+| 4 | `ADWGETSOUNDDRIVERINFO` | 8 | 23 | `ADWPAUSESOUND` | 0 |
+| 5 | `ADWGETSOUNDMUTE` | 0 | 24 | `ADWSOUNDASYNCCAP` | 0 |
+| 6 | `ADWLOADSOUNDFILE` | 4 | 25 | `ADWPLAYSOUND` | 2 |
+| 7 | `ADWGETSOUNDINFO` | 6 | 26 | `ADWSTOPSOUND` | 0 |
+| 8 | `ADWSETSOUNDMUTE` | 2 | 27 | `ADWGETVOLUME` | 0 |
+| 9 | `ADWSOUNDCLEANUP` | 0 | 28 | `ADWLOADSOUNDRESOURCE` | 6 |
+| 10 | `ADWRESTOREPREVIOUSVOLUME` | 0 | 29 | `ADWSETVOLUME` | 2 |
+| 11 | `ADWSOUNDINIT` | 6 | 31 | `ADWPLAYSOUNDFILE` | 6 |
+| 12 | `ADWSOUNDVOLUMECAP` | 0 | 32 | `ADWSOUNDDLLVER` | 0 |
+| 13 | `ADWSOUNDLOOPCAP` | 0 | 33 | `ADWSETSOUNDMODE` | 4 |
+| 14 | `ADWPLAYSOUNDRESOURCE` | 8 | 50 | `ADWQUERYSFX` | 2 |
+| 15 | `ADWCREATESOUND` | 6 | 51 | `ADWDOEFFECT` | 8 |
+| 16 | `ADWOPENSOUND` | 0 | 100 | `VERSTR` | 6 |
+| 17 | `ADWCLOSEDIALOG` | 0 | 101 | `ADWGETSYSTEMVOLUMES` | 4 |
+| 19 | `ADWSOUNDSETUP` | 4 | 102 | `ADWSETSYSTEMVOLUMES` | 2 |
+
+Measured under the lane (3.0.3 and 3.2 alike, where not said): init leaves
+the level at 25; the capabilities come from `waveOutGetDevCaps` of the
+devices its format queries chose; `adwGetSystemVolumes`' block begins with
+the signature 0x6969; `adwCreateSound` refuses a named file, so
+`adwPlaySoundFile` always fails, in 3.0.3 and in 3.2; `adwIsSoundDone`
+answers 1 only for the current sound (or none) and 0 otherwise;
+`adwSetSoundMute` stores the value as given and stops nothing; init and
+cleanup clear the mute. What the host's module does with each entry is
+`AUDIO.md` §2.10.
+
+### 3.14 A selector freed under its caller — what Windows did
+
+Two releases' code keeps a segment register holding a selector a call has
+just freed, and reloads it from the stack later: Marvel's `DECO.DLL` DS
+(§3.11) and Borland C++'s far-heap free in Snoopy's modules ES (§3.10). Both
+ran on Windows 3.1 and 95, so the register must have come back null (or
+the reload been tolerated). The evidence
+(`research/win/pkg/more/l2/FREED_SELECTOR_RULE.md` and its `evidence/`,
+gitignored):
+
+* Windows 3.1's `GlobalFree` (KRNL386; Pietrek, *Windows Internals*, 1993,
+  ch. 2) zeroes the caller's DS it saved on entry when that DS is the block
+  being freed, "so that we don't GP fault when we restore the value from
+  the stack". ES is scratch in the Win16 convention, and KERNEL's heap code
+  used it for its own selectors, so Borland's `push es`/`pop es` could run
+  only if ES never came back holding the freed selector (inferred, not
+  measured).
+* KERNEL's GP fault handler recovered faults only in the system DLLs' `__GP`
+  ranges (*Undocumented Windows*, ch. 5): a freed selector loaded by an
+  application's own code was an Unrecoverable Application Error, so there
+  was no fault-time fix-up.
+* DPMI 1.0's Free LDT Descriptor (INT 31h AX=0001h): "any segment registers
+  which contain the selector being freed are zeroed by this function".
+* Wine nulls a freed DS, ES, FS or GS that its 16-bit relay restores as
+  every API call returns (`dlls/krnl386.exe16/wowthunk.c` `fix_selector`;
+  in 2000, `memory/instr.c`: "We simply clear it"), and fixes no load in the
+  application's code but selector 0x40.
+
+The Win16 runtime therefore nulls, as every API call and every software
+interrupt returns, any of DS, ES, FS and GS that holds an LDT selector no
+longer in use, and fixes no load: a selector pushed before a call and popped
+after it still faults (`host/win16/README.md`, "The freed-selector rule").
+In the 202 After Dark baseline modules the rule fires too (ES after
+`GlobalFree` or `FreeResource`, and FS four times), with every stream
+unchanged.
 
 ---
 
@@ -1450,6 +1698,9 @@ end with the stand-in for that line, "Berkeley Systems Authorized User."
   variables).
 * **Self-modifying code**: none found — no writes through CS: overrides in
   reachable code, no `AllocCStoDSAlias`/`PrestoChangoSelector` imports.
+  (Outside the Deluxe disc there is some: Marvel Comics Screen Posters'
+  `DECO.DLL` patches its own code through a writable alias of its code
+  segment, §3.11.)
   Threads: only the host's runner thread (the engine creates none).
   `SetTimer`: 1 Classic binary.
 
@@ -1483,6 +1734,8 @@ All under `research/win/` (gitignored), run with `research/win/venv`
 | `pkg/swse/survey/swdis.py`, `fsum.py` | §3.8: annotated listings of the 14 modules and their DLLs (`pkg/swse/dis/*.ann.asm`: sibling-DLL imports by name, string notes); a per-function call summary |
 | `pkg/startrek/tools/kwaj.py` | §3.9: the reference KWAJ expander (`PACKAGES.md` §8.8), which unpacks Star Trek: The Screen Saver's disks into `pkg/startrek/extracted/expanded/` for `nedis.py` (listings in `pkg/startrek/lane/dis/` and `pkg/startrek/content/dis/`) |
 | `pkg/startrek/lane/tools/ad2pal.py`, `neinv.py`, `impcheck.py` | §3.9: After Dark 2.0's four palettes recomputed from `AD.EXE`'s code and compared with ADTASK's and AFTERDAR.SCR's (`lane/ad2pal.json`); the release's NE imports and exports (`lane/neinv.json`); every import checked against the Win16 runtime's shims (`lane/impcheck.json`) |
+| `pkg/snoopy/lane/dis/`, `pkg/marvel/dis/`, `pkg/disney/dis/`, `pkg/installshield/tools/` | §3.10–§3.13: `nedis.py` listings of Snoopy's modules and AD_SND 3.0.3, of `MARVEL.AD` and `DECO.DLL`, of `ADXPL100.DLL`, `ADW30.EXE` and `ADTASK.DLL`; the InstallShield 2 readers that unpack the Marvel and Snoopy disks for them (`is3z.py`, `dclexplode.py`) |
+| `pkg/more/l2/FREED_SELECTOR_RULE.md`, `evidence/` | §3.14: what Windows 3.1, DPMI 1.0 and Wine did with a freed selector left in a segment register; the three `ADW30.EXE` builds' write code (§3.12) |
 
 ---
 

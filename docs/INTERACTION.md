@@ -156,6 +156,8 @@ hook, or reads the message queue itself (§1.5).
 | Caps Lock one-shot (`GetKeyState/GetAsyncKeyState(0x14)`), no `0x0E` | TUNNEL, CONFETTI, SATORI, NIRVANA, FISHPRO, MANDELBR, STRANGE, TOILET(S), CHAM, CS, ARTIST, RAY, TOAST3, BADDOG3, SIMPCLOK, GRAMPA, HOMEREAT, PHYSICS, SIMPFILE, SNOWBALL | **VERIFIED** call sites + **EMPIRICAL** (no `0x0E`) |
 | Caps Lock as "next" (`GetKeyState(0x14) & 1`, called by the module itself, or through `AD_MOD.DLL` for MISSION and PANELS), no `0x0E` (Star Trek: The Screen Saver, since the seventh release) | FRONTIER (the next scene), HORTA (a new cavern), IONSTORM (the next colours), MISSION (the next scene), PANELS (the next panel), PLANETS (the next planet), SCOTTYS (the next schematic), SICKBAY (the next case) | **EMPIRICAL**: a `CAPS 1`/`CAPS 0` script against a run without it (the content survey) |
 | Num Lock's toggle (`GetKeyState(0x90) & 1`) latched at start; a change starts an exam that hooks the keyboard (`WH_KEYBOARD`) and returns `0x0E`; a mouse move ends it with `0x0E`, then 5 (§1.7) | FINAL (Star Trek: The Screen Saver's Final Exam) | **VERIFIED** `FINAL.AD 3:732e`; **EMPIRICAL**: the host's scripted exam (`ne16.startrek`) |
+| A Caps Lock game: Caps Lock on installs a `WH_KEYBOARD` hook and returns `0x0E` (status `0x29`: interactive, key filter, ready; source 2), the Wishing Star cursor appears and Pinocchio walks to the mouse; Caps Lock off removes the hook and returns `0x0E` (status `0x20`) (the Disney Collection, with the twelve releases) | PINOCCHI (Pinocchio), the only module of ADXPL100's that returns `0x0E` | **EMPIRICAL**: `KEY 20` + `CAPS 1` / `CAPS 0` in a lockstep script (the Disney survey, `research/win/pkg/disney/content/pinocchio/`) |
+| Caps Lock as "next", no `0x0E` and no hook (status `0x20` throughout, nothing eaten) (the Looney Tunes and the Disney Collection, with the twelve releases) | Looney Tunes: ACMESHOP (the next product), CART101 (the next lesson), CONDUCKT (the next colour scheme), LTMESSGS (the next message), MARVIN and RABBITRN (the next scene), FROG, SAM and WOCKETS (they change too; PEPE, PUTTYTAT and TAZ do not react); Disney: BEAUTY, CHECAT, JUNGLE, MERMAID (they change from the next frames) | **EMPIRICAL**: `KEY 20`/`CAPS` lines at frames 300 and 700 with `ADSTATUSLOG=1` against a run without them (the surveys) |
 
 The About texts announce the games: "Caps-lock gets you in and out of
 interactive mode" (Rodger Dodger), "hit CAPS LOCK … hit 1, 2, or 3"
@@ -163,9 +165,12 @@ interactive mode" (Rodger Dodger), "hit CAPS LOCK … hit 1, 2, or 3"
 … pressing 1, 2, or 3" (Simpsons Trivia), "CapsLock: Take control of the
 crosshairs — click the mouse" (Mime Hunt), "Press Caps-lock to display the
 edit window" (Magic Turtle), "press Caps-lock and click and drag the pins"
-(Marbles), "Press Caps-lock to choose your fighter" (RPS), and "Depress the
+(Marbles), "Press Caps-lock to choose your fighter" (RPS), "Depress the
 Num Lock key to begin, and type the number of your answer. Move the mouse
-to end the exam." (Final Exam).
+to end the exam." (Final Exam), and "click the Caps Lock key … Pinocchio
+will follow" (Pinocchio). The ScreamSavers, Snoopy's and Marvel's modules
+read neither the keyboard nor the mouse (none imports `GetKeyState`,
+`GetAsyncKeyState` or `GetCursorPos`), so none of them is interactive.
 
 ### 1.6 Module buttons — VERIFIED
 
@@ -202,13 +207,23 @@ to end the exam." (Final Exam).
 | `tt` MESSYGES, `ad32` LOGO, `ad32` BUGS, `simpsons` HOW2DRAW (ne16) | Edit Custom, Picture…, Bug Type, Help | `DialogBox` (+ engine prefs) | as above |
 | the 14 `swse` modules (ne16, Intermission) | Configure... | `SAVERMAIN(8)` → `DialogBox` of `"DIALOGBOX"` (named through the module's `NAMETABLE`), with INTRMLIB's `ANT3DBOX`/`ANT3DCHECK`/`ANT3DSCROLL`/`ANT3DTEXT`/`ANT3DONEORMORE` controls and SWSE's animated credits box; Scrolling Text adds `GetOpenFileName`, `GetSaveFileName` and `ChooseFont` | `WritePrivateProfileString` into `SWSE.INI` in the Windows directory, one section per module (Scrolling Text also writes its edit box to `SWTXEDBX.TXT` there) |
 | `startrek` COMMS, SOUNDER (ne16, After Dark 2.0) | Edit Custom... (Communications, MODULE 10), Sounds.. (Sounder, MODULE 9) | `DialogBox`: "Edit Message" (a multi-line edit, id 103); "Select Directory", whose folder list is `DlgDirList(…, DDL_EXCLUSIVE \| DDL_DRIVES \| DDL_DIRECTORY)` beside the folder's `*.WAV` (§6.2) | `WritePrivateProfileString` into `AD_PREFS.INI`: `[Communications] MessageText`, `[Sounder] SoundPath` (nothing for a folder without a `.WAV`) |
+| `marvel` MARVEL (ne16, After Dark 2.0d; with the twelve releases) | Saver.. (index 0, MODULE 7), Posters... (index 1, MODULE 8) | `DialogBox`: Saver.. is the image selection, with the module's own "Images" window of nine owner-drawn thumbnails, All/None, Display In Order/Random, Show Captions and Create Poster On Wakeup; Posters... has Install, Uninstall, Info... (the poster's description) and Done | Saver.. OK rewrites the image catalog `C:\AFTERDRK\MRVLIMAG\MRVLIMAG.ADC` (the whole file is copied up into the state overlay; the display flags and each poster's selection word are written from the dialog, ABI.md §3.11). Posters... → Install decodes the poster into `C:\AFTERDRK\MRVLIMAG\MARVEL.BMP` and writes `WIN.INI [Desktop] TileWallPaper`; Create Poster On Wakeup writes `MARVEL.BMP` at every wake. Both land in the state overlay: `SystemParametersInfo` changes nothing in the runtime, so **the wallpaper features have no effect outside the emulator** |
+| `looney` LTMESSGS (ne16, the Looney Tunes' Messages; with the twelve releases) | Edit Custom... (index 3, MODULE 10) | `DialogBox`: "Enter your custom message:" (an edit, id 101, "Your Message Here"; OK, Cancel) | `WritePrivateProfileString` into `MODULES.INI`: `[Looney Messages] CustomA`, which Foghorn, Elmer or Speedy then says when the message control picks the custom one |
 
 The merged catalog of the six releases (216 modules) has 58 button
 controls on 53 modules, from 35 distinct binaries: the 202 After Dark
 modules have 44 on 39 modules (21 binaries; counted in the catalog when
 Star Wars Screen Entertainment was added, where this line had said 39 and
 22), and each of the 14 Intermission modules has one. With the seventh
-release's two (232 modules) it has 60 on 55 modules, from 37 binaries.
+release's two (232 modules) it has 60 on 55 modules, from 37 binaries, and
+with the twelve releases (284 modules) 63 on 57 modules, from 39 binaries:
+Marvel's two and the Looney Tunes' Messages' one; ScreamSavers, Snoopy's and
+the Disney Collection's modules have none (`--configure --button 0` on one
+of them exits 1, "control 0 is not a button"). Marvel's thumbnails are not
+scriptable, in either dialog: their nine buttons (ids 1007–1015) are
+children of the Images window (1006), and a configure script's `CLICK` goes
+to the dialog (§6.6). Saver..'s All (1000) and None (1001) are the dialog's
+own buttons, which a script can click.
 
 ### 1.7 After Dark 2.0 (`AD.EXE` 2.0b, Star Trek: The Screen Saver) — VERIFIED
 
@@ -437,8 +452,9 @@ event goes to the owner's host.
 * **MOUSE coordinates** are the cursor's position mapped into the owner's
   letterboxed frame rectangle, scaled to the host's emulated screen and
   clamped to it (that host's own: an Intermission module's 640×480, which
-  its ABI gives it, or since the seventh release a Star Trek module's,
-  which its catalog entry's `"screen": "640x480"` gives it, whatever the
+  its ABI gives it, or since the seventh release a Star Trek module's, and
+  with the twelve releases a ScreamSavers or Marvel one's, which its
+  catalog entry's `"screen": "640x480"` gives it, whatever the
   Resolution setting, DESIGN.md §6a; its frame pillarboxed on a widescreen;
   a game's cursor clip is that frame, and Final Exam's mouse move is mapped
   into it); `buttons` from `GetKeyState(VK_LBUTTON/RBUTTON/MBUTTON)`.
@@ -491,7 +507,8 @@ while a hold is pending. The decision logic is a pure function
   exam.
 * Playing (after Caps Lock in Rodger Dodger, You Bet Your Head, Simpsons
   Trivia, Mime Hunt, Frankenscreen, Marbles, RPS, Magic Turtle's editor,
-  How to Draw…): keys, clicks and the mouse belong to the game. Press Caps
+  How to Draw…, and the Disney Collection's Pinocchio, whose Wishing Star
+  Pinocchio follows): keys, clicks and the mouse belong to the game. Press Caps
   Lock again to stop playing (the next key or move then ends the saver), or
   press **Alt** to end it at once.
 * **Final Exam** (Star Trek: The Screen Saver, since the seventh release)
@@ -904,6 +921,7 @@ at a scratch folder gets scratch state with it.
 ```
 <state>\                                 ADSTATE
   <package>\                             deluxe (the FILES\… tree), ad10, ad32, tt, simpsons, swse, startrek,
+                                         marvel, snoopy, looney, screams, disney,
                                          or legacy-<fnv32 of the module dir, 8 hex> for anything else
     WINDOWS\                             upper layer of the guest's C:\WINDOWS (both lanes of a package share it)
     <MODDIR>\                            upper layer of the guest's C:\AFTERDRK = the module dir
@@ -926,6 +944,18 @@ written at each load of a module that wants sound. The lane's profile
 seeds for that file (`[After Dark] Path`, `[Sound] SoundDriver`) are never
 written there (`PACKAGES.md` §7.3); deleting `<state>\startrek` restores
 the defaults.
+
+Of the twelve releases' later five, Marvel's module keeps its **Saver..**
+choices in `marvel\AFTERDRK\MRVLIMAG\MRVLIMAG.ADC` (a copy of the package's
+image catalog, made at its first write: a Saver.. OK, a Posters... →
+Install or a wake with Create Poster On Wakeup, ABI.md §3.11), and
+**Posters...** → Install and
+Create Poster On Wakeup write `marvel\AFTERDRK\MRVLIMAG\MARVEL.BMP` and
+`marvel\WINDOWS\WIN.INI` there: a wallpaper for the emulated PC only
+(§1.6). The Looney Tunes' Messages keeps its custom message in
+`looney\WINDOWS\MODULES.INI`. The After Dark 3.x seeds (`[After Dark]
+Path`, `[Sound] SoundDriver` in `AD_PREFS.INI`) are never written there
+either.
 
 One package is one 1996 machine: Deluxe's AD4 and Classic modules share
 `WIN.INI`, `MODULES.INI`, `AFTERDRK.INI` as they did on one Windows 95
@@ -1015,7 +1045,8 @@ What remains:
     the window's After Dark size, in
     `%TEMP%\LongAfterDark-seed-<pid>-<window index>.ppm`;
   * a module with a 640×480 screen of its own, an Intermission module by
-    its ABI or a Star Trek one by its catalog `screen` (that module alone,
+    its ABI or a Star Trek, ScreamSavers or Marvel one by its catalog
+    `screen` (that module alone,
     a rotation holding one, or Random while the host's answer may add
     them): the part of the monitor its 640×480 frame will cover
     (`geometry.h` `seed_source`: the letterboxed 4:3 frame), shrunk to
@@ -1031,8 +1062,8 @@ What remains:
     at a time.
 
   A window that can only start with such a module (it alone, or Star Wars
-  Screen Entertainment or Star Trek: The Screen Saver the only release
-  imported) gets just the second. Where the two pictures are the same (a
+  Screen Entertainment, Star Trek: The Screen Saver, ScreamSavers or Marvel
+  Comics Screen Posters the only release imported) gets just the second. Where the two pictures are the same (a
   4:3 monitor at 480 lines, both kinds possible) the second is not written:
   the 640×480 module's entry uses the first file. Each file is created with
   `FILE_FLAG_DELETE_ON_CLOSE | FILE_ATTRIBUTE_TEMPORARY`, share

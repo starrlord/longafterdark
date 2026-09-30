@@ -1,41 +1,47 @@
 # host/win16 — the Win16 guest runtime and API shims
 
 `adw_win16` is one emulated Win16 "task" for Long After Dark's Classic lane
-(`host/ne16`). That lane runs the 16-bit modules of all seven releases: the
-After Dark 2.x/3.x modules in After Dark 4.0 Deluxe's `FILES\CLASSIC`, After
-Dark 3.2, Totally Twisted, The Simpsons Screen Saver, the 16-bit modules of
-After Dark 10th Anniversary, Star Trek: The Screen Saver's After Dark 2.0
-modules (below), and Star Wars Screen Entertainment's Intermission modules
-(below). The module, its package's engine when it uses one
-(`ADXPL300.DLL`, `ADXPL40.DLL` or `ADXPL310.DLL`; After Dark 2.0's module
-library `AD_MOD.DLL` with `AD_RSRC.DLL`), `AD_SND.DLL` (and After Dark 2.0's
-sound driver `AD_MME.DRV`), the helper
+(`host/ne16`). That lane runs the 16-bit modules of all twelve releases:
+the After Dark 2.x/3.x modules in After Dark 4.0 Deluxe's `FILES\CLASSIC`,
+After Dark 3.2, Totally Twisted, The Simpsons Screen Saver, the 16-bit
+modules of After Dark 10th Anniversary, Star Trek: The Screen Saver's After
+Dark 2.0 modules (below), Star Wars Screen Entertainment's Intermission
+modules (below), and those of the five later releases, Marvel Comics Screen
+Posters, Snoopy's Screen Savers, The Looney Tunes Screen Saver,
+ScreamSavers and The Disney Collection Screen Saver (below). The module,
+its package's engine when it uses one (`ADXPL300.DLL`, `ADXPL40.DLL`,
+`ADXPL310.DLL`, `ADXPL41.DLL` or `ADXPL100.DLL`; After Dark 2.0's module
+library `AD_MOD.DLL` with `AD_RSRC.DLL`; Marvel's decoder `DECO.DLL`),
+`AD_SND.DLL` (and After Dark 2.0's sound driver `AD_MME.DRV`), the helper
 DLLs and, where the package ships it (Deluxe, 10th Anniversary), the real
 `OLDMOD16.DLL` — for an Intermission module, its helper DLLs and
 Intermission's own reader, `IMIMXPLY.IMQ` — run as 16-bit protected-mode code
 on `adw::cpu`, over a host-owned LDT, with KERNEL/USER/GDI/MMSYSTEM/…
-supplied from here. The packages without `OLDMOD16.DLL` go through the
-lane's native AD3 bridge instead (`ne16/bridge.hh`, PACKAGES.md §7.4). Design
-and contract: `docs/DESIGN.md`, `docs/ABI.md` §3/§4/§8 (verified on the
-Deluxe binaries), `docs/API_SURFACE.md` §2, `docs/PACKAGES.md`
-§7.3/§7.4/§7.5.
+supplied from here, and, for a package that ships no `AD_SND.DLL`
+(Snoopy's), AD_SND too (`adsnd16.cc`, below). The packages without
+`OLDMOD16.DLL` go through the lane's native AD3 bridge instead
+(`ne16/bridge.hh`, PACKAGES.md §7.4). Design and contract:
+`docs/DESIGN.md`, `docs/ABI.md` §3/§4/§8 (verified on the Deluxe binaries;
+§3.8–§3.14 on the later releases'), `docs/API_SURFACE.md` §2,
+`docs/PACKAGES.md` §7.3/§7.4/§7.5.
 
 | File | What it owns |
 |---|---|
 | `layout16.hh` | The linear address space: BIOS data area (selector 0x40), system segment (environment, PSP, host strings), thunk segment, task stack, the global arena. |
-| `ldt.hh/.cc` | `Ldt` (the CPU's `DescriptorProvider`): LDT selectors with RPL 3, handles = selector with bit 0 clear, huge blocks tiled `__AHINCR` (8) apart, the GDT selector 0x40. |
+| `ldt.hh/.cc` | `Ldt` (the CPU's `DescriptorProvider`): LDT selectors with RPL 3, handles = selector with bit 0 clear, huge blocks tiled `__AHINCR` (8) apart, the GDT selector 0x40; the runs of selectors KERNEL's selector calls made for the guest, marked in their entries (`mark_guest_run`, below). |
 | `global_heap.hh/.cc` | `GlobalHeap16`: GlobalAlloc/ReAlloc/Free/Lock/Unlock/Size/Handle/Flags over `win32::GuestHeap` (one arena, so DIB sections can alias any block), module segments (`alloc_block`), DGROUPs reserved at 64 KiB. |
 | `local_heap.hh/.cc` | `LocalHeaps16`: per-segment local heaps (LocalInit/Alloc/…), fixed pointers 4-aligned, moveable handles ≡ 2 mod 4 pointing at real handle-table entries, `DS:[6]` = pLocalHeap, growth to the segment end. |
 | `shims16.hh/.cc` | Far thunks (`int 0xFE; dw id`), `Shim16Registry` keyed `MODULE.ordinal`, `Call16` (Pascal/cdecl argument readers, AX / DX:AX results), the unimplemented census. |
 | `signatures16.cc` | **Generated** (`research/win/gen_sig16.py`): name, convention, return width and argument bytes of every entry of the emulated system DLLs, from the Win16 interface facts in `research/win/spec`. |
-| `runtime16.hh/.cc` | `Runtime16`: the CPU in segmented mode, `call_far` (nested host→guest calls to a sentinel), thunk dispatch, faults (→ `GuestError16`), VGA ports (0x3DA retrace from the clock, DAC 0x3C7–0x3C9 on the display palette), virtual time, debug knobs. |
+| `runtime16.hh/.cc` | `Runtime16`: the CPU in segmented mode, `call_far` (nested host→guest calls to a sentinel), thunk dispatch, faults (→ `GuestError16`), the freed-selector rule (`null_freed_segments`, below), VGA ports (0x3DA retrace from the clock, DAC 0x3C7–0x3C9 on the display palette), virtual time, debug knobs. |
 | `modules16.hh/.cc` | `ModuleTable16`: NE loading via `adw::loader::ne` (place → selectors → dependencies → `load_segments` → prolog patching → LibEntry → DLLENTRYPOINT), LoadLibrary/FreeLibrary/GetModuleHandle/GetProcAddress (names case-insensitive, constant exports), resources incl. Win 3.0 `NAMETABLE`s, pseudo modules for the system DLLs. |
-| `dos16.hh/.cc` | INT 21h (DOS 7.00: files as a handle table over `win32::Vfs::open`/`VfsFile`, directories, rename, FindFirst/FindNext on the merged listing, the current drive and each drive's current directory, `dos_chdir`), INT 1Ah/2Fh/25h/26h/10h/16h/31h, the guest disk's seeds (below: `C:\WINDOWS` and its `TEMP` as in-memory overlays until the lane mounts its own, `MODULES.INI`/`AD_PREFS.INI`/`AFTERDRK.INI` as empty virtual files with their settings as profile seeds, `seed_program_manager`'s `PROGMAN.INI` and `.GRP` files as virtual files, `seed_intermission`'s profile seeds for an Intermission module, `seed_after_dark2`'s for an After Dark 2.0 one), and `profiles16()`, the runtime's `win32::IniStore`. |
+| `dos16.hh/.cc` | INT 21h (DOS 7.00: files as a handle table over `win32::Vfs::open`/`VfsFile`, directories, rename, FindFirst/FindNext on the merged listing, the current drive and each drive's current directory, `dos_chdir`), INT 1Ah/2Fh/25h/26h/10h/16h/31h, the guest disk's seeds (below: `C:\WINDOWS` and its `TEMP` as in-memory overlays until the lane mounts its own, `MODULES.INI`/`AD_PREFS.INI`/`AFTERDRK.INI` as empty virtual files with their settings as profile seeds, `seed_program_manager`'s `PROGMAN.INI` and `.GRP` files as virtual files, `seed_intermission`'s profile seeds for an Intermission module, `seed_after_dark2`'s for an After Dark 2.0 one, `seed_after_dark3`'s for an After Dark 3.x one), and `profiles16()`, the runtime's `win32::IniStore`. |
 | `input16.hh`, `keyboard16.cc` | Saver-window input (below): the WH_KEYBOARD chain, input messages tagged with their input line, the per-step report (consumed, queue reads, wake); the fixed US keyboard (scan codes, `TranslateMessage`'s characters, `key_lparam`). |
 | `dialogs16.hh/.cc` | Configure mode (below): the Win16 → Win32 dialog template converter, the message translation table, and the shims that make a module's dialogs, message boxes and file dialogs real. |
 | `gdi16.hh`, `gdi16_objects.cc`, `gdi16.cc` | `Gdi16`: Win16 GDI objects on real GDI with the Win32 lane's key-table model (`win32/display.hh`); screen DCs are DIB sections over the display's bits; DIBs are translated to hardware indices through the DC's palette; the native DIB driver (`CreateDC("DIB")`, below). Also USER's SelectPalette/RealizePalette. |
 | `kernel16.cc user16.cc system16.cc` | The API families (`register_<family>16(Runtime16&)`); `system16.cc` also has MMSYSTEM's clock, WIN87EM, COMMDLG, KEYBOARD, SHELL, TOOLHELP and `register_all16()`. `user16.cc` also holds the synthetic desktop and the icons (below), `SHELL.ExtractIcon`, the host-posted messages MMSYSTEM's callbacks use (`user16_post_host`/`user16_dispatch_host`), and the guest pump of the Intermission protocol (`user16_dispatch_guest`, below). |
 | `sound16.hh/.cc` | MMSYSTEM's sound half (below, AUDIO.md §8) over the host audio engine (`adw/core/audio.h`): `sndPlaySound`, `waveOut*`, `midiOut*` (volumes, and the raw port a self-sequencing guest plays through)/`aux*` volumes, the mixer (none), `mciSendString`'s sequencer, the MCISEQ.DRV stub, and the delivery of `MM_WOM_*`/`MM_MOM_*`/`MM_MCINOTIFY` and of the multimedia timer events (`timeSetEvent`, registered in `system16.cc`). Without an enabled engine: the silent device, byte for byte. |
+| `adsnd16.cc` | The host's own AD_SND (`register_host_ad_snd`, below; AUDIO.md §2.10): a system module named `AD_SND` with AD_SND 3.0.3's 36 entries, which the ne16 lane's AD3 protocol registers for a package without an `AD_SND.DLL`. Not one of `register_all16`'s families. |
 
 ## The synthetic desktop and icons (PACKAGES.md §7.3)
 
@@ -264,6 +270,175 @@ every Win16 import of the modules, `AD_MOD.DLL`, `AD_RSRC.DLL` and
   table; `test_mono_dib_targets` checks both sides, and that the source
   origin and a band's start scan reach real GDI as given.
 
+## The five later releases (Marvel, Snoopy, the Looney Tunes, ScreamSavers, Disney)
+
+What the runtime has for them (PACKAGES.md §7.3; each change left the
+frozen baselines at 0 differences, PACKAGES.md §9):
+
+**GDI** (`gdi16.cc`):
+
+* `GetMapMode` (GDI.81): real GDI's answer for the DC. Every ScreamSavers
+  module gives its memory DC the screen DC's mode,
+  `SetMapMode(mem, GetMapMode(screen))`: `MM_TEXT`.
+* `FloodFill` (GDI.25, to the colour: `FLOODFILLBORDER`) and `ExtFloodFill`
+  (GDI.372, border or `FLOODFILLSURFACE`): the colour is keyed as
+  `SetPixel`'s, so the fill compares pixel indices, as a Windows 95 palette
+  device compared physical colours; real GDI fills, from the logical point,
+  4-connected, with the DC's brush and ROP2, within the surface and the clip
+  region, and answers FALSE when the point is outside them or not in the
+  area to fill. A monochrome DC compares bits against the colour's nearest
+  of black and white; a DIB DC reads its pixels in its own row order,
+  bottom-up DIBs included. The pixels a fill paints are charged as a fill's
+  pixels are (Virtual time, below), counted by the host by real GDI's rule
+  (`flood_pixels`, which `test_flood_fill` holds to what real GDI painted),
+  a fill of nothing costing nothing. Snoopy's modules make their sprite
+  masks so (ABI.md §3.10); without it every sprite was drawn in a white box.
+* `GetDIBits`:
+  * **4-bit rows** (the Disney Collection's Haunted captures the desktop a
+    line at a time so): the
+    colour table real GDI writes, measured on Windows 11 on an 8-bit key
+    surface, the 16 VGA colours with dark grey `808080` at index 7 and light
+    grey `C0C0C0` at 8 (DIB.DRV's table has them the other way round); each
+    pixel becomes its nearest entry (squared distance, the first of equals,
+    as real GDI chose for all 32 colours probed); `biClrUsed` 0.
+  * **`DIB_PAL_COLORS`**: the bits stay hardware indices and the table
+    describes them, entry h naming the DC palette's logical entry nearest
+    hardware colour h (`GetNearestPaletteIndex`'s rule; `DEFAULT_PALETTE`
+    when none is selected), so a `SetDIBits` through the same palette gives
+    the colours back. The table used to be the identity: ADXPL41 (the Looney
+    Tunes) draws its labels on a canvas it round-trips, `SetDIBits` → GDI →
+    `GetDIBits` → `SetDIBits`, through a 255-entry palette holding the high
+    statics at 245..254, so white (hardware 255) fell off the palette and
+    246..254 moved one static on: Pepe's black label boxes, Sam's and Taz's
+    broken folders. Windows NT and Wine return the logical indices
+    themselves, which no module here needs (tried: the white labels turned
+    cyan, and Simpsons Trivia moved).
+  * **Monochrome bitmaps**: 1-bit rows are real GDI's, asked in a header of
+    our own (40 bytes, the bitmap's own width and height, the guest's
+    top-down sign kept; the guest's header keeps its `biSize`, and its
+    2-entry table follows it); 4-, 8- and 24-bit rows show black and white
+    as hardware indices 0 and 255, real GDI's values (0 and 15 in 4-bit
+    rows, 0 and 255 in 8-bit ones, `000000` and `FFFFFF` in 24-bit ones);
+    16- and 32-bit requests are refused, as for 8-bit bitmaps, and so are
+    4-, 8- and 24-bit requests of the stock 1×1 bitmap. (Before, a
+    monochrome bitmap's 8-, 16-, 24- and 32-bit requests crashed the host, a
+    defect from 1.1.0, as did a 1-bit request with a header larger than 40
+    bytes or wider than the bitmap, and its 4-bit rows were garbage; no
+    module of the corpus makes such a request. `test_getdibits_mono` holds
+    the fix.)
+  * Rows are the bitmap's own width and height, whatever the header says;
+    real GDI follows the header (measured). Haunted asks for 640 pixels of
+    each 648-pixel line and gets 648 (the next line overwrites the extra
+    bytes), and ADXPL40 and ADXPL41 ask for 24 rows of a 76-row bitmap with
+    a 24-row header and get its bottom rows where real GDI gives its top
+    ones: in Chameleon a stray icon then covers the "Accessories" label
+    after about half a minute (a known gap, PACKAGES.md §12).
+    `ADTRACE=dib16` logs each request.
+* `CreateBitmapIndirect` (GDI.49): `CreateBitmap` of the structure's width,
+  height, planes, bits per pixel and bits (the rows WORD-aligned, as
+  `CreateBitmap` reads them). `CreatePatternBrush` (GDI.60): a brush of the
+  bitmap's top-left 8×8 pixels (Windows 3.1 and 95 brushes were 8×8), in a
+  bitmap of the brush's own that `DeleteObject` deletes with it, so the
+  program may delete its bitmap once the brush is made, as Windows allowed;
+  a monochrome pattern paints its 0 bits in the DC's text colour and its 1
+  bits in its background colour. Little Mermaid's "Plain" sea fills each
+  row with an 8×8 dither made so. (`CreateBrushIndirect`'s `BS_PATTERN`
+  still paints the guest's bitmap itself, whole.)
+
+**KERNEL and TOOLHELP** (`kernel16.cc`, `system16.cc`):
+
+* `GetHeapSpaces` (KERNEL.138): a fixed, healthy local heap for any module
+  handle, 57,600 of 64,000 bytes free (`0xFA00E100`: the 90%
+  `GetFreeSystemResources` reports); 0 for a handle that is no module's, as
+  Wine answers. `MARVEL.AD` divides by the size (ABI.md §3.11).
+* `GetCodeHandle` (KERNEL.93): DX:AX = the selector and handle of the module
+  segment `lpfn` points into, as `GlobalHandle` gives them; 0 when it is no
+  module's.
+* **The selector calls**, as Windows 3.1's KRNL386 made them (Pietrek's
+  pseudocode, the 3.1 SDK, KB Q132005), for Marvel's `DECO.DLL`:
+  `AllocSelector` (175) copies a selector's descriptor, one selector per 64
+  KiB of its limit, tiled as a huge block's (for 0 or a bad selector, one
+  uninitialized selector, not present until its rights are set; 0 when the
+  LDT is full); `FreeSelector` (176) frees every tile of such a run (0; else
+  the selector back); `AllocCStoDSAlias` and `AllocDStoCSAlias` (170, 171)
+  make one selector over the descriptor with only its code bit changed;
+  `GetSelectorBase` and `GetSelectorLimit` (186, 188) read any selector (0
+  for a bad one); `SetSelectorBase` (187) returns the selector (0 when
+  refused) and `SetSelectorLimit` (189) always 0, the limit taken as 20
+  bits, byte-granular, and a segment register holding the selector sees the
+  change at once. **Only their own**: the runs these calls make are marked
+  in the LDT entries themselves (`Ldt::mark_guest_run`; freeing or
+  reallocating an entry clears its mark, so a reused index is never taken
+  for theirs), and `FreeSelector` and the Sets refuse any other selector (a
+  global block's, a module segment's, the host's), where KRNL386 would have
+  changed any LDT entry. `ADTRACE=mem16` logs each call that makes, frees
+  or changes a selector, and each refusal.
+* `GlobalFirst` and `GlobalNext` (TOOLHELP.51, 52): an empty walk, FALSE at
+  once, the `GLOBALENTRY` untouched, as the unimplemented stubs answered.
+  Their one caller, the Disney Collection's ADXPL100 with sound on, walks
+  the heap for MCISEQ.DRV's blocks to page-lock them (AUDIO.md §2.9); on
+  FALSE it notes "Error walking global list" and the song plays. MCISEQ.DRV
+  is no NE module here (the MCI sequencer is the host's), so a real walk
+  (every block in arena order with its address, size, handle, lock counts,
+  owner and type: the `system16.cc` comment) would find none of its blocks
+  and lock nothing either.
+
+**The freed-selector rule** (`Runtime16::null_freed_segments`, one place):
+as every API call returns (`dispatch_thunk`, whether or not the shim took
+over CS:IP) and every software interrupt handler (`on_interrupt`: DPMI's
+Free LDT Descriptor, INT 31h AX=0001h), any of DS, ES, FS and GS that holds
+an LDT selector no longer in use becomes the null selector, whatever freed
+it: `GlobalFree`, `FreeSelector`, `FreeResource`, `FreeLibrary`, a
+`GlobalReAlloc` that gave a block new selectors, DPMI, or a callback the
+call made. Null registers, the GDT's 0x40 and live selectors stay as they
+are, and no load is fixed: a selector pushed before a call and popped after
+it still faults. That is what Windows 3.1's `GlobalFree` did for the
+caller's DS, what DPMI 1.0 does for any register, and what Wine's relay
+does as every call returns; KERNEL fixed up no fault in an application's
+own code (ABI.md §3.14; the evidence is
+`research/win/pkg/more/l2/FREED_SELECTOR_RULE.md`, gitignored). It serves
+`DECO.DLL`, which frees its work buffer with DS still holding it, and
+Borland C++'s far-heap free in six of Snoopy's modules, which reloads the
+ES it has just freed at CLOSE. It fires, invisibly, in 162 of the 202 After
+Dark baseline modules too (ES after `GlobalFree` or `FreeResource`, FS four
+times), every stream unchanged. `ADTRACE=mem16` logs each register it nulls:
+"ES 00D7 was freed by KERNEL.17 GlobalFree: null on return".
+
+**After Dark 3.x's `AD_PREFS.INI`**, `seed_after_dark3(rt)` (`dos16.hh`),
+which the lane's AD3 protocol applies when the engine dir holds
+`ADW30.EXE`: `[After Dark] Path=C:\AFTERDRK` (the guest directory, in
+ADW30's own spelling, with no trailing backslash) and `[Sound]
+SoundDriver=AD_MME.DRV`, the keys `ADW30.EXE` wrote at every start (ABI.md
+§3.12), as profile seeds: read under the empty virtual file, never written
+out. The Disney Collection's ADXPL100 finds `DIS_SND.DLL` and `MUSIC\` by
+the first. ADW30's third key, `WIN.INI [Berkeley Systems] After Dark`,
+`register_dos` seeds for every module. After Dark 2.0's seeds win where both
+rules hold.
+
+**The host's own AD_SND**, `register_host_ad_snd(rt)` (`adsnd16.cc`,
+declared in `shim_families16.hh`): a system module named `AD_SND` with the
+36 entries of AD_SND 3.0.3, their ordinals, names and argument sizes (ABI.md
+§3.13). Once it is registered, `AD_SND` by name, an import or a
+`LoadLibrary` whatever the path, is this module. It is no family of
+`register_all16`: the ne16 lane's AD3 protocol registers it, for the native
+bridge only, before the bridge opens, when the package's engine dir holds
+no `AD_SND.DLL` (`ne16/package.hh` `host_ad_snd`; Snoopy's Screen Savers).
+It keeps its state in the runtime (`HostAdSnd16`), makes every call through
+the KERNEL and MMSYSTEM thunks as a real library's imports would, so the
+census, the `api16` trace, virtual time and the audio engine see them, and
+costs no instructions of its own. What each entry does is AUDIO.md §2.10.
+`ADTRACE=sound` prints, at its init, "AD_SND (the host's): wave devices 0
+(11 kHz) and 0 (22 kHz), capabilities 7", or "AD_SND (the host's): no sound:
+…" with the reason.
+
+Tests, all on made-up data: win16.unit's `test_map_mode`, `test_flood_fill`,
+`test_getdibits_4bpp`, `test_dib_pal_colors`, `test_getdibits_mono`,
+`test_pattern_brush`, `test_heap_spaces_code_handle`, `test_selector_calls`,
+`test_freed_selector_rule`, `test_toolhelp_walk` and
+`test_after_dark3_seeds`; ne16.unit's `test_host_ad_snd`, its After Dark
+3.x seeds check and `test_ad2_palettes` (After Dark 2.0's palettes computed
+in code, `ne16/package.hh` `palettes_after_dark2`).
+
 ## Sound (AUDIO.md §8)
 
 `attach_audio16(rt, engine)` (the lane passes `LaneContext::audio`) decides
@@ -336,7 +511,10 @@ Callbacks, below):
   engine on) >= 32; `GetProcAddress(TOOLHELP, "GLOBALFIRST"/"GLOBALNEXT")`
   non-NULL. The engines use GlobalFirst/GlobalNext only on Windows 3.10
   exactly (to page-lock MCISEQ's segments, ADXPL310 4:f46f); on the 3.95 we
-  report they never call them. They reload MCISEQ every 100 songs, and
+  report they never call them. (ADXPL41, the Looney Tunes', plays the same
+  way; the Disney Collection's ADXPL100 walks the heap with them before a
+  song on the 3.95 too and gets the empty walk, above.) They reload MCISEQ
+  every 100 songs, and
   around every play set `system.ini [mciseq.drv] disablewarning=true` and
   write the old value back — the key is seeded `true` (a profile seed, sound
   on only), so no SYSTEM.INI is written to a persistent state directory.
@@ -395,7 +573,7 @@ with the pe32 lane. The Classic lane mounts, for an After Dark module,
 
 | Guest | Lower (read-only) | Upper |
 |---|---|---|
-| `C:\WINDOWS` | the package's `WINDOWS` folder when it has one (Star Wars Screen Entertainment's: `SWSE.INI`, as its installer put it there); virtual seed files (`MODULES.INI`, `AD_PREFS.INI`, `AFTERDRK.INI` empty; `PROGMAN.INI` and the `.GRP` files once the synthetic desktop exists; `LunData.dat`, the module dir's `LUNDATA.DAT`, where the installers copied it); for an Intermission module, the profile seeds of `seed_intermission` (above), for an After Dark 2.0 module those of `seed_after_dark2` (above) | `<ADSTATE>\<package>\WINDOWS`, or memory |
+| `C:\WINDOWS` | the package's `WINDOWS` folder when it has one (Star Wars Screen Entertainment's: `SWSE.INI`, as its installer put it there); virtual seed files (`MODULES.INI`, `AD_PREFS.INI`, `AFTERDRK.INI` empty; `PROGMAN.INI` and the `.GRP` files once the synthetic desktop exists; `LunData.dat`, the module dir's `LUNDATA.DAT`, where the installers copied it); for an Intermission module, the profile seeds of `seed_intermission` (above), for an After Dark 2.0 module those of `seed_after_dark2` (above), for an After Dark 3.x one those of `seed_after_dark3` (above) | `<ADSTATE>\<package>\WINDOWS`, or memory |
 | `C:\WINDOWS\TEMP` | — | memory, always |
 | `C:\WINDOWS\SYSTEM` | the engine dir (an Intermission module's: `IMIMXPLY.IMQ`) | none (read-only) |
 | `C:\AFTERDRK`, `C:\AFTERD~1` (After Dark) | the module dir | `<ADSTATE>\<package>\<MODDIR>` (one directory for both names; in memory mode each name has its own) |
@@ -437,7 +615,14 @@ WMORPH `morph*.dat` (module dir); FISHPRO `[Fish]`, BUGS `[Bugs]`, ARTIST
 `LunData.dat` (in `GetWindowsDirectory()`, so `<package>\WINDOWS`; read from the seed until
 Keys… or a high score writes it); Star Trek's Communications `[Communications]
 MessageText`, Sounder `[Sounder] SoundPath` and AD_SND 1.0 `[Sound] Mute`
-(`AD_PREFS.INI`).
+(`AD_PREFS.INI`); Marvel's Saver.. choices in `MRVLIMAG\MRVLIMAG.ADC` (module
+dir: the whole catalog copied up at its first write, a Saver.. OK, a
+Posters... Install or a wake with Create Poster On Wakeup, ABI.md §3.11)
+and its Posters... Install
+and Create Poster On Wakeup in `MRVLIMAG\MARVEL.BMP` and `WIN.INI [Desktop]`
+(a wallpaper for the emulated PC only: `SystemParametersInfo` changes
+nothing); the Looney Tunes' Messages `[Looney Messages] CustomA`
+(`MODULES.INI`).
 
 ## Saver-window input (INTERACTION.md §5.2)
 
@@ -506,6 +691,29 @@ the saver.
   queries and moves, focus, capture, timers with guest `TIMERPROC`s, props,
   window words/longs incl. subclassing, `EnumChildWindows`, scroll bars,
   `CreateWindow(Ex)` on a real parent) act on the real window.
+* Placement: the module keeps the screen coordinates of its emulated
+  desktop (640×480: `GetDesktopWindow`'s rectangle,
+  `GetSystemMetrics(SM_CXSCREEN)`), and that desktop lies over the settings
+  window (`guest_screen_origin16`): its origin is the owner's centre less
+  half the desktop, moved inside the owner monitor's work area (centred on
+  the work area when that is the smaller), measured once in the dialog
+  thread's 96-DPI coordinates. A top-level real window the module places
+  (`MoveWindow`, `SetWindowPos` without `SWP_NOMOVE`, `CreateWindow(Ex)` of
+  an owned popup) goes to origin + (x, y); a child's position, in its
+  parent's client area, is left alone. `GetWindowRect` of a real window,
+  `ClientToScreen`, `CB_GETDROPPEDCONTROLRECT` and a top-level window's
+  `WM_MOVE` subtract the origin and `ScreenToClient` adds it first, so a
+  module that reads positions back stays consistent. The dialogs that place
+  themselves on that screen (Marvel's Saver.. and Posters..., Lunatic
+  Fringe's Keys..., Messages' Edit / Select, Globe's Map..., Slides...,
+  DrawMorph's Edit..., Star Trek's Edit Custom... and Sounds.., the Star
+  Wars modules' Configure...) so open over the settings window; before,
+  they opened at the primary monitor's top left (Marvel's Saver.. and
+  Slides... have no title bar to drag them by). A template's own position
+  stays the real dialog manager's (relative to the owner; no module's
+  template has `DS_ABSALIGN`). Without `--owner`, or hidden
+  (`ADCONFIGHIDDEN`: the dialogs are parked off every monitor), the origin
+  is (0, 0).
 * Messages into the guest (Win32 → Win16): `WM_COMMAND` (`wParam` = id,
   `lParam` = MAKELONG(hwnd16, code)), `WM_CTLCOLOR*` → `WM_CTLCOLOR`
   (`wParam` = a DC wrapper, `lParam` = MAKELONG(hwnd16, CTLCOLOR_xxx); the
@@ -614,7 +822,8 @@ core clock starts; before it (the module's load, where AD_RSRC, EINSTEIN,
 GLOBE and Om Appliances calibrate on the tick count) reads are modeled as
 headless, and the wall clock then continues from the time that took, so time
 never goes back. `work_insns()` — instructions, API costs and
-`pixel_cost_insns` per pixel a GDI blit or fill writes (`charge_pixels`) — is
+`pixel_cost_insns` per pixel a GDI blit or fill writes (`charge_pixels`; a
+flood fill charges exactly the pixels it paints, `flood_pixels`, above) — is
 what the lane's DRAWFRAME budget counts; pixels never move the clock.
 
 `set_deadline(us, fn)` runs `fn` once, at the first API call (or retrace-port
@@ -657,7 +866,11 @@ is dated at), `debug16` (`OutputDebugString`), `lane`, `bt16` (every call with t
 its callers: which module code reached a shim), `dib16` (per `StretchDIBits`
 of an 8-bit DIB: the source rectangle's index histogram, what it became, the
 DIB's colour table and the DC's palette; DIB driver DCs as they are made,
-and each RGB colour matched on one with the pixel value it became), `input16` (hooks installed and
+and each RGB colour matched on one with the pixel value it became; each
+`GetDIBits` request, "GetDIBits(hdc, bitmap h WxH D-bit, scans S+L, usage
+U): header N bytes, WxH, B bpp"), `mem16` (the selector calls that make,
+free or change a selector, and their refusals; each segment register the freed-selector rule nulls:
+"ES 00D7 was freed by KERNEL.17 GlobalFree: null on return"), `input16` (hooks installed and
 called with their results, input posted/removed/dispatched/consumed,
 `FindWindow("Sleep")`, wake), `dlg16` (configure mode: every message
 forwarded to a guest dialog or window procedure, dialogs opened and ended,

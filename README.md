@@ -14,17 +14,23 @@ them. It runs the original modules, unchanged, on an emulated PC of the
 time: the x86 processor and the parts of Windows 95 they talk to. So they
 look, move and sound the way they did.
 
-It works with seven releases for Windows: six of After Dark, and Star Wars
-Screen Entertainment, 232 modules in all. Import one or all of them; each
+It works with twelve releases for Windows, 284 modules in all: nine of
+Berkeley Systems' After Dark, two of other companies' modules for After
+Dark, and Star Wars Screen Entertainment. Import one or all of them; each
 works on its own.
 
 | Release | Year | Modules |
 |---|---|---|
 | Star Trek: The Screen Saver | 1992 | 16 |
+| Marvel Comics Screen Posters | 1993 | 1 |
 | The Simpsons Screen Saver | 1994 | 15 |
 | Star Wars Screen Entertainment (LucasArts) | 1994 | 14 |
+| Snoopy's Screen Savers (Image Smith) | 1994 | 8 |
+| The Looney Tunes Screen Saver | 1995 | 12 |
+| ScreamSavers (Binary Software) | 1995 | 15 |
 | After Dark 3.2 | 1995 | 44 |
 | Totally Twisted After Dark | 1995 | 13 |
+| The Disney Collection Screen Saver | 1995 | 16 |
 | After Dark 4.0 Deluxe | 1996 | 84 |
 | After Dark 10th Anniversary | 1999 | 46 |
 
@@ -41,15 +47,28 @@ Horta, Tholian Web, Scotty's Files, Sickbay, Communications, Planetary
 Atlas and more, with the show's theme, its sounds and McCoy's quotes. Its
 Final Exam is a game: press Num Lock to take the Starfleet Academy exam.
 
+Marvel Comics Screen Posters (1993) is one module, a slide show of 36
+Marvel posters with their captions, which you choose with its own
+**Saver..** button. The Looney Tunes and Disney Collection screen savers
+are Berkeley's 1995 collections of Warner Bros.' and Disney's cartoons,
+with their music: Pinocchio follows your mouse after a press of Caps Lock.
+ScreamSavers and Snoopy's Screen Savers are not Berkeley's: they are other
+companies' modules for After Dark, Binary Software's fifteen modules of
+Stephen Blickenstaff's creatures (on the After Dark engine it licensed) and
+Image Smith's eight Peanuts modules, made to run in an After Dark already
+installed; for Snoopy, Long After Dark supplies the sound library After
+Dark would have.
+
 - **Every monitor.** It runs on all your monitors, or only the main one.
 - **Sound.** The modules' sound effects and music, and the Simpsons'
   voices, with one volume setting for all of it (or off).
 - **Games.** Caps Lock starts the games built into some modules, such as
-  Rodger Dodger and You Bet Your Head, and Num Lock Star Trek's Final Exam,
-  without closing the screen saver.
+  Rodger Dodger, You Bet Your Head and Pinocchio, and Num Lock Star Trek's
+  Final Exam, without closing the screen saver.
 - **The modules' own options.** Each module's sliders and choices, and
-  buttons such as Fish World's **Select Fish…** or a Star Wars module's
-  **Configure...** that open the module's original settings windows.
+  buttons such as Fish World's **Select Fish…**, Marvel's **Posters...** or
+  a Star Wars module's **Configure...** that open the module's original
+  settings windows.
 - **A modern settings window.** It follows Windows' light or dark mode,
   shows each release's box cover, and has a live preview.
 
@@ -67,18 +86,25 @@ Final Exam is a game: press Num Lock to take the Starfleet Academy exam.
     `.flp`), or a `.zip` of the install files or of the floppy images. For
     a release on several floppies, choose every image, such as the
     Simpsons' two or Star Trek's two, or the ZIP they came in;
+  - a `.zip` whose install files sit in one folder per disk (`Disk1`,
+    `Disk2`, …), as the Internet Archive's copies of ScreamSavers, Marvel
+    and Snoopy do, or a folder unzipped from one;
   - the Internet Archive. The importer can download each release for you:
     a CD image of 381.7 MB (4.0 Deluxe), 143.3 MB (10th Anniversary),
     58.8 MB (3.2), 37.9 MB (Totally Twisted) or 6.9 MB (Star Wars Screen
-    Entertainment), the Simpsons' install files (2.6 MB), or Star Trek's
-    two floppy images (2.8 MB).
+    Entertainment), Star Trek's two floppy images (2.8 MB), or a ZIP of the
+    install files: the Simpsons' (2.6 MB), Marvel's (1.9 MB), Snoopy's
+    (1.9 MB), the Looney Tunes' (2.8 MB), ScreamSavers' (3.3 MB) or the
+    Disney Collection's (3.4 MB).
 
 Every import is checked, file by file, against the original release, so you
 know you have the real thing. For Star Wars Screen Entertainment that is
 the build on its CD: the CD, its ISO or Redump BIN image, the ZIP of its
 files, or the download. The floppy sets found online (the US five-disk set
 and the German edition) are other builds, so they fail that check (exit
-code 3) unless you import them with `adimport --no-verify`.
+code 3) unless you import them with `adimport --no-verify`. The same goes
+for the Looney Tunes' later CD (`LTW320CD`, or `LOONEY.zip`), which carries
+After Dark 3.2's engine files in place of the April release's.
 
 ## Getting started
 
@@ -134,13 +160,15 @@ code 3) unless you import them with `adimport --no-verify`.
 - **Module buttons** such as **Select Fish…**, or **Configure...** for a
   Star Wars module, open the module's original options window. What you
   choose there is saved straight away, and **Cancel** in the settings window
-  doesn't undo it.
+  doesn't undo it. Marvel's wallpaper features (**Posters...** → Install,
+  and Create Poster On Wakeup) make their picture inside the emulated PC
+  only: your own desktop stays as it is.
 - **Sound** plays only from the main monitor's screen saver. The small live
   preview is always silent.
-- **Star Wars and Star Trek modules** always draw at their original
-  640×480, scaled up to fit the screen in its 4:3 shape (with bars at the
-  sides on a widescreen monitor). The Resolution setting applies to the
-  rest.
+- **Star Wars, Star Trek, ScreamSavers and Marvel modules** always draw at
+  their original 640×480, scaled up to fit the screen in its 4:3 shape
+  (with bars at the sides on a widescreen monitor). The Resolution setting
+  applies to the rest.
 - **Your files** are all in `%LOCALAPPDATA%\LongAfterDark` (paste that into
   File Explorer's address bar): the imported releases, downloads, your
   settings and what the modules save themselves, such as message texts and
@@ -149,7 +177,11 @@ code 3) unless you import them with `adimport --no-verify`.
 ## Status
 
 Long After Dark is new. It has no installer or code signing yet, and not
-every module's speed has been compared with the original.
+every module's speed has been compared with the original. Known
+differences: Marvel's poster transitions (wipes, irises, blinds and the
+like) show at once where the original swept them over about half a
+second, and in Chameleon (Totally Twisted and 10th Anniversary) a stray
+icon covers the "Accessories" label after about half a minute.
 
 ## Building from source
 
@@ -173,7 +205,7 @@ together, the tests, and running a module without the screen saver.
 - [docs/BUILDING.md](docs/BUILDING.md): building, testing and the source
   tree.
 - [docs/DESIGN.md](docs/DESIGN.md): how the emulation works.
-- [docs/PACKAGES.md](docs/PACKAGES.md): the seven releases and how each one
+- [docs/PACKAGES.md](docs/PACKAGES.md): the twelve releases and how each one
   is imported.
 
 ## License
@@ -184,8 +216,13 @@ code built into the programs, including the x86 emulator, which is derived
 from [resource_dasm](https://github.com/fuzziqersoftware/resource_dasm), and
 the importer's ARJ decoder, modified from Robert K. Jung's UNARJ.
 
-After Dark, Star Trek: The Screen Saver and Star Wars Screen Entertainment
-(published by LucasArts), their modules, pictures, music, sounds and box
-art belong to their rights holders.
+After Dark and every release above, their modules, pictures, music, sounds
+and box art belong to their rights holders, among them those of Berkeley
+Systems (After Dark), LucasArts (Star Wars Screen Entertainment), Paramount
+(Star Trek), Fox (the Simpsons), The Walt Disney Company (the Disney
+Collection), Warner Bros. (the Looney Tunes), Marvel (Marvel Comics Screen
+Posters), United Feature Syndicate / Peanuts Worldwide and Image Smith
+(Snoopy's Screen Savers), and Binary Software and Stephen Blickenstaff /
+IMPart (ScreamSavers).
 None of their files are in this repository or in the programs it builds:
 you import your own copies.

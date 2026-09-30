@@ -2,7 +2,7 @@
 
 **Long After Dark** is a screen saver for Windows that runs the original
 modules of After Dark and of LucasArts' Star Wars Screen Entertainment,
-unchanged, under x86 emulation. It knows seven releases:
+unchanged, under x86 emulation. It knows twelve releases, 284 modules:
 
 | id | Release | Internet Archive download |
 |---|---|---|
@@ -13,9 +13,21 @@ unchanged, under x86 emulation. It knows seven releases:
 | `simpsons` | The Simpsons Screen Saver (1994) | install files (ZIP), 2.6 MB |
 | `swse` | Star Wars Screen Entertainment (1994) | CD image, 6.9 MB |
 | `startrek` | Star Trek: The Screen Saver (1992) | two floppy images, 2.8 MB |
+| `marvel` | Marvel Comics Screen Posters (1993) | install files (ZIP), 1.9 MB |
+| `snoopy` | Snoopy's Screen Savers (1994) | install files (ZIP), 1.9 MB |
+| `looney` | The Looney Tunes Screen Saver (1995) | install files (ZIP), 2.8 MB |
+| `screams` | ScreamSavers (1995) | install files (ZIP), 3.3 MB |
+| `disney` | The Disney Collection Screen Saver (1995) | install files (ZIP), 3.4 MB |
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
-Trek modules, on two floppies.
+Trek modules, on two floppies. Marvel Comics Screen Posters (After Dark
+2.0d, one module of 36 posters) and Snoopy's Screen Savers came on two
+floppies each, the Looney Tunes on two floppies or a CD, ScreamSavers and
+the Disney Collection on three floppies. ScreamSavers (Binary Software) and
+Snoopy's Screen Savers (Image Smith) are other companies' modules for After
+Dark: ScreamSavers shipped the After Dark engine it licensed, and Snoopy's
+modules were made for an After Dark already installed, so Long After Dark
+supplies the sound library they would have found there.
 
 Star Wars Screen Entertainment is not an After Dark release, though it is
 sometimes listed as "After Dark Star Wars": its 14 modules were made for
@@ -43,9 +55,8 @@ describes: `bash tools/package.sh` stages the same files in
   those of the code built into the programs.
 
 Keep the three programs in one folder: the screen saver looks for the other
-two next to itself. No After Dark or Star Wars Screen Entertainment files
-are included. You import them from your own copy (and are responsible for
-sourcing them legally).
+two next to itself. No file of any of the releases is included. You import
+them from your own copy (and are responsible for sourcing them legally).
 
 ## 1. Import your releases
 
@@ -56,10 +67,13 @@ Double-click `adimport.exe`, or open the screen saver's settings and click
   `.flp`, or a `.zip` of the install files, or of a release's floppy
   images. If you have a release's floppies as separate images, select them
   all, such as the Simpsons' two or Star Trek's two, or the ZIP they came
-  in.
+  in. A `.zip` that keeps each disk's files in a folder of its own
+  (`DISK1`, `DISK2`, …, as the Internet Archive's copies of ScreamSavers,
+  Marvel and Snoopy do) is read as all its disks together.
 - **A drive or folder:** the CD itself, or a folder copied from it (for
-  floppies, one folder holding the files of every disk).
-- **A download from the Internet Archive:** a list of the seven releases
+  floppies, one folder holding the files of every disk, or one holding
+  nothing but a `DISK1`, `DISK2`, … folder per disk).
+- **A download from the Internet Archive:** a list of the twelve releases
   with their sizes, plus one entry that fetches every release not imported
   yet. An interrupted download resumes, and each file is checked against its
   published MD5 before it is used.
@@ -84,15 +98,32 @@ alone, that the image is install disk 2 of 2). A folder
 where After Dark 2.0 was installed (`C:\AFTERDRK`) is no source: the
 importer needs the install disks.
 
+Marvel Comics Screen Posters, Snoopy's Screen Savers, the Looney Tunes,
+ScreamSavers and the Disney Collection have no image of their disks online:
+the Internet Archive's ZIP of each one's install files (the one the download
+fetches, and likely the copy you have) is its known copy, and verifies as
+the known ZIP. A flat folder or ZIP of the same files, or one kept in
+`DISK<n>` folders, verifies file by file. Every install disk is needed:
+disk 1 alone of ScreamSavers, Marvel or Snoopy is refused ("needs every
+install disk"), and another disk alone is not a known release. The Looney
+Tunes' April CD (`LOONEY_T`) verifies too; its August CD (`LTW320CD`, also
+online as `LOONEY.zip`) carries After Dark 3.2's engine files and fails
+verification (exit code 3) unless imported with `adimport --no-verify`.
+The notes a previous owner left in some of these copies (serial numbers)
+are never opened.
+
 From a command prompt, with the ids from the table above:
 
 ```
 adimport --image "C:\Images\After Dark 3.2.iso"
 adimport --image disk1.img --image disk2.img
 adimport --image afterdark-20b_startrek.zip
+adimport --image "C:\Downloads\After Dark - Scream Savers.zip"
 adimport --from E:\
+adimport --from C:\Copies\Snoopy
 adimport --download ad10
 adimport --download swse
+adimport --download disney
 adimport --download all
 adimport --list-packages
 adimport --remove tt
@@ -174,12 +205,26 @@ root: as in DOS, its short path after the drive letter must fit in 63
 characters. After Dark's Globe ("Map..." in After Dark 4.0 Deluxe and 3.2)
 reaches your drives the same way.
 
+Several ScreamSavers modules and Marvel's poster module compose their
+pictures for 640×480 too, so all the ScreamSavers modules and Marvel's
+always get 640×480, scaled to fit. Marvel's
+module has two buttons: **Saver..** chooses the posters it shows, in order
+or at random, with or without their captions (it keeps your choice in its
+own catalog file, in your data folder's `state\marvel\`), and
+**Posters...** installs a poster as wallpaper, or shows its description
+(**Info...**). The wallpaper it makes, and the one Create Poster On Wakeup
+makes, stay inside the emulated PC: your own desktop never changes. The
+Looney Tunes' Messages has **Edit Custom...**, where you type the message
+Foghorn, Elmer or Speedy says when **Custom Message** is chosen.
+
 **Sound** is on by default. Only the primary monitor's screen saver plays
 it, at the default volume (50): the modules' wave effects, their MIDI
 music (through Windows' MIDI synthesizer, normally the Microsoft GS
 Wavetable Synth), the Simpsons' speech and the Star Trek modules' sounds
 (which the original could also play on the PC speaker; here they always go
-through Windows' sound). In the settings window,
+through Windows' sound). Snoopy's modules play through a sound library of
+Long After Dark's own, which does what After Dark's did. Marvel's module
+is silent, as it always was. In the settings window,
 **Sound** (Primary monitor / Off) and **Volume** (0–100) change that. For
 Star Wars Screen Entertainment, Volume reaches the effects through
 Intermission's own volume setting, and the music as the Windows mixer's
@@ -192,9 +237,11 @@ small live preview never does.
 Any key except Shift, Ctrl, Caps Lock and Num Lock, a click, the mouse
 wheel, moving the mouse or switching away (the Windows key, Alt+Tab,
 Ctrl+Alt+Del) ends the screen saver. Caps Lock never does: in some modules
-it changes something (it scares the fish, changes the colours) or starts a
+it changes something (it scares the fish, changes the colours, or in many
+Looney Tunes and Disney modules moves on to the next scene) or starts a
 game, as in Rodger Dodger, You Bet Your Head, Simpsons Trivia, Mime Hunt,
-Frankenscreen and Marbles.
+Frankenscreen, Marbles and Pinocchio (the Wishing Star: Pinocchio follows
+the mouse).
 
 While a game is playing, keys, clicks and the mouse belong to it, and the
 pointer stays on the primary monitor. Press Caps Lock again to stop playing
@@ -218,7 +265,7 @@ address bar):
 | `assets\win\` | the imported modules, one folder per release, the module list `catalog-win.json`, and the releases' box covers (`covers\`) |
 | `downloads\` | Internet Archive downloads, reused if you import the same release again |
 | `settings.ini` | the screen saver's settings |
-| `state\` | what the modules save themselves (message texts, chosen pictures, high scores, the Star Wars modules' settings, Sounder's folder), per release |
+| `state\` | what the modules save themselves (message texts, chosen pictures, high scores, the Star Wars modules' settings, Sounder's folder, Marvel's poster choices), per release |
 | `thumbs\` | the settings window's module pictures |
 | `logs\saver-last.log` | how the last screen saver run went and why it ended |
 
@@ -234,5 +281,10 @@ program's Properties → Details in Explorer.
 
 - **Speed.** Each module's pace follows a model of a mid-1990s PC (Swirling
   Magic's too-fast pace is fixed); not every module has been compared with
-  the original yet.
+  the original yet. Marvel's poster transitions (wipes, irises, blinds and
+  the like) show at once where the original swept them over about half a
+  second.
+- **Chameleon** (Totally Twisted and 10th Anniversary): after about half a
+  minute a stray icon covers the "Accessories" label, a known difference
+  not fixed yet.
 - No installer or code signing yet.

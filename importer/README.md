@@ -3,11 +3,13 @@
 Puts the original Windows screen saver modules where the hosts read them
 (DESIGN.md §6, §7; the full specification is `docs/PACKAGES.md`), and keeps
 each release's box cover (DESIGN.md §9, `docs/COVERS.md` §2). It is Long
-After Dark's importer, and it knows seven releases, the *packages* of its
-built-in registry (`packages.h`): six of After Dark, the oldest being Star
-Trek: The Screen Saver (1992, After Dark 2.0b), and LucasArts' Star Wars
-Screen Entertainment (1994), whose modules run on Delrina's Intermission
-engine, not After Dark's.
+After Dark's importer, and it knows twelve releases, the *packages* of its
+built-in registry (`packages.h`): nine of Berkeley Systems' After Dark, the
+oldest being Star Trek: The Screen Saver (1992, After Dark 2.0b); two of
+other companies' modules for After Dark, Binary Software's ScreamSavers and
+Image Smith's Snoopy's Screen Savers; and LucasArts' Star Wars Screen
+Entertainment (1994), whose modules run on Delrina's Intermission engine,
+not After Dark's.
 
 | id | Release | Medium | Recipe | Installs to (`<win>` = `<assets root>\win`) | Modules | Internet Archive copy |
 |---|---|---|---|---|---|---|
@@ -18,6 +20,11 @@ engine, not After Dark's.
 | `simpsons` | The Simpsons Screen Saver | two floppies (FAT12), InstallShield 2 + encrypted PKZIP | `ad3zip` | `packages\simpsons\{SIMPSONS,ENGINE}` | 15 | a ZIP of the install files, 2.6 MB (2 copies) |
 | `swse` | Star Wars Screen Entertainment | CD copy of five install floppies (plain ISO-9660), Presage installer: multi-volume ARJ + SZDD | `intermission` | `packages\swse\{SAVER,ENGINE,WINDOWS}` | 14 | the CD image, 6.9 MB (3 copies: the ISO, the Redump BIN, a flat ZIP) |
 | `startrek` | Star Trek: The Screen Saver | two 1.44 MB floppies (FAT12), Microsoft Setup 2.0: KWAJ-compressed files | `ad2kwaj` | `packages\startrek\{AFTERDRK,ENGINE}` | 16 | the two floppy images, 1.4 MB each (2 copies) |
+| `marvel` | Marvel Comics Screen Posters | two floppies, InstallShield 2.00: compressed libraries, one split over both disks | `islib` | `packages\marvel\{AFTERDRK,ENGINE}` | 1 | a ZIP of the install files, 1.9 MB (2 copies: flat, and in `Disk1`/`Disk2` folders) |
+| `snoopy` | Snoopy's Screen Savers | two floppies, InstallShield 2.00: one compressed library split over both | `islib` | `packages\snoopy\AFTERDRK` (no `ENGINE`) | 8 | a ZIP of the install files in `Disk1`/`Disk2` folders, 1.9 MB |
+| `looney` | The Looney Tunes Screen Saver | two floppies or their CD copy, InstallShield 3 + encrypted PKZIP | `ad3zip` | `packages\looney\{LNYTUNES,ENGINE}` | 12 | a ZIP of the install files, 2.8 MB |
+| `screams` | ScreamSavers | three floppies, InstallShield 3 + encrypted PKZIP | `ad3zip` | `packages\screams\{SCREAMS,ENGINE}` | 15 | a ZIP of the install files in `DISK1`–`DISK3` folders, 3.3 MB |
+| `disney` | The Disney Collection Screen Saver | three floppies, InstallShield 3 + encrypted PKZIP | `ad3zip` | `packages\disney\{DISNEY,ENGINE}` | 16 | a ZIP of the install files, 3.4 MB |
 
 ```
 adimport --image <image> [--image <image2> …] | --iso <image> | --from <drive or folder>
@@ -39,7 +46,9 @@ package (see **Catalog**); `--catalog-only` imports nothing and rewrites it
 from the files already there. `--list-packages` prints each registry
 package, whether (and how verified) it is installed, and the size of its
 download (every image of a floppy set: "download 2.8 MB (2 floppy
-images)"), and its cover. `--remove <id>`
+images)"; a ZIP of install files: "download 3.4 MB (ZIP of the install
+files)"), and its cover; its title column is as wide as the longest title,
+"The Disney Collection Screen Saver". `--remove <id>`
 deletes one package (Deluxe: `FILES` and its `import.json`) and rewrites the
 catalog. The cover commands are described under **Covers**.
 
@@ -49,9 +58,38 @@ Every source is read through one view, `SourceFs` (`source.h`):
 
 | Source | What is read |
 |---|---|
-| `--image` (= `--iso`) | The type is sniffed from the content, never the extension. **ISO-9660** (`iso9660.h`): level 1/2, Joliet SVD preferred when present (each Joliet entry is paired with its 8.3 twin), multi-extent files, one-sided both-endian fields, cooked 2048 or raw 2352-byte sectors; the Apple partition map and HFS half of a hybrid disc are ignored. Otherwise, a local file header at byte 0: a ZIP (`zip.h`, held in memory, at most 256 MB). A ZIP that holds **floppy images** — members of a DOS floppy's size (a multiple of 512 bytes, 160 KB to 2.88 MB) that open as FAT volumes — is those images (`source.h` `floppy_images_in_zip`): each is inflated into memory with its size and CRC-32 checked and read as if it had been given with `--image`, a part of its own named `<zip>!<member>`; the other members (scans, metadata) are ignored and logged — a floppy-sized one whose first sector is no boot sector is not inflated past its first 64 KiB (the output chunk that holds that sector) — and a password-protected floppy-sized member is refused, as is a ZIP whose members with a boot sector add up to more than 64 MB (`kMaxZippedImageBytes`: "… holds more than 64 MB of disk images; no release came on that many disks"). That is how the Internet Archive serves an item's disks together (Star Trek's: the ZIP's own md5 changes with every download, so its images' md5s identify it). Member names are UTF-8 when the archive says so (general-purpose bit 11; each byte that is not UTF-8 becomes U+FFFD) or when they are UTF-8 without it (archivers outside Windows write that); any other name is code page 437, which the ZIP specification prescribes without the bit and which Explorer and 7-Zip on an English Windows write for a name that fits it (their OEM code page; byte 0x81 is `ü`), the same reading on every machine: so two names that differ only in a letter outside ASCII are two names, and nothing that is not UTF-8 reaches a message or `import.json`. Any other ZIP is a **ZIP of install files**, whose members are the files at the source's root — bare names only (a ZIP that nests them in a folder is refused: "a ZIP source must hold the install files at its root"), none password-protected (the installer's own encrypted archives are members like any file), each inflated and its size and CRC-32 checked as it is read. Otherwise **FAT12/16** (`fat.h`): BPB-driven, strict (see below). The image md5 is always computed. Several `--image`s (split floppies: the Simpsons' two, Star Trek's two, Star Wars Screen Entertainment's five), and the images of a ZIP, are read as one tree: directories merge; a file present in more than one image must have the same size (checked when listed) and bytes (checked when read), else the source is invalid ("… they are not the disks of one release"). An image given twice, or a byte-identical copy of one (same md5 and size), is read once and logged as ignored, so the import still counts as one known image. Known images of two different releases are refused before anything is read: "these images are two different releases (…); import each image on its own". |
-| `--from` | A folder or drive root. The root of a **CD drive** (a disc, or an image Windows mounted) is read as the disc itself, through the ISO reader on the raw volume (`\\.\E:`, sector-aligned reads): Windows lists a Joliet disc such as the 10th Anniversary by its long names ("Toaster 2k.ad"), and only the disc's own pairing gives the 8.3 names the release, its manifest and the catalog ids use (`TOASTER2.AD`). When the volume cannot be opened it falls back to the listing (logged). Anything else: names are taken as listed, upper-cased (never the volume's generated `~1` alias, which depends on the drive's 8dot3name setting). |
+| `--image` (= `--iso`) | The type is sniffed from the content, never the extension. **ISO-9660** (`iso9660.h`): level 1/2, Joliet SVD preferred when present (each Joliet entry is paired with its 8.3 twin), multi-extent files, one-sided both-endian fields, cooked 2048 or raw 2352-byte sectors; the Apple partition map and HFS half of a hybrid disc are ignored. Otherwise, a local file header at byte 0: a ZIP (`zip.h`, held in memory, at most 256 MB). A ZIP that holds **floppy images** — members of a DOS floppy's size (a multiple of 512 bytes, 160 KB to 2.88 MB) that open as FAT volumes — is those images (`source.h` `floppy_images_in_zip`): each is inflated into memory with its size and CRC-32 checked and read as if it had been given with `--image`, a part of its own named `<zip>!<member>`; the other members (scans, metadata) are ignored and logged — a floppy-sized one whose first sector is no boot sector is not inflated past its first 64 KiB (the output chunk that holds that sector) — and a password-protected floppy-sized member is refused, as is a ZIP whose members with a boot sector add up to more than 64 MB (`kMaxZippedImageBytes`: "… holds more than 64 MB of disk images; no release came on that many disks"). That is how the Internet Archive serves an item's disks together (Star Trek's: the ZIP's own md5 changes with every download, so its images' md5s identify it). Member names are UTF-8 when the archive says so (general-purpose bit 11; each byte that is not UTF-8 becomes U+FFFD) or when they are UTF-8 without it (archivers outside Windows write that); any other name is code page 437, which the ZIP specification prescribes without the bit and which Explorer and 7-Zip on an English Windows write for a name that fits it (their OEM code page; byte 0x81 is `ü`), the same reading on every machine: so two names that differ only in a letter outside ASCII are two names, and nothing that is not UTF-8 reaches a message or `import.json`. Any other ZIP is a **ZIP of install files**, whose members are the files at the source's root — bare names only, or, since the twelve releases, nothing but flat `DISK<n>` folders (below; any other nesting is refused: "… (a ZIP source holds the install files at its root, or only DISK<n> folders)") — none password-protected (the installer's own encrypted archives are members like any file), each inflated and its size and CRC-32 checked as it is read. A ZIP of install files whose md5 is one of a package's known images (the five releases below that have no image of their disks online) is that release's known copy: read as the install folder, verified `image`, and logged "a ZIP of install files, the known copy of <title> (by its md5)". Otherwise **FAT12/16** (`fat.h`): BPB-driven, strict (see below). The image md5 is always computed. Several `--image`s (split floppies: the Simpsons' two, Star Trek's two, Star Wars Screen Entertainment's five), and the images of a ZIP, are read as one tree: directories merge; a file present in more than one image must have the same size (checked when listed) and bytes (checked when read), else the source is invalid ("… they are not the disks of one release"). An image given twice, or a byte-identical copy of one (same md5 and size), is read once and logged as ignored, so the import still counts as one known image. Known images of two different releases are refused before anything is read: "these images are two different releases (…); import each image on its own". |
+| `--from` | A folder or drive root. The root of a **CD drive** (a disc, or an image Windows mounted) is read as the disc itself, through the ISO reader on the raw volume (`\\.\E:`, sector-aligned reads): Windows lists a Joliet disc such as the 10th Anniversary by its long names ("Toaster 2k.ad"), and only the disc's own pairing gives the 8.3 names the release, its manifest and the catalog ids use (`TOASTER2.AD`). When the volume cannot be opened it falls back to the listing (logged). Anything else: names are taken as listed, upper-cased (never the volume's generated `~1` alias, which depends on the drive's 8dot3name setting). A folder whose root holds nothing but `DISK<n>` folders is a disk set (below); one that holds anything else beside them is read as it is, and the log says why (so does the importer window's caution: `identify_folder` puts `open_folder`'s note before the error). |
 | `--download` | The package's Internet Archive copy (see **Downloads**; Deluxe when neither `--download <id>` nor `--package` names one) via WinHTTP into `<data folder>\downloads` (see **Destination and atomicity**; or `--download-dir`): redirects followed by hand (never from https to http), resume from `<file>.part` with `Range`, restart when a server ignores or botches it, the published size checked before a byte is written and while it streams (a body with no `Content-Length` included; without a published size, 2 GB at most), and the md5 (CNG) before the rename. An already-downloaded file that matches is reused. Retries: 5 failed connections in a row, reset whenever a connection gets the file further (cap 50). One download per destination at a time (`<file>.lock`, delete-on-close). The downloaded file — or every image of a copy on several floppies, each fetched and checked the same way — is then read as `--image` would read it. `--url` fetches another URL instead (saved under its own decoded file name — `download.iso` when that is a DOS device such as `NUL.iso` — checked against `--md5` when given); `--md5` must be 32 hex digits. Without `--md5`, the URL is recorded in `<file>.source` (hidden) and the file, or its `.part`, is reused only for that same URL. `--download all`: every package in turn. A cancel (the window's Cancel, or Ctrl+C at the console) stops a download at once, even while it waits on the network. |
+
+**Disk sets** (`source.h`). A source whose root holds nothing but folders
+named `DISK<n>` (`DISK1`–`DISK99`, any case, no leading zero; `zip.h`
+`disk_folder_number`) is a release's install disks kept apart, and is read
+as the union of those folders in disk order, exactly as several `--image`s
+are: folders merge, and a name on two disks must be one file (the same size
+when listed, the same bytes when read), else the source is invalid: "SAME.TXT
+differs between Disk1 and Disk2 (size); they are not the disks of one
+release". Any subset of disks is accepted; the recipe says whether the
+release is complete. The Internet Archive's copies of ScreamSavers
+(`DISK1/`–`DISK3/`), Marvel Comics Screen Posters and Snoopy's Screen Savers
+(`Disk1/`, `Disk2/`) are ZIPs of this shape (Snoopy's `DREAM.ON`, on both of
+its disks, is the same bytes on each). The log says "reading <source> as
+the union of its folders Disk1 and Disk2 (one install disk each)".
+* **A ZIP** (`ZipArchive` with `ZipNames::disk_folders`): its disks are
+  flat, its members `DISK<n>/<bare name>` and the folders' own entries
+  (`ZipMember::disk`, `directory`, `file_name()`). Another folder
+  (`__MACOSX/` among them), a deeper path, a folder entry that holds data,
+  or a file at the root beside the disks refuses it (2). The installers'
+  own archives inside a source keep the strict bare names
+  (`ZipNames::bare`).
+* **A folder, a CD drive read as its disc, an ISO or FAT image**: the same
+  rule, and a folder disk may hold subfolders, which merge. A root that
+  holds anything besides its `DISK<n>` folders (a `desktop.ini`, the
+  downloaded ZIP beside its unzipped disks) is read as it is, the note
+  saying so, and is then usually no known release; the importer window's
+  caution gives that note before the error (`identify_folder`).
+* `import.json`'s `from` names a file by its path in the union, without
+  its disk (`AFI.ZIP!SCREAMS.AFI`).
 
 ## Downloads
 
@@ -59,10 +97,12 @@ Each registry package lists its Internet Archive copies (`packages.h`
 `Download`: URL, file name, size, md5, kind), from the archive.org search
 verified on 2026-09-26 (`research/win/pkg/sources/sources.json`; Star Wars
 Screen Entertainment's on 2026-09-28, `research/win/pkg/swse/sources.json`;
-Star Trek's on 2026-09-29, `research/win/pkg/startrek/importer/sources.json`:
-every URL answered 302 → 200 (Star Trek's a Range request: 302 → 206) with
-the stated size and `Accept-Ranges`, and each file's md5 was compared with
-the user's own copy):
+Star Trek's on 2026-09-29, `research/win/pkg/startrek/importer/sources.json`,
+and the five later releases' on 2026-09-29 and 30 (their surveys'
+`research/win/pkg/<survey>/`, and `import.download_real` fetching them):
+every URL answered 302 → 200 (Star Trek's and the five's a Range request:
+302 → 206) with the stated size and `Accept-Ranges`, and each file's md5
+was compared with the user's own copy):
 
 | id | Copies, in the order tried | Saved as | Size | md5 | Kind |
 |---|---|---|---|---|---|
@@ -73,6 +113,11 @@ the user's own copy):
 | `simpsons` | `SIMPSONS_WIN/SIMPSONS.zip`, then `AfterDarkSimpsons/After Dark - The Simpsons.zip` | the same names | 2752575 / 2752010 | `90a85bf6…` / `1d608334…` | zip |
 | `swse` | `cd_AfterDark_Star_Wars_ScreenSaver_for_Win3.1/AfterDarkStarWars.iso` (the exact image), then `swse1/SWSE.bin` (the Redump dump of the same pressing, raw 2352-byte sectors), then `swse_20240317/SWSE.zip` (the disc's 40 files, flat) | `AfterDarkStarWars.iso`, `Star Wars - Screen Entertainment (USA).bin`, `SWSE.zip` | 7227392 / 9005808 / 7013137 | `bfa63c1b…` / `ce51614a…` / `c7a4c532…` | image / image / zip |
 | `startrek` | `afterdark-20b_startrek/afterdark-20b_startrek_disk1.img` + `…_disk2.img` (the user's images), then `startrektosscreensaver1992win/startrek1.img` + `startrek2.img` (the same disks as a Windows 9x copy wrote to them: the same files, byte for byte) | the same names | 1474560 each | `28e33608…` + `c630da5f…` / `6ee71b45…` + `af9d29a7…` | image, two parts |
+| `marvel` | `afterdarkmarvelscreenposters/After Dark - Marvel Screen Posters.zip` (the twelve install files, flat, without the previous owners' notes), then `after-dark-collection/After Dark - Marvel Comics.zip` (both disks in `Disk1`/`Disk2` folders: the user's copy) | the same names | 2039771 / 2046286 | `4c608dbb…` / `6981b36a…` | zip (known images) |
+| `snoopy` | `after-dark-collection/After Dark - Snoopy.zip` (`Disk1`/`Disk2` folders) | the same name | 1993700 | `a712447e…` | zip (a known image) |
+| `looney` | `after-dark-collection/After Dark - Looney Tunes.zip` | the same name | 2900525 | `642b358a…` | zip (a known image) |
+| `screams` | `after-dark-collection/After Dark - Scream Savers.zip` (`DISK1`–`DISK3` folders; the only copy online) | the same name | 3453163 | `37a47b25…` | zip (a known image) |
+| `disney` | `after-dark-collection/After Dark - Disney Collection.zip` | the same name | 3560012 | `2f38df15…` | zip (a known image) |
 
 * **Disc images** (`kind` image): the md5 is one of the package's known
   images, so the import is exactly an `--image` import of that file:
@@ -87,6 +132,14 @@ the user's own copy):
   md5, read as the install folder (see `--image` above) and every installed
   file is verified against the manifest: `verified: files`. Star Wars Screen
   Entertainment's third copy is such a ZIP too (all 40 files of the disc).
+* **Known ZIPs** (Marvel, Snoopy, the Looney Tunes, ScreamSavers, the Disney
+  Collection): no image of their disks exists online (the Looney Tunes'
+  CD, `LOONEY_T`, is online only under a name that carries the product's
+  serial number, so it is a known image by md5, size and volume id alone,
+  and never a download), and each copy's bytes never change, so each ZIP's
+  md5 is a known image: the download is read as the install folder and
+  verified `image`, as the user's own copy of the same file is. No
+  serial-number file of the items is ever fetched.
 * **Floppy sets** (Star Trek: The Screen Saver): a copy is the images of
   every install disk (`Download::more_images`, each a `DownloadPart`),
   fetched one after the other into the downloads folder, each checked
@@ -111,6 +164,10 @@ the user's own copy):
 * `--download all` imports every package in registry order, each as its own
   `--download <id>` (going on after a failure, stopping at a cancel); the
   exit code is the first failure's, 0 when all were imported.
+* A download's progress (`Progress::Phase::download`, then `check_image`
+  while its md5 is checked: a reused file's, or the finished transfer's)
+  names the file it is saved as (`Progress::item`: "After Dark -
+  Snoopy.zip"), as a copy names the file it copies.
 
 Names that could escape the staging directory or are DOS devices (`CON`,
 `NUL.AD`, `COM1`…) reject the source, from every reader (`names.h`). So do
@@ -194,6 +251,38 @@ on a token boundary) is caught only by the manifest (3, before a byte is
 written when its size differs), as with SZDD, and not at all under
 `--no-verify`.
 
+**InstallShield 2 libraries** (`isz.h`; Marvel Comics Screen Posters'
+`IMAGES.1` + `IMAGES.2`, `MODULES.LIB`, `ENGINE.LIB`, `WIN.LIB` and Snoopy's
+Screen Savers' `AD_MODS.1` + `AD_MODS.2`: InstallShield 2's compressed "Z"
+libraries, PKWARE DCL implode inside; PACKAGES.md §8.9). Written from the
+InstallShield format survey's public description and its Python reference
+(`research/win/pkg/installshield/`), not from any third-party decoder: it
+holds no third-party code. `IszLibrary` takes one library, or every volume
+of a split set in any order (ordered by their headers, never their names),
+and checks everything the format records: the 255-byte header (signature,
+password byte 0, split-set fields, zero padding, DOS dates), the directory
+and file tables exactly where the header says and ending every volume,
+identical in every volume of a set, entries of their exact sizes with
+NUL-terminated names that pass the name rules (code page 437 as UTF-8, no
+duplicates), members back to back with no gap or overlap, every size and
+sum, a complete set, and exactly one member crossing each boundary between
+two consecutive volumes (`IMAGES.1+IMAGES.2!XMEN2099.FIF`). It refuses by
+name what neither release has: a password, a stored member, a named or
+second directory, a member over three or more volumes, a boundary no member
+crosses, and PKWARE's coded-literal mode. The DCL decoder (binary literals;
+dictionary bits 4–6, a 1, 2 or 4 KiB window) never copies from before the
+first byte written, never produces more than the member's recorded size and
+must reach it exactly at the end code, after which only zero bits may
+follow; output streams in chunks of at most 64 KiB. A missing volume is
+named as the set would name it, unless a file given carries that name: then
+the message says which volume that file holds ("the set's volume 1 is
+missing (T.1 is volume 2)"). Nothing in the format has a checksum: a damaged
+container or stream is a corrupt source (2), and a damaged member that
+still decodes to its size is caught only by the manifest (3), as with SZDD
+and KWAJ, and not at all under `--no-verify`. The tests carry `ICOMP`
+vectors of made-up data and streams written token by token; nothing in
+them compresses.
+
 **FAT12/16.** Bytes/sector 512–4096, sectors/cluster a power of two,
 reserved sectors ≥ 1, one or two FATs, a root directory, a sector count and
 a FAT size; the `55 AA` signature; the image at least as long as its
@@ -225,7 +314,11 @@ same way, from memory (`FatImage` over the member's bytes).
    images hold every install disk of Star Trek: The Screen Saver (by md5)
    and another image besides; checking files individually" (a set that
    lacks a disk logs "the source holds install disk 1 of 2 of … (by md5),
-   not the whole set" instead).
+   not the whole set" instead). The md5 of a ZIP of install files names a
+   package the same way when it is one of its known images (Marvel's two
+   ZIPs, Snoopy's, the Looney Tunes', ScreamSavers' and the Disney
+   Collection's); the ZIP is read as the install folder (a disk set when it
+   keeps its disks in `DISK<n>` folders), and the fingerprint must match.
 2. **Fingerprints** (folders, and images with an unknown md5), every package
    in registry order; exactly one must match:
    * `tree` packages: a FILES dir (`ADE\FILES`, `FILES` or the root) holding
@@ -233,10 +326,21 @@ same way, from memory (`FatImage` over the member's bytes).
      (`ad10`: `AD10TH\ADXPL40.DLL`) and none of its absent dirs (`ad10`: no
      `AD40`). Deluxe: `AD40` + `ENGINE`, as always.
    * `ad3zip` packages: an install dir (`INSTALL`, or the root of a floppy)
-     holding `INSTALL.INS`, `SETUP.PKG`, `ENGINE.ZIP` and `MODMISC.ZIP`; the
-     package is the one whose engine DLL is a member of `MODMISC.ZIP`
-     (`ADXPL300.DLL` / `ADXPL40.DLL` / `ADXPL310.DLL`). Central-directory
-     names are not encrypted, so no password is needed to identify.
+     holding `INSTALL.INS`, `SETUP.PKG`, `ENGINE.ZIP`, `MODMISC.ZIP` and
+     `AFI.ZIP`; the package is the one whose engine DLL is a member of
+     `MODMISC.ZIP` (`ADXPL300.DLL` / `ADXPL40.DLL` / `ADXPL310.DLL` /
+     `ADXPL41.DLL` / `ADXPL300.DLL` / `ADXPL100.DLL` for `ad32` / `tt` /
+     `simpsons` / `looney` / `screams` / `disney`), whose folder file is a
+     member of `AFI.ZIP` (`AD3.AFI` / `PHLEM.AFI` / `SAX.AFI` /
+     `LNYTUNES.AFI` / `SCREAMS.AFI` / `DISNEY.AFI`), and whose `marker`, when
+     it has one, is a member of `MODMISC.ZIP` too (`ad32`: `AD30RSDB.DLL`).
+     Neither archive alone tells the family apart: ScreamSavers ships After
+     Dark 3.2's own `ADXPL300.DLL` (1.1.0 took every flat form of it for
+     3.2, and `--no-verify` installed it over `packages\ad32`), and every
+     `AFI.ZIP` carries other products' folder files. Checked over every known
+     source form of the six, disk 1 alone included: each matches exactly one
+     package, or none. Central-directory names are not encrypted, so no
+     password is needed to identify.
    * `intermission` packages: Presage's installer script `INSTALL.DAT` at the
      source's root (the CD, disk 1, a flat ZIP or a copy of one), a plain file
      of at most 64 KiB (a larger one is simply no match), whose `[data]`
@@ -254,6 +358,20 @@ same way, from memory (`FatImage` over the member's bytes).
      beside it. The file list is read only for this. An installed
      `C:\AFTERDRK` is no source: it has no `SETUP.LST`, and its `AD.EXE`
      carries the owner's name.
+   * `islib` packages: InstallShield 2's package list `SETUP.PKG` at the
+     source's root (disk 1, the disks together, a flat folder or ZIP of
+     their files) with disk 1's library volume (`IMAGES.1`, `AD_MODS.1`)
+     beside it; only then is the list read, once: a plain file of at most
+     64 KiB that starts with `4A A3` and parses strictly (`parse_setup_pkg`:
+     every group's size adds up, the groups end at the disk table, every
+     library points at a group and every group is pointed at), else it is
+     no package list and identifies nothing. The package is the one whose
+     tag member the list names in its tag library (`Package::tag_library`,
+     `tag_member`: `MARVEL.AD` in `modules.lib`, `IS_FLY.AD` in `AD_MODS.z`,
+     compared without ASCII case). An AD 3.x install's `SETUP.PKG`, which has
+     no such volume beside it, is never read. Disk 1 alone is identified
+     (and then refused: every install disk is needed); disk 2 alone matches
+     nothing.
 3. `--package <id>` restricts step 2 to that package and refuses a source
    that is something else.
 
@@ -285,16 +403,25 @@ source, 2, never a verify failure):
 | `MODMISC.ZIP` | every member but `EDITFILE.TXT` → `M\` |
 | `WIN.ZIP` | `AD_RSRC.DLL` → `M\` |
 | `BITMAPS.ZIP`, `TRACES.ZIP`, `SOUNDS.ZIP` | → `M\BITMAPS\`, `M\TRACES\`, `M\SOUNDS\` |
-| `MUSICG.ZIP`, else `MUSIC.ZIP` | `*.MID` → `M\MUSIC\`; `*.DLL` (`TT_SND`, `SIMP_SND`) → `M\` |
+| `MUSICG.ZIP`, else `MUSIC.ZIP` | `*.MID` → `M\MUSIC\`; `*.DLL` (`TT_SND`, `SIMP_SND`, `LT_SOUND`) → `M\` |
 | `AFI.ZIP` | the package's folder AFI → `M\FOLDER.AFI` |
 | `ENGINE.ZIP` | `AD_SND.DLL`, `ADTASK.DLL`, `ADW30.EXE`, `ADW30.INI`, `ECOLOGIC.DLL` → `E\` |
 | `HELP`, `MULTIS`, `WINSYS`, `WAVEMIX`, the unused `MUSIC` | skipped |
+| an archive the package lists as never opened (`Package::never_opened`: `disney`'s `BEAUTYOL.ZIP`, the 1993 build of `BEAUTY.AD`) | skipped by name before it is loaded, never read: "skipped BEAUTYOL.ZIP (never opened: not in the recipe of The Disney Collection Screen Saver)" |
 | anything else | skipped and logged |
 
 Only the archives and `INSTALL.INS` are read: the Simpsons floppy's
 `CEREAL.TXT` and `SERIAL.TXT` (the original owner's notes) are never opened,
-copied, hashed or listed. `simpsons` also requires all 15 module archives,
-so a split-floppy source must include both disks.
+copied, hashed or listed, nor are the previous owners' notes in the Looney
+Tunes', ScreamSavers' and the Disney Collection's copies. `simpsons`,
+`looney` (with `MUSIC.ZIP`), `screams` and `disney` also require all their
+module archives, so a split-floppy source must include every disk. The
+Looney Tunes install 34 files (12 modules, `ADXPL41`, `LT_SOUND`,
+`AD_RSRC`, `FOLDER.AFI`, 13 MIDI; `ENGINE` 5), ScreamSavers 23 (15
+modules, After Dark 3.2's `ADXPL300`, which nothing loads but the installer
+put there, `AD_RSRC`, `FOLDER.AFI`; `ENGINE` 5) and the Disney Collection 31
+(16 modules, `ADXPL100`, `DIS_SND`, `AD_RSRC`, `FOLDER.AFI`, 6 MIDI from
+`MUSICG.ZIP`; `ENGINE` 5).
 
 **`intermission`** reproduces what Presage's installer did for Star Wars
 Screen Entertainment, flattened into the module dir `M` = `SAVER` (the ne16
@@ -392,6 +519,61 @@ Microsoft Setup's own files (`SETUP.EXE`, `_MSTEST.EXE`, `AD_NSTLL.MST`,
 `SPLASH1.BMP`, `BMPRSRC.DLL`). `import.json`'s `from` is the compressed file
 (`PLANETS.AD_`).
 
+**`islib`** reproduces what InstallShield 2.00 did for Marvel Comics Screen
+Posters (`INSTALL.INS`) and Snoopy's Screen Savers (`SETUP.INS`): each
+member of their compressed libraries placed as the script placed it,
+flattened into the module dir `M` = `AFTERDRK` and `E` = `ENGINE`. It is
+baked in: registry parameters (the module dir, the library volumes, the tag
+and the placement table `Package::library_members`, one `LibraryMember` per
+installed file: 64 rows for `marvel`, 8 for `snoopy`), no script
+interpreter.
+
+1. Every install disk: each library volume the registry lists must be at
+   the source's root, else 2 ("the source is missing IMAGES.2, MODULES.LIB,
+   ENGINE.LIB, WIN.LIB; importing Marvel Comics Screen Posters needs every
+   install disk").
+2. Each library the table names is read once, whole, with `isz.h`: a file,
+   or a split set found from its first volume's header, its other volumes
+   named from it (`IMAGES.1` → `IMAGES.2`) and taken only from the
+   registry's volumes. Refused (2): a volume that says the set continues on
+   one the registry does not list ("IMAGES.1 says the library continues on
+   IMAGES.3, which is not one of the install disks of Marvel Comics Screen
+   Posters (a damaged or foreign volume?)"; that file is never opened), a
+   first volume that holds another volume ("IMAGES.1 is volume 2 of its
+   set, not volume 1 (a mislabelled or foreign volume?)"; nothing else of
+   the set is opened), and any damaged library or stream.
+3. The table's members go where it says: `MARVEL.AD` and `DECO.DLL` →
+   `M\`; the 36 posters, 23 tables and the image catalog `MRVLIMAG.ADC` of
+   `IMAGES.1`+`IMAGES.2` → `M\MRVLIMAG\`; `ENGINE.LIB!AD.EXE` (After Dark
+   2.0d's host, kept for reference) and `WIN.LIB!AD_SND.DLL` (AD_SND 1.0)
+   → `E\`; Snoopy's eight modules → `M\`. A member no row names is listed
+   in one log line ("skipped ENGINE.LIB!ADINIT.EXE, … (not in the recipe
+   of …)") and never decoded.
+4. Libraries without the tag member `SETUP.PKG` promised are not the disks
+   of one release (2: "SETUP.PKG lists MARVEL.AD in modules.lib, but
+   MODULES.LIB holds no such member (not the disks of one release?)");
+   another missing member is logged ("the source's IMAGES.1 has no
+   COVER.FTT") and the manifest reports it (`partial`).
+
+`marvel` installs 64 files, 2,002,020 bytes (`AFTERDRK` 62, `ENGINE` 2);
+`snoopy` 8, 4,044,927 bytes, and no `ENGINE` (its modules were made for an
+After Dark already installed; the ne16 lane supplies their AD_SND,
+PACKAGES.md §7.4). `from` is the member's volumes and name
+(`IMAGES.1+IMAGES.2!XMEN2099.FIF`, `MODULES.LIB!MARVEL.AD`), the copy's time
+the member's DOS time. Every recorded size counts towards the staging
+budget and is checked against the manifest before a byte is written; a
+changed literal that still decodes is caught by the manifest (3). Only
+`SETUP.PKG` (to identify) and the registry's volumes are ever opened (I5):
+Marvel's `INSTALL.INS`, `SETUP.EXE`, `SETUP.BIN`, `~INS0762.LIB`,
+`CHANGES.TXT` and `WINSYS.LIB`, and the rest of `ENGINE.LIB` and `WIN.LIB`
+(listed, never decoded: the PC-speaker, Sound Blaster and multimedia
+drivers, `AD_LIB.DLL`, `ADINIT.EXE`, the manual and readme texts, `AD.HLP`,
+`AD_WRAP.COM`, `SPALETTE.DLL` and the disk's `AD_PREFS.INI`); Snoopy's
+`SETUP.EXE`, `SETUP.INS`, `AD_MODS.LIS` and `AD_MODS.BMP` (a cover source
+only), the disk copier's leftovers (`AD_Changes.txt`, `CMOS.RAM`,
+`DREAM.ON`, `TXTSCR.DAT`); and both copies' previous owners' notes, which
+nothing reads.
+
 **The archive password** is never stored: it is derived from `INSTALL.INS`
 at import time (§8.4). Candidates are the script's strings of 4–32 printable
 bytes — its own length-prefixed strings (a 16-bit length, then the bytes:
@@ -409,8 +591,12 @@ satisfy PACKAGES.md §4.2 (2 otherwise): I1 no `AD_SND`/`OLDMOD16`/`OLDMOD32`/
 `ADTASK`/`ADW30.EXE` beside the modules; I2 every non-system DLL a module
 imports (but `AD_SND`) beside it; I3 `ENGINE\AD_SND.DLL` plus either
 `ENGINE\OLDMOD16.DLL` + `AFTERDAR.SCR` or `ENGINE\ADTASK.DLL`; I4 every
-`*_SND.DLL` sound database in a module folder, and (`ad3zip`) every MIDI in
-`M\MUSIC\`. An `intermission` package has its own: I1 also no
+sound database (a `*_SND.DLL` other than `AD_SND.DLL`, or a `*_SOUND.DLL`:
+the Looney Tunes' `LT_SOUND.DLL`) in a module folder, and (`ad3zip`) every
+MIDI in `M\MUSIC\`. The Looney Tunes require `LNYTUNES\ADXPL41.DLL` and
+`LT_SOUND.DLL`, ScreamSavers only `ENGINE\AD_SND.DLL` and `ADTASK.DLL`, the
+Disney Collection `DISNEY\ADXPL100.DLL` and `DIS_SND.DLL`, each with its
+`ENGINE\AD_SND.DLL` and `ADTASK.DLL`. An `intermission` package has its own: I1 also no
 `INTERMIS.EXE` or `*.IMQ` beside the modules (they live in `ENGINE`); I2 also
 every non-system DLL that the NE DLLs beside the modules import is beside them
 too (`INTRMLIB.DLL` → `ANTSW.DLL`; `TOOLHELP`, `LZEXPAND`, `VER` and `WING`
@@ -430,7 +616,16 @@ modules import is beside them (`AD_MOD.DLL` → `AD_RSRC`; `AD_SND` is
 `AFTERDRK\ST_RES\`, where AD_MOD opens it. Its `required` files are
 `AFTERDRK\{AD_MOD,AD_RSRC}.DLL`,
 `AFTERDRK\ST_RES\{ST_RESDB,ST_MASKS,ST_VGA,ST_SVGA,ST_SND}.DLL` and
-`ENGINE\AD_SND.DLL`.
+`ENGINE\AD_SND.DLL`. An `islib` package has its own as well: I1 also no
+`AD.EXE` beside the modules; I2 also every non-system DLL that the NE DLLs
+and drivers beside the modules import is beside them (Marvel's
+`DECO.DLL`; `AD_SND` is `ENGINE`'s); I3 instead: `ENGINE\AD_SND.DLL` when
+the table places one (Marvel; Snoopy ships none), `ENGINE` holds none of
+`OLDMOD16.DLL`, `ADTASK.DLL`, `AFTERDAR.SCR`, and there is no `WINDOWS`
+folder; I4 as for `ad3zip`. Marvel's `required` files are
+`AFTERDRK\DECO.DLL`, `AFTERDRK\MRVLIMAG\MRVLIMAG.ADC` and
+`ENGINE\AD_SND.DLL`; Snoopy's are none (its tag member, which the recipe
+requires, is a module).
 
 ## Destination and atomicity
 
@@ -493,8 +688,10 @@ source invalid · 3 verify failed · 4 network · 5 cancelled.
 Each package has a manifest (path, size, md5 of every installed file,
 fix-ups included — never After Dark bytes): `known_files.inc` (Deluxe, 175
 files) and `known_files_<id>.inc` (`ad10` 147, `ad32` 89, `tt` 26,
-`simpsons` 30, `swse` 29, `startrek` 27). `"verified"` is `image` (the image md5 is one of
-the package's known images, or the images are a known disk set), `files` (every file of the manifest is there and matched it, and
+`simpsons` 30, `swse` 29, `startrek` 27, `marvel` 64, `snoopy` 8, `looney`
+34, `screams` 23, `disney` 31). `"verified"` is `image` (the image md5 is one of
+the package's known images — a disc or floppy image, or a known ZIP of the
+install files —, or the images are a known disk set), `files` (every file of the manifest is there and matched it, and
 nothing else was installed), `partial` (some installed files are not in the
 manifest, or some of the manifest's are missing: `missingKnown` lists them),
 or `none` (`--no-verify`, or no manifest). A file that differs
@@ -506,7 +703,11 @@ record, only when the image md5 is one of that package's known images
 release on several install disks (`startrek`), only when the record's
 `parts` are every one of its known disks exactly once (either copy of each)
 and nothing else, and it has no single image md5; the manifest's header
-then names the disks' md5s.
+then names the disks' md5s. For a release known by the ZIP of its install
+files (`marvel`: either of its two ZIPs, which give the same files;
+`snoopy`, `screams`, `disney`; `looney`: its ZIP or its `LOONEY_T` CD) it
+takes the import of that ZIP, and the header says so. The script writes
+next to itself: run it on a scratch copy to compare.
 
 ## import.json
 
@@ -535,7 +736,7 @@ Every other package writes version 2 inside its root (PACKAGES.md §5.3):
               "from": "INSTALL/GUTS.ZIP!GUTS.AD"} ] }
 ```
 
-`package.recipe` is `tree`, `ad3zip`, `intermission` or `ad2kwaj`. `kind` is `iso`,
+`package.recipe` is `tree`, `ad3zip`, `intermission`, `ad2kwaj` or `islib`. `kind` is `iso`,
 `floppy`, `zip`, `folder` or `download`; `format` is
 `iso9660`, `iso9660+joliet`, `fat12`, `fat16`, `zip` or `folder`; the image
 fields appear for image sources, downloads included (`imageSize`/`imageMd5`
@@ -547,7 +748,10 @@ fetched; for a floppy set, its first image's), `finalUrl` (where its redirects l
 download was reused) and `md5Checked` (the file matched its published md5,
 or `--md5`). Deluxe's version-1 record keeps its `url`/`finalUrl`. `from` is the source path, `zip!member`
 for an archive member (`SWSE1.ARJ!ANTSW.DLL`; `SWSE2.ARJ+SWSE2.A01!JAWAS.IMX`
-for an ARJ member that spans volumes), `alias:<path>` for a fix-up. `files` is sorted by
+for an ARJ member that spans volumes; `MODULES.LIB!MARVEL.AD` and
+`IMAGES.1+IMAGES.2!XMEN2099.FIF` for InstallShield library members), a
+path in the union for a disk set (without its `DISK<n>` folder),
+`alias:<path>` for a fix-up. `files` is sorted by
 path; `known` is `match`, `mismatch` or `unknown`.
 
 Both records are UTF-8 JSON whatever a source holds. Every name reaches
@@ -578,7 +782,7 @@ following ABI.md §2.10, over every installed package in registry order:
 | `controls` | `1000/1..4` (slot = name − 1) | same | one button, `{index 0, "Configure...", button}`, when `SAVERDLGPROC` is exported (the module's own dialog) |
 | `entry` | `_Module@4` when exported (STARRYNI), else `Module` | `MODULE` | `SAVERDRAW` |
 | `abi` | absent (After Dark) | absent (After Dark) | `"intermission"`, the entry's last field |
-| `screen` | absent | `"640x480"` on every `startrek` entry, its last field; else absent | absent (the ABI gives an IMX module its screen) |
+| `screen` | absent | `"640x480"` on every `startrek`, `screams` and `marvel` entry, its last field; else absent | absent (the ABI gives an IMX module its screen) |
 
 An NE file is told apart exactly as the ne16 lane's `detect_kind` tells it
 (`host/ne16/package.cc`), so the catalog lists it as the lane will run it:
@@ -588,9 +792,11 @@ are there. An NE the lane would refuse — an `IMXX_*` file, one exporting
 `SETCURRSAVER`, `SAVERINIT` or `SAVERDRAW` alone, a reader exporting
 `SAVERMAIN`, one with none of these — is left out, logged with the lane's
 reason (`catalog: skipped packages/swse/SAVER/IMXX_EXT.IMX: an Intermission
-module named IMXX_*, which the IMX reader refuses`). All 178 NE modules of
-the six After Dark releases export `MODULE`; Star Trek's 16, After Dark
-2.0b's, are Classic-lane modules like the others.
+module named IMXX_*, which the IMX reader refuses`). All 230 NE modules of
+the eleven After Dark releases export `MODULE`; Star Trek's 16, After Dark
+2.0b's, are Classic-lane modules like the others, and so are Snoopy's eight,
+which export it from the NE non-resident names table (searched as the lane
+searches it).
 
 A missing name falls back to `STRINGLIST 128[0]`, then the file name; it is
 trimmed at both ends (After Dark 2.0 began 15 of Star Trek's 16 names with
@@ -598,11 +804,17 @@ a space), then the package's name overrides apply (`ad10`
 `TOAST2K.AD` → "Toasters 2k (early build)"; every `swse` module, `SAVER/VADER.IMX`
 → "Darth Vader"; `startrek` `AFTERDRK/PLANETS.AD`, whose resource says
 " PlanetaryAtlas", → "Planetary Atlas", as its About heading and Berkeley's
-later `PREVIOUS.INF` name it): that is `moduleName`.
+later `PREVIOUS.INF` name it; `disney`'s five names that lost their space
+to the 16-byte name resource, `DISNEY/DALM.AD` → "101 Dalmatians",
+`DSCLOCKS.AD` → "Disney Clocks", `FALLING.AD` → "Falling Flower",
+`FIREWRK.AD` → "Magic Kingdom" and `MERMAID.AD` → "Little Mermaid", as each
+module's own description spells it): that is `moduleName`.
 `displayName` is unique within a lane, case-insensitively: the first module
 with a name keeps it, a later one becomes `name (<short title>)`, and if
 that is taken too `name (<short title>, <FILE>)` — so today's front-end,
-which lists by lane, needs no change. PE resources in several languages
+which lists by lane, needs no change. (The Looney Tunes' Messages is
+"Messages (Looney Tunes)" beside Deluxe's and 3.2's, "Messages" on its
+own.) PE resources in several languages
 (STARRYNI has five) are read as an English Windows loads them: 0x409, then
 neutral, then the lowest id. Text is Windows-1252, written as UTF-8. Each
 control carries `index`, `name`, `kind`
@@ -621,9 +833,11 @@ last, for a package shown at a fixed screen, `screen` (`Package::screen`:
 `"640x480"` on all 16 `startrek` entries, so the release looks as it did at
 640×480: some of its modules — The Mission, Final Exam and Sickbay — compose
 a fixed 640×480 scene, and the others (Ship Panels and Scotty's Files among
-them) lay out for whatever screen they get; the settings window gives such a module that
-screen whatever the Resolution setting, as it gives an IMX module its own
-by ABI; absent everywhere else).
+them) lay out for whatever screen they get; on all 15 `screams` entries,
+four of whose modules paint a 640×480 scene and one composes one 640 wide;
+and on `marvel.marvel`, whose posters are fixed 640×480 pictures; the
+settings window gives such a module that screen whatever the Resolution
+setting, as it gives an IMX module its own by ABI; absent everywhere else).
 
 **After Dark 2.0's About texts** (`Package::About::ad20`, `startrek` only;
 `catalog.h` `ad20_about`): the last line, the registrant stand-in "Berkeley
@@ -670,10 +884,14 @@ identical to the prototype's apart from the new fields and one correction —
 the prototype never parses exports, so it lists STARRYNI's entry as
 `Module`; the module exports `_Module@4`), `ad10` 46 (17 + 29), `ad32` 44,
 `tt` 13, `simpsons` 15 (all `ne16`), `swse` 14 (all `ne16`, Intermission),
-`startrek` 16 (all `ne16`, After Dark 2.0b, each with `screen`): 232 with
-all seven installed, 73 of them `sameAs` an earlier entry (swse and
-startrek add none); the `packages` list, oldest first, begins with
-`startrek` (1992-11).
+`startrek` 16 (all `ne16`, After Dark 2.0b, each with `screen`), `marvel` 1
+(with `screen`, two buttons), `snoopy` 8 (27 controls, no buttons, `about`
+empty: their About texts are blank), `looney` 12 (one button), `screams` 15
+(each with `screen`), `disney` 16 (no buttons): 284 with all twelve
+installed, 232 over the first seven, 73 of them `sameAs` an earlier entry
+(swse, startrek and the five after them add none); the `packages` list, oldest
+first, reads `startrek` (1992-11), `marvel`, `simpsons`, `swse`, `snoopy`,
+`looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
 
 ## Covers
 
@@ -695,6 +913,11 @@ dialog's release strip shows them). The tile shows the first of:
 | `simpsons` | the box front from Wikisimpsons, then the Wayback Machine's copy of the full-box scan it was cut from (cropped to 600×776), then `SETUP.EXE`'s bitmap 7500 (cropped to 387×172) | 600×776 / 387×172 |
 | `swse` | the box front from Presage's 1997 product page (`box-starwars.JPEG`), then Wookieepedia's photo of the same box (the Wayback Machine's byte-exact capture of the stored original: Fandom's live URL rewrites what it serves), both through the Wayback Machine, then two archive.org scans of the disc label (`swse1/1.jpg`, and the exact-ISO item's, cropped to 1424×1424); nothing on the disc (every picture is inside its ARJ archives), so an offline import shows the generated cover | 150×200 / 713×847 / 1416×1416 / 1424×1424 |
 | `startrek` | the Windows box front from the Internet Archive's box scans (`afterdark-20b_startrek_box/Aaa_itemimage.jpg`; it fills the tile), then the same front at 600 dpi, then the scan of disk 1's label in the disk images' own item (`afterdark-20b_startrek_disk1.jpg`, art `panel`: drawn as a picture, never cut to a disc); nothing on the disks (every file is KWAJ-compressed), so an offline import shows the generated cover | 1180×1525 / 1585×2048 / 1090×1145 |
+| `marvel` | the Internet Archive's photo of the Windows box front (`afterdarkmarvelscreenposters/box.jpg`, the flat ZIP's item; cropped to the box at 28,64, 1132×1390, the camera's date stamp inside it kept), then the 1993 magazine advertisement showing the same box (`marval-computer/MarvalComputer.jpg`, art `panel`, "Advertisement"); nothing on the disks (every picture is inside the libraries), so an offline import shows the generated cover | 1132×1390 / 1307×2048 |
+| `snoopy` | the picture its installer shows beside the readme on disk 1 (`AD_MODS.BMP`, Image Smith's logo, art `panel`, "Setup art"); no box, label or manual scan of the Windows release was found online | 79×175 |
+| `looney` | the box front from Berkeley Systems' 1997 product page (`box.looneytunesL.jpg`, through the Wayback Machine), then the installer splash (`SETUP.BMP`, cropped to 387×161 above its warning text), then the scan of the CD label (of the August CD of the same release) | 127×162 / 387×161 / 750×734 |
+| `screams` | the installer's title art in `SETUP.EXE` (bitmap 7500, 350×179, cropped to 350×119 above its copyright block); no box or label scan exists online | 350×119 |
+| `disney` | the box front from Berkeley Systems' 1997 product page (`box.disneyL.jpg`, through the Wayback Machine), then the installer splash (`SETUP.BMP`, cropped to 387×172 above its warning text) | 128×162 / 387×172 |
 
 The box fronts are small (a tile is never shown larger than 160×200 px),
 but they are the retail boxes; a disc label or an installer splash is what
@@ -710,8 +933,10 @@ refresh reuses them without a request. A disc source is read from the source
 being imported (only the named file; with its md5 checked, so another pressing
 is skipped); a bitmap resource of an NE or PE file gets a `BITMAPFILEHEADER`
 before it is decoded. The Simpsons art belongs to Fox, Star Wars Screen
-Entertainment's to Lucasfilm and Star Trek's to Paramount: each is fetched
-onto the user's machine at import time and never bundled.
+Entertainment's to Lucasfilm and Star Trek's to Paramount; the Looney
+Tunes' to Warner Bros., the Disney Collection's to Disney and Marvel's to
+Marvel (with Berkeley's): each is fetched onto the user's machine at import
+time and never bundled.
 
 **During an import** a `cover` phase comes between `verify` and `finalize`
 (`Progress::Phase::cover`, "Getting the cover art"). It tries only the sources
@@ -834,7 +1059,11 @@ names as UTF-8 — code page 437 names without bit 11 decoded (u-umlaut and
 o-umlaut two names, u-umlaut and U-umlaut one), UTF-8 without it kept, a
 byte that is not UTF-8 under it read as U+FFFD; the
 password candidates and their order, decoys, a check-byte trap, no
-password, two archives under different passwords), `import.arj`
+password, two archives under different passwords; the disk-set names of
+`ZipNames::disk_folders` — `DISK<n>/` folder entries, the bare names in
+them, any case, gaps in the numbering, and every refused shape: another
+folder, a deeper path, a folder entry with data, a file beside the disks),
+`import.arj`
 (`tests/arj_builder.h`: stored round trips
 — one member, many, an empty one, one over 64 KiB, names found without case,
 code page 437 names, 7-bit text members; every damaged or foreign header
@@ -884,7 +1113,24 @@ after its first literal (none of its literals); `max_size` at the size, one byte
 short and 0, refused as `KwajTooLarge`; chunks of at most 64 KiB; every
 single-bit flip of the vectors of 1 KB or less, 35,416 of them: an error,
 other bytes, or (a flipped padding bit) the same bytes; never a crash or
-more than the bound), `import.fat` (`tests/fat_builder.h`: 1.44 MB, 2.88 MB,
+more than the bound), `import.isz` (`tests/isz_builder.h`, which lays out
+given streams as libraries and split sets and writes DCL token by token,
+compressing nothing; `tests/isz_vectors.h`, generated by the research
+script `research/win/pkg/more/i1/gen_isz_vectors.py`: 20 of the format
+survey's libraries that InstallShield's own `ICOMP` made from data the
+tests' own generators produce — all 16 of 1 KB or less and four larger —
+each decoded to that data, the stored one refused; the survey's 20 crafted
+and damaged streams, rewritten byte for byte by the builder and decoded as
+its reference did, but for the three this reader refuses by name; the
+header, lengths 2–518, every distance at dictionary bits 4, 5 and 6, a copy
+reaching exactly the first byte and one byte further, the size rules, a
+cut at every byte, bytes and one-bits after the end code, chunks over 64
+KiB; split sets with the boundary at every byte of a member and three
+volumes in all six orders, volumes under each other's names or missing,
+and a set under swapped names, which decodes; every container rule broken
+and every refusal by name, each with its message; every single-bit flip of
+the small libraries and streams, 62,104 and 26,456 of them: a clean error
+or exactly the recorded size, never a crash), `import.fat` (`tests/fat_builder.h`: 1.44 MB, 2.88 MB,
 FAT16 and 1 KB-sector volumes, a fragmented file, subdirectories, skipped
 entries, a volume label in code page 437 (and one whose leading 0xE5 is
 stored as 0x05), every refused BPB, loops, free/bad/out-of-range clusters, short
@@ -907,8 +1153,14 @@ from both interrupted-swap states, an unrepresentable timestamp,
 Windows' strict decoder over every string of one and two bytes, every
 three-byte string that starts past 0xBF and four-byte strings around every
 edge, its repair, and `json_escape` read back by phosg as UTF-8 for every
-string of one and two bytes and random ones), `import.packages`
-(`tests/pkg_fixture.h`: all seven releases as folders, ISOs and FAT images,
+string of one and two bytes and random ones; disk sets as ZIPs, folders,
+ISO and FAT images — one name on two disks listed with another size or read
+with other bytes, a root holding something beside its disks read as it is
+(a folder, an image) or refused (a ZIP), a ZIP's disks flat — and then
+imported end to end: an AD 3.x install over two disks, a Microsoft Setup
+one, a Presage one over five and a plain CD tree split in two, one disk
+alone, and a note beside them never read), `import.packages`
+(`tests/pkg_fixture.h`: all twelve releases as folders, ISOs and FAT images,
 split floppies in either order — Star Wars Screen Entertainment also as its
 five 1.44 MB floppies and a flat ZIP, from a made-up Presage install with
 stored and LZH members cut across ARJ volumes, SZDD loose files and decoys;
@@ -916,7 +1168,33 @@ Star Trek: The Screen Saver as its two floppies in either order, the ZIP of
 them (disk 2 first, a scan beside them), a flat ZIP, an ISO and a folder,
 from a made-up Microsoft Setup install of KWAJ files — its module names
 with After Dark 2.0's leading space, its About texts with the stand-in
-line and hand-wrapped breaks — and decoys;
+line and hand-wrapped breaks — and decoys; the Looney Tunes, ScreamSavers
+and the Disney Collection as made-up AD 3.x installs with their real
+`MODMISC.ZIP` and `AFI.ZIP` member names (and the ad32 fixture's now hold
+3.2's real ones, `AD30RSDB.DLL` among them), as folders, flat ZIPs,
+`DISK<n>` folders and ZIPs, and floppies, with an owner's-note decoy each
+and Disney's `BEAUTYOL.ZIP`, locked in folder sources and never opened; a
+ScreamSavers source never taken for After Dark 3.2 nor 3.2 for it, disk 1
+alone (ScreamSavers': "needs every install disk"), I4 over `*_SOUND.DLL`,
+the Disney names and ScreamSavers' `screen`; Marvel Comics Screen Posters
+and Snoopy's Screen Savers as made-up InstallShield 2 installs (a
+`SETUP.PKG`, split and whole libraries of streams written token by token,
+undecodable decoy members in the libraries the table does not read) as a
+folder, a flat ZIP, `Disk1`/`Disk2` folders and a ZIP of them, and two
+floppies in either order — the `from` forms, DOS times, `screen` and
+`needs`; a known ZIP md5 verified `image`; disk 1 alone ("needs every
+install disk") and disk 2 alone (no release); decoys, notes and the Looney
+Tunes' `SETUP.PKG` locked and never read; a `SETUP.PKG` without the tag
+member, of 70 KB, of another magic, with a bad offset, a group one byte
+short, cut short or with a stray byte (no release, no crash); `Disk1`/`Disk2`
+folders beside a `desktop.ini` (no release, `identify_folder`'s reason
+starting with the note that says why); `--package`
+mismatches; a volume naming a locked `IMAGES.3`; `IMAGES.2` cut short,
+junk `MODULES.LIB`, another set's `IMAGES.2`, the tag member missing, a
+stream with dictionary bits 7, a crossing member without its end code (2);
+a flipped literal (3); the staging budget; a cancel; a missing member
+(`partial`); both releases' volumes swapped (their own message, nothing
+copied); and the islib invariants;
 identification, unknown, ambiguous, `--package`, image md5s, Presage's
 `INSTALL.DAT` (another short name, a 70 KB one, no first archive beside it),
 `SETUP.LST` (another title, one in capitals, a 70 KB one, no `MISSION.AD_`
@@ -994,7 +1272,9 @@ and out), `import.pkg_download` (every package from its registry copies on a
 loopback server that redirects like archive.org: the five disc images
 verified `image`, the Simpsons as a flat ZIP verified `files` (and swse's
 flat ZIP once its image copy is gone), Star Trek's two floppy images
-verified `image` as a known disk set, the ZIP as
+verified `image` as a known disk set, the ZIPs of Marvel (both copies),
+Snoopy, the Looney Tunes, ScreamSavers and the Disney Collection verified
+`image` (each a known image, its medium starting "ZIP"), the ZIP as
 `--image`, nested and password-protected ZIPs refused; fallback after a 404,
 a wrong size — refused before a byte is written, the `.part` resumed by the
 next copy — and a wrong md5; a floppy set's progress over both images, its
@@ -1006,7 +1286,7 @@ the wrong size fetched again; no copy known; `--url` with and without a
 package; `--md5` over the registry, and over a floppy set's copies (each
 copy's first image's md5 only: the other copy's disk 1 named moves on to
 that copy; the second image still checked against its own); the download record in both
-`import.json` versions; `import_downloads` over all seven and a cancel
+`import.json` versions; `import_downloads` over all twelve and a cancel
 mid-way; the built-in copies' shape — archive.org URLs, image md5s equal to
 the known images, file names per content, the Simpsons ZIPs' md5s, swse's
 ISO, Redump BIN and ZIP, Star Trek's copies each a complete set of its
@@ -1042,8 +1322,9 @@ renders it; with `AD_E2E_PKG=1` it also imports the real images (by md5, from
 folders directly in each; the Deluxe ISO also from the downloads folder,
 which is only read) with `--no-cover-download`, so every disc source is
 extracted, and checks the originals' sizes (387×183, 387×172, 387×204,
-118×226); a release with no cover source on its disc (Star Wars Screen
-Entertainment) is skipped. It writes every tile side by side into
+118×226, and the later releases' 79×175, 387×161, 350×119 and 387×172); a
+release with no cover source on its disc (Star Wars Screen Entertainment,
+Star Trek: The Screen Saver, Marvel Comics Screen Posters) is skipped. It writes every tile side by side into
 `<build dir>\covers-sheet.png` for a person to look at, and deletes its
 scratch tree unless `AD_E2E_KEEP=1`. Every other opt-in import runs with
 `--no-cover-download`. `import.download_real` (`AD_E2E=1`) runs `adimport --download <id>`
@@ -1054,10 +1335,10 @@ the installed data folder's `downloads` and its `verify\`) is hard-linked
 or copied in first, so what can be verified locally is not fetched again
 (`AD_E2E_NO_SEED=1` fetches everything); the importer still checks its md5.
 Each import must exit 0 with kind `download`, the expected `verified`,
-nothing missing, every file a manifest match and 84/46/44/13/15/14/16 modules.
-Every copy with other bytes than a package's first (another file name: the
-Simpsons' second ZIP, swse's Redump BIN and flat ZIP, Star Trek's second
-pair of images) is fetched with `--url`/`--md5` — a floppy set's images
+nothing missing, every file a manifest match and 84/46/44/13/15/14/16/1/8/12/15/16
+modules. Every copy with other bytes than a package's first (another file
+name: the Simpsons' second ZIP, swse's Redump BIN and flat ZIP, Star Trek's
+second pair of images, Marvel's second ZIP) is fetched with `--url`/`--md5` — a floppy set's images
 with the library's `download`, then imported `--image` each — and imported
 the same way (`verified: image` for a known image or disk set, else
 `files`). `AD_E2E_PACKAGES=<id>[,<id>…]` limits every step to
@@ -1073,19 +1354,39 @@ through `--download`, `--iso`, `--from` the imported tree and `--from` the
 image mounted by Windows, checks every file against the manifest, and
 byte-compares the seeded tree at the installed data folder's
 `assets\win\FILES` (`AD_E2E_SEED`).
-`import.pkg_real` (`AD_E2E_PKG=1`) finds the five package images, and
-Star Trek's two disk images (loose, or in the ZIP they came in:
-`test_util.h` `find_disk_set`), by size and
+`import.isz_real` (`AD_E2E_PKG=1`) finds the user's Marvel and Snoopy ZIPs
+by size and md5 (in `AD_SOURCE_ISO_DIR` or `<repo>\source_iso`), reads them
+as disk sets (Marvel's union has 14 names, Snoopy's 13: `DREAM.ON` is on
+both disks, one file), and checks all 88 members of their libraries against
+the InstallShield survey's md5s (`tests/isz_real.h`, generated: names,
+sizes and md5s only), from the ZIPs and again from folder copies of the
+library volumes; it prints the union's count, never its listing, so no
+previous owner's note is named.
+`import.pkg_real` (`AD_E2E_PKG=1`) finds the five package images, Star
+Trek's two disk images (loose, or in the ZIP they came in:
+`test_util.h` `find_disk_set`) and the known ZIPs of Marvel, Snoopy, the
+Looney Tunes, ScreamSavers and the Disney Collection, by size and
 md5 in `AD_SOURCE_ISO_DIR` (`;`-separated folders; default
 `<repo>\source_iso`) and the folders directly in each (so
 `source_iso\Implemented` too), and imports each into a fresh scratch root
 (exit 0, `verified: image`, nothing missing, the installed files exactly the
-manifest, the §4.3 counts, the invariants — the intermission and ad2kwaj
-recipes' own for swse and startrek — and 46/44/13/15/14/16 modules in the
-right lanes; swse's as IMX entries with their registry names and one button
-each; startrek's as Classic entries with `screen`, trimmed names, the
-Planetary Atlas override, After Dark 2.0's About rules and their two
-buttons), mounts the 10th
+manifest, the §4.3 counts, the invariants — the intermission, ad2kwaj and
+islib recipes' own — and 46/44/13/15/14/16/1/8/12/15/16 modules in the
+right lanes, no owner's note named; swse's as IMX entries with their
+registry names and one button each; startrek's as Classic entries with
+`screen`, trimmed names, the Planetary Atlas override, After Dark 2.0's
+About rules and their two buttons; marvel's with its `screen` and two
+buttons; snoopy's eight with 27 controls; screams' with `screen`; disney's
+with its five names spelt out), imports the Looney Tunes' `LOONEY_T` CD
+when an image folder holds it (verified `image`, the ZIP's files), checks
+Marvel's and Snoopy's baked tables against their disks, read from the ZIPs
+(each row's member in its library with the manifest's size; every member
+the table leaves one the recipe never installs; `SETUP.PKG`, parsed on its
+own, listing each library the table reads with exactly its members and
+sizes, and the tag member in the tag library), imports their disks copied
+out of the ZIPs (the owners' notes skipped by name, never read) as a flat
+folder, `DISK1`/`DISK2` folders and a flat ZIP (verified `files`, the ZIP's
+files) and each disk alone (2), mounts the 10th
 Anniversary, Totally Twisted and Star Wars Screen Entertainment CDs with
 Windows and imports `--from` the drive (the same files as the image; skipped
 when mounting is refused), checks swse's real `INSTALL.DAT` against the
@@ -1100,12 +1401,12 @@ two real disks zipped under code page 437 names with bit 11 clear, as
 Explorer or 7-Zip on an English Windows zips them (`DISKüö1.IMG` and
 `DISKüö2.IMG`; `TREKü.IMG` and `TREKö.IMG`: verified `image`, the same files
 as the images' import, an `import.json` that is strict UTF-8 with the names
-decoded), then all six
+decoded), then all eleven
 plus Deluxe `--from` the installed assets (read only; `AD_ASSETS_DIR` picks
-them, e.g. `<repo>\build\win-pkg-setup\assets`) into one root (232 modules,
-73 `sameAs`, unique names per lane, the releases oldest first, every Deluxe
-field as the installed catalog has it), and checks that re-importing each
-package changes nothing else.
+them, e.g. `<repo>\build\win-pkg-setup\assets`) into one root (284 modules,
+232 over the first seven, 73 `sameAs`, unique names per lane, the releases
+oldest first, every Deluxe field as the installed catalog has it), and
+checks that re-importing each package changes nothing else.
 
 **Before a release** (these stay opt-in: they need the real images, the
 network or both, and take minutes), in a Release build directory:

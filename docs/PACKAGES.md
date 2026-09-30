@@ -1,25 +1,36 @@
 # Long After Dark — packages
 
-How the host imports and runs modules from seven releases, not just the
-After Dark 4.0 Deluxe CD: six of After Dark, the oldest being Star Trek: The
-Screen Saver (1992, After Dark 2.0b), and LucasArts' Star Wars Screen
-Entertainment (1994), whose modules run on Delrina's Intermission screen
-saver engine, not on After Dark's. DESIGN.md §6, §6a and §7 give the
-contract in brief; this file is the full specification and the plan that
-implements it.
+How the host imports and runs modules from twelve releases, not just the
+After Dark 4.0 Deluxe CD: nine of Berkeley Systems' After Dark, the oldest
+being Star Trek: The Screen Saver (1992, After Dark 2.0b); two of other
+publishers' modules for After Dark, Binary Software's ScreamSavers (1995,
+on the After Dark 3.0.6 engine it licensed from Berkeley) and Image Smith's
+Snoopy's Screen Savers (1994, modules for an After Dark already installed);
+and LucasArts' Star Wars Screen Entertainment (1994), whose modules run on
+Delrina's Intermission screen saver engine, not on After Dark's. DESIGN.md
+§6, §6a and §7 give the contract in brief; this file is the full
+specification and the plan that implements it.
 
-**Status: implemented.** The importer reads all seven releases (232 catalog
-modules). The 218 modules of the six After Dark releases run headless,
-deterministically, and each release also runs on its own; Star Wars Screen
-Entertainment's 14 are driven by the Intermission protocol of §7.5. This
-file keeps the specification and the plan as they were written, so tables
-that say "today" or "current" describe the host before this work. Star Wars
-Screen Entertainment was added in a second round, after the rest was built
-(the `swse` rows and paragraphs, §7.5, §8.6 and §8.7); there, "before this
+**Status: implemented.** The importer reads all twelve releases (284
+catalog modules, 73 of them `sameAs` an earlier entry). The 270 modules of
+the eleven After Dark releases run headless, deterministically, and each
+release also runs on its own; Star Wars Screen Entertainment's 14 are
+driven by the Intermission protocol of §7.5. This file keeps the
+specification and the plan as they were written, so tables that say
+"today" or "current" describe the host before this work. Star Wars Screen
+Entertainment was added in a second round, after the rest was built (the
+`swse` rows and paragraphs, §7.5, §8.6 and §8.7); there, "before this
 release" means the five-release host. Star Trek: The Screen Saver was added
 in a third round (the `startrek` rows and paragraphs, the After Dark 2.0
 rules of §7.3 and §7.4, and §8.8); there, "before this release" means the
-six-release host. Where the implementation went further, the component
+six-release host. Five more were added in a fourth round: Marvel Comics
+Screen Posters, Snoopy's Screen Savers, The Looney Tunes Screen Saver,
+ScreamSavers and The Disney Collection Screen Saver (the `marvel`,
+`snoopy`, `looney`, `screams` and `disney` rows and paragraphs, the `islib`
+recipe and §8.9, the disk sets of §5.2, the After Dark 3.x seeds of §7.3,
+and the host's own AD_SND and After Dark 2.0's computed palettes of §7.4);
+there, "before this release" means the seven-release host (1.1.0). Where
+the implementation went further, the component
 READMEs are authoritative: `importer/README.md` (every release can also be
 downloaded from the Internet Archive, and a ZIP of install files, or of a
 release's floppy images, is a valid source), and `host/win32/README.md` and
@@ -31,29 +42,40 @@ its disc (Sept 2026: the Intermission protocol, the modules, the API census,
 the host, the importer, the front-end, and the online copies and covers),
 and about Star Trek: The Screen Saver from four more of its floppies (Sept
 2026: the KWAJ format and the install, the importer, the lane, and the
-modules' content). Their artifacts are in `research/win/pkg/<id>/`, which is
-gitignored: extraction scripts, inventories, trial runs, contact sheets and
-disassembly. **No After Dark, LucasArts or Paramount bytes, extracted files
-or disassembly are ever committed.** Manifests hold only path, size and
-md5. The ZIP password is derived at import time, never stored (§8.4).
+modules' content), and about the fourth round's five from a survey of each
+and one of the InstallShield 2 format that two of them share (Sept 2026;
+`research/win/pkg/{marvel,snoopy,looney,scream,disney}/`, the ScreamSavers
+survey's folder being `scream`, and `research/win/pkg/installshield/`).
+Their artifacts are in `research/win/pkg/<id>/`, which is gitignored:
+extraction scripts, inventories, trial runs, contact sheets and
+disassembly. **No After Dark (Berkeley Systems), LucasArts, Paramount,
+Disney, Warner Bros., Marvel, Image Smith, United Feature Syndicate
+(Peanuts), Binary Software or IMPart bytes, extracted files or disassembly
+are ever committed.** Manifests hold only path, size and md5. The ZIP
+password is derived at import time, never stored (§8.4). The previous
+owners' notes some copies carry (serial numbers, registration files) are
+never opened, copied, hashed or listed (§4.2 I5).
 
 ## 0. Decisions at a glance
 
 | Question | Decision |
 |---|---|
 | What is a package | One release in a built-in registry: id, titles, known images, fingerprints, recipe, manifest (§2) |
-| Where it goes | Deluxe keeps `<win>\FILES\…` unchanged. Every other package goes in `<win>\packages\<id>\` and owns only that directory (§4). A package may also have a `WINDOWS` folder: what its installer put in `C:\WINDOWS` (`swse`: `SWSE.INI`), the lower layer of the guest's `C:\WINDOWS` (§4.1, §7.5). `startrek` has none: its settings are the lane's profile seeds (§7.3) |
+| Where it goes | Deluxe keeps `<win>\FILES\…` unchanged. Every other package goes in `<win>\packages\<id>\` and owns only that directory (§4). A package may also have a `WINDOWS` folder: what its installer put in `C:\WINDOWS` (`swse`: `SWSE.INI`), the lower layer of the guest's `C:\WINDOWS` (§4.1, §7.5). `startrek` has none: its settings are the lane's profile seeds (§7.3). `snoopy` has no `ENGINE` either: its installer put nothing but the modules in the user's After Dark folder (§4.1) |
 | Import semantics | Stage and swap only that package's directory. Importing or re-importing one package never touches another. One `import.json` per package, inside its directory (Deluxe keeps `<win>\import.json`). There is no second index: the merged view is the catalog (§5) |
 | Catalog ids | Deluxe keeps `ad40.*` / `classic.*`. Others use `<package>.<lower-case file stem>` (§6) |
 | Duplicates | Keep all, one entry per package. Later duplicate names get ` (<short title>)`. `sameAs` links byte-identical modules (§6) |
 | Lane → package | By path only: package root = parent of the module's folder. Engine dir = `<root>\ENGINE`. Packaged when the root's parent is named `packages`. No env var, no descriptor file (§7.1) |
 | Cross-package files | Never, for packaged modules: search the module dir, then the engine dir. Deluxe and lone modules keep today's order (§7.1) |
-| 16-bit host for AD 3.x | Real OLDMOD16 where the package ships it (`deluxe`, `ad10`). Otherwise a host-native AD3 bridge that implements OLDMOD16's verified behaviour. It uses the package's own AD_SND 3.x and ADTASK palettes. Deluxe is never needed (§7.4) |
-| After Dark 2.0 (`startrek`) | The same AD3 protocol and native bridge: After Dark 2.0's `AD.EXE` drove its modules with the same messages and blocks as OLDMOD16, and the host replaces it, an NE application, as it replaces `AFTERDAR.SCR` (ABI.md §3.9). The bridge takes AD_SND 1.0's own volume pair (§7.4). The lane's other differences are rules by file, keyed on `AD_MOD.DLL` in the module folder: `AD_PREFS.INI` profile seeds, result 5 as the module's wake, no AD palettes (§7.3). Every catalog entry has `"screen": "640x480"`: several of the modules compose a fixed 640×480 scene, and all 16 get that screen so the release looks as it did at 640×480 (§6) |
+| 16-bit host for AD 3.x | Real OLDMOD16 where the package ships it (`deluxe`, `ad10`). Otherwise a host-native AD3 bridge that implements OLDMOD16's verified behaviour. It uses the package's own AD_SND 3.x and ADTASK palettes. Deluxe is never needed (§7.4). The keys the After Dark 3.x host `ADW30.EXE` wrote into `AD_PREFS.INI` at every start are profile seeds, a rule by file on `ENGINE\ADW30.EXE` (§7.3): the Disney Collection's library needs them |
+| After Dark 2.0 (`startrek`) | The same AD3 protocol and native bridge: After Dark 2.0's `AD.EXE` drove its modules with the same messages and blocks as OLDMOD16, and the host replaces it, an NE application, as it replaces `AFTERDAR.SCR` (ABI.md §3.9). The bridge takes AD_SND 1.0's own volume pair (§7.4). The lane's other differences are rules by file, keyed on `AD_MOD.DLL` in the module folder: `AD_PREFS.INI` profile seeds and result 5 as the module's wake (§7.3). Its four AD palettes, which `AD.EXE` built in code, are computed the same way, a rule by file too (§7.4). Every catalog entry has `"screen": "640x480"`: several of the modules compose a fixed 640×480 scene, and all 16 get that screen so the release looks as it did at 640×480 (§6) |
+| No sound library, no palettes (`snoopy`; fourth round) | A package whose engine dir holds no `AD_SND.DLL` gets the host's own AD_SND, a Win16 system module with AD_SND 3.0.3's entries, our own code (§7.4); one whose engine dir holds neither `ADTASK.DLL` nor `AFTERDAR.SCR` (`startrek`, `marvel`, `snoopy`) gets After Dark 2.0's four palettes, generated in code the way `AD.EXE` 2.0 generated them, never copied from Berkeley's files, handed over at the first palette request (§7.4). Both are rules by file: a package that ships its own files runs exactly as before |
 | Intermission modules (`swse`) | A second module protocol inside the ne16 lane, chosen by the module's exports. Intermission's own IMX reader, `IMIMXPLY.IMQ`, runs as real code, as OLDMOD16 does; a native C++ reader is the oracle and the fallback. The host replaces `INTERMIS.EXE`, an NE application, as it replaces `AFTERDAR.SCR` (§7.5; the protocol is ABI.md §3.8) |
-| Known images | An image md5 names a release, or since the seventh release one install disk of a release on several floppies: every disk exactly once, from any known copy of each, is that release's known image (`verified: image`, §3) |
-| Install-time fix-ups | A baked table per package: file copies under the names the modules open (§4.3). No INF, IS-script, Presage-script or MS-Test interpreter: `intermission` and `ad2kwaj` are baked too |
-| Formats to implement | FAT12/16 image reader; PKZIP with traditional PKWARE (ZipCrypto) decryption and raw inflate (zlib). The existing ISO-9660/Joliet reader already handles all three hybrid CDs (§8). For `swse`: multi-volume ARJ 2.x (§8.6) and SZDD (§8.7). For `startrek`: KWAJ method 3 (§8.8), and a ZIP of floppy images read as those images (§5.2) |
+| Known images | An image md5 names a release, or since the seventh release one install disk of a release on several floppies: every disk exactly once, from any known copy of each, is that release's known image (`verified: image`, §3). Since the fourth round a ZIP of the install files is a known image too where no image of the original disks exists online, or none can be listed: the Internet Archive's stored file, the user's copy byte for byte (`marvel`, `snoopy`, `looney`, `screams`, `disney`) |
+| Install-time fix-ups | A baked table per package: file copies under the names the modules open (§4.3). No INF, IS-script, Presage-script or MS-Test interpreter: `intermission`, `ad2kwaj` and `islib` are baked too |
+| Formats to implement | FAT12/16 image reader; PKZIP with traditional PKWARE (ZipCrypto) decryption and raw inflate (zlib). The existing ISO-9660/Joliet reader already handles all three hybrid CDs (§8). For `swse`: multi-volume ARJ 2.x (§8.6) and SZDD (§8.7). For `startrek`: KWAJ method 3 (§8.8), and a ZIP of floppy images read as those images (§5.2). For `marvel` and `snoopy`: InstallShield 2's compressed libraries, single or split over two floppies, with PKWARE DCL implode (§8.9) |
+| Disk sets (fourth round) | A ZIP or a folder whose root holds nothing but `DISK<n>` folders is the union of those folders, as several floppy images are (§5.2): the Internet Archive's copies of ScreamSavers, Marvel Comics Screen Posters and Snoopy's Screen Savers keep their disks so |
+| InstallShield 2 installs (`marvel`, `snoopy`; fourth round) | A new recipe, `islib`: the libraries read with a strict reader of our own and each member placed by a table baked from the installer's script; the package list `SETUP.PKG` is read only to identify the release (§3, §4.3) |
 | Work split | A: importer (`importer/**`). B: pe32 lane + core. C: ne16 lane + win16 + cpu. File ownership is disjoint (§10) |
 
 ## 1. Scope and starting point
@@ -70,9 +92,16 @@ hybrid discs hold is noted in §12; the importer skips them.
 | `simpsons` | 15 ne16 (the survey prose says 14; its own table, the disc and AD10's `PREVIOUS.INF` list 15) | 12 exit 0, **only with Deluxe's ENGINE**; `SIMPCLOK` renders black | no FAT or ZIP support; no OLDMOD16; `HOMEREAT`, `INS` (desktop icons) |
 | `swse` | 14 ne16, Intermission IMX modules (surveyed later, against the five-release host) | none: the lane took an IMX for an After Dark module, loaded Intermission's own `AD_SND.DLL` and exited 1 ("AD_SND.DLL lacks an entry point"); a research prototype of §7.5 showed the protocol right, every module then stopping at SWSE's "resources are too low" screen | the importer refused the disc (no ARJ or SZDD, no identification); no Intermission protocol; STRESS's handle probe (`GetTempFileName` created no file, ABI.md §3.8.7), `AccessResource`, the DIB driver `CreateDC("DIB")`, and a few more Win16 calls (§7.5) |
 | `startrek` | 16 ne16, After Dark 2.0b modules (surveyed last, against the six-release host) | none: every module stopped at load, "AD_SND.DLL lacks an entry point" (its AD_SND 1.0 has no `adwGetSystemVolumes`/`adwSetSystemVolumes`); in a research prototype with that fixed, 15 stopped with "File not found." and Sounder with "Can't find any .WAV files to play!" until `AD_PREFS.INI`'s `[After Dark] Path` reached them | the importer refused the user's ZIP, the two images and a folder copy ("not a known release": no KWAJ, no ZIP of floppy images, no disk sets); AD_SND 1.0's volume pair; `AD_PREFS.INI`, which the lane's empty virtual file hid, and whose PC-speaker sound driver hangs the emulator (§7.3); Final Exam: no Num Lock toggle, and its wake (result 5) taken for an error |
+| `marvel` | 1 ne16: `MARVEL.AD`, a slide show of 36 posters in Iterated Systems' fractal format with its decoder `DECO.DLL`, After Dark 2.0d (surveyed with the other four of the fourth round, against the seven-release host) | none: in every layout the module stopped at load, `KERNEL.138 GetHeapSpaces` unimplemented and then a division by zero (`MARVEL 5:068C`) | the importer refused every form (no InstallShield 2 reader; the user's ZIP keeps its disks in `Disk1/` and `Disk2/`); `GetHeapSpaces`; DECO's selector calls (`GetCodeHandle`, `AllocSelector`, `FreeSelector`, `AllocCStoDSAlias`, `Get/SetSelectorBase`); DECO reloading a freed selector into DS (the freed-selector rule, `host/win16/README.md`) |
+| `snoopy` | 8 ne16: Image Smith's Borland C++ modules for an After Dark 2.0 or 3.0 already installed, with no engine, no AD_SND and no palettes | none: all 8 stopped at load, "cannot load AD_SND.DLL" (the native bridge loads AD_SND before any module); Collage also asks for AD palette 12 | the importer refused every form (no InstallShield 2 reader, no `Disk1/`/`Disk2/` ZIP); no sound library (§7.4); `ExtFloodFill` (every sprite drawn in a white box); six modules faulting at close (Borland's far-heap free reloading the segment it had just freed) |
+| `looney` | 12 ne16 on their own engine, `ADXPL41.DLL`, with a sound database, `LT_SOUND.DLL` | all 12 exit 0 with 0 unimplemented calls; Pepe, Yosemite Sam and Taz drew wrongly | the importer refused every form (no registry entry); `GetDIBits(DIB_PAL_COLORS)` wrote an identity colour table (Pepe's black label boxes, Sam's and Taz's broken folders) |
+| `screams` | 15 ne16, Binary Software's modules on After Dark 3.0.6, which it licensed from Berkeley | all 15 exit 0; one unimplemented call, `GDI.81 GetMapMode`, which changes no pixel | the user's ZIP refused (its `DISK1/`–`DISK3/` folders); every other form taken for After Dark 3.2, whose `ADXPL300.DLL` its `MODMISC.ZIP` holds: exit 3, and with `--no-verify` installed over `packages\ad32` |
+| `disney` | 16 ne16 on the After Dark 2.0-era library `ADXPL100.DLL` with a sound library, `DIS_SND.DLL`, re-released on the After Dark 3.2 engine | none: all 16 stopped at load, "File not found." | the importer refused every form (no registry entry; its `BEAUTYOL.ZIP` would map a second `BEAUTY.AD`); `AD_PREFS.INI [After Dark] Path`, which `ADW30.EXE` wrote; `GetDIBits` to 4-bit rows (Haunted), `CreateBitmapIndirect` and `CreatePatternBrush` (Little Mermaid's "Plain" sea), and `TOOLHELP.51 GlobalFirst` in the census |
 
-In total, 232 catalog entries over the seven packages: 218 over the six After
-Dark ones, and Star Wars Screen Entertainment's 14.
+In total, 284 catalog entries over the twelve packages: 232 over the first
+seven (218 over their six After Dark releases, and Star Wars Screen
+Entertainment's 14) and 52 over the fourth round's five (1 + 8 + 12 + 15 +
+16), so 270 over the eleven After Dark ones.
 
 ## 2. The package registry
 
@@ -88,6 +117,11 @@ the catalog order and the precedence order for name disambiguation:
 | `simpsons` | The Simpsons Screen Saver | Simpsons | `ad3zip` | `packages/simpsons` | `SIMPSONS` |
 | `swse` | Star Wars Screen Entertainment | Star Wars | `intermission` | `packages/swse` | `SAVER` |
 | `startrek` | Star Trek: The Screen Saver | Star Trek | `ad2kwaj` | `packages/startrek` | `AFTERDRK` |
+| `marvel` | Marvel Comics Screen Posters | Marvel | `islib` | `packages/marvel` | `AFTERDRK` |
+| `snoopy` | Snoopy's Screen Savers | Snoopy | `islib` | `packages/snoopy` | `AFTERDRK` |
+| `looney` | The Looney Tunes Screen Saver | Looney Tunes | `ad3zip` | `packages/looney` | `LNYTUNES` |
+| `screams` | ScreamSavers | ScreamSavers | `ad3zip` | `packages/screams` | `SCREAMS` |
+| `disney` | The Disney Collection Screen Saver | Disney | `ad3zip` | `packages/disney` | `DISNEY` |
 
 Ids match `[a-z0-9]+`. `ad40` and `classic` are reserved: they are Deluxe's
 legacy id prefixes. `swse` is the product's own short name (its installer's
@@ -96,7 +130,18 @@ command ids of the first five stay put. `startrek` is Berkeley's own key for
 the release (After Dark 4.0 Deluxe's `ENGINE\PREVIOUS.INF` lists it as
 `[StarTrek]`, `Name=Star Trek`, the short title; a later The Next
 Generation package would take its `[STTNG]`); it comes after `swse`, last,
-for the same reason.
+for the same reason. The fourth round's five follow it, in the order
+`marvel`, `snoopy`, `looney`, `screams`, `disney`, so the first seven keep
+their places and command ids. `marvel`, `looney` and `disney` are
+Berkeley's keys in `PREVIOUS.INF` (`[Marvel]`, `[Looney]`, `[Disney]`);
+Berkeley's files name neither ScreamSavers nor Snoopy's Screen Savers,
+which are not its products, so `screams` is the installer's own folder
+(`C:\AFTERDRK\SCREAMS`, `SCREAMS.AFI`) and `snoopy` the release's name. The
+titles are what each release calls itself: its installer, readme and folder
+file ("Marvel Comics Screen Posters", where the box says "Marvel Screen
+Posters"; "The Looney Tunes Screen Saver", where the box says "Looney Tunes
+Animated Screen Saver"; "ScreamSavers", where the splash says "Stephen
+Blickenstaff's ScreamSavers").
 
 Known images (identification + `verified: image`):
 
@@ -113,11 +158,24 @@ Known images (identification + `verified: image`):
 | `startrek` | `c630da5f6839303b599947f56fdd7c25` | 1,474,560 | FAT12, 1.44 MB: install disk 2 of 2 (the same) | — |
 | `startrek` | `6ee71b45e32b07001d46ab8c80af589d` | 1,474,560 | install disk 1 of 2 as a Windows 9x copy wrote to it (item `startrektosscreensaver1992win`: the boot sector's OEM name and the root directory's access dates differ; every file is the same, byte for byte) | — |
 | `startrek` | `af9d29a7ddea2c03618899c1c5733c67` | 1,474,560 | install disk 2 of 2, the same way | — |
+| `marvel` | `4c608dbbeb34108b30ede88304912c94` | 2,039,771 | ZIP of the install files of both floppies, flat (Internet Archive item `afterdarkmarvelscreenposters`, without the previous owners' notes) | — |
+| `marvel` | `6981b36abb04779a076466fabad3721c` | 2,046,286 | ZIP of both floppies' files in `Disk1` and `Disk2` folders (item `after-dark-collection`: the user's copy); each file is the flat ZIP's, byte for byte | — |
+| `snoopy` | `a712447e1c957767bdbca884cead02dc` | 1,993,700 | ZIP of both floppies' files in `Disk1` and `Disk2` folders (`after-dark-collection`: the user's copy) | — |
+| `looney` | `642b358a4854c481fe99984b8452ceb5` | 2,900,525 | ZIP of the install files of both floppies, flat (`after-dark-collection`: the user's copy) | — |
+| `looney` | `6ad72e19b2cf6fcb9e67427f8e600449` | 6,625,280 | ISO-9660 CD of the same files, known by md5, size and volume id only: its one copy online is named, URL and all, after what another item publishes as the product's serial number, so it is never listed as a download | `LOONEY_T` |
+| `screams` | `37a47b25dd35b214f94f57b6a0c2bd02` | 3,453,163 | ZIP of the three floppies' files in `DISK1`–`DISK3` folders (`after-dark-collection`: the user's copy, and the only one online) | — |
+| `disney` | `2f38df15494728b5bc20d26c36ba84c7` | 3,560,012 | ZIP of the install files of the three floppies, flat (`after-dark-collection`: the user's copy) | — |
 
 A known image is the whole release, or, since the seventh release, one
 install disk of a release on several (`KnownImage::disk` n of N):
 `startrek`'s four are its two disks in two copies, and only a set of every
-disk is the release (§3).
+disk is the release (§3). Since the fourth round it may also be a ZIP of
+install files whose bytes never change, where no image of the original
+disks exists online or none can be listed, as the Simpsons' known image is
+the owner's own merge of both floppies: the user's file and the download
+then verify `image`. Such an image's medium starts with "ZIP", and the
+importer's window then says "verified against the known ZIP"
+(`importer/gui/README.md`).
 
 Other registry fields:
 
@@ -128,22 +186,35 @@ Other registry fields:
   * `simpsons`: `SIMPSONS/ADXPL310.DLL`, `SIMPSONS/SIMP_SND.DLL`, `ENGINE/AD_SND.DLL`, `ENGINE/ADTASK.DLL`, plus all 15 module ZIPs (so a split-floppy source is complete)
   * `swse`: `SAVER/INTRMLIB.DLL`, `SAVER/ANTSW.DLL`, `SAVER/SWSE.DLL`, `SAVER/READJPG.DLL`, `SAVER/STRESS.DLL`, `SAVER/SWSFX.DLL`, `SAVER/MEMMIDI.DLL` (what every module loads, statically or by name), `ENGINE/IMIMXPLY.IMQ` (the reader), `WINDOWS/SWSE.INI` (the modules' default settings), plus all five ARJ volumes (so every install disk is there)
   * `startrek`: `AFTERDRK/AD_MOD.DLL`, `AFTERDRK/AD_RSRC.DLL` (the modules' framework), `AFTERDRK/ST_RES/ST_RESDB.DLL`, `ST_MASKS.DLL`, `ST_VGA.DLL`, `ST_SVGA.DLL`, `ST_SND.DLL` (the art and sound databases `AD_MOD.DLL` opens), `ENGINE/AD_SND.DLL` (the sound library the native bridge loads), plus both install disks' tag files (`MISSION.AD_`, `ST_SND.DL_`: every install disk is there)
-* `ad3zip` parameters: `moduleDir` (`AD32` / `TWISTED` / `SIMPSONS`); `engineDll`, the member of `MODMISC.ZIP` that identifies the package (`ADXPL300.DLL` / `ADXPL40.DLL` / `ADXPL310.DLL`); `folderAfi`, the `AFI.ZIP` member that becomes `FOLDER.AFI` (`AD3.AFI` / `PHLEM.AFI` / `SAX.AFI`).
+  * `marvel`: `AFTERDRK/DECO.DLL` (the decoder the module imports), `AFTERDRK/MRVLIMAG/MRVLIMAG.ADC` (the image catalog it refuses to start without), `ENGINE/AD_SND.DLL`, plus all five library volumes (`IMAGES.1` on disk 1; `IMAGES.2`, `MODULES.LIB`, `ENGINE.LIB`, `WIN.LIB` on disk 2)
+  * `snoopy`: no file (the fingerprint's tag member is a module), plus both library volumes (`AD_MODS.1`, `AD_MODS.2`)
+  * `looney`: `LNYTUNES/ADXPL41.DLL`, `LNYTUNES/LT_SOUND.DLL`, `ENGINE/AD_SND.DLL`, `ENGINE/ADTASK.DLL`, plus the 12 module ZIPs and `MUSIC.ZIP`
+  * `screams`: `ENGINE/AD_SND.DLL`, `ENGINE/ADTASK.DLL` (its modules import only AD_SND), plus the 15 module ZIPs
+  * `disney`: `DISNEY/ADXPL100.DLL` (the library the modules import), `DISNEY/DIS_SND.DLL` (the one it loads by name from the After Dark directory), `ENGINE/AD_SND.DLL`, `ENGINE/ADTASK.DLL`, plus the 16 module ZIPs
+* `ad3zip` parameters: `moduleDir` (`AD32` / `TWISTED` / `SIMPSONS` / `LNYTUNES` / `SCREAMS` / `DISNEY`); `engineDll`, the member of `MODMISC.ZIP` that identifies the package (`ADXPL300.DLL` / `ADXPL40.DLL` / `ADXPL310.DLL` / `ADXPL41.DLL` / `ADXPL300.DLL` / `ADXPL100.DLL`); `folderAfi`, the `AFI.ZIP` member that becomes `FOLDER.AFI` and identifies the package too (`AD3.AFI` / `PHLEM.AFI` / `SAX.AFI` / `LNYTUNES.AFI` / `SCREAMS.AFI` / `DISNEY.AFI`); since the fourth round `marker`, a second `MODMISC.ZIP` member the fingerprint wants (`ad32`: `AD30RSDB.DLL`, §3), and `never_opened`, archives of the install dir the recipe skips by name, unread (`disney`: `BEAUTYOL.ZIP`, §4.3).
+* `islib` parameters (`marvel`, `snoopy`; fourth round): `moduleDir` (`AFTERDRK` for both); the library volumes the recipe reads, every install disk's, disk 1's first (`required_archives`, above); the tag, `SETUP.PKG`'s logical library name and the member it must list there (`tag_library` `modules.lib` and `tag_member` `MARVEL.AD`; `AD_MODS.z` and `IS_FLY.AD`); and the placement table (`LibraryMember`: a library, by its file or a split set's first volume, a member, and where it goes: 64 rows for `marvel`, 8 for `snoopy`).
 * `intermission` parameters (`swse`): `moduleDir` (`SAVER`); `installName`, the `[data] shortname` of the installer's `INSTALL.DAT` that identifies the package (`SWSE`); the archives (`SWSE1.ARJ`, `SWSE2.ARJ`, `SWSE2.A01`, `SWSE2.A02`, `SWSE2.A03`: disk 1, then one archive over disks 2–5); `looseFiles`, what the recipe takes from outside the archives, with the name the installer gave it and whether it is SZDD (§4.3).
 * `ad2kwaj` parameters (`startrek`): `moduleDir` (`AFTERDRK`); `setupTitle`, the `[Params] WndTitle` of Microsoft Setup's `SETUP.LST` that identifies the package (`Star Trek\xAE: The Screen Saver`, 0xAE being Windows-1252's ®); the install disks' tag files, from `ST_NSTLL.INF [Source Media Descriptions]` (`MISSION.AD_` on disk 1, which the fingerprint wants beside `SETUP.LST`, and `ST_SND.DL_` on disk 2); `looseFiles`, every file the recipe installs, each KWAJ-compressed (§4.3); `screen` (`640x480`) and the About rules (`ad20`), for the catalog (§6).
-* `fixups` (§4.3), `nameOverrides` (§6), `manifest` (`known_files_<id>.inc`, generated like today's `known_files.inc`; `swse` 29 files, `startrek` 27), `downloadUrl` (Deluxe only, as planned; the importer now lists Internet Archive copies for every package, `importer/README.md` "Downloads"; `swse` has three: the ISO, the Redump BIN and a flat ZIP of the disc's 40 files, 6.9, 8.6 and 6.7 MB; `startrek` two, each the images of both disks, 2.8 MB: a copy is used only when both of its images are fetched and verify, §5.2).
-* `released` (`YYYY-MM[-DD]`, §6): `swse` is `1994-08`. Every Windows build of it found dates from 1994-08-20 at the earliest (`INTERMIS.EXE`), LucasArts announced it for July 1994 on both platforms, and this CD is a later build (its files are from October 1994). It ties with the Simpsons (`1994-08`) and sorts after it by registry order. `startrek` is `1992-11`: its newest files are dated 1992-11-16 (15 of the 16 modules, all but Sounder, with `AD_MOD.DL_`, `ST_NSTLL.IN_`, `AD_NSTLL.DL_` and `AD_NSTLL.MS_`), so it is the oldest release and comes first in the catalog's `packages` list.
+* `fixups` (§4.3), `nameOverrides` (§6), `manifest` (`known_files_<id>.inc`, generated like today's `known_files.inc`; `swse` 29 files, `startrek` 27, `marvel` 64, `snoopy` 8, `looney` 34, `screams` 23, `disney` 31), `downloadUrl` (Deluxe only, as planned; the importer now lists Internet Archive copies for every package, `importer/README.md` "Downloads"; `swse` has three: the ISO, the Redump BIN and a flat ZIP of the disc's 40 files, 6.9, 8.6 and 6.7 MB; `startrek` two, each the images of both disks, 2.8 MB: a copy is used only when both of its images are fetched and verify, §5.2; `marvel` two, the flat ZIP of item `afterdarkmarvelscreenposters` first, then the `after-dark-collection` ZIP, 1.9 and 2.0 MB; `snoopy`, `looney`, `screams` and `disney` the `after-dark-collection` ZIPs, 1.9, 2.8, 3.3 and 3.4 MB; each of the six is a known image, so a download verifies `image`; neither the items' serial-number files nor any URL that carries a serial is ever fetched).
+* `released` (`YYYY-MM[-DD]`, §6): `swse` is `1994-08`. Every Windows build of it found dates from 1994-08-20 at the earliest (`INTERMIS.EXE`), LucasArts announced it for July 1994 on both platforms, and this CD is a later build (its files are from October 1994). It ties with the Simpsons (`1994-08`) and sorts after it by registry order. `startrek` is `1992-11`: its newest files are dated 1992-11-16 (15 of the 16 modules, all but Sounder, with `AD_MOD.DL_`, `ST_NSTLL.IN_`, `AD_NSTLL.DL_` and `AD_NSTLL.MS_`), so it is the oldest release and comes first in the catalog's `packages` list. Of the fourth round: `marvel` is `1993-12` (the libraries and `MARVEL.AD` are dated 1993-12-13, its readme December 15, 1993); `snoopy` `1994-10` (its library is dated 1994-10-19, the newest modules 1994-10-13); `looney` `1995-04` (every file of the April build is dated 1995-04-11/12; Berkeley announced it on 1995-04-25); `screams` `1995-04` (the newest file on its disks is `ENGINE.ZIP`, 1995-04-11); `disney` `1995-09` (its script, package list and `AFI.ZIP` are dated 1995-09-13). `looney` and `screams` tie and sort by registry order, so the catalog's `packages` list reads `startrek`, `marvel`, `simpsons`, `swse`, `snoopy`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
+* `screen` (§6): `"640x480"` on `startrek`, `marvel` (each poster is a fixed 640×480 picture, drawn in the middle of a larger screen with its caption at the bottom of the whole screen) and `screams` (four modules paint a 640×480 scene and Belcho composes one 640 wide, drawn small in the middle of a larger screen); none elsewhere: the Disney, Looney Tunes and Snoopy modules lay out for any screen.
 
 ## 3. Identification
 
 A source is a file (an image), a folder, or several images (split floppies).
 Every source is read through one `SourceFs` view: an ISO-9660/Joliet image,
 a FAT12/16 image, or a host folder. Names are matched case-insensitively and
-reported as 8.3 upper case.
+reported as 8.3 upper case. Since the fourth round a source whose root holds
+nothing but `DISK<n>` folders is read, before anything is identified, as the
+union of those folders (§5.2), so the steps below see one install folder.
 
 1. **Image md5.** The md5 is computed for every image source anyway, for
    `verified`. A match names the package, and that package's fingerprint must
-   then also match. If it does not, the source is invalid (2).
+   then also match. If it does not, the source is invalid (2). Since the
+   fourth round the md5 of a ZIP of install files names a package too, when
+   it is one of its known images (§2): the ZIP is still read as the install
+   folder and must match the fingerprint, and the log says "a ZIP of install
+   files, the known copy of <title> (by its md5)".
 
    **Disk sets** (since the seventh release). For a release on several
    install disks the known images are its disks' (§2): the images of every
@@ -167,7 +238,8 @@ reported as 8.3 upper case.
    "not a known release; known: …"), several → 2 (ambiguous).
    * `deluxe`: a `FILES` dir (`ADE\FILES`, `FILES`, or the root) holding `AD40\` and `ENGINE\`. This is today's rule, unchanged.
    * `ad10`: a `FILES` dir (same three places) holding `AD10TH\` (with `ADXPL40.DLL`) and `ENGINE\`, and no `AD40\`.
-   * `ad3zip` family: an install dir (`INSTALL\`, or the root for floppies and floppy copies) holding `INSTALL.INS`, `SETUP.PKG`, `ENGINE.ZIP` and `MODMISC.ZIP`. The package is the one whose `engineDll` is a member of `MODMISC.ZIP`. Central-directory names are not encrypted, so no password is needed to identify.
+   * `ad3zip` family: an install dir (`INSTALL\`, or the root for floppies and floppy copies) holding `INSTALL.INS`, `SETUP.PKG`, `ENGINE.ZIP` and `MODMISC.ZIP`, and since the fourth round `AFI.ZIP`. The package is the one whose `engineDll` is a member of `MODMISC.ZIP`, whose `folderAfi` is a member of `AFI.ZIP`, and whose `marker`, when it has one, is a member of `MODMISC.ZIP` too. Central-directory names are not encrypted, so no password is needed to identify. Before the fourth round the engine DLL alone decided, which no longer tells this family apart: ScreamSavers' `MODMISC.ZIP` holds After Dark 3.2's own `ADXPL300.DLL`, so every flat form of it was taken for 3.2 (exit 3, and with `--no-verify` it replaced an installed 3.2); every `AFI.ZIP` carries other products' folder files (`DISNEY.AFI` is on all six known releases' disks, `AD3.AFI` on three), so the AFI alone would not do either. Hence both, and for `ad32`, whose engine DLL and folder file ScreamSavers both ship, the marker `AD30RSDB.DLL`, which of every known AD 3.x install only 3.2's `MODMISC.ZIP` holds (`research/win/pkg/more/i2/members.json`). Checked over every known source form of `ad32`, `tt`, `simpsons`, `looney`, `screams` and `disney` (their CDs, floppies, ZIPs, flat folders and `DISK<n>` copies): each matches exactly one package. Disk 1 alone of ScreamSavers is identified and then refused by the recipe (every install disk is needed, §4.3); disk 1 alone of the others matches nothing, 3.2's among them, whose `AFI.ZIP` is on its disk 2 (before, a 3.2 disk 1 was identified, and imported a partial 3.2, since `ad32` lists no required archives).
+   * `islib` (`marvel`, `snoopy`; fourth round): InstallShield 2's package list `SETUP.PKG` at the source's root (disk 1, the disks together, a flat folder or ZIP of their files), with disk 1's library volume (`required_archives[0]`: `IMAGES.1`, `AD_MODS.1`) beside it. Only then is it read, once: a plain file of at most 64 KiB (the real ones are 1,650 and 194 bytes) that starts with `4A A3` and parses strictly (each group's body adds up to its size, the groups end at the disk table, every library in the disk table points at a group, and every group is pointed at); anything else is no package list and identifies nothing, whatever it holds. The package is the one whose tag member the list names in its tag library (`MARVEL.AD` in `modules.lib`; `IS_FLY.AD` in `AD_MODS.z`; both compared without ASCII case). `INSTALL.INS` and `SETUP.INS` are not needed. Since the list is opened only beside a first library volume, an AD 3.x install's `SETUP.PKG` is never read. Disk 1 alone is identified and then refused (every install disk is needed, §4.3); disk 2 alone matches nothing.
    * `intermission` (`swse`): Presage's installer script `INSTALL.DAT` at the source's root (the CD, disk 1, a flat ZIP, or a folder copy of the disks), a plain file of at most 64 KiB (a larger one is simply no match), whose `[data] shortname` is the package's `installName` (`SWSE`; sections and keys compared without case, values trimmed), with the first archive, `SWSE1.ARJ`, beside it. The script is read for nothing else. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); disks 2–5 without it match nothing.
    * `ad2kwaj` (`startrek`): Microsoft Setup's file list `SETUP.LST` at the source's root (disk 1, the disks together, or a flat folder, ZIP or ISO of their files), a plain file of at most 64 KiB (the real one is 654 bytes), whose `[Params] WndTitle` is the package's `setupTitle` ("Star Trek®: The Screen Saver", compared in Windows-1252 as the file holds it, without ASCII case, values trimmed), with disk 1's tag file, `MISSION.AD_`, beside it. `CmdLine` is not used: it is the same for every Berkeley After Dark 2.0 setup. The file is read for nothing else. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); disk 2 alone matches no fingerprint (its md5 names it, step 1). An installed `C:\AFTERDRK` is no source: it has no `SETUP.LST`, and the installer wrote the owner's name, company and serial number into its `AD.EXE` (resource type 3000, ids 1–3), so that file never matches the manifest.
 3. `--package <id>` restricts step 2 to one package. It is an error if the
@@ -202,6 +274,16 @@ This is the contract between the importer (A) and the lanes (B, C).
 <win>\packages\startrek\AFTERDRK\…            16 modules, AD_MOD, AD_RSRC, AD_MME.DRV, ST_RES\ (5 DLLs), SOUNDS\JIM.WAV
                                                 (25 files; the guest's C:\AFTERDRK, §7.3)
 <win>\packages\startrek\ENGINE\…              AD_SND 1.0, AD.EXE (replaced by the host, kept for reference)
+<win>\packages\marvel\AFTERDRK\…              MARVEL.AD, DECO.DLL, MRVLIMAG\ (36 FIF, 23 FTT, MRVLIMAG.ADC)
+                                                (62 files; the guest's C:\AFTERDRK)
+<win>\packages\marvel\ENGINE\…                AD_SND 1.0 (Star Trek's, byte for byte), AD.EXE 2.0d (replaced by the host, kept for reference)
+<win>\packages\snoopy\AFTERDRK\…              the 8 modules; no ENGINE folder at all (the host's own AD_SND, §7.4)
+<win>\packages\looney\LNYTUNES\…              12 modules, ADXPL41, LT_SOUND, AD_RSRC, FOLDER.AFI, MUSIC\ (13 MIDI) (29 files)
+<win>\packages\looney\ENGINE\…                AD_SND 3.1.4, ADTASK 3.0.12, ADW30.EXE 3.0.23, ADW30.INI, ECOLOGIC.DLL
+<win>\packages\screams\SCREAMS\…              15 modules, ADXPL300 (3.2's; nothing loads it), AD_RSRC, FOLDER.AFI (18 files)
+<win>\packages\screams\ENGINE\…               AD_SND 3.1.4, ADTASK 3.0.12, ADW30.EXE 3.0.23, ADW30.INI, ECOLOGIC.DLL
+<win>\packages\disney\DISNEY\…                16 modules, ADXPL100, DIS_SND, AD_RSRC, FOLDER.AFI, MUSIC\ (6 MIDI) (26 files)
+<win>\packages\disney\ENGINE\…                AD_SND 3.2, ADTASK 3.0.12, ADW30.EXE, ADW30.INI, ECOLOGIC.DLL (3.2's, byte for byte)
 <win>\packages\<id>\import.json               record (v2, §5.3)
 <win>\catalog-win.json                        merged catalog (§6)
 ```
@@ -217,7 +299,15 @@ lower layer of the guest's `C:\WINDOWS` (§7.5): a rule by file, for every
 package, never by package id. Only `swse` has one. `startrek`'s installer
 put its settings file, `AD_PREFS.INI`, in `C:\WINDOWS` too, but the package
 has no `WINDOWS` folder: those settings are the lane's profile seeds, which
-a file there would override (§7.3).
+a file there would override (§7.3). Neither has `marvel` (its installer put
+`AD_SND.DLL`, which the package keeps in `ENGINE`, and an `AD_PREFS.INI`
+naming the PC speaker's driver in `C:\WINDOWS`), nor any AD 3.x package:
+what `ADW30.EXE` wrote into `AD_PREFS.INI` is seeded too (§7.3).
+
+**No `ENGINE`.** `snoopy`'s package root holds only its module folder: the
+release is eight modules its installer copied into the user's own After
+Dark folder, and the importer never creates an empty folder. The ne16 lane
+treats a missing engine dir as an empty one (§7.4).
 
 ### 4.2 Invariants
 
@@ -237,14 +327,21 @@ self-contained module that imports nothing, such as `ad10`'s
 * **I3.** `ENGINE\AD_SND.DLL` exists. So does either
   `ENGINE\OLDMOD16.DLL` + `ENGINE\AFTERDAR.SCR` (AD 4 generation) or
   `ENGINE\ADTASK.DLL` (AD 3 generation).
-* **I4.** Sound databases a module names (`TT_SND.DLL`, `SIMP_SND.DLL`) sit
-  in the module folder, because modules open them as
-  `<AD Data Files>\X.DLL` = `C:\AFTERDRK`. MIDI goes in `MUSIC\` beneath it,
-  because modules open `MUSIC\X.MID` relative to `C:\AFTERDRK`.
+* **I4.** Sound databases a module names (`TT_SND.DLL`, `SIMP_SND.DLL`,
+  `DIS_SND.DLL`: a `*_SND.DLL` other than `AD_SND.DLL`, and since the fourth
+  round a `*_SOUND.DLL`, the Looney Tunes' `LT_SOUND.DLL`) sit in the module
+  folder, because modules open them as `<AD Data Files>\X.DLL` =
+  `C:\AFTERDRK`. MIDI goes in `MUSIC\` beneath it, because modules open
+  `MUSIC\X.MID` relative to `C:\AFTERDRK`.
 * **I5.** The importer reads only the files its recipe names. On the Simpsons
   floppy, `CEREAL.TXT` and `SERIAL.TXT` (the original owner's notes;
   `SERIAL.TXT` holds a serial number) are never opened, copied, hashed or
-  listed.
+  listed. Nor are the previous owners' notes in the copies of the fourth
+  round (Marvel's `SERIAL#.DOC` and `reg#.txt`, Snoopy's `Serial.nfo` and
+  `ADnews.txt`, the Looney Tunes' `looneyAD_sn.txt`, ScreamSavers'
+  `REG'D.TXT`, the Disney Collection's `Dizny_sn.txt`): the recipes name
+  them nowhere, and the tests lock made-up stand-ins for them in folder
+  sources to prove it.
 
 **For an `intermission` package** (`swse`) they read:
 
@@ -291,6 +388,23 @@ self-contained module that imports nothing, such as `ad10`'s
 * **I5**: only `SETUP.LST` (to identify) and the recipe's 27 files are ever
   opened; the never-read list is in §4.3.
 
+**For an `islib` package** (`marvel`, `snoopy`; fourth round) they read:
+
+* **I1** also: no `AD.EXE` in the module folder (Marvel's After Dark 2.0d
+  host is kept in `ENGINE`, for reference, as Star Trek's is).
+* **I2** also: every non-system DLL that a DLL or driver in the module
+  folder imports is there too (`DECO.DLL`; `AD_SND` is `ENGINE`'s, or the
+  host's, and the `ad2kwaj` system list applies).
+* **I3** instead: `ENGINE\AD_SND.DLL` exists when the table places one
+  (`marvel`'s AD_SND 1.0; `snoopy` ships none, and gets the host's, §7.4);
+  `ENGINE` holds none of `OLDMOD16.DLL`, `ADTASK.DLL` and `AFTERDAR.SCR`;
+  and there is no `WINDOWS` folder at all (what the installer put in
+  `C:\WINDOWS`, Marvel's `AD_PREFS.INI` with its PC-speaker driver among
+  it, is never installed).
+* **I4** as for `ad3zip` (neither release ships a sound database or MIDI).
+* **I5**: only `SETUP.PKG` (to identify) and the registry's library volumes
+  are ever opened; the never-read lists are in §4.3.
+
 ### 4.3 Recipes
 
 **`tree`** (`deluxe`, `ad10`): copy `<FILES>\<dir>\**` for the package's
@@ -320,10 +434,13 @@ copy dirs, byte for byte, to `<root>\<dir>\**`, then apply the fix-ups.
   only when its source matched the manifest. It records the copy as
   `"from": "alias:<source path>"`.
 
-**`ad3zip`** (`ad32`, `tt`, `simpsons`): the Windows install is an
-InstallShield 2/3 script driving encrypted PKZIP archives in the install dir
-(`INSTALL\` on the CDs, the root on the floppy). The recipe reproduces the
-placement the three `INSTALL.INS` scripts perform, as decoded by the surveys.
+**`ad3zip`** (`ad32`, `tt`, `simpsons`, and since the fourth round
+`looney`, `screams` and `disney`): the Windows install is an InstallShield
+2/3 script driving encrypted PKZIP archives in the install dir (`INSTALL\`
+on the CDs, the root on the floppies and their copies). The recipe
+reproduces the placement the `INSTALL.INS` scripts perform, as decoded by
+the surveys; the fourth round's three use the same scripts, rebranded, and
+the same archive password, and needed only registry entries.
 It flattens that placement into one module folder, because the lane mounts
 that folder as `C:\AFTERDRK`, the AD Data Files directory, and data files
 hard-code `C:\AFTERDRK\…`. The recipe does not interpret the IS script.
@@ -331,14 +448,23 @@ hard-code `C:\AFTERDRK\…`. The recipe does not interpret the IS script.
 | Archive | Classified by | Goes to (`M` = `<root>\<moduleDir>`, `E` = `<root>\ENGINE`) |
 |---|---|---|
 | any ZIP with at least one `*.AD` member ("module ZIP") | content | every member → `M\` (e.g. `WMORPH.ZIP`: `WMORPH.AD` + 9 `.DAT`) |
-| `MODMISC.ZIP` | name | every member except `EDITFILE.TXT` → `M\` (engine `ADXPL300/40/310.DLL`, AD 3.2 helpers `AD30RSDB`, `ADTOOL`, `READ*`, `DJPG`, `DTARGA`, `STOIKDTH`, `BITMAPS.ADC`, `MESG_AD3.DAT`, `NONSENSE.TXT`) |
+| `MODMISC.ZIP` | name | every member except `EDITFILE.TXT` → `M\` (engine `ADXPL300/40/310/41/100.DLL`, AD 3.2 helpers `AD30RSDB`, `ADTOOL`, `READ*`, `DJPG`, `DTARGA`, `STOIKDTH`, `BITMAPS.ADC`, `MESG_AD3.DAT`, `NONSENSE.TXT`; the Disney Collection's `DIS_SND.DLL`) |
 | `WIN.ZIP` | name | `AD_RSRC.DLL` → `M\` (the installer put it in `C:\WINDOWS`); the rest skipped (`UNLINK.EXE`, `SPALETTE.DLL`) |
 | `BITMAPS.ZIP`, `TRACES.ZIP`, `SOUNDS.ZIP` | name | → `M\BITMAPS\`, `M\TRACES\`, `M\SOUNDS\` |
-| `MUSICG.ZIP` if present, else `MUSIC.ZIP` | name | `*.MID` → `M\MUSIC\`; any `*.DLL` (`TT_SND`, `SIMP_SND`) → `M\` (I4). MUSICG is the General MIDI authoring (channels 1–8). MUSIC is the Microsoft dual-format one, which a modern GS synth would double |
+| `MUSICG.ZIP` if present, else `MUSIC.ZIP` | name | `*.MID` → `M\MUSIC\`; any `*.DLL` (`TT_SND`, `SIMP_SND`, `LT_SOUND`) → `M\` (I4). MUSICG is the General MIDI authoring (channels 1–8). MUSIC is the Microsoft dual-format one, which a modern GS synth would double |
 | `AFI.ZIP` | name | the registry's `folderAfi` → `M\FOLDER.AFI`; the rest skipped |
 | `ENGINE.ZIP` | name | `AD_SND.DLL`, `ADTASK.DLL`, `ADW30.EXE`, `ADW30.INI`, `ECOLOGIC.DLL` (those present) → `E\`; the rest skipped (hooks, VxD, password drivers, setup, System IQ, CTL3D, font, Win95 shell extras) |
 | `HELP`, `MULTIS`, `WINSYS`, `WAVEMIX`, `MUSIC` when MUSICG was used | name | skipped |
 | any other ZIP without an `.AD` | — | skipped and logged |
+| an archive the registry lists as never opened (`disney`: `BEAUTYOL.ZIP`; fourth round) | name | never opened: skipped by name before it is loaded, logged "skipped BEAUTYOL.ZIP (never opened: not in the recipe of The Disney Collection Screen Saver)" |
+
+`BEAUTYOL.ZIP` holds the 1993 build of `BEAUTY.AD` beside `BEAUTY.ZIP`'s
+1995 build, and only the installer's last function names it (beside
+"CopyFile failed for"). The release installs the 1995 build, the one
+Berkeley's own checksum list (`Cheksums.new`) names; read, the two
+archives would be two files for one path ("two source files map to
+packages/disney/DISNEY/BEAUTY.AD"). The derived password's check entries
+are unchanged by the skip.
 
 Resulting file sets, checked against the survey extractions:
 * `ad32`: `AD32\` has 44 `.AD`, 9 morph `.DAT`, `FOLDER.AFI`, 11 DLLs from
@@ -350,6 +476,33 @@ Resulting file sets, checked against the survey extractions:
 * `simpsons`: `SIMPSONS\` has 15 `.AD`, `ADXPL310.DLL`, `SIMP_SND.DLL`,
   `AD_RSRC.DLL`, `FOLDER.AFI`, `MUSIC\` (6 MIDI, including `I&SSHOW.MID`).
   `ENGINE\` has 5 files.
+* `looney` (fourth round): `LNYTUNES\` has 12 `.AD`, `ADXPL41.DLL`,
+  `LT_SOUND.DLL` (from `MUSIC.ZIP`: the installer moved it up to
+  `C:\AFTERDRK`, as the Simpsons' moved `SIMP_SND.DLL`), `AD_RSRC.DLL`,
+  `FOLDER.AFI` (`LNYTUNES.AFI`) and `MUSIC\` (13 General MIDI files); 29
+  files. `ENGINE\` has 5. 34 files, 4,379,364 bytes.
+* `screams` (fourth round): `SCREAMS\` has 15 `.AD`, `ADXPL300.DLL`
+  (After Dark 3.2's, which no module imports; the installer put it in
+  `C:\AFTERDRK`, so it is kept), `AD_RSRC.DLL` and `FOLDER.AFI`
+  (`SCREAMS.AFI`); 18 files. `ENGINE\` has 5. 23 files, 9,298,284 bytes.
+* `disney` (fourth round): `DISNEY\` has 16 `.AD`, `ADXPL100.DLL`,
+  `DIS_SND.DLL`, `AD_RSRC.DLL`, `FOLDER.AFI` (`DISNEY.AFI`) and `MUSIC\` (6
+  General MIDI files, from `MUSICG.ZIP`); 26 files. `ENGINE\` has 5. 31
+  files, 7,456,663 bytes.
+
+**Never read** (I5) by the fourth round's `ad3zip` imports, besides every
+archive the recipe skips unopened: the Looney Tunes' `CHANGES.TXT`,
+`README.TXT`, `DISK.1`, `DISK.2`, `DISK.CD`, `DUNZIP.DLL`, `INS0762.LIB`,
+`SETUP.EXE`, `SETUP.PKG` (its presence is checked) and `SETUP.BMP` (read as
+a cover source only); ScreamSavers' `CHANGES.TXT`, `DISK.1`–`DISK.3`,
+`~INS0762.LIB`, `SETUP.PKG` (presence) and `SETUP.EXE` (a cover source
+only); the Disney Collection's `Changes.txt`, `Cheksums.new`,
+`Disk.1`–`Disk.3`, `Disk.cd`, `Dunzip.dll`, `Ins0762.lib`, `Readme.txt`,
+`Site.stp`, `Setup.pkg` (presence), `Setup.exe` and `Setup.bmp` (a cover
+source only) and `BEAUTYOL.ZIP`; and each copy's previous owner's note
+(I5). When a ZIP of them is given as `--image`, the floppy-image sniff
+(§5.2) may read the first 64 KiB of `SETUP.EXE`, which is floppy-sized in
+all three.
 
 **`intermission`** (`swse`): the disc is a CD copy of the five install
 floppies of Presage's installer: `INSTALL.EXE` + its script `INSTALL.DAT`,
@@ -472,6 +625,82 @@ identify):
 
 Opened: `SETUP.LST` and the table's 27 files, 28 of the disks' 62.
 
+**`islib`** (`marvel`, `snoopy`; fourth round): both releases came on two
+1.44 MB floppies installed by InstallShield 2.00, which unpacked
+InstallShield's own compressed libraries (§8.9) as a compiled script said:
+Marvel's `INSTALL.INS` (Berkeley's `SETUP.EXE` loader runs `SETUP.BIN`), and
+Snoopy's `SETUP.INS`. Each has one library split over both disks (Marvel's
+`images.lib`, `IMAGES.1` + `IMAGES.2`; Snoopy's `AD_MODS.z`, `AD_MODS.1` +
+`AD_MODS.2`), with one member crossing the boundary (`XMEN2099.FIF`,
+`IS_FLY.AD`); Marvel's other libraries are whole files on disk 2. There are
+no ZIPs and no password. The recipe reproduces the scripts' placement of
+what the modules use, flattened into the module folder `M` = `AFTERDRK`
+(the installer's `C:\AFTERDRK`, which the lane mounts there) and `E` =
+`ENGINE`. It is baked in from registry parameters (§2), no script
+interpreter: `SETUP.PKG` is read only to identify, and an opt-in real test
+checks the baked tables against the disks' own package list and libraries
+(§9).
+
+1. **Every install disk.** Each library volume the registry lists must be
+   at the source's root, else 2: "the source is missing IMAGES.2,
+   MODULES.LIB, ENGINE.LIB, WIN.LIB; importing Marvel Comics Screen Posters
+   needs every install disk".
+2. **The libraries.** Each library the table names is read once, whole: a
+   file, or a split set found from its first volume's header, whose other
+   volumes are named from it (`IMAGES.1` → `IMAGES.2`) and taken only from
+   the registry's volumes. A volume that says the library goes on to one the
+   registry does not list is damaged or foreign (2: "IMAGES.1 says the
+   library continues on IMAGES.3, which is not one of the install disks of
+   Marvel Comics Screen Posters (a damaged or foreign volume?)"), and the
+   file it names is never opened. A set's first volume that holds another
+   volume (the disks' files swapped, or another set's) is refused as what it
+   is: "IMAGES.1 is volume 2 of its set, not volume 1 (a mislabelled or
+   foreign volume?)", nothing else of the set opened. A damaged library is a
+   corrupt source (2), never a verify failure.
+3. **The members**, by the table (`LibraryMember`), each where it says; a
+   member the table does not name is listed in one log line ("skipped
+   ENGINE.LIB!ADINIT.EXE, … (not in the recipe of …)") and never decoded:
+
+   | Library | Members | Go to |
+   |---|---|---|
+   | `marvel` `MODULES.LIB` | `MARVEL.AD`, `DECO.DLL` | `M\` |
+   | `marvel` `IMAGES.1` + `IMAGES.2` | the 36 `*.FIF` posters, the 23 `*.FTT` tables, `MRVLIMAG.ADC` (the image catalog) | `M\MRVLIMAG\`, where the module opens them (`<Path>\mrvlimag\`) |
+   | `marvel` `ENGINE.LIB` | `AD.EXE` (After Dark 2.0d's host, which the host replaces: the disks' pristine copy, kept for reference as Star Trek's is; an installed one carries its owner's name) | `E\` |
+   | `marvel` `WIN.LIB` | `AD_SND.DLL` (AD_SND 1.0, Star Trek's, byte for byte; the installer put it in `C:\WINDOWS`) | `E\` |
+   | `snoopy` `AD_MODS.1` + `AD_MODS.2` | the 8 modules, `IS_COLAG.AD` … `IS_THRPY.AD` | `M\` (the directory of the After Dark they were installed into) |
+
+4. **What is missing.** When the libraries lack the tag member `SETUP.PKG`
+   promised, they are not the disks of one release (2: "SETUP.PKG lists
+   MARVEL.AD in modules.lib, but MODULES.LIB holds no such member (not the
+   disks of one release?)"); another missing member is logged, and the
+   manifest reports it (`partial`).
+
+Result: `marvel` 64 files, 2,002,020 bytes (`AFTERDRK\` 62, `ENGINE\` 2);
+`snoopy` 8 files, 4,044,927 bytes; the manifests'. A file's `from` is its
+volumes and name (`IMAGES.1+IMAGES.2!XMEN2099.FIF`, `MODULES.LIB!MARVEL.AD`),
+its time the member's DOS time. Every recorded size counts towards the
+staging budget and is checked against the manifest before a byte is
+written. The format has no checksum: a changed literal that still decodes
+to its size is caught by the manifest (3), and not at all under
+`--no-verify`. There are no fix-ups.
+
+**Never opened** (I5): only `SETUP.PKG` (to identify) and the registry's
+volumes are.
+
+* `marvel`: `INSTALL.INS`, `SETUP.EXE`, `SETUP.BIN`, `~INS0762.LIB` (the
+  installer's own `RESOURCE.DLL`), `CHANGES.TXT`, `WINSYS.LIB` (`AD.386`),
+  and the previous owners' notes; listed but never decoded: the rest of
+  `ENGINE.LIB` (`ADINIT.EXE`, `AD_LIB.DLL`, the `AD_MPT`, `AD_SB` and
+  `AD_MME` drivers, the manual `MRVL.WRI` and the readme texts `MRVLREAD.TXT`,
+  `MARVEL.TXT`, `EDITFILE.TXT`, `MARVELAD.TXT`) and of `WIN.LIB` (`AD.HLP`,
+  `AD_WRAP.COM`, `SPALETTE.DLL`, and the disk's `AD_PREFS.INI`, whose
+  PC-speaker driver would hang the emulator).
+* `snoopy`: `SETUP.EXE`, `SETUP.INS`, `AD_MODS.LIS` (the info text),
+  `AD_MODS.BMP` (read as a cover source only), the previous owner's notes,
+  and what the copier of the Internet Archive's copy left on its disks
+  (`AD_Changes.txt`, the Disney Collection's `Changes.txt`; `CMOS.RAM`;
+  `DREAM.ON`, on both disks with the same bytes; `TXTSCR.DAT`).
+
 ### 4.4 Interim test roots (for B and C before A lands)
 
 The lanes are built in parallel with the importer. Until A's `adimport` can
@@ -563,8 +792,44 @@ adimport --remove <id> [--dest <root>]          (should)
   order (the floppy sets found online are builds other than this CD's and
   fail verification, §12), and so are Star Trek: The Screen Saver's two, in
   either order: a known disk set (§3). A flat folder, ZIP or ISO of both
-  disks' files is a source too (verified `files`); a folder that keeps the
-  disks apart, in `DISK1\` and `DISK2\`, is not (§12).
+  disks' files is a source too (verified `files`), and since the fourth
+  round so is a folder or ZIP that keeps the disks apart (below).
+* **Disk sets** (fourth round; `source.h`): a source whose root holds
+  nothing but folders named `DISK<n>` (`DISK1` to `DISK99`, any case, no
+  leading zero) is a release's install disks kept apart, and is read as the
+  union of those folders in disk order, as several `--image`s are: folders
+  merge, and a name on two disks must be one file (the same size when
+  listed, the same bytes when read; Snoopy's `DREAM.ON`, on both of its
+  disks, is), else 2 ("SAME.TXT differs between Disk1 and Disk2; they are
+  not the disks of one release"). Any subset of disks is accepted: the
+  recipe decides whether the release is complete (disk 1 alone of
+  ScreamSavers, Marvel Comics Screen Posters or Snoopy's Screen Savers is
+  identified and needs every install disk; each of their other disks alone
+  is no known release). The log says "reading <source> as the union of its
+  folders Disk1 and Disk2 (one install disk each)". The Internet Archive's
+  copies of
+  ScreamSavers (`DISK1/`–`DISK3/`), Marvel Comics Screen Posters and
+  Snoopy's Screen Savers (`Disk1/`, `Disk2/`) are such ZIPs, and a folder
+  they were unzipped into is such a folder.
+  * *A ZIP*'s disks are flat: its members are `DISK<n>/<bare name>` and the
+    folders' own entries (`zip.h` `ZipNames::disk_folders`). Any other
+    folder (`__MACOSX/` among them), a deeper path, a folder entry holding
+    data, or a file at the root beside the `DISK<n>` folders refuses the ZIP
+    (2: "… (a ZIP source holds the install files at its root, or only
+    DISK<n> folders)"). The installers' own archives inside keep the bare
+    names only.
+  * *A folder*, a CD drive read as its disc, and an ISO or FAT image apply
+    the same rule; a folder disk may hold subfolders, which merge. A root
+    that holds anything besides its `DISK<n>` folders (a `desktop.ini`, the
+    downloaded ZIP beside its unzipped disks) is read as it is, its
+    `DISK<n>` folders ordinary folders, and the log says why: such a source
+    is then usually no known release.
+  * `import.json`'s `from` names a file by its path in the union, without
+    its disk folder (`AFI.ZIP!SCREAMS.AFI`).
+* **A known ZIP** (fourth round): a ZIP of install files whose md5 is one
+  of a package's known images (§2) is still read as the install folder, and
+  verified `image`; the log says "a ZIP of install files, the known copy of
+  <title> (by its md5)" and the result "(the known ZIP of <title>)".
 * **A ZIP of floppy images** (since the seventh release; `source.h`
   `floppy_images_in_zip`) is those images. The Internet Archive serves an
   item's disk images together as a ZIP it makes on the fly
@@ -631,7 +896,8 @@ adimport --remove <id> [--dest <root>]          (should)
                "from": "INSTALL/GUTS.ZIP!GUTS.AD" } ] }
 ```
 
-* `package.recipe` is `tree`, `ad3zip`, `intermission` or `ad2kwaj`.
+* `package.recipe` is `tree`, `ad3zip`, `intermission`, `ad2kwaj` or,
+  since the fourth round, `islib`.
 * `kind` is `iso`, `floppy`, `folder` or `download` (and `zip`, as built).
 * `format` is `iso9660`, `iso9660+joliet`, `fat12`, `fat16` or `folder`
   (and `zip`).
@@ -644,13 +910,15 @@ adimport --remove <id> [--dest <root>]          (should)
 * `from` is the source path; `zip!member` for an archive member (ARJ too:
   `SWSE1.ARJ!ANTSW.DLL`, and `SWSE2.ARJ+SWSE2.A01!JAWAS.IMX` for a member
   that spans volumes); or `alias:<package path>` for a fix-up copy. A
-  KWAJ-expanded file's is its compressed name (`PLANETS.AD_`).
+  KWAJ-expanded file's is its compressed name (`PLANETS.AD_`). An
+  InstallShield library member's is its volumes and name
+  (`MODULES.LIB!MARVEL.AD`, `IMAGES.1+IMAGES.2!XMEN2099.FIF`).
 * `verified` means what it means today: `image`, `files`, `partial` or
   `none`. The manifest covers the installed files. Every ZIP member's CRC-32
   is always checked, and so is every ARJ segment's. SZDD has no checksum: a
   damaged SZDD file that still expands to its size is caught only by the
   manifest (3), and not at all under `--no-verify`. Neither has KWAJ
-  (§8.8).
+  (§8.8), nor an InstallShield library (§8.9).
 * The record is UTF-8 JSON whatever the source holds: every name arrives
   as UTF-8 (code page 437 decoded for FAT and ARJ names, FAT volume labels
   and ZIP member names that are not UTF-8; Latin-1 for ISO-9660 names and
@@ -666,7 +934,9 @@ generator becomes `adimport 1.1` (`adimport 1.2` since the covers work,
 COVERS.md §2.7; `adimport 1.3` since the sixth release, for `abi` and the
 `intermission` recipe). The seventh release added `screen` and the
 `ad2kwaj` recipe under the same `adimport 1.3`, so every entry of the six
-releases before it is byte for byte what it was.
+releases before it is byte for byte what it was; the fourth round added
+five packages and the `islib` recipe under it too, and the 232 entries of
+the first seven are field for field what 1.1.0 wrote.
 
 * **Order.** Installed packages in registry order. Within a package, its
   module dirs in registry order. Within a dir, `*.AD` sorted as today.
@@ -691,7 +961,8 @@ releases before it is byte for byte what it was.
   `ad10` `TOAST2K.AD` → `Toasters 2k (early build)`. It is an earlier build
   that `SETUP.INF` never installs, and without the override it would share
   the name of the installed `TOASTER2.AD`. (Since the sixth release, `swse`
-  has fourteen more, below, and since the seventh `startrek` one.)
+  has fourteen more, below, since the seventh `startrek` one, and since the
+  fourth round `disney` five.)
 * **displayName**: unique within a lane, case-insensitively. Walk the
   catalog in order. The first module with a given `(lane, moduleName)`
   keeps `moduleName`. Every later one gets `moduleName + " (" + shortTitle +
@@ -786,6 +1057,44 @@ releases before it is byte for byte what it was.
   of them `sameAs` an earlier entry (`startrek` adds none: none of its files
   is byte-identical to another release's), and the `packages` list begins
   with `startrek` (1992-11).
+* **The fourth round's modules** are Classic entries too, lane `ne16`,
+  entry `MODULE`; none is byte-identical to another release's, so none has
+  `sameAs`. Ids are `<package>.<stem>` (`marvel.marvel`, `snoopy.is_fly`,
+  `looney.pepe`, `screams.amphibo`, `disney.mermaid`).
+  * `marvel`: one entry, "Marvel Comics", 4 controls: two buttons,
+    **Saver..** (index 0) and **Posters...** (index 1) (INTERACTION.md
+    §1.6), the transition popup `FX` (ten effects, default Random) and the
+    `Delay:` string slider (10 seconds to an hour, default 1 minute);
+    `needs` `DECO`; `screen` `"640x480"`.
+  * `snoopy`: 8 entries (Collage, Dance, Faces, Flying Ace, Linus &
+    Snoopy, Literary Ace, Spotlights, Therapy), 27 controls, no buttons;
+    `needs` `AD_SND` for six, nothing for Collage and Spotlights; `about`
+    is `""` (their About texts are blank lines: each module draws its own
+    About picture instead, ABI.md §3.10), and the credits keep their
+    28-space indent as written. The modules export `MODULE` from the
+    NE non-resident names table, where the catalog finds it as the lane
+    does.
+  * `looney`: 12 entries, 28 controls, one button, Messages' **Edit
+    Custom...** (index 3); `needs` `ADXPL41`. Its Messages meets After Dark
+    3.2's and Deluxe's under the displayName rule: `looney.ltmessgs` is
+    "Messages (Looney Tunes)" beside them, "Messages" in a root of its own.
+    Pepe's name resource holds Windows-1252's `’` ("Desquetoppe D’amour").
+  * `screams`: 15 entries, `needs` `AD_SND`, 11 checkbox controls ("Blank
+    Screen First"), no buttons; `screen` `"640x480"`.
+  * `disney`: 16 entries, 38 controls, no buttons; `needs` `ADXPL100` and
+    `AD_RSRC`. The name resource is 16 bytes with two leading spaces, so
+    five names lost their space: overrides give `DISNEY/DALM.AD` "101
+    Dalmatians", `DSCLOCKS.AD` "Disney Clocks", `FALLING.AD` "Falling
+    Flower", `FIREWRK.AD` "Magic Kingdom" and `MERMAID.AD` "Little Mermaid",
+    as each module's own NE description and Berkeley's 1996 product page
+    spell them.
+
+  `screen` is on 32 entries: `startrek`'s 16, `screams`' 15 and `marvel`'s
+  one. With all twelve releases installed the catalog lists 284 modules,
+  still 73 of them `sameAs` an earlier entry, no display name repeated
+  within a lane, and the `packages` list reads `startrek`, `marvel`,
+  `simpsons`, `swse`, `snoopy`, `looney`, `screams`, `ad32`, `tt`,
+  `disney`, `deluxe`, `ad10`.
 * **New per-module fields**, on every entry, Deluxe's too, appended after
   the existing ones:
   * `package`, `packageTitle`, `moduleName`
@@ -849,9 +1158,11 @@ from a VFS alias table.
 | | DLL search order | `C:\WINDOWS\SYSTEM` mount | bridge (§7.4) | palettes |
 |---|---|---|---|---|
 | packaged, engine dir holds `OLDMOD16.DLL` (`ad10`) | module dir → engine dir | engine dir | real `OLDMOD16` | `ENGINE\AFTERDAR.SCR` `AD_PALETTE` 101..104 |
-| packaged, no `OLDMOD16.DLL` (`ad32`, `tt`, `simpsons`) | module dir → engine dir | engine dir | native AD3 bridge with `ENGINE\AD_SND.DLL` | `ENGINE\ADTASK.DLL` 5000/1..4, else `ENGINE\AFTERDAR.SCR` |
+| packaged, no `OLDMOD16.DLL` (`ad32`, `tt`, `simpsons`, `looney`, `screams`, `disney`) | module dir → engine dir | engine dir | native AD3 bridge with `ENGINE\AD_SND.DLL` | `ENGINE\ADTASK.DLL` 5000/1..4, else `ENGINE\AFTERDAR.SCR` |
 | packaged, an Intermission module (`swse`; §7.5) | module dir (`C:\SAVER`) → engine dir | engine dir | no AD3 bridge: Intermission's reader `ENGINE\IMIMXPLY.IMQ`, or the native reader | none: the modules build their own |
-| packaged, After Dark 2.0: the module dir holds `AD_MOD.DLL` (`startrek`; below) | module dir → engine dir | engine dir | native AD3 bridge with `ENGINE\AD_SND.DLL`, AD_SND 1.0 | none: After Dark 2.0 kept none, and no module asks for one |
+| packaged, After Dark 2.0: the module dir holds `AD_MOD.DLL` (`startrek`; below) | module dir → engine dir | engine dir | native AD3 bridge with `ENGINE\AD_SND.DLL`, AD_SND 1.0 | After Dark 2.0's four, computed as its `AD.EXE` computed them, handed over at the first palette request (§7.4); no Star Trek module asks for one |
+| packaged, After Dark 2.0d without `AD_MOD.DLL` (`marvel`; below) | module dir → engine dir | engine dir | native AD3 bridge with `ENGINE\AD_SND.DLL`, AD_SND 1.0 | After Dark 2.0's four, computed, at the first request; the module asks for none |
+| packaged, no `AD_SND.DLL` in the engine dir (`snoopy`, which has no engine dir at all; below) | module dir → engine dir | engine dir | native AD3 bridge over the host's own AD_SND (§7.4) | After Dark 2.0's four, computed, at the first request: Collage asks for palette 12 |
 | legacy | today: module dir → `FILES\CLASSIC` → `FILES\ENGINE` (or beside the module) | today | real `OLDMOD16` | today |
 
 * `ADNE16BRIDGE=auto|oldmod16|native` overrides the choice. `auto` is the
@@ -920,12 +1231,18 @@ from a VFS alias table.
     Mute`, written at each load of a module that wants sound (15 of the 16:
     all but Ion Storm), Communications' `[Communications] MessageText` and
     Sounder's `[Sounder] SoundPath`.
-  * **No AD palettes.** After Dark 2.0 stored none: `AD.EXE` built its four
-    in code (the same bytes as ADTASK.DLL's 5000/1..4, ABI.md §3.9). None is
-    computed here, and none is needed: no Star Trek module makes a palette
-    request (each builds its own palettes), and one would fail with 7
-    (§7.4). The lane's note says so: "After Dark 2.0 modules make no
-    palette requests (one would fail with 7)".
+  * **AD palettes, computed.** After Dark 2.0 stored none: `AD.EXE` built
+    each of its four in code when a module asked for it (the same bytes as
+    ADTASK.DLL's 5000/1..4, ABI.md §3.9). Since the fourth round the lane
+    computes them the same way, for any package whose engine dir holds
+    neither `ADTASK.DLL` nor `AFTERDAR.SCR`, and hands them to the bridge at
+    the first palette request (§7.4). No Star Trek module makes one (each
+    builds its own palettes), so nothing changes for them: their frames and
+    sound are byte for byte what they were. (Before, no palette was
+    computed, a request would have failed with 7, and the lane said so;
+    that note is gone.) The lane trace names the source: "palettes After
+    Dark 2.0's four, computed as its AD.EXE computed them, handed over at
+    the first palette request".
   * **Result 5 is the module's wake.** `AD.EXE` 2.0b took a DRAWFRAME
     result of 5 as its wake: it posted itself its wake message, 0x7EE
     (ABI.md §3.9). Final Exam returns it when a mouse move ends its exam.
@@ -935,6 +1252,67 @@ from a VFS alias table.
     as the module's error, as AFTERDAR.SCR treated it (ABI.md §3.1).
   * **Guest disk**: the module dir is `C:\AFTERDRK`, as for every After
     Dark module: the installer's own folder, which `Path` names.
+* **After Dark 3.x's `AD_PREFS.INI`** (fourth round). The host the lane
+  stands in for, `ADW30.EXE`, wrote two keys into `C:\WINDOWS\AD_PREFS.INI`
+  at every start, with its own directory (its routine 3:0166, called from
+  start-up at 1:0100; the 3.01, 3.06 and 3.2 builds carry the same code,
+  ABI.md §3.12): `[After Dark] Path=C:\AFTERDRK` and `[Sound]
+  SoundDriver=AD_MME.DRV`. The Disney Collection's library, `ADXPL100.DLL`,
+  one of the After Dark 2.0 generation, loads `<Path>DIS_SND.DLL` and
+  `<Path>music\<song>.mid` from the first (without it every Disney module
+  stopped at load with "File not found."). The lane seeds both, profile
+  seeds read as seed ⊕ file and never written out
+  (`host/win16/dos16.hh` `seed_after_dark3`), when the engine dir holds
+  `ADW30.EXE` (`host/ne16/package.hh` `after_dark3_host`): a rule by file,
+  which After Dark 2.0's (above) overrides where both would hold. `Path` is
+  ADW30's own spelling, without a trailing backslash (ADXPL100 adds one).
+  It applies to `ad32`, `tt`, `simpsons`, `looney`, `screams` and `disney`,
+  all of which ship `ENGINE\ADW30.EXE`. Only the Disney modules need the
+  keys: the 202 After Dark baseline streams, the Looney Tunes' and
+  ScreamSavers' stayed byte for byte as they were, sound captures included
+  (the 72 modules of 3.2, Totally Twisted and the Simpsons read only
+  `[Sound] Mute` there, and Globe its `GlobeFile`). The lane
+  trace says "seeds: AD_PREFS.INI [After Dark] Path, [Sound]
+  SoundDriver=AD_MME.DRV (After Dark 3.x's ADW30.EXE)".
+* **Marvel Comics Screen Posters** (fourth round) is After Dark 2.0d, but
+  ships no `AD_MOD.DLL`, so the After Dark 2.0 rules keyed on it do not
+  apply, and it needs none of them: its only profile reads, `[After Dark]
+  Path` (default `c:\afterdrk`), `MemRequired` (default 4096) and `[Palette]
+  SwapPalette` (default 1), give the same stream with the installer's values
+  as without, and it never makes a palette request or returns 5. The native
+  bridge runs
+  it over its AD_SND 1.0, with no `WINDOWS` folder. What it needed was the
+  runtime's (ABI.md §3.11, `host/win16/README.md`): `GetHeapSpaces`, which
+  its INITIALIZE divides by; the selector calls of its decoder `DECO.DLL`;
+  and the freed-selector rule, since DECO frees its work buffer with DS
+  still holding it and restores that DS later. All 36 posters show with
+  their captions, the one split across the two disks (`XMEN2099.FIF`)
+  included, and its two buttons work in configure mode (INTERACTION.md
+  §1.6). Its transitions show at once where the original swept them
+  (§12). The module is silent by design: AD_SND 1.0 initialises and plays
+  nothing.
+* **Snoopy's Screen Savers** (fourth round): eight modules for an After Dark
+  already installed. The package has no engine dir, so the AD3 protocol
+  registers the host's own AD_SND before the native bridge opens, and the
+  bridge gets After Dark 2.0's computed palettes (§7.4); Collage asks for
+  palette 12, the grey ramp, at INITIALIZE, and fades its 1-bit line art
+  through it. The lane trace says "AD_SND the host's (no …\ENGINE\AD_SND.DLL)".
+  Seven modules make their sprite masks with `ExtFloodFill`, and six free a
+  segment in Borland C++'s far-heap code and then reload it into ES at
+  CLOSE: the runtime's flood fills and its freed-selector rule
+  (`host/win16/README.md`). Nothing is seeded: the modules read no INI and
+  open no file.
+* **The Looney Tunes, ScreamSavers and the Disney Collection** (fourth
+  round) run on the AD 3.x path over their own AD_SND and ADTASK palettes,
+  as 3.2's modules do. What they needed was the runtime's
+  (`host/win16/README.md`): the Looney Tunes' `GetDIBits(DIB_PAL_COLORS)`
+  colour table (Pepe's labels, Sam's and Taz's folders), ScreamSavers'
+  `GetMapMode`, and for the Disney Collection the seeds above, `GetDIBits`
+  to 4-bit rows (Haunted lights the desktop around Mickey's match),
+  `CreateBitmapIndirect` and `CreatePatternBrush` (Little Mermaid's "Plain"
+  sea), and TOOLHELP's heap walk answered empty (the music modules' page
+  locking, AUDIO.md §2.9). Pinocchio's Caps Lock game hooks the keyboard
+  and plays through the status record as any game (INTERACTION.md §1.5).
 
 ### 7.4 The native AD3 bridge (ne16, packages without OLDMOD16)
 
@@ -952,7 +1330,10 @@ It is a replacement for OLDMOD16, of the same kind as our replacement of
 code. Since the seventh release it runs After Dark 2.0's modules too
 (`startrek`): their host, `AD.EXE` 2.0b, sent them the same messages with
 the same blocks (ABI.md §3.9), and like the AD 3.x discs theirs ships no
-OLDMOD16; the bridge then stands in for `AD.EXE`.
+OLDMOD16; the bridge then stands in for `AD.EXE`. Since the fourth round it
+runs Marvel's After Dark 2.0d module and the AD 3.x collections of that
+round too, and Snoopy's modules, whose package ships no AD_SND at all: the
+AD_SND the bridge loads is then the host's own (step 2).
 
 **Interface.** The lane talks to either bridge through one interface that
 mirrors ABI.md §3.2: `load(hwnd, hdc, ctrl4, volume, mute, path, err,
@@ -978,9 +1359,31 @@ anything that section leaves open, follow OLDMOD16's code
    1. `LoadLibrary(<engine dir>\AD_SND.DLL)` by full path. Resolve
       `adwSoundInit`, `adwSoundCleanup`, `adwGetSystemVolumes`,
       `adwSetSystemVolumes`, `adwSetVolume`, `adwSetSoundMute` and
-      `adwStopSound` case-insensitively. All seven exist in AD_SND 3.0.3
-      and 3.2 (checked). Load failure is error id 1 and a missing entry is
-      id 3. There is **no `VerStr` gate**.
+      `adwStopSound` case-insensitively. All seven exist in AD_SND 3.0.3,
+      3.1.4 and 3.2 (checked). Load failure is error id 1 and a missing
+      entry is id 3. There is **no `VerStr` gate**.
+
+      **The host's own AD_SND** (fourth round). A package whose engine dir
+      holds no `AD_SND.DLL`, or that has no engine dir (`snoopy`: eight
+      modules made to run in the user's own After Dark 2.0 or 3.0, six of
+      which import AD_SND by name), gets AD_SND from the host: the AD3
+      protocol registers a Win16 system module named `AD_SND`
+      (`host/win16/adsnd16.cc` `register_host_ad_snd`) before the bridge
+      opens, for a run and for a button alike, and the bridge's
+      `LoadLibrary(C:\WINDOWS\SYSTEM\AD_SND.DLL)` and the modules' imports
+      by name then reach it. It is a rule by file (`host/ne16/package.hh`
+      `host_ad_snd`), for the native bridge only: today it applies to
+      `snoopy` alone, every other After Dark package shipping its own. An
+      `AD_SND.DLL` in the module dir does not count (the importer never
+      puts one there, I1). The module carries all 36 entries of AD_SND
+      3.0.3, with their ordinals, names and argument sizes, and does what
+      that library does as the Snoopy survey measured 3.0.3 and 3.2 under
+      the lane (AUDIO.md §2.10, ABI.md §3.13): our own code, with no byte of
+      Berkeley's. With instruction timing off (`ADMIPS=0`) it gives the
+      Snoopy modules byte-identical frames and sound captures to After Dark
+      3.2's real AD_SND and ADTASK borrowed into the package (a research
+      stage only), and the same MMSYSTEM calls, call for call. The lane
+      trace says "AD_SND the host's (no <engine dir>\AD_SND.DLL)".
 
       Since the seventh release five of them are required, `adwSoundInit`,
       `adwSoundCleanup`, `adwSetVolume`, `adwSetSoundMute` and
@@ -1020,11 +1423,29 @@ anything that section leaves open, follow OLDMOD16's code
    from `ADTASK.DLL`, `hpal[0..3]` = 5000/3, 5000/1, 5000/4, 5000/2, so
    palette request `10+k` selects 5000/(k+1). The three ADTASK builds have
    byte-identical 5000/1..4: `ad32`'s and `tt`'s 3.0.12 and `simpsons`'
-   3.0.8, checked by md5 while writing this. The `ad32` survey verified
-   them equal to `AFTERDAR.SCR` `AD_PALETTE` 102/104/101/103. None of these
-   palettes is ever embedded in the host: they are After Dark data. After
-   Dark 2.0 (`startrek`) has no palette source (its `AD.EXE` computed its
-   four); none is computed here, and no module asks for one (§7.3).
+   3.0.8, checked by md5 while writing this (and the Looney Tunes' and
+   ScreamSavers' 3.0.12, a relink that differs from 3.2's in 16 bytes, hold
+   the same palettes). The `ad32` survey verified them equal to
+   `AFTERDAR.SCR` `AD_PALETTE` 102/104/101/103. No palette data from
+   Berkeley's files is ever embedded in the host: they are After Dark data.
+
+   When the engine dir holds neither `ADTASK.DLL` nor `AFTERDAR.SCR` (or
+   there is no engine dir: `startrek`, `marvel`, `snoopy`; a rule by file),
+   the lane **computes** After Dark 2.0's four, as `AD.EXE` 2.0b generated
+   them in code, never copied (`host/ne16/package.hh`
+   `palettes_after_dark2`: the algorithm of ABI.md §3.9, which gives the
+   bytes ADTASK's and AFTERDAR.SCR's palettes hold), in `SETADPALETTE16`
+   order: `hpal[0..3]` = the palettes of requests 12, 10, 13 and 11. They
+   reach the bridge at the first palette request, still through
+   `SETADPALETTE16` in that order, as `AD.EXE` built a palette when a module
+   asked for one (`Bridge16::defer_palettes`; the real OLDMOD16 would get
+   them at once). A module that asks for none never sees the calls, so
+   `startrek` and `marvel`, whose modules ask for none, run byte for byte as
+   before, frames and sound; Snoopy's Collage asks for 12 at INITIALIZE.
+   Handing them over at load was tried first: the frames stayed the same,
+   but the eight `SETADPALETTE16` calls at load moved virtual time, which
+   moved Star Trek's voice starts by 1 µs (Sounder's first sound by 40 µs)
+   and 3 of the 23,400 frames of Marvel's full poster cycle.
 6. **Unload**:
    1. `MODULE(3)` if initialized.
    2. `RestoreDC`, `FreeLibrary(module)`, `DeleteObject(hDrawRgn)`.
@@ -1296,13 +1717,16 @@ repository. Derive it:
   COMPRESS formats of `_` files, were on this list for the five After Dark
   releases, which use neither; Star Wars Screen Entertainment uses SZDD, so
   it is §8.7 now, and Star Trek: The Screen Saver KWAJ, §8.8.
-* The InstallShield 3 `.Z` archive `INS0762.LIB` (PKWARE DCL implode): it
-  holds only the installer's own `DUNZIP.DLL`/`RESOURCE.DLL`.
+* The AD 3.x installers' `INS0762.LIB` (an InstallShield library, PKWARE
+  DCL implode): it holds only the installer's own `DUNZIP.DLL`/
+  `RESOURCE.DLL`. The format itself is needed since the fourth round, for
+  Marvel's and Snoopy's libraries (§8.9); this file is still never opened.
 * An `INSTALL.INS` bytecode interpreter: the placement is baked into
   `ad3zip`. Likewise no interpreter of Presage's `INSTALL.DAT`: the
   placement is baked into `intermission`; nor of Microsoft Setup's
   `ST_NSTLL.INF` and its MS-Test script `AD_NSTLL.MST`: `ad2kwaj` is baked
-  too.
+  too; nor of the InstallShield 2.00 scripts `INSTALL.INS` and `SETUP.INS`
+  of Marvel and Snoopy: `islib` is baked too.
 * A `SETUP.INF` parser: the `ad10` fix-ups are baked.
 * HFS and StuffIt (Mac halves, §12).
 
@@ -1425,6 +1849,70 @@ only what the release uses:
   literal, or a file cut on a token boundary, which gives a clean prefix)
   is caught only by the manifest (3; before a byte is written when its size
   differs, §4.3), as with SZDD, and not at all under `--no-verify`.
+
+### 8.9 InstallShield 2 compressed libraries (new with the fourth round: `isz.h/.cc`)
+
+Marvel Comics Screen Posters and Snoopy's Screen Savers keep every file in
+InstallShield 2's compressed ("Z") libraries: Marvel's `images.lib`,
+`IMAGES.1` + `IMAGES.2` (60 members), and its whole `MODULES.LIB`,
+`ENGINE.LIB`, `WIN.LIB` and `WINSYS.LIB`; Snoopy's `AD_MODS.z`, `AD_MODS.1`
++ `AD_MODS.2` (8 members). The format is the InstallShield format survey's
+(`research/win/pkg/installshield/SURVEY_REPORT.md`), which decoded all 88
+members byte for byte alike with its Python reference and six independent
+decoders, InstallShield's own `ICOMP.EXE` 3.00 among them. The reader was
+written from that public description and the survey's Python reference, not
+from any third-party decoder; it holds no third-party code (zlib's
+`contrib/blast`, also a DCL decoder, served only as a research oracle and is
+not built in). It accepts only what the two releases and `ICOMP` write:
+
+* **The container.** Every volume starts with a 255-byte header (signature
+  `13 5D 65 8C 3A 01 02 00`, a password byte that must be 0, flags 0 or 1 for
+  a volume of a split set, the file count, a DOS date, the unsplit library's
+  size, the members' total size, the directory and file tables' offsets and
+  sizes, and for a split set its volume count, volume number, a check byte
+  and where the member continuing into the next volume starts), its other
+  bytes as the format fixes them. The members' compressed data runs back to
+  back from byte 255 in table order; the directory table and the file table
+  follow and end the file. Every volume of a set repeats the header and both
+  tables, which must be identical. Each file entry is 43 bytes plus its name
+  (sizes, the data's offset, DOS date and time, attributes, the volumes it
+  starts and ends in, and flags); names are NUL-terminated, pass the
+  importer's name rules, are read as code page 437 and compared without
+  case, and none repeats. Every size, count and offset the header and the
+  tables record must agree, with no gap and no overlap between members.
+* **Split sets.** The volumes are taken in any order and ordered by their
+  headers, never by their names; the set must be complete. Exactly one
+  member crosses each boundary between two consecutive volumes, its head
+  ending one volume and its tail opening the next (`XMEN2099.FIF`,
+  `IS_FLY.AD`). A missing volume is named as the set would name it, unless
+  a given file carries that name: then the message says which volume that
+  file holds ("the set's volume 1 is missing (T.1 is volume 2)").
+* **Refused by name**, never guessed at (neither release has them): a
+  password, a stored (uncompressed) member, a named or a second directory,
+  a member spanning three or more volumes, a volume boundary no member
+  crosses, and PKWARE's coded-literal ("ASCII") mode.
+* **PKWARE DCL implode.** Every member is one stream: binary literals, a
+  window of 1024, 2048 or 4096 bytes (dictionary bits 4–6, the three levels
+  `ICOMP` writes; the releases use 6), the three fixed Huffman codes. A copy
+  may reach no further back than the first byte written; the output never
+  passes the member's recorded size, before each token, and must equal it at
+  the end code; the end code is the last thing in the data, and the bits
+  after it in its last byte are zero. The output streams in chunks of at
+  most 64 KiB; the volumes are held in memory (the largest is 1.1 MB).
+* **Checks.** The format has no checksum anywhere. A damaged container or
+  stream is a corrupt source (2). A damaged member that still decodes to its
+  recorded size (in binary mode most single-bit flips do) is caught only by
+  the manifest (3; before a byte is written when its size differs), as with
+  SZDD and KWAJ, and not at all under `--no-verify`.
+
+**`SETUP.PKG`**, the package list, is parsed by the recipe (`importer.cc`
+`parse_setup_pkg`), not by the reader: `4A A3`, the disk table's offset and
+the number of disks, then one group per library (its size, its directories
+and files with their sizes and names), then the disk table (each disk's
+libraries by their logical names, such as `images.lib` and `AD_MODS.z`,
+each pointing at its group). It lists the same names, sizes and order as
+each library's own file table (checked on all six libraries of the two
+releases). It serves only to identify the release (§3).
 
 ## 9. Test strategy
 
@@ -1630,6 +2118,98 @@ only what the release uses:
     to every 16-bit module) differed from `baselines-w` in those three
     streams alone: no module before this release reads Num Lock's toggle as
     it starts.
+* **The fourth round** (`marvel`, `snoopy`, `looney`, `screams`, `disney`),
+  the same way:
+  * Importer, synthetic: a new suite, `import.isz` (`tests/isz_builder.h`,
+    which compresses nothing: 20 of the format survey's libraries that
+    `ICOMP` made from data the tests' own generators produce, every one of
+    1 KB or less and four larger, each decoded to that data, and its stored
+    member refused; the survey's crafted and damaged streams, rewritten
+    token by token to the same bytes; the header, every length 2–518, every
+    distance at each window size, a copy reaching exactly the first byte
+    and one byte further, the size rules, a cut at every byte, bytes and
+    one-bits after the end code, chunks over 64 KiB; split sets with the
+    boundary at every byte of a member and three volumes in every order,
+    misnamed volumes and a set under swapped names; every container rule
+    broken and every refusal by name; every single-bit flip of the small
+    libraries and streams: an error, or other bytes of the recorded size,
+    never a crash). `import.zip` checks the `DISK<n>` names (`ZipNames::
+    disk_folders`: folder entries, the bare names inside, every refused
+    shape), and `import.import` disk sets as ZIPs, folders, ISO and FAT
+    images (the Simpsons, Star Trek, Star Wars and a Deluxe tree imported
+    from disk sets; a name that differs between two disks, mixed roots).
+    `import.packages` gains made-up Looney Tunes, ScreamSavers and Disney
+    installs (encrypted ZIPs with the real member names in `MODMISC.ZIP` and
+    `AFI.ZIP`; the ad32 fixture's hold `AD30RSDB.DLL` now): as folders,
+    ZIPs, `DISK<n>` folders and ZIPs and floppies; identification (a
+    ScreamSavers source never taken for After Dark 3.2, nor 3.2 for
+    ScreamSavers), every install disk, disk 1 alone, `BEAUTYOL.ZIP` and the
+    owners' notes locked and never opened, I4 over `*_SOUND.DLL`, the
+    Disney names and the ScreamSavers `screen`; and made-up Marvel and
+    Snoopy islib installs (a `SETUP.PKG`, split and whole libraries of
+    streams written token by token, undecodable decoy members) as a folder,
+    a flat ZIP, `Disk1`/`Disk2` folders and a ZIP of them, and two floppies
+    in either order: the `from` forms and DOS times, a known ZIP's md5
+    verified `image`, disk 1 alone ("needs every install disk") and disk 2
+    alone (no release), decoys, notes and the Looney Tunes' `SETUP.PKG`
+    locked and never read, a `SETUP.PKG` without the tag member, too large,
+    of another magic, with a bad offset, a group one byte short, cut short
+    or with a stray byte (no release), `--package` mismatches, a volume
+    naming `IMAGES.3` (locked, never opened), damaged libraries (2), a
+    flipped literal (3), the staging budget, a cancel, a missing non-tag
+    member (`partial`), the swapped volumes of either release, and the
+    islib invariants. `import.pkg_download` fetches the five releases' ZIPs
+    and Marvel's second copy from its loopback server (each a known image,
+    its medium starting "ZIP"); `import.cli` pins the `--list-packages`
+    lines (the title column 34 characters wide); `import.gui_model` and
+    `import.gui_shots` show twelve releases.
+  * Importer, real sources: `import.isz_real` (`AD_E2E_PKG=1`) reads the
+    user's Marvel and Snoopy ZIPs, found by md5, as disk sets, and checks
+    all 88 members against the format survey's md5s, from the ZIPs and from
+    folder copies of their volumes. `import.pkg_real` finds the five ZIPs
+    (and the `LOONEY_T` CD when an image folder holds it: verified `image`,
+    the ZIP's files), imports each (verified `image`, 64 / 8 / 34 / 23 / 31
+    files, 1 / 8 / 12 / 15 / 16 modules), checks Marvel's and Snoopy's baked
+    tables against their disks (each row's member in its library with the
+    manifest's size; every member the table leaves one the recipe never
+    installs; `SETUP.PKG`, parsed on its own, listing each library the table
+    reads with exactly its members and sizes, and the tag member in the tag
+    library), imports their disks copied out of the ZIPs as a flat folder,
+    `DISK1`/`DISK2` folders and a flat ZIP (verified `files`, the ZIP's
+    files) and alone (2), and merges all twelve releases: 284 modules, 73
+    `sameAs`, unique names per lane, `startrek` first. `import.download_real`
+    fetches the six copies (each verified `image`) and checks every URL with
+    a Range request; `import.covers_real` the new covers.
+  * Lanes: `win16.unit` gains `GetMapMode`; flood fills (surface and
+    border, a diagonal barrier, palette colours, a viewport origin, the
+    screen, a clip region, a monochrome DC, a bottom-up DIB DC; each fill's
+    pixel charge against what real GDI painted); ADXPL41's
+    `SetDIBits` → `GetDIBits` → `SetDIBits` round trip through a 255-entry
+    palette; 4-bit rows; `CreateBitmapIndirect` and `CreatePatternBrush`;
+    `GetDIBits` of monochrome bitmaps; the After Dark 3.x seeds;
+    `GetHeapSpaces` and `GetCodeHandle`; the selector calls; the
+    freed-selector rule (DS, ES, FS and GS, and INT 31h); TOOLHELP's empty
+    walk. `ne16.unit` gains the rules by file (`after_dark3_host`,
+    `host_ad_snd`), the seeds of a made-up `packages\disney`, the computed
+    palettes against the test's own implementation of ABI.md §3.9 (handed
+    over at the first request, never to a module that asks for none), a
+    made-up NE module importing AD_SND by name that plays a made-up sound
+    through the host's own AD_SND (every entry: load, loop and sync modes,
+    the three play flags, mute, volume, free, the system volumes, the async
+    capability with and without a device), and the AD3 protocol for a
+    package with no engine dir, for a run and a button. The new opt-in
+    `ne16.snoopy` runs the eight real modules of an imported package
+    (BUILDING.md, "Test"); `ne16.startrek` now finds the computed palettes
+    in the lane trace.
+  * Every lane change of the round kept the frozen baselines at 0
+    differences, so none was re-accepted: the 202 After Dark modules × A/C/S
+    against `research/win/pkg/startrek/baselines-st`, the 14 Star Wars
+    modules' 900-frame streams (28/28) and the 16 Star Trek modules' (32/32);
+    the C-run sound captures of all 202 are byte-identical to 1.1.0's. Each
+    new module was run 900 frames twice from the package its import made:
+    identical, 0 unimplemented calls, no fault, and contact sheets looked
+    at; Marvel's full cycle of 36 posters over 23,400 frames; sound captured
+    twice where there is any.
 
 Headless runs stay deterministic throughout. Nothing may write to the
 user's real data folder (`%LOCALAPPDATA%\LongAfterDark`) except the
@@ -1914,7 +2494,7 @@ Acceptance:
    the settings dialog shows, and the saver needs no change for it.
 5. Documentation to update afterwards (outside these packages):
    * the project's status notes;
-   * `tools/package.sh`'s dist README ("Deluxe only" wording; since rewritten for the five releases);
+   * `tools/package.sh`'s dist README ("Deluxe only" wording; since rewritten for the releases it knows, twelve today);
    * the scr status strings that count "After Dark 4 / Classic" (the scr
      workflow owns them). These are part of the user-requested wording
      pass.
@@ -1959,18 +2539,87 @@ Acceptance:
   * a writable per-user overlay: **done** (INTERACTION.md §7): `HALLOFFA`'s
     `HOF.INI` and the other modules' files persist per user and per
     package.
-* **Other AD 3.x collections** share this install family: Looney Tunes,
-  Star Trek TNG, X-Men, Disney and Marvel, per the folder list in the IS
-  scripts and the AFI files. `ad3zip` plus a registry entry (engine DLL,
-  module dir, folder AFI, manifest) should cover them. The derived password
-  makes that cheap. They, More After Dark and the AD 2.x releases for
-  Windows are future packages: none is in the registry, and each needs its
-  own survey (identification, layout, manifest, a known source) before it
-  can be. (Since the seventh release one AD 2.x release is: Star Trek: The
-  Screen Saver. After Dark 2.0 itself and More After Dark, where their
-  disks use the same Microsoft Setup installer, which was not checked,
-  would be further `ad2kwaj` packages: a registry entry with the setup
-  title, the disks' tag files, the loose-file table and a manifest.)
+* **Other AD 3.x collections** share this install family: Star Trek TNG
+  and X-Men, per the folder list in the IS scripts and the AFI files, as
+  the Looney Tunes and Disney ones did, which the fourth round added
+  (`ad3zip` plus a registry entry, the derived password unchanged; their
+  engine DLL, folder AFI and, where one package's engine DLL is another's,
+  a marker, §3). Marvel is not of this family, as this item used to say:
+  its 1993 disks are InstallShield 2 libraries (`islib`). The remaining
+  collections, More After Dark and the AD 2.x releases for Windows are
+  future packages: none is in the registry, and each needs its own survey
+  (identification, layout, manifest, a known source) before it can be.
+  (Since the seventh release one AD 2.x release is: Star Trek: The Screen
+  Saver. After Dark 2.0 itself and More After Dark, where their disks use
+  the same Microsoft Setup installer, which was not checked, would be
+  further `ad2kwaj` packages: a registry entry with the setup title, the
+  disks' tag files, the loose-file table and a manifest.)
+* **The fourth round's other builds and editions**, documented, not
+  supported:
+  * *The Looney Tunes' build B* (the August 1995 CD `LTW320CD`, also the
+    Internet Archive's `LOONEY_WIN/LOONEY.zip`): the same modules, library,
+    sound database and MIDIs byte for byte, on After Dark 3.2's engine
+    files. It is identified as `looney` and fails verification (3: three
+    `ENGINE` files differ from the April build's manifest), and
+    `--no-verify` imports it. Supporting it would take a manifest per build
+    (a `Package::builds` list, as for Star Wars Screen Entertainment's).
+  * *The 1993 Disney edition*, on After Dark 2.0 and InstallShield
+    libraries over three floppies: another release, whose module code
+    equals the 1995 build's but for Beauty, Cheshire Cat and Captain Hook.
+    It would be a package of its own (the `islib` reader, Star Trek's After
+    Dark 2.0 rules); not surveyed further.
+  * *ScreamSavers' January 1995 build*: its `SETUP.PKG` lists an
+    `ENGINE.ZIP` of 330,871 bytes and a `HELP.ZIP` of 40,972 where the
+    user's disks, remastered with the 3.0.6 engine, hold 319,648 and 37,171;
+    a copy of it would fail verification in `ENGINE`. None is online.
+  * *Other Marvel builds*: the After Dark 3.x-era build that After Dark 4.0
+    Deluxe's `PREVIOUS.INF` implies (`Base\mrvlsp`, `Base\Marvel Posters`)
+    was not surveyed.
+  * *Snoopy's CD branch*: its `SETUP.INS` has an unused CD install ("Only
+    support files", "Entire CD"); no CD was surveyed.
+  * *The Mac editions* (After Dark: Snoopy Fun Pac, the Disney Collection's
+    800 KB floppies, the Looney Tunes' and Marvel's Mac versions): not read,
+    as no Mac half is.
+* **Marvel's transitions show at once** (a known difference). The poster's
+  decode and its transition happen inside one DRAWFRAME call; the region
+  transitions (Radial, Wipe, Iris, Blinds, …) take few instructions and up
+  to 27 million blit pixels, and pixels cost the frame's budget, not virtual
+  time, so they finish inside one presented frame, where a 1993 machine
+  showed them over about half a second (Dissolve, which is
+  instruction-bound, shows over about 15 frames). A lane-wide "pixel time"
+  (a research knob that charged pixels to virtual time) restores the sweep,
+  but moves 101 of the 202 After Dark streams, so it is a pacing decision of
+  its own, not taken.
+* **Snoopy's default timing.** The host's own AD_SND costs no instructions
+  of its own and makes other API calls than a real AD_SND's, so at the
+  default instruction timing a Snoopy module's run is not the one a
+  borrowed AD_SND 3.2 would give (Flying Ace's stream differs from frame
+  268; the sound captures by fractions of a microsecond). Only the
+  `ADMIPS=0` oracle is byte-identical (§7.4); there is no reference for
+  default timing. Where the host's AD_SND chose between the real
+  libraries' ways, no module of the corpus reaches the difference
+  (AUDIO.md §2.10).
+* **Snoopy's About pictures.** The modules draw their own About picture
+  when sent ABOUT (message 6, ABI.md §3.10); none of the hosts sends it, and
+  their About texts are blank, so the catalog's `about` is empty.
+* **Snoopy's cover.** No box, label or manual scan of the Windows release
+  was found online; its cover is the Image Smith logo its disk 1 carries
+  (`AD_MODS.BMP`, COVERS.md §2.3). A cover source that reads a resource of
+  an installed module (Flying Ace's About picture) was considered and not
+  built.
+* **InstallShield boundaries never seen.** How InstallShield 2's splitter
+  recorded a volume boundary falling exactly between two members, or a
+  member over three or more volumes, is unknown: the reader refuses both by
+  name (§8.9). A release made that way would need the rule revisited.
+* **`GetDIBits` and a header of another size** (a known gap, found in the
+  fourth round, not fixed): the runtime answers for the bitmap's own width
+  and height whatever the header asks, where real GDI follows the header.
+  ADXPL40 and ADXPL41 read 24-row bands of a 76-row bitmap and get its
+  bottom rows where real GDI gives the top ones; in Chameleon (Totally
+  Twisted, 10th Anniversary) a stray icon then covers the "Accessories"
+  label after about half a minute. The frozen streams hold the runtime's
+  answer (300 frames do not reach it); a research build that follows the
+  header changed no frozen or new-release stream and fixed the label.
 * **Deferred on purpose:** AD 3.2's built-in Starry Night (above: it needs
   an NE application mapped as a library; Deluxe and the 10th Anniversary
   ship Starry Night as a module), `ECOLOGIC.DLL` in the catalog (above),
@@ -2004,16 +2653,17 @@ Acceptance:
   its ARJ archives, where a disc cover source cannot reach, so an offline
   import shows the generated cover until `--refresh-covers` fetches one
   (COVERS.md §2.3). Star Trek: The Screen Saver's disks likewise hold no
-  picture a disc source can reach: every one is KWAJ-compressed.
+  picture a disc source can reach: every one is KWAJ-compressed; nor do
+  Marvel Comics Screen Posters' (every one is inside its libraries).
 * **Star Trek: The Screen Saver, other forms and builds.** A folder that
   keeps the two disks apart, in `DISK1\` and `DISK2\` (the INF's own
-  `..\disk1` and `..\disk2`), is not a source, only a flat copy of both
-  disks' files: when a root matches no release, identification could be
-  retried on the union of its `DISK<n>` folders. An installed `C:\AFTERDRK`
-  is no source (§3). Other builds were not surveyed: After Dark 4.0
-  Deluxe's `PREVIOUS.INF` shows one that also shipped After Dark 2.0's
-  generic Messages module (`AD_MESG.AD`, whose data file, `AD_MESG.ADS`,
-  these disks carry unused).
+  `..\disk1` and `..\disk2`), was not a source before the fourth round;
+  it is now, as every root holding only `DISK<n>` folders is (§5.2, a rule
+  applied before identification rather than retried after it). An
+  installed `C:\AFTERDRK` is no source (§3). Other builds were not
+  surveyed: After Dark 4.0 Deluxe's `PREVIOUS.INF` shows one that also
+  shipped After Dark 2.0's generic Messages module (`AD_MESG.AD`, whose data
+  file, `AD_MESG.ADS`, these disks carry unused).
 * **After Dark 2.0's host, further.** `AD.EXE`'s built-in modules (Starry
   Night 2.0, the Randomizer, MultiModule) are not catalogued: Starry Night
   is NE application code, which the Win16 runtime does not run, as AD 3.2's

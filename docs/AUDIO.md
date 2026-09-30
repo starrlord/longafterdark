@@ -13,7 +13,13 @@ both lanes (§7, §8) and the saver (§9) are in the tree, and the integration
 census of §10.4 has run over all 202 modules (§10.5). The design census (§1)
 was taken on the silent-stub host before that, and where the specification
 below says "today" or "as today" it means that silent host, which is still
-exactly what the lanes do with sound off. Evidence is marked as in the
+exactly what the lanes do with sound off. The releases added later are
+outside that census and have sections of their own: Star Wars Screen
+Entertainment's music (§10.6), Star Trek: The Screen Saver's AD_SND 1.0
+(§2.12, §10.7), and the five of the twelve-release registry, with the
+Looney Tunes' and the Disney Collection's music paths (§2.9), the host's
+own AD_SND for Snoopy's Screen Savers (§2.10) and their results (§10.8).
+Evidence is marked as in the
 other documents: **VERIFIED** (our disassembly, with addresses), **EMPIRICAL**
 (observed in runs or measured on the files) and **UNVERIFIED** (leads still
 open).
@@ -82,7 +88,8 @@ Tooling (all under `research/win/audio/`, gitignored like the rest of
 ### 1.1 Method
 
 * **Static** (`static_census.py`): every `*.AD` and `*.DLL` under the
-  assets (`build/win-pkg-setup/assets`, all five releases imported). It
+  assets (`build/win-pkg-setup/assets`, the five releases of the time
+  imported). It
   records imports from WINMM, MMSYSTEM, MSACM32, AD_SND and the engines, and
   every resource that is a RIFF WAVE (type `3000` in the 16-bit releases,
   `WAV` in the AD4 ones) with its format and length. It also records the
@@ -275,12 +282,15 @@ Notes:
 
 | Binary | Builds | Sound role |
 |---|---|---|
-| `AD_SND.DLL` | 3: Deluxe = 10th (`b3ab…`, "4.0.0 Sep 12 1996"), 3.2 = TT (`07a2…`), Simpsons (`08d3…`, "3.0.4 Jul 05 1994"); and since the seventh release Star Trek's 1.0 ("V1.0", §2.12) | the Classic sound library (§2.10); mandatory for OLDMOD16 (ABI.md §3.3) |
+| `AD_SND.DLL` | 3: Deluxe = 10th (`b3ab…`, "4.0.0 Sep 12 1996"), 3.2 = TT (`07a2…`), Simpsons (`08d3…`, "3.0.4 Jul 05 1994"); and since the seventh release Star Trek's 1.0 ("V1.0", §2.12); with the twelve releases, the Looney Tunes' and ScreamSavers' 3.1.4 (`b2d3…`), the Disney Collection's (3.2's, `07a2…`) and Marvel's (Star Trek's 1.0, byte for byte); Snoopy's Screen Savers ship none and get **the host's own** (§2.10) | the Classic sound library (§2.10); mandatory for OLDMOD16 (ABI.md §3.3) |
+| `LT_SOUND.DLL` | the Looney Tunes | "Looney Tunes Shared Sounds" (NE module `LOON_SND`, KERNEL imports only): **103** type-3000 WAVE resources (ids 15000–16107, 1.25 MB); `ADXPL41` loads it by name (`FindResource(LOON_SND, id, 3000)`) and plays them through AD_SND |
+| `DIS_SND.DLL` | the Disney Collection | 3 type-3000 WAVE resources (ids 1000–1002); `ADXPL100` loads it by name from `AD_PREFS.INI [After Dark] Path` (§2.9) |
 | `SIMP_SND.DLL` | Simpsons | "Simpsons Shared Sounds": **143** type-3000 WAVE resources (all 8-bit 11025 Hz PCM mono, 109 s: the speech and effects), no code but a `WEP`; loaded by name by all 15 Simpsons modules and read through ADXPL310/AD_SND |
 | `TT_SND.DLL` | TT and 10th (same file, also in the 10th's `MUSIC\`) | 12 type-3000 WAVE resources (8-bit PCM mono at 11025, 11127, 22254 and 22255 Hz; 8 s); loaded by name by 7 TT modules |
 | `ST_SND.DLL` | Star Trek (since the seventh release) | 71 type-3000 WAVE resources (all 8-bit PCM mono at 11025 Hz, 94.8 s: the effects, Final Frontier's theme, McCoy's quotes); `AD_MOD.DLL` loads it by name from `<Path>ST_RES\` for 15 modules (§2.12) |
 | `AD_MME.DRV`, `AD_MPT.DRV`, `AD_SB.DRV` | Star Trek | AD_SND 1.0's plug-in sound drivers (§2.12); only `AD_MME.DRV` is installed |
 | `ADXPL300/310/40.DLL` | 16-bit engines | `XSoundDatabase` (→ AD_SND) and `XSoundMusicPlayer` (→ `mciSendString`); import MMSYSTEM `midiOutGetNumDevs`, `waveOutGetNumDevs/GetDevCaps`, `mciSendString` |
+| `ADXPL41.DLL`, `ADXPL100.DLL` | the Looney Tunes' engine (a superset of ADXPL310's ordinals); the Disney Collection's library, of the After Dark 2.0 generation | the same two paths: effects through AD_SND, songs through the MCI sequencer strings (§2.9) |
 | `ADXPL510.DLL` | Deluxe (`3fe1…`), 10th (`7976…`) | `XNoiseMaker`/`XNoise` (DirectSound, ACM), `WinMidiPlayer` (MCI), `XCdAudio`, `SoundHelp`; imports WINMM (aux, mixer, MCI) and MSACM32; `dsound.dll` dynamically |
 | `ADTASK.DLL`, `ADW30.EXE` | 3.2, TT, Simpsons | the original AD 3 host. Not run: the native bridge replaces it (PACKAGES.md §7.4) |
 | `AFTERDAR.SCR` | Deluxe, 10th | snapshots and restores every mixer control around a module (ABI.md §2.12). Not run: our host never touches the real mixer |
@@ -532,6 +542,31 @@ instruction):
   same in traces (RATRACE, TOAST3, YBYH): the same API sequence, and no
   `GlobalFirst`/`GlobalNext` calls.
 
+**ADXPL41** (the Looney Tunes; EMPIRICAL, the survey's traces) plays the
+same way: `open sequencer!C:\AFTERDRK\music\<song>.mid alias fred wait`,
+then `play fred notify`, for all 13 of the release's General MIDI songs
+(every open succeeds; Messages, Marvin and Taz open none), and its effects
+come from `LT_SOUND.DLL` through AD_SND. **ADXPL100** (the Disney
+Collection's library, of the After Dark 2.0 generation; VERIFIED in the
+survey's listing, `research/win/pkg/disney/dis/`) reads `AD_PREFS.INI
+[After Dark] Path` (the lane's seed of what `ADW30.EXE` wrote, PACKAGES.md
+§7.3), loads `<Path>DIS_SND.DLL`, and opens its songs as
+`sequencer!C:\AFTERDRK\music\<song>` with the alias `fred` (Beauty
+`bandb`, Falling Flower `nutcrack`, Captain Hook `crocodil`, Little Mermaid
+`undersea`, The Sorcerer `dukasexp` and `dukasint`), flipping `SYSTEM.INI
+[mciseq.drv] disablewarning` around each play as ADXPL310 does. Its
+`IsSoundLame()` takes the sound for "lame" only when `[Sound] SoundDriver`
+is empty or `AD_MPT.DRV`, so the seed's `AD_MME.DRV`, like the default
+"None", passes. Before a song its `lock_sequencer_down_hard_now` (7:09BF)
+walks the global heap with TOOLHELP's `GlobalFirst`/`GlobalNext` (`GLOBAL_ALL`)
+for MCISEQ.DRV's blocks to `GlobalPageLock`, on the 3.95 the runtime
+reports too (ADXPL310 walks only on 3.10). The runtime answers an empty walk
+(`GlobalFirst` FALSE at once; `host/win16/README.md`): the library notes
+"Error walking global list", returns 1, and the song plays. A real walk
+would lock nothing either (MCISEQ is the host's stub, with no blocks), and
+only add its calls; before, the two were unimplemented and counted in the
+census.
+
 ### 2.10 AD_SND — VERIFIED (`research/win/dis/AD_SND.DLL.asm`, Deluxe build)
 
 * **Playback**: `sndPlaySound(lpRiff, flags)` from a `GlobalLock`ed
@@ -566,12 +601,108 @@ instruction):
   full volume whatever `ADVOLUME` said, §8.3.) The Simpsons build (3.0.4)
   looks for `MMMIXER` and, without it, uses the wave and aux volumes.
 
+**The host's own AD_SND** (with the twelve releases; `host/win16/adsnd16.cc`;
+PACKAGES.md §7.4). Snoopy's Screen Savers are eight modules made for an
+After Dark already installed: they ship no AD_SND, six of them import it by
+name, and the native bridge needs one before it loads any module. For a
+package whose engine dir holds no `AD_SND.DLL` (a rule by file; Snoopy's is
+the only one) the ne16 lane's AD3 protocol registers a Win16 system module
+named `AD_SND` before the bridge opens, and the bridge's
+`LoadLibrary(C:\WINDOWS\SYSTEM\AD_SND.DLL)` and the modules' imports reach
+it. It is our own code, written from the Snoopy survey's measurements of
+AD_SND 3.0.3 and 3.2 under the lane: no byte of Berkeley's. Everything it
+does goes through the Win16 thunks (KERNEL, MMSYSTEM), as a real library's
+imports would, so the census, the `api16` trace, virtual time and the audio
+path see its calls alike; its own work costs no instructions.
+
+* **Entries**: all 36 of AD_SND 3.0.3 (the Simpsons package's, version
+  resource 3.0.3; 3.2 exports the same set), with their ordinals, names and
+  argument sizes (ABI.md §3.13): the bridge's seven, AD_SND 1.0's volume
+  pair, and every entry the Snoopy modules import among them.
+* **Init.** `adwSoundInit(w, err)` asks `mmsystemGetVersion` and
+  `waveOutGetNumDevs`, then, for 8-bit mono PCM at 11025 and at 22050 Hz,
+  the first device whose `waveOutOpen(WAVE_FORMAT_QUERY)` takes it (a second
+  pass adds `WAVE_ALLOWSYNC`). Found, it answers 0, leaves the level at 25
+  until `adwSetVolume` sets one, and takes its capabilities from the
+  devices' caps: volume (1) when both have `WAVECAPS_VOLUME`, async (2) and
+  loop (4) unless the 11 kHz device has `WAVECAPS_SYNC`; the lane's device
+  gives 7 (`adwSoundAsyncCap` answers 2). With no device (`ADSOUNDDEV=0`),
+  or none that plays both rates, it answers 1 with the reason in `err` ("No
+  wave output device is installed."); every entry that needs the device then
+  answers 0 (`adwOpenSound`, `adwLoadSoundResource`, `adwSoundAsyncCap` and
+  the other capabilities, `adwStopSound`), but `adwPlaySound` answers 1, so
+  the modules run silent. Init and cleanup clear the mute and forget the
+  last volume.
+* **Sounds** are records the module keeps (`GlobalAlloc(GMEM_MOVEABLE |
+  GMEM_DDESHARE)`, 0x42 bytes): the mode, a file name, the image's handle.
+  `adwLoadSoundResource(hInstance, name)` is `FindResource(hInstance, name,
+  3000)`, `LoadResource` and `LockResource`, the image staying locked;
+  `adwLoadSoundFile` reads a file whole into a global block. The mode:
+  0x200 loops, 0x100 does not (the default), 0x20 plays synchronously, 0x10
+  asynchronously (the default); `adwSetSoundMode` refuses both of a pair and
+  a synchronous loop, and changes only the pairs it names.
+* **Playback.** `adwPlaySound(h)`: muted, or at level 0, nothing plays and
+  it answers 1; else `sndPlaySound(image, SND_MEMORY | SND_NODEFAULT`, plus
+  `SND_ASYNC` unless synchronous, plus `SND_LOOP` when looping`)`, flags
+  0x07, 0x06 or 0x0F, the image locked for the call and unlocked right after
+  it, and the sound becomes the current one. A synchronous loop plays
+  nothing (0). `adwStopSound` is `sndPlaySound(NULL, 0)`; `adwCloseSound(2)`
+  stops too; `adwFreeSound` stops the sound when it is the current one, then
+  frees the image (a resource: `GlobalUnlock` and `FreeResource`) and the
+  record.
+* **Mute and volume.** `adwSetSoundMute` stores the value as it came
+  (`adwPlaySound` tests it) and stops nothing. `adwSetVolume(v)`: muted, v
+  counts as 0; the value it last took answers 1 at once; 0..100 sets the
+  level and v × 0xFFFF / 100 on both channels, `midiOutSetVolume` on every
+  MIDI device with `MIDICAPS_VOLUME`, then `waveOutSetVolume` on the wave
+  devices: AD_SND 3.2's levels and order (50 gives `0x7FFF7FFF` on both
+  buses, §6.7; 3.0.3's MIDI level followed a curve of its own, which no
+  module of such a package hears, none playing MIDI); anything else answers
+  0, and is remembered all the same.
+* **System volumes.** `adwGetSystemVolumes(&h)` saves in a new global block
+  (`GHND`, 0xB4 bytes, signature 0x6969) the volume of every wave, MIDI and
+  aux device that has one; `adwSetSystemVolumes(h)` writes them back and
+  frees the block (0; 1 for no block, 2 for one that does not lock, 3 for
+  one that is not such a block). AD_SND 1.0's `adwSavePreviousVolume`/
+  `adwRestorePreviousVolume` do the same for the wave devices alone. So a
+  run sets `0x7FFF7FFF` at load and restores `0xFFFFFFFF` at unload, as the
+  real library does.
+* **The rest**: `adwOpenSound`, `adwPauseSound` and `adwResumeSound` answer
+  1 with the device; `adwIsSoundDone` 1 for the current sound (or none) and
+  0 for any other (the library cannot ask `sndPlaySound`); `adwGetSoundInfo`
+  reads a PCM image's `fmt ` and `data` chunks; `adwCreateSound` makes a
+  record, but none for a named file, so `adwPlaySoundFile` fails, as it does
+  in 3.0.3 and 3.2; `adwPlaySoundResource` loads, sets the mode and plays
+  (never freeing the sound: the library's own leak, kept); no sound effects
+  (`adwQuerySfx` and `adwDoEffect` answer 1 for effect 0 alone) and no setup
+  dialog; `adwSoundDllVer` "3.0.3", `VerStr` 303.
+* **Not there**: a mixer path (`MMMIXER`, a Windows 3.1 sound card's DLL:
+  the host has none), `AD_PREFS.INI` (3.2 reads `[Sound] Mute` there, which
+  nothing in such a package writes; the bridge sets the mute anyway), and a
+  `VerStr` gate (the native bridge has none; OLDMOD16, which wants 400, never
+  gets this module).
+* **Checked** (the Snoopy work; `research/win/pkg/more/sn/`, gitignored):
+  with instruction timing off (`ADMIPS=0`) the eight modules' frames and
+  captures are byte-identical to After Dark 3.2's real AD_SND and ADTASK
+  borrowed into the package (a research stage only), and the MMSYSTEM trace
+  equals the real 3.2's call for call (but one trace line of its own and the
+  image's selector number). At the default timing the host's AD_SND makes
+  other calls than a real one and costs no instructions of its own, so runs
+  differ from a borrowed library's (PACKAGES.md §12). `ADTRACE=sound` says
+  "AD_SND (the host's): wave devices 0 (11 kHz) and 0 (22 kHz), capabilities
+  7", or "… no sound: No wave output device is installed.".
+* **Chosen where the real ones differ**, never reached by a module of the
+  corpus: `VerStr` 303 and "3.0.3" (the entry set's version resource; the
+  3.0.3 file's internals say 304 and "3.0.4"); the MIDI level of 3.2; one
+  `FreeResource` where the real library, when `LockResource` fails in
+  `adwLoadSoundResource`, frees the resource twice.
+
 ### 2.11 Formats in the corpus
 
 | Where | Formats |
 |---|---|
 | AD4 WAV resources (29 modules) | IMA-ADPCM 22050/11025/44100 mono; PCM 8- and 16-bit mono at 11025/22050 |
-| AD 3.x type-3000 resources, SIMP_SND, TT_SND; since the seventh release ST_SND (all 11025 Hz) | 8-bit PCM mono at 11025, 22050, 22000, 11000, 11127, 7418, 5564, 5563, 5011 Hz; **MS-ADPCM 11025 mono** in 8 ADXPL40 modules (BUNGEE, CHAM, CS, MESSYGES, MIKES, PHLEGM_B, TCLOCKS, VOYEUR), which on Win95 played through `sndPlaySound` via the wave mapper's ACM |
+| AD 3.x type-3000 resources, SIMP_SND, TT_SND; since the seventh release ST_SND (all 11025 Hz); with the twelve releases LT_SOUND, DIS_SND, and the ScreamSavers and Snoopy modules' own | 8-bit PCM mono at 11025, 22050, 22000, 11000, 11127, 22254, 7418, 5564, 5563, 5011 Hz (ScreamSavers' Mac-derived 5563, 7418, 11127 and 22254 among them); **MS-ADPCM 11025 mono** in 8 ADXPL40 modules (BUNGEE, CHAM, CS, MESSYGES, MIKES, PHLEGM_B, TCLOCKS, VOYEUR), which on Win95 played through `sndPlaySound` via the wave mapper's ACM |
 | HOF.SRF | its own chunks, mixed by HALLOFFA to 22050 16-bit mono PCM |
 | Music | SMF 0/1, PPQN (§1.5) |
 
@@ -1382,7 +1513,13 @@ play at half amplitude.
     (After Dark 2.0, since the seventh release: the lane seeds its `Path`
     and `SoundDriver`, and AD_SND 1.0 reads a `[Sound] Mute` it wrote
     itself into the state overlay; the bridge's `adwSetSoundMute` sets the
-    mute right after, for every module that wants sound, §2.12.)
+    mute right after, for every module that wants sound, §2.12. After Dark
+    3.x packages, with the twelve releases: the lane seeds the `Path` and
+    `SoundDriver` `ADW30.EXE` wrote, which only the Disney Collection's
+    library reads, §2.9.)
+  * A package that ships no AD_SND (Snoopy's Screen Savers) gets the host's
+    own (§2.10); the bridge sets its mute and volume as it sets any
+    AD_SND's.
   * `ADSOUNDDEV=0` keeps meaning "no wave device at all".
 
 ### 8.2 `sndPlaySound` (MMSYSTEM.2)
@@ -1492,8 +1629,10 @@ RATRACE, TOAST3, YBYH, CS, FRANKEN, LISA, SNOWBALL:
 * `LoadLibrary("TOOLHELP.DLL")` ≥ 32.
 * `LoadLibrary("MCISEQ.DRV")` ≥ 32: a stub module (resident name `MCISEQ`,
   no exports needed unless tracing shows otherwise).
-* `GetProcAddress(TOOLHELP, "GLOBALFIRST"/"GLOBALNEXT")` non-NULL. They are
-  called only on an exact 3.10 (§2.9), so never here.
+* `GetProcAddress(TOOLHELP, "GLOBALFIRST"/"GLOBALNEXT")` non-NULL. ADXPL300,
+  310 and 40 call them only on an exact 3.10 (§2.9), so never here; the
+  Disney Collection's ADXPL100 calls them before its songs, and gets an
+  empty walk (§2.9).
 * `RegisterClass`/`CreateWindowEx` of `adwMidiCall` with its guest
   `MIDIWNDPROC`.
 * Delivery of `MM_MCINOTIFY` to that window (§8.6).
@@ -1954,6 +2093,48 @@ captured with `ADAUDIOOUT` and `ADAUDIOLIVE=0` for 900 frames (15 s of
   streams for 13 of the 16: Final Frontier, Horta and Ship Panels differ,
   because the muted path skips the driver's API calls, which cost virtual
   time.
+* Not exercised: live output (`ADAUDIOLIVE=1`, §12).
+
+### 10.8 The five later releases' sound (2026-09-30)
+
+The modules of Marvel Comics Screen Posters, the Looney Tunes, ScreamSavers,
+the Disney Collection and Snoopy's Screen Savers, from packages their own
+imports made, captured with `ADAUDIOOUT` for 900 frames, twice (the
+twelve-release integration's and the Snoopy work's runs, and the surveys'
+longer ones; gitignored under `research/win/pkg/`):
+
+* **The Looney Tunes**: all 12 make sound: effects from `LT_SOUND.DLL`, 2
+  to 20 ids per module in 30 s, and the 13 MIDI songs through the MCI
+  sequencer (§2.9), all of them within 30 s (Conducktor's sound is its
+  music).
+* **ScreamSavers**: all 15 play their modules' own type-3000 WAVs through
+  their AD_SND 3.1.4, 2 to 32 voices in 15 s, peaks near −6 dBFS;
+  correlation 1.0000 against the resources for the top matches (Spin Out,
+  Big Mess, Head Butt, Swamp Lunch, Bone Crunch). Sound on and off give
+  identical frames for 12 modules; Swamp Lunch, Bug Out and Melt Down wait
+  on their sounds.
+* **The Disney Collection**: 10 modules play WAV effects (through AD_SND
+  3.2's `sndPlaySound`; Cheshire Cat's capture against its resource
+  3000/1100: correlation 0.9993 at lag 0, gain 0.499 at volume 50, both
+  channels equal) and 5 play MIDI songs (Beauty, Falling Flower, Captain
+  Hook, Little Mermaid, The Sorcerer); Scrooge is silent in 60 s. The
+  music modules' `GlobalFirst` calls answer the empty walk, and the census
+  counts no unimplemented call.
+* **Marvel Comics Screen Posters** is silent by design: AD_SND 1.0
+  initialises, and the module plays nothing (0 voices, 0 MIDI events, a
+  peak of 0; the stream equals the one with sound off).
+* **Snoopy's Screen Savers**, over the host's own AD_SND (§2.10): the six
+  modules that import it are audible, Dance (one looping song), Faces,
+  Flying Ace, Linus & Snoopy, Literary Ace and Therapy (its synchronous
+  plays, flags 0x06), at about −6 dBFS; flags 0x07, 0x06 and 0x0F all
+  occur; Collage and Spotlights import no AD_SND and are silent. With no
+  wave device (`ADSOUNDDEV=0`) all eight run, silent, the host's AD_SND
+  having said why.
+* Every capture is identical run to run. The frozen baselines' C-run
+  captures of the 202 After Dark modules stayed byte-identical to 1.1.0's
+  (404 of 404), so did the Looney Tunes' and ScreamSavers' under the After
+  Dark 3.x seeds, and so did Star Trek's 16 under the computed palettes
+  (PACKAGES.md §7.4).
 * Not exercised: live output (`ADAUDIOLIVE=1`, §12).
 
 ---
