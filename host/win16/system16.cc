@@ -194,6 +194,27 @@ void register_system16(Runtime16& rt) {
     c.rt.wr32(ge + 32, 0);
     c.ret(1);
   });
+  // GlobalFirst/GlobalNext(lpGlobal, wFlags): an empty walk — FALSE at once,
+  // lpGlobal untouched, what the unimplemented stubs answered. Their one
+  // caller, ADXPL100's lock_sequencer_down_hard_now (the Disney Collection's
+  // music modules, with sound on), walks the heap (GLOBAL_ALL, dwSize 0x24)
+  // for MCISEQ.DRV's blocks to GlobalPageLock (7:09BF..7:0BB1): on FALSE it
+  // notes "Error walking global list" and returns 1, and the song plays. A
+  // real walk would have to list every block of the heap in arena order,
+  // the burgermaster and the sentinel (GT_SENTINEL, which ends its loop),
+  // each with its address, size, handle, lock and page-lock counts, owner
+  // (a module, or the task's PDB), type (GT_CODE, GT_DGROUP, GT_DATA, …) and
+  // segment number; MCISEQ is no NE module here (the MCI sequencer is the
+  // host's), so no block would match and nothing would be locked either:
+  // the walk would only add its own calls (it walks twice, one GlobalNext
+  // per block each time).
+  for (const char* n : {"GlobalFirst", "GlobalNext"}) {
+    r.impl("TOOLHELP", n, [](Call16& c) {
+      c.ptr();
+      c.w();
+      c.ret(0);
+    });
+  }
 
   r.impl("SHELL", "RegSetValue", [](Call16& c) { c.ret32(0); });
   r.impl("SHELL", "DragQueryFile", [](Call16& c) { c.ret(0); });

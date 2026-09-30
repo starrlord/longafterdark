@@ -104,7 +104,9 @@ uint16_t u16(std::string_view s, size_t off) {
 //                 modules; over the package's windows dir (package.hh) when
 //                 it has one (none of the After Dark packages does); for
 //                 After Dark 2.0 (package.hh after_dark2) AD_PREFS.INI's
-//                 profile seeds (win16/dos16.hh seed_after_dark2)
+//                 profile seeds (win16/dos16.hh seed_after_dark2), else for
+//                 After Dark 3.x (package.hh after_dark3_host) the ones
+//                 ADW30.EXE wrote (win16/dos16.hh seed_after_dark3)
 //   C:\WINDOWS\SYSTEM  the engine dir (OLDMOD16, AD_SND), read-only
 //   H:\<L>\…      the host's drives, read-only, 8.3 names (file dialogs)
 // Without ADSTATE every upper layer is memory: nothing is read from or
@@ -139,12 +141,18 @@ void mount_disk(Runtime16& rt, const Env& env, const std::string& module_path, c
   // After Dark 2.0's AD_PREFS.INI (a rule by file: the module folder holds
   // AD_MOD.DLL): profile seeds under the empty virtual file, never the
   // disk's AD_PREFS.INI, whose PC-speaker driver would win over a seed.
+  // Else After Dark 3.x's (the engine dir holds ADW30.EXE): the keys ADW30
+  // wrote at every start, as seeds too.
   const bool ad2 = after_dark2(layout, file_exists);
+  const bool ad3 = !ad2 && after_dark3_host(layout, file_exists);
   if (ad2) win16::seed_after_dark2(rt);
+  if (ad3) win16::seed_after_dark3(rt);
   trace("lane", "disk: C:\\WINDOWS and %s over %s%s%s", o.guest_dir.c_str(),
         pkg.empty() ? "memory (no ADSTATE)" : (pkg + " (" + moddir + ")").c_str(),
         layout.windows_dir.empty() ? "" : (", C:\\WINDOWS over " + layout.windows_dir).c_str(),
-        ad2 ? "; seeds: AD_PREFS.INI [After Dark] Path, [Sound] SoundDriver=AD_MME.DRV (After Dark 2.0)" : "");
+        ad2   ? "; seeds: AD_PREFS.INI [After Dark] Path, [Sound] SoundDriver=AD_MME.DRV (After Dark 2.0)"
+        : ad3 ? "; seeds: AD_PREFS.INI [After Dark] Path, [Sound] SoundDriver=AD_MME.DRV (After Dark 3.x's ADW30.EXE)"
+              : "");
 }
 
 int16_t control_default16(std::string_view rec) {
@@ -208,12 +216,17 @@ class Ad3Protocol : public Protocol16 {
   }
 
  private:
+  // The native bridge over its AD_SND: the engine dir's, or — none there
+  // (package.hh host_ad_snd) — the host's own, registered first.
+  std::unique_ptr<Bridge16> open_native(Runtime16& rt, std::string* why);
+
   Ne16Layout layout_;
   std::string module_name_;
   Runtime16* rt_ = nullptr;  // load's or button's
   std::unique_ptr<Bridge16> bridge_;
   BridgeKind bridge_kind_ = BridgeKind::oldmod16;
   bool bridge_auto_ = true;  // no ADNE16BRIDGE (the init trace says when it chose)
+  bool host_ad_snd_ = false;  // the host's AD_SND answers (open_native)
   bool ad2_ = false;         // After Dark 2.0's (package.hh after_dark2): result 5 is its wake
   std::shared_ptr<loader::ne::Image> img_;  // configure mode: the image check_button read
   uint32_t scratch_ = 0;  // far pointer to the scratch block
@@ -221,6 +234,17 @@ class Ad3Protocol : public Protocol16 {
   uint16_t volume_ = 50, mute_ = 1;
   int16_t ctrl_[4] = {0, 0, 0, 0};
 };
+
+// The native bridge loads C:\WINDOWS\SYSTEM\AD_SND.DLL, the engine dir's. A
+// package that ships none (Snoopy's Screen Savers: modules for the user's
+// own After Dark 2.0 or 3.0) gets the host's AD_SND instead, registered as
+// the system module AD_SND before the bridge loads it — by that path, and
+// the modules' imports by name, then reach it (win16/adsnd16.cc).
+std::unique_ptr<Bridge16> Ad3Protocol::open_native(Runtime16& rt, std::string* why) {
+  host_ad_snd_ = host_ad_snd(layout_, file_exists);
+  if (host_ad_snd_) win16::register_host_ad_snd(rt);
+  return open_native_bridge(rt, rt.options().system_dir + "\\" + kAdSndLibrary, why);
+}
 
 std::string Ad3Protocol::error_text() const {
   if (!rt_ || !scratch_) return "(no error text)";
@@ -289,7 +313,7 @@ bool Ad3Protocol::load(Runtime16& rt, uint16_t hwnd, uint16_t hdc, LaneContext& 
     }
     bridge_ = open_oldmod16_bridge(rt, engine + "\\OLDMOD16.DLL", &why);
   } else {
-    bridge_ = open_native_bridge(rt, opts.system_dir + "\\AD_SND.DLL", &why);
+    bridge_ = open_native(rt, &why);
   }
   if (!bridge_) {
     log("%s: %s", module_name_.c_str(), why.c_str());
@@ -304,21 +328,28 @@ bool Ad3Protocol::load(Runtime16& rt, uint16_t hwnd, uint16_t hdc, LaneContext& 
   // SetADPalette3216(hpal[i], i) for the four AD palettes (ABI.md §3.1).
   AdPalettes pals = load_palettes(layout_, bridge_kind_, file_exists);
   std::string pal_text = pals.pal.empty() ? "none: " + pals.error : pals.source;
+  if (pals.computed) pal_text += ", handed over at the first palette request";
+  std::string snd_text = host_ad_snd_ ? "the host's (no " + ad_snd + ")" : ad_snd;
   trace("lane", "%s: package %s, module dir %s, engine dir %s, bridge %s%s, AD_SND %s, palettes %s, %s display palette",
         module_name_.c_str(), layout_.packaged ? layout_.package_id.c_str() : "legacy", dir.c_str(), engine.c_str(),
-        bridge_name(bridge_kind_), bridge_auto_ ? "" : " (ADNE16BRIDGE)", ad_snd.c_str(), pal_text.c_str(),
+        bridge_name(bridge_kind_), bridge_auto_ ? "" : " (ADNE16BRIDGE)", snd_text.c_str(), pal_text.c_str(),
         opts.desktop_palette ? "desktop" : "boot");
   if (pals.pal.empty()) {
-    // After Dark 2.0 keeps no palettes (AD.EXE 2.0b built its four in code),
-    // and its modules ask for none: they make their own.
-    log(ad2_ ? "%s: no AD palettes (%s); After Dark 2.0 modules make no palette requests (one would fail with 7)"
-             : "%s: no AD palettes (%s); palette requests will fail",
-        module_name_.c_str(), pals.error.c_str());
+    // No palette source (package.hh): an OLDMOD16 without AFTERDAR.SCR, or
+    // an ADTASK.DLL without its palettes. (After Dark 2.0's are computed.)
+    log("%s: no AD palettes (%s); palette requests will fail", module_name_.c_str(), pals.error.c_str());
   }
-  auto& gdi = rt.state<win16::Gdi16>();
-  for (size_t i = 0; i < pals.pal.size(); i++) {
-    uint16_t hpal = gdi.create_palette(pals.pal[i]);
-    bridge_->set_palette(hpal, uint16_t(i));
+  // At load for the files' palettes, as AFTERDAR.SCR set them before loading
+  // a module; at the first palette request for After Dark 2.0's computed
+  // ones, as AD.EXE 2.0b built one when a module asked (AdPalettes::computed).
+  auto supply = [&rt, bridge = bridge_.get(), pal = std::move(pals.pal)] {
+    auto& gdi = rt.state<win16::Gdi16>();
+    for (size_t i = 0; i < pal.size(); i++) bridge->set_palette(gdi.create_palette(pal[i]), uint16_t(i));
+  };
+  if (pals.computed) {
+    bridge_->defer_palettes(std::move(supply));
+  } else {
+    supply();
   }
 
   // Controls: the record defaults, ADCVSET over them.
@@ -449,7 +480,7 @@ Protocol16::Button Ad3Protocol::button(Runtime16& rt, int slot, uint16_t owner16
     }
     bridge_ = open_oldmod16_bridge(rt, layout_.engine_dir + "\\OLDMOD16.DLL", &why);
   } else {
-    bridge_ = open_native_bridge(rt, opts.system_dir + "\\AD_SND.DLL", &why);
+    bridge_ = open_native(rt, &why);
   }
   if (!bridge_) {
     out.message = why;
@@ -468,8 +499,8 @@ Protocol16::Button Ad3Protocol::button(Runtime16& rt, int slot, uint16_t owner16
   }
   std::string guest = opts.guest_dir + "\\" + win16::upper16(module_name_);
   rt.write_str(scratch_ + scratch::kPath, guest, 260);
-  trace("lane", "%s: BUTTONPUSHED16(%s, owner %04X, %d) through the %s bridge", module_name_.c_str(), guest.c_str(),
-        owner16, slot, bridge_name(bridge_kind_));
+  trace("lane", "%s: BUTTONPUSHED16(%s, owner %04X, %d) through the %s bridge%s", module_name_.c_str(), guest.c_str(),
+        owner16, slot, bridge_name(bridge_kind_), host_ad_snd_ ? ", the host's AD_SND" : "");
   uint16_t r = bridge_->button(scratch_ + scratch::kPath, owner16, uint16_t(slot), scratch_ + scratch::kCtrl,
                                scratch_ + scratch::kError, scratch::kErrorSize, scratch_ + scratch::kErrId);
   uint16_t err_id = rt.rd16(scratch_ + scratch::kErrId);

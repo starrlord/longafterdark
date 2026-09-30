@@ -1,5 +1,6 @@
 // adw_win16 tests: the LDT (selectors, huge-block tiling), the global and
-// local heaps, Pascal far thunks (argument order, callee pops, DX:AX), far
+// local heaps, KERNEL's selector calls and the freed-selector rule, Pascal
+// far thunks (argument order, callee pops, DX:AX), far
 // callbacks from a shim into guest code (nested), Catch/Throw, INT 21h/1Ah
 // basics (the current drive and each drive's current directory, DOS's
 // limit on one), the VGA ports, a small NE DLL built in memory (imports, prolog
@@ -99,6 +100,22 @@ void test_ldt() {
   CHECK(ldt.lookup(0x40, d) && d.base == 0x10000, "selector 0x40 = BIOS data area");
   ldt.free(b, 3);
   CHECK(ldt.alloc(2) == b, "freed selectors are reused first-fit");
+  // Runs the guest's selector calls made (mark_guest_run): the first carries
+  // the length, its tiles belong to it; a freed or reallocated entry is never
+  // taken for one of them.
+  uint16_t g = ldt.alloc(3), h = ldt.alloc(1);
+  ldt.mark_guest_run(g, 3);
+  ldt.mark_guest_run(h, 1);
+  CHECK(ldt.guest_run(g) == 3 && !ldt.guest_run(g + 8) && ldt.in_guest_run(g + 16) && ldt.guest_run(h) == 1 &&
+            !ldt.in_guest_run(a),
+        "a marked run: its first has the length, its tiles are in it, others are not");
+  CHECK(ldt.free_guest_run(uint16_t(g + 8)) == 0 && ldt.in_use(g + 8), "free_guest_run of a tile: nothing");
+  ldt.free(uint16_t(g + 8), 1);
+  uint16_t reuse = ldt.alloc(1);
+  CHECK(reuse == uint16_t(g + 8) && !ldt.in_guest_run(reuse), "a tile freed and handed out again is no longer marked");
+  CHECK(ldt.free_guest_run(g) == 3 && !ldt.in_use(g) && ldt.in_use(reuse) && !ldt.in_use(g + 16) && ldt.in_use(h),
+        "free_guest_run frees the run's own tiles only");
+  CHECK(ldt.alloc(1) == g && !ldt.guest_run(g), "a freed run's first, reallocated, is unmarked");
 }
 
 // ---- global heap ---------------------------------------------------------------------------------------
@@ -2098,6 +2115,591 @@ void test_gdi_additions() {
         "GlobalUnWire unlocks");
 }
 
+// GetMapMode: DCs start in MM_TEXT; SetMapMode's mode comes back; the
+// ScreamSavers idiom, SetMapMode(mem, GetMapMode(screen)), keeps MM_TEXT.
+void test_map_mode() {
+  Machine m;
+  Screen screen(64, 48);
+  m.rt.attach_display(screen);
+  uint16_t sdc = gdi16_screen_dc(m.rt, user16_saver_window(m.rt));
+  uint16_t mdc = uint16_t(api(m, "GDI", "CreateCompatibleDC", {w16(sdc)}));
+  auto mode = [&](uint16_t dc) { return int(api(m, "GDI", "GetMapMode", {w16(dc)}) & 0xFFFF); };
+  CHECK(mode(sdc) == MM_TEXT && mode(mdc) == MM_TEXT, "screen and memory DCs start in MM_TEXT (%d %d)", mode(sdc),
+        mode(mdc));
+  api(m, "GDI", "SetMapMode", {w16(mdc), w16(MM_ANISOTROPIC)});
+  CHECK(mode(mdc) == MM_ANISOTROPIC, "SetMapMode(MM_ANISOTROPIC) comes back (%d)", mode(mdc));
+  api(m, "GDI", "SetMapMode", {w16(mdc), w16(uint16_t(mode(sdc)))});
+  CHECK(mode(mdc) == MM_TEXT, "SetMapMode(mem, GetMapMode(screen)): MM_TEXT again (%d)", mode(mdc));
+  CHECK(mode(0x1234) == 0, "no DC: 0");
+  api(m, "GDI", "DeleteDC", {w16(mdc)});
+}
+
+// FloodFill and ExtFloodFill (Snoopy's sprite masks): the colour keyed as
+// SetPixel's, so pixel indices are compared (PALETTEINDEX and PALETTERGB
+// through the DC's palette, a plain RGB to the statics); real GDI's fill,
+// 4-connected, with the DC's brush, in logical coordinates, within the clip
+// region, FALSE when the point is not in the area; on a monochrome bitmap
+// the colour's nearest of black and white; on a DIB DC its pixel values, in
+// its own row order. Every fill charges the pixels it painted: the host's
+// count is held here to what real GDI painted.
+void test_flood_fill() {
+  Machine m;
+  Screen screen(64, 48);
+  m.rt.attach_display(screen);
+  Gdi16& g = m.rt.state<Gdi16>();
+  uint16_t sdc = gdi16_screen_dc(m.rt, user16_saver_window(m.rt));
+  uint16_t mdc = uint16_t(api(m, "GDI", "CreateCompatibleDC", {w16(sdc)}));
+  const int W = 8, H = 5;
+  uint16_t bmp = uint16_t(api(m, "GDI", "CreateCompatibleBitmap", {w16(sdc), w16(W), w16(H)}));
+  api(m, "GDI", "SelectObject", {w16(mdc), w16(bmp)});
+  Obj16* bo = g.get(bmp, G16::bitmap);
+  CHECK(bo && bo->bmp.bpp == 8 && bo->bmp.bits, "an 8-bit bitmap");
+  if (!bo || !bo->bmp.bits) return;
+  // Pictures in hardware indices: '.' light grey (7), '#' black (0), 'o'
+  // yellow (251), 'w' white (255), 'p' a palette's white (slot 10, below),
+  // 'r' red (249), the brush's.
+  const std::string key = ".#owpr";
+  const uint8_t idx[] = {7, 0, 251, 255, 10, 249};
+  auto load = [&](const std::vector<std::string>& rows) {
+    GdiFlush();
+    for (int y = 0; y < H; y++) {
+      for (int x = 0; x < W; x++) bo->bmp.bits[size_t(y) * bo->bmp.stride + size_t(x)] = idx[key.find(rows[size_t(y)][size_t(x)])];
+    }
+  };
+  auto show = [&]() {
+    GdiFlush();
+    std::string s;
+    for (int y = 0; y < H; y++) {
+      if (y) s += '/';
+      for (int x = 0; x < W; x++) {
+        size_t k = size_t(std::find(idx, idx + 6, bo->bmp.bits[size_t(y) * bo->bmp.stride + size_t(x)]) - idx);
+        s += k < 6 ? key[k] : '?';
+      }
+    }
+    return s;
+  };
+  // A call's result, the pixels it charged (its work beyond a call that
+  // fills nothing, over the pixel cost) and the 8-bit bitmap after it.
+  auto work = [&](bool ext, uint16_t dc, int x, int y, uint32_t col, uint16_t type, int* ok) {
+    uint64_t before = m.rt.work_insns();
+    uint32_t r = ext ? api(m, "GDI", "ExtFloodFill", {w16(dc), w16(uint16_t(x)), w16(uint16_t(y)), l16(col), w16(type)})
+                     : api(m, "GDI", "FloodFill", {w16(dc), w16(uint16_t(x)), w16(uint16_t(y)), l16(col)});
+    if (ok) *ok = int(r & 0xFFFF);
+    return m.rt.work_insns() - before;
+  };
+  const uint64_t idle_ext = work(true, mdc, -1, 0, RGB(0, 0, 0), FLOODFILLBORDER, nullptr);
+  const uint64_t idle_ff = work(false, mdc, -1, 0, RGB(0, 0, 0), 0, nullptr);
+  struct Fill {
+    int ok = 0;
+    int64_t charged = 0;
+    std::string after;
+  };
+  auto fill = [&](bool ext, uint16_t dc, int x, int y, uint32_t col, uint16_t type) {
+    Fill f;
+    uint64_t wk = work(ext, dc, x, y, col, type, &f.ok);
+    f.charged = int64_t(wk - (ext ? idle_ext : idle_ff)) / int64_t(Runtime16Options{}.pixel_cost_insns);
+    f.after = show();
+    return f;
+  };
+  uint16_t red = uint16_t(api(m, "GDI", "CreateSolidBrush", {l16(RGB(255, 0, 0))}));
+  api(m, "GDI", "SelectObject", {w16(mdc), w16(red)});
+  // FLOODFILLSURFACE is 4-connected: a diagonal of black stops it.
+  load({"...#....", "..#.....", ".#......", "#.......", "........"});
+  Fill a = fill(true, mdc, 0, 0, RGB(0xC0, 0xC0, 0xC0), FLOODFILLSURFACE);
+  CHECK(a.ok == 1 && a.after == "rrr#..../rr#...../r#....../#......./........" && a.charged == 6,
+        "surface fill: the corner alone (%d, %s, %lld pixels)", a.ok, a.after.c_str(), (long long)a.charged);
+  // FLOODFILLBORDER, and FloodFill: everything up to the colour, whatever it holds.
+  const std::vector<std::string> box = {"########", "#..o...#", "#.o..o.#", "########", "........"};
+  load(box);
+  Fill b = fill(true, mdc, 1, 1, RGB(0, 0, 0), FLOODFILLBORDER);
+  CHECK(b.ok == 1 && b.after == "########/#rrrrrr#/#rrrrrr#/########/........" && b.charged == 12,
+        "border fill: the box's inside (%d, %s, %lld pixels)", b.ok, b.after.c_str(), (long long)b.charged);
+  load(box);
+  Fill b2 = fill(false, mdc, 6, 2, RGB(0, 0, 0), 0);
+  CHECK(b2.ok == 1 && b2.after == b.after && b2.charged == 12, "FloodFill: the same (%d, %s, %lld pixels)", b2.ok,
+        b2.after.c_str(), (long long)b2.charged);
+  // No fill: the point on the border colour, not of the surface's, or off the bitmap.
+  load(box);
+  Fill n1 = fill(true, mdc, 0, 0, RGB(0, 0, 0), FLOODFILLBORDER);
+  Fill n2 = fill(true, mdc, 3, 1, RGB(0xC0, 0xC0, 0xC0), FLOODFILLSURFACE);
+  Fill n3 = fill(true, mdc, W, 0, RGB(0, 0, 0), FLOODFILLBORDER);
+  CHECK(n1.ok == 0 && n2.ok == 0 && n3.ok == 0 && n1.charged == 0 && n2.charged == 0 && n3.charged == 0 &&
+            n3.after == "########/#..o...#/#.o..o.#/########/........",
+        "no fill: FALSE, nothing painted or charged (%d %d %d, %lld %lld %lld)", n1.ok, n2.ok, n3.ok,
+        (long long)n1.charged, (long long)n2.charged, (long long)n3.charged);
+  // Palette-mapped colours: PALETTEINDEX and PALETTERGB name the palette's
+  // white, realized at slot 10; a plain RGB white is the static at 255.
+  uint32_t lp = uint32_t(m.data(16)) << 16;
+  m.rt.wr16(lp, 0x300);
+  m.rt.wr16(lp + 2, 1);
+  m.rt.wr32(lp + 4, 0x01FFFFFF);  // white, PC_RESERVED
+  uint16_t pal = uint16_t(api(m, "GDI", "CreatePalette", {l16(lp)}));
+  api(m, "USER", "SelectPalette", {w16(sdc), w16(pal), w16(0)});
+  api(m, "USER", "RealizePalette", {w16(sdc)});
+  api(m, "USER", "SelectPalette", {w16(mdc), w16(pal), w16(0)});
+  Obj16* po = g.get(pal, G16::palette);
+  CHECK(po && po->pal->map.size() == 1 && po->pal->map[0] == 10, "the palette's white is at slot 10");
+  const std::vector<std::string> whites = {"pppp####", "pppp#www", "####wwww", "wwwwwwww", "wwwwwwww"};
+  load(whites);
+  Fill p1 = fill(true, mdc, 0, 0, 0x01000000, FLOODFILLSURFACE);  // PALETTEINDEX(0)
+  CHECK(p1.ok == 1 && p1.after == "rrrr####/rrrr#www/####wwww/wwwwwwww/wwwwwwww" && p1.charged == 8,
+        "PALETTEINDEX(0): the slot's area (%d, %s, %lld pixels)", p1.ok, p1.after.c_str(), (long long)p1.charged);
+  load(whites);
+  Fill p2 = fill(true, mdc, 1, 1, 0x02FFFFFF, FLOODFILLSURFACE);  // PALETTERGB(255, 255, 255)
+  CHECK(p2.ok == 1 && p2.after == p1.after && p2.charged == 8, "PALETTERGB white: the same (%d, %s)", p2.ok,
+        p2.after.c_str());
+  load(whites);
+  Fill p3 = fill(true, mdc, 0, 0, RGB(255, 255, 255), FLOODFILLSURFACE);
+  Fill p4 = fill(true, mdc, 7, 4, RGB(255, 255, 255), FLOODFILLSURFACE);
+  CHECK(p3.ok == 0 && p3.charged == 0 && p4.ok == 1 &&
+            p4.after == "pppp####/pppp#rrr/####rrrr/rrrrrrrr/rrrrrrrr" && p4.charged == 23,
+        "plain RGB white: the static's area, not the slot's (%d; %d, %s, %lld pixels)", p3.ok, p4.ok, p4.after.c_str(),
+        (long long)p4.charged);
+  api(m, "USER", "SelectPalette", {w16(mdc), w16(g.stock(DEFAULT_PALETTE)), w16(0)});
+  // Logical coordinates: with the viewport origin at (4, 0), logical (0, 0) is pixel (4, 0).
+  load({"....oooo", "....oooo", "....oooo", "....oooo", "....oooo"});
+  api(m, "GDI", "SetViewportOrg", {w16(mdc), w16(4), w16(0)});
+  Fill v = fill(true, mdc, 0, 0, RGB(255, 255, 0), FLOODFILLSURFACE);
+  api(m, "GDI", "SetViewportOrg", {w16(mdc), w16(0), w16(0)});
+  CHECK(v.ok == 1 && v.after == "....rrrr/....rrrr/....rrrr/....rrrr/....rrrr" && v.charged == 20,
+        "viewport origin (4, 0): the right half (%d, %s, %lld pixels)", v.ok, v.after.c_str(), (long long)v.charged);
+  // A screen DC: the display's pixels.
+  api(m, "GDI", "PatBlt", {w16(sdc), w16(0), w16(0), w16(64), w16(48), l16(BLACKNESS)});
+  api(m, "GDI", "PatBlt", {w16(sdc), w16(10), w16(10), w16(20), w16(5), l16(WHITENESS)});
+  uint16_t was = uint16_t(api(m, "GDI", "SelectObject", {w16(sdc), w16(red)}));
+  Fill sc = fill(true, sdc, 12, 12, RGB(255, 255, 255), FLOODFILLSURFACE);
+  api(m, "GDI", "SelectObject", {w16(sdc), w16(was)});
+  CHECK(sc.ok == 1 && sc.charged == 100 && screen.at(10, 10) == 249 && screen.at(29, 14) == 249 && screen.at(9, 10) == 0 &&
+            screen.at(30, 14) == 0 && screen.at(10, 15) == 0,
+        "the screen: the white rectangle (%d, %lld pixels, %u %u %u)", sc.ok, (long long)sc.charged, screen.at(10, 10),
+        screen.at(9, 10), screen.at(10, 15));
+  // The clip region bounds the fill: column 3 is clipped away but for the
+  // bottom row, so the right half is reached through that row alone, and not
+  // its top block, which touches the rest only through clipped pixels; a
+  // point outside the region fills nothing.
+  auto rgn = [&](int l, int t, int r, int b) {
+    return uint16_t(api(m, "GDI", "CreateRectRgn", {w16(uint16_t(l)), w16(uint16_t(t)), w16(uint16_t(r)), w16(uint16_t(b))}));
+  };
+  uint16_t clip = rgn(0, 0, 3, 5), top = rgn(4, 0, 8, 2), bottom = rgn(3, 4, 8, 5);
+  api(m, "GDI", "CombineRgn", {w16(clip), w16(clip), w16(top), w16(RGN_OR)});
+  api(m, "GDI", "CombineRgn", {w16(clip), w16(clip), w16(bottom), w16(RGN_OR)});
+  api(m, "GDI", "SelectClipRgn", {w16(mdc), w16(clip)});
+  const std::vector<std::string> grey(size_t(H), "........");
+  load(grey);
+  Fill k1 = fill(true, mdc, 0, 0, RGB(0xC0, 0xC0, 0xC0), FLOODFILLSURFACE);
+  CHECK(k1.ok == 1 && k1.after == "rrr...../rrr...../rrr...../rrr...../rrrrrrrr" && k1.charged == 20,
+        "clipped: the left columns and the bottom row (%d, %s, %lld pixels)", k1.ok, k1.after.c_str(),
+        (long long)k1.charged);
+  load(grey);
+  Fill k2 = fill(true, mdc, 3, 1, RGB(0xC0, 0xC0, 0xC0), FLOODFILLSURFACE);
+  CHECK(k2.ok == 0 && k2.charged == 0 && k2.after == "......../......../......../......../........",
+        "a point outside the clip region: FALSE (%d, %lld)", k2.ok, (long long)k2.charged);
+  api(m, "GDI", "SelectClipRgn", {w16(mdc), w16(0)});
+  // A monochrome bitmap, a black column at x 8: light grey is white there,
+  // a dark grey black (the colour keyed as everywhere: its static first).
+  uint16_t mono = uint16_t(api(m, "GDI", "CreateBitmap", {w16(16), w16(2), w16(1), w16(1), l16(0)}));
+  uint16_t mmdc = uint16_t(api(m, "GDI", "CreateCompatibleDC", {w16(sdc)}));
+  api(m, "GDI", "SelectObject", {w16(mmdc), w16(mono)});
+  api(m, "GDI", "SelectObject", {w16(mmdc), w16(g.stock(BLACK_BRUSH))});
+  auto mono_load = [&]() {
+    api(m, "GDI", "PatBlt", {w16(mmdc), w16(0), w16(0), w16(16), w16(2), l16(WHITENESS)});
+    api(m, "GDI", "PatBlt", {w16(mmdc), w16(8), w16(0), w16(1), w16(2), l16(BLACKNESS)});
+  };
+  auto mono_rows = [&]() {
+    GdiFlush();
+    uint8_t mb[4] = {};
+    GetBitmapBits(static_cast<HBITMAP>(g.host(mono)), 4, mb);
+    char s[16];
+    snprintf(s, sizeof(s), "%02X%02X %02X%02X", mb[0], mb[1], mb[2], mb[3]);
+    return std::string(s);
+  };
+  mono_load();
+  Fill q1 = fill(true, mmdc, 0, 0, RGB(200, 200, 200), FLOODFILLSURFACE);
+  std::string q1_rows = mono_rows();
+  CHECK(q1.ok == 1 && q1_rows == "007F 007F" && q1.charged == 16, "monochrome, light grey's surface: the left half (%d, %s, %lld)",
+        q1.ok, q1_rows.c_str(), (long long)q1.charged);
+  mono_load();
+  Fill q2 = fill(true, mmdc, 15, 1, RGB(40, 40, 40), FLOODFILLBORDER);
+  std::string q2_rows = mono_rows();
+  CHECK(q2.ok == 1 && q2_rows == "FF00 FF00" && q2.charged == 14, "monochrome, up to dark grey: the right side (%d, %s, %lld)",
+        q2.ok, q2_rows.c_str(), (long long)q2.charged);
+  // A DIB DC, bottom-up (its top row last in memory): DIBINDEX(5) from the
+  // top-left reaches the top row and three of the next, not the bottom row.
+  uint32_t p = packed_dib(m, 8, 4);
+  uint16_t ddc = uint16_t(api(m, "GDI", "CreateDC", {l16(m.rt.static_bytes("t DIB", "DIB")), l16(0), l16(0), l16(p)}));
+  const char* drows[4] = {"55555555", "55599999", "99999999", "55555555"};
+  for (uint32_t y = 0; y < 4; y++) {
+    for (uint32_t x = 0; x < 8; x++) m.rt.wr8(p + 0x428 + (3 - y) * 8 + x, uint8_t(drows[y][x] - '0'));
+  }
+  api(m, "GDI", "SelectObject", {w16(ddc), w16(uint16_t(api(m, "GDI", "CreateSolidBrush", {l16(0x10FF0007)})))});
+  Fill d = fill(true, ddc, 0, 0, 0x10FF0005, FLOODFILLSURFACE);
+  std::string dib_after;
+  for (uint32_t y = 0; y < 4; y++) {
+    if (y) dib_after += '/';
+    for (uint32_t x = 0; x < 8; x++) dib_after += char('0' + m.rt.rd8(p + 0x428 + (3 - y) * 8 + x));
+  }
+  CHECK(d.ok == 1 && dib_after == "77777777/77799999/99999999/55555555" && d.charged == 11,
+        "a bottom-up DIB DC: its pixel values (%d, %s, %lld pixels)", d.ok, dib_after.c_str(), (long long)d.charged);
+  api(m, "GDI", "DeleteDC", {w16(ddc)});
+  api(m, "GDI", "DeleteDC", {w16(mmdc)});
+  api(m, "GDI", "DeleteDC", {w16(mdc)});
+}
+
+// GetDIBits(DIB_PAL_COLORS): the bits stay hardware indices (never logical
+// ones) and the colour table describes them, entry h the DC palette's
+// logical entry nearest hardware colour h, so ADXPL41's label canvas keeps
+// its colours through its round trips, SetDIBits → GetDIBits → SetDIBits,
+// through a 255-entry palette holding the low statics at 0..9 and the high
+// ones at 245..254. The identity table written before sent hardware 255 to
+// logical 255, past the palette's end (black), and 246..254 one static on.
+void test_dib_pal_colors() {
+  Machine m;
+  Screen screen(64, 48);
+  m.rt.attach_display(screen);
+  Gdi16& g = m.rt.state<Gdi16>();
+  uint16_t sdc = gdi16_screen_dc(m.rt, user16_saver_window(m.rt));
+  // ADXPL41's kind of palette: the statics at 0..9 and 245..254, colours of
+  // its own (PC_NOCOLLAPSE) between, 10 a second black.
+  win32::LogicalPalette st = win32::Display::default_palette();
+  uint32_t lp = uint32_t(m.data(4 + 4 * 255)) << 16;
+  m.rt.wr16(lp, 0x300);
+  m.rt.wr16(lp + 2, 255);
+  for (uint32_t i = 0; i < 255; i++) {
+    PALETTEENTRY e{BYTE(i), BYTE(255 - i), BYTE(i * 7), PC_NOCOLLAPSE};
+    if (i < 10) e = st.entries[i];
+    if (i >= 245) e = st.entries[i - 235];
+    if (i == 10) e = PALETTEENTRY{0, 0, 0, PC_NOCOLLAPSE};
+    write16(m.rt, lp + 4 + 4 * i, e);
+  }
+  uint16_t pal = uint16_t(api(m, "GDI", "CreatePalette", {l16(lp)}));
+  api(m, "USER", "SelectPalette", {w16(sdc), w16(pal), w16(0)});
+  api(m, "USER", "RealizePalette", {w16(sdc)});
+  Obj16* po = g.get(pal, G16::palette);
+  CHECK(po && po->pal->map.size() == 255 && po->pal->map[10] == 10 && po->pal->map[244] == 244 &&
+            po->pal->map[245] == 246 && po->pal->map[254] == 255,
+        "realized: 0..244 in place, the high statics at 246..255");
+  // The canvas: a 16x16 DIB, pixel i of value i, with ADXPL41's own table
+  // (hardware → logical: 10 → 0, 246..255 → 245..254).
+  const uint32_t hsize = 40 + 4 * 256;
+  uint32_t dib = uint32_t(m.data(hsize + 256)) << 16, bits = dib + hsize;
+  auto header = [&]() {
+    BITMAPINFOHEADER bi{sizeof(BITMAPINFOHEADER), 16, 16, 1, 8, BI_RGB, 256, 0, 0, 256, 0};
+    m.rt.write_bytes(dib, &bi, sizeof(bi));
+  };
+  header();
+  for (uint32_t i = 0; i < 256; i++) {
+    m.rt.wr16(dib + 40 + 2 * i, uint16_t(i == 10 ? 0 : i >= 246 ? i - 1 : i));
+    m.rt.wr8(bits + i, uint8_t(i));
+  }
+  uint16_t b1 = uint16_t(api(m, "GDI", "CreateCompatibleBitmap", {w16(sdc), w16(16), w16(16)}));
+  uint16_t b2 = uint16_t(api(m, "GDI", "CreateCompatibleBitmap", {w16(sdc), w16(16), w16(16)}));
+  auto set = [&](uint16_t b) {
+    return int(api(m, "GDI", "SetDIBits", {w16(sdc), w16(b), w16(0), w16(16), l16(bits), l16(dib), w16(DIB_PAL_COLORS)}) & 0xFFFF);
+  };
+  auto get = [&](uint16_t dc, uint16_t usage) {
+    return int(api(m, "GDI", "GetDIBits", {w16(dc), w16(b1), w16(0), w16(16), l16(bits), l16(dib), w16(usage)}) & 0xFFFF);
+  };
+  CHECK(set(b1) == 16, "SetDIBits through the palette");
+  GdiFlush();
+  Obj16* o1 = g.get(b1, G16::bitmap);
+  Obj16* o2 = g.get(b2, G16::bitmap);
+  // Bottom-up: value i's pixel is on row 15 - i / 16.
+  auto hw = [&](Obj16* o, uint32_t i) { return int(o->bmp.bits[size_t(15 - i / 16) * o->bmp.stride + i % 16]); };
+  CHECK(hw(o1, 255) == 255 && hw(o1, 250) == 250 && hw(o1, 246) == 246 && hw(o1, 10) == 0 && hw(o1, 100) == 100,
+        "the canvas in hardware indices: white 255, 250, 246, a black 0, 100 (%d %d %d %d %d)", hw(o1, 255), hw(o1, 250),
+        hw(o1, 246), hw(o1, 10), hw(o1, 100));
+  // GetDIBits through the same DC: the table describes the hardware indices.
+  for (uint32_t i = 0; i < 256; i++) {
+    m.rt.wr16(dib + 40 + 2 * i, 0xEEEE);
+    m.rt.wr8(bits + i, 0);
+  }
+  CHECK(get(sdc, DIB_PAL_COLORS) == 16, "GetDIBits(DIB_PAL_COLORS)");
+  auto tab = [&](uint32_t h) { return int(m.rt.rd16(dib + 40 + 2 * h)); };
+  CHECK(tab(255) == 254 && tab(246) == 245 && tab(250) == 249 && tab(10) == 0 && tab(0) == 0 && tab(7) == 7 &&
+            tab(100) == 100 && tab(244) == 244,
+        "the table: 255 -> 254, 246 -> 245, 250 -> 249, 10 -> 0, 100 -> 100 (%d %d %d %d %d)", tab(255), tab(246),
+        tab(250), tab(10), tab(100));
+  CHECK(m.rt.rd8(bits + 255) == 255 && m.rt.rd8(bits + 250) == 250 && m.rt.rd8(bits + 10) == 0 && m.rt.rd8(bits + 100) == 100,
+        "the bits stay hardware indices (%u %u %u %u)", m.rt.rd8(bits + 255), m.rt.rd8(bits + 250), m.rt.rd8(bits + 10),
+        m.rt.rd8(bits + 100));
+  // … and back through the table GetDIBits wrote: every colour kept, white
+  // and the high statics included.
+  CHECK(set(b2) == 16, "SetDIBits again");
+  GdiFlush();
+  int same = 0;
+  for (uint32_t i = 0; i < 256; i++) same += g.index_rgb(hw(o1, i)) == g.index_rgb(hw(o2, i));
+  CHECK(same == 256 && hw(o2, 255) == 255 && hw(o2, 246) == 246 && hw(o2, 254) == 254,
+        "the round trip keeps every colour (%d of 256): 255, 246, 254 stay (%d %d %d)", same, hw(o2, 255), hw(o2, 246),
+        hw(o2, 254));
+  // A DC with no palette of its own names DEFAULT_PALETTE's entries (white its 20th).
+  uint16_t mdc = uint16_t(api(m, "GDI", "CreateCompatibleDC", {w16(sdc)}));
+  header();
+  CHECK(get(mdc, DIB_PAL_COLORS) == 16 && tab(255) == 19 && tab(249) == 13 && tab(0) == 0 && tab(7) == 7,
+        "DEFAULT_PALETTE: 255 -> 19, 249 -> 13 (%d %d)", tab(255), tab(249));
+  // DIB_RGB_COLORS: the hardware colours, as ever (100: the palette's 100, 9B, BC).
+  header();
+  CHECK(get(sdc, DIB_RGB_COLORS) == 16 && m.rt.rd32(dib + 40 + 4 * 255) == 0x00FFFFFF &&
+            m.rt.rd32(dib + 40 + 4 * 249) == 0x00FF0000 && m.rt.rd32(dib + 40 + 4 * 100) == 0x00649BBC,
+        "DIB_RGB_COLORS: the colours (%08X)", m.rt.rd32(dib + 40 + 4 * 100));
+  api(m, "GDI", "DeleteDC", {w16(mdc)});
+}
+
+// GetDIBits to 4-bit rows (Haunted captures the desktop a line at a time
+// so): real GDI's table of 16 colours — dark grey at 7, light grey at 8 —
+// each pixel its nearest entry, biClrUsed 0; with DIB_PAL_COLORS the table
+// names the DC palette's entries nearest those colours. 1-, 16- and 32-bit
+// rows stay refused.
+void test_getdibits_4bpp() {
+  Machine m;
+  Screen screen(64, 48);
+  m.rt.attach_display(screen);
+  Gdi16& g = m.rt.state<Gdi16>();
+  uint16_t sdc = gdi16_screen_dc(m.rt, user16_saver_window(m.rt));
+  uint16_t bmp = uint16_t(api(m, "GDI", "CreateCompatibleBitmap", {w16(sdc), w16(5), w16(2)}));
+  Obj16* o = g.get(bmp, G16::bitmap);
+  CHECK(o && o->bmp.bits, "an 8-bit bitmap");
+  if (!o || !o->bmp.bits) return;
+  // Row 0: black, light grey, dark grey, red, white; row 1: the four statics
+  // outside the 16 (C0DCC0, A6CAF0, FFFBF0, A0A0A4), then dark cyan.
+  const uint8_t px[2][5] = {{0, 7, 248, 249, 255}, {8, 9, 246, 247, 6}};
+  GdiFlush();
+  for (int y = 0; y < 2; y++) {
+    for (int x = 0; x < 5; x++) o->bmp.bits[size_t(y) * o->bmp.stride + size_t(x)] = px[y][x];
+  }
+  uint32_t dib = uint32_t(m.data(40 + 64 + 16)) << 16, bits = dib + 40 + 64;
+  auto get = [&](uint16_t dc, uint16_t bpp, uint16_t usage) {
+    BITMAPINFOHEADER bi{sizeof(BITMAPINFOHEADER), 5, 2, 1, bpp, BI_RGB, 0, 0, 0, 0, 0};
+    m.rt.write_bytes(dib, &bi, sizeof(bi));
+    for (uint32_t i = 0; i < 16; i++) m.rt.wr32(dib + 40 + 4 * i, 0x44332211);
+    for (uint32_t i = 0; i < 16; i++) m.rt.wr8(bits + i, 0xAA);
+    return int(api(m, "GDI", "GetDIBits", {w16(dc), w16(bmp), w16(0), w16(2), l16(bits), l16(dib), w16(usage)}) & 0xFFFF);
+  };
+  CHECK(get(sdc, 4, DIB_RGB_COLORS) == 2, "GetDIBits: two 4-bit lines");
+  BITMAPINFOHEADER got = read16<BITMAPINFOHEADER>(m.rt, dib);
+  CHECK(got.biBitCount == 4 && got.biClrUsed == 0 && got.biSizeImage == 8 && got.biWidth == 5 && got.biHeight == 2,
+        "the header: 4 bits, biClrUsed 0, 8 bytes (%u %u %u)", got.biBitCount, unsigned(got.biClrUsed),
+        unsigned(got.biSizeImage));
+  const uint32_t want[16] = {0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0x808080,
+                             0xC0C0C0, 0xFF0000, 0x00FF00, 0xFFFF00, 0x0000FF, 0xFF00FF, 0x00FFFF, 0xFFFFFF};
+  int table_ok = 0;
+  for (uint32_t i = 0; i < 16; i++) table_ok += m.rt.rd32(dib + 40 + 4 * i) == want[i];  // RGBQUAD: 0x00RRGGBB
+  CHECK(table_ok == 16, "real GDI's 16 colours, dark grey at 7 (%d of 16; 7 = %06X, 8 = %06X)", table_ok,
+        m.rt.rd32(dib + 40 + 4 * 7), m.rt.rd32(dib + 40 + 4 * 8));
+  // Bottom-up: row 1 first — 8, 8, 15, 8, 6 — then row 0 — 0, 8, 7, 9, 15.
+  const uint8_t rows[8] = {0x88, 0xF8, 0x60, 0x00, 0x08, 0x79, 0xF0, 0x00};
+  uint8_t b[8] = {};
+  m.rt.read_bytes(bits, b, 8);
+  CHECK(memcmp(b, rows, 8) == 0, "each pixel its nearest colour (%02X%02X%02X%02X %02X%02X%02X%02X)", b[0], b[1], b[2], b[3],
+        b[4], b[5], b[6], b[7]);
+  // DIB_PAL_COLORS through a DC without a palette: DEFAULT_PALETTE's entries
+  // nearest the 16 colours (dark grey its 12, light grey its 7); the same bits.
+  uint16_t mdc = uint16_t(api(m, "GDI", "CreateCompatibleDC", {w16(sdc)}));
+  CHECK(get(mdc, 4, DIB_PAL_COLORS) == 2, "GetDIBits(DIB_PAL_COLORS): two 4-bit lines");
+  const int pal_want[16] = {0, 1, 2, 3, 4, 5, 6, 12, 7, 13, 14, 15, 16, 17, 18, 19};
+  int pal_ok = 0;
+  for (uint32_t i = 0; i < 16; i++) pal_ok += m.rt.rd16(dib + 40 + 2 * i) == pal_want[i];
+  m.rt.read_bytes(bits, b, 8);
+  CHECK(pal_ok == 16 && memcmp(b, rows, 8) == 0, "the palette's entries (%d of 16), the same bits", pal_ok);
+  for (uint16_t bpp : {1, 16, 32}) CHECK(get(sdc, bpp, DIB_RGB_COLORS) == 0, "%u-bit rows: refused", bpp);
+  api(m, "GDI", "DeleteDC", {w16(mdc)});
+}
+
+// GetDIBits of a monochrome bitmap: 1-bit rows are real GDI's, asked in a
+// header of the host's own — 40 bytes, the bitmap's width and height —
+// whatever the guest's says (real GDI writes rows as wide as its header's
+// biWidth and reads biSize bytes of it: a wider header or a biSize over 40
+// ran it past the host's buffers); 4-, 8- and 24-bit rows are the bitmap's
+// black and white as hardware indices 0 and 255, described as for an 8-bit
+// bitmap (real GDI's values: 0 and 15, 0 and 255, 000000 and FFFFFF; each
+// request went to real GDI with room for 1-bit rows and two colours, and
+// crashed the host); 16- and 32-bit rows and the stock 1x1 bitmap: refused.
+void test_getdibits_mono() {
+  Machine m;
+  Screen screen(64, 48);
+  m.rt.attach_display(screen);
+  uint16_t sdc = gdi16_screen_dc(m.rt, user16_saver_window(m.rt));
+  // 37x3 (a WORD row of 6 bytes, DIB rows of 8, 20, 40 and 112): white on
+  // row 0 at x 0..7, on row 1 at 8..15, on row 2 at 32..36, black elsewhere.
+  uint16_t mono = uint16_t(api(m, "GDI", "CreateBitmap", {w16(37), w16(3), w16(1), w16(1), l16(0)}));
+  uint32_t seg = uint32_t(m.data(0x800)) << 16, dib = seg, bits = seg + 0x500, src = seg + 0x7C0;
+  const uint8_t ddb[18] = {0xFF, 0, 0, 0, 0, 0, 0, 0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8, 0};
+  m.rt.write_bytes(src, ddb, sizeof(ddb));
+  api(m, "GDI", "SetBitmapBits", {w16(mono), l16(sizeof(ddb)), l16(src)});
+  auto white = [](int x, int y) { return y == 0 ? x < 8 : y == 1 ? (x >= 8 && x < 16) : x >= 32; };
+  auto get = [&](uint16_t dc, uint16_t hb, uint16_t bpp, uint32_t size, int32_t w, int32_t h, uint16_t lines,
+                 uint16_t usage) {
+    for (uint32_t i = 0; i < 0x7C0; i += 4) m.rt.wr32(seg + i, 0xAAAAAAAA);
+    BITMAPINFOHEADER bi{size, w, h, 1, bpp, BI_RGB, 0, 0, 0, 0, 0};
+    m.rt.write_bytes(dib, &bi, sizeof(bi));
+    uint32_t r = api(m, "GDI", "GetDIBits", {w16(dc), w16(hb), w16(0), w16(lines), l16(bits), l16(dib), w16(usage)});
+    return int(r & 0xFFFF);
+  };
+  // The pixels that differ from white() in the three rows written (bottom-up
+  // unless top_down), plus 1 when the byte after them was touched.
+  auto bad_pixels = [&](uint16_t bpp, bool top_down) {
+    uint32_t stride = ((37u * bpp + 31) / 32) * 4;
+    int bad = 0;
+    for (int r = 0; r < 3; r++) {
+      uint32_t at = bits + uint32_t(r) * stride;
+      for (int x = 0; x < 37; x++) {
+        uint32_t v = bpp == 1   ? (m.rt.rd8(at + x / 8) >> (7 - x % 8)) & 1
+                     : bpp == 4 ? (m.rt.rd8(at + x / 2) >> (x % 2 ? 0 : 4)) & 15
+                     : bpp == 8 ? m.rt.rd8(at + x)
+                                : m.rt.rd32(at + 3 * x) & 0xFFFFFF;
+        uint32_t want = bpp == 1 ? 1 : bpp == 4 ? 15 : bpp == 8 ? 255 : 0xFFFFFF;
+        bad += v != (white(x, top_down ? r : 2 - r) ? want : 0);
+      }
+    }
+    return bad + (m.rt.rd8(bits + 3 * stride) != 0xAA);
+  };
+  auto header = [&]() { return read16<BITMAPINFOHEADER>(m.rt, dib); };
+  // 1-bit rows, the bitmap's own header: real GDI's answer, as before.
+  CHECK(get(sdc, mono, 1, 40, 37, 3, 3, DIB_RGB_COLORS) == 3 && header().biSizeImage == 24 &&
+            m.rt.rd32(dib + 40) == 0 && m.rt.rd32(dib + 44) == 0x00FFFFFF && bad_pixels(1, false) == 0,
+        "1-bit rows: black and white, 24 bytes (%d bad)", bad_pixels(1, false));
+  // A header wider and taller than the bitmap, of 108 bytes, for 10 lines:
+  // the bitmap's own rows, 8 bytes each, three of them; the header keeps its
+  // size and its table follows it.
+  CHECK(get(sdc, mono, 1, 108, 4096, 4096, 10, DIB_RGB_COLORS) == 3, "1-bit rows for a larger header: three lines");
+  BITMAPINFOHEADER got = header();
+  CHECK(got.biSize == 108 && got.biWidth == 37 && got.biHeight == 3 && got.biSizeImage == 24 &&
+            m.rt.rd32(dib + 108) == 0 && m.rt.rd32(dib + 112) == 0x00FFFFFF && bad_pixels(1, false) == 0,
+        "the bitmap's own 37x3 rows, the table after the 108 bytes (%u %dx%d, %d bad)", unsigned(got.biSize),
+        int(got.biWidth), int(got.biHeight), bad_pixels(1, false));
+  CHECK(get(sdc, mono, 1, 40, 37, -3, 3, DIB_RGB_COLORS) == 3 && header().biHeight == -3 && bad_pixels(1, true) == 0,
+        "top-down 1-bit rows (%d bad)", bad_pixels(1, true));
+  // 4-, 8- and 24-bit rows: black and white as the colour tables hold them.
+  CHECK(get(sdc, mono, 4, 40, 37, 3, 3, DIB_RGB_COLORS) == 3, "4-bit rows");
+  got = header();
+  CHECK(got.biBitCount == 4 && got.biClrUsed == 0 && got.biSizeImage == 60 && m.rt.rd32(dib + 40) == 0 &&
+            m.rt.rd32(dib + 40 + 4 * 7) == 0x00808080 && m.rt.rd32(dib + 40 + 4 * 15) == 0x00FFFFFF &&
+            bad_pixels(4, false) == 0,
+        "4-bit rows: black 0 and white 15 of real GDI's table (%u bytes, %d bad)", unsigned(got.biSizeImage),
+        bad_pixels(4, false));
+  CHECK(get(sdc, mono, 8, 40, 37, 3, 3, DIB_RGB_COLORS) == 3, "8-bit rows");
+  got = header();
+  CHECK(got.biClrUsed == 256 && got.biSizeImage == 120 && m.rt.rd32(dib + 40) == 0 &&
+            m.rt.rd32(dib + 40 + 4 * 255) == 0x00FFFFFF && bad_pixels(8, false) == 0,
+        "8-bit rows: hardware black 0 and white 255 (%u bytes, %d bad)", unsigned(got.biSizeImage),
+        bad_pixels(8, false));
+  CHECK(get(sdc, mono, 24, 40, 37, 3, 3, DIB_RGB_COLORS) == 3 && header().biSizeImage == 336 &&
+            bad_pixels(24, false) == 0,
+        "24-bit rows: 000000 and FFFFFF (%d bad)", bad_pixels(24, false));
+  // DIB_PAL_COLORS: the table names the DC palette's entries nearest black
+  // and white (a palette of red, white, black: 2 and 1); the bits the same.
+  uint32_t lp = uint32_t(m.data(16)) << 16;
+  m.rt.wr16(lp, 0x300);
+  m.rt.wr16(lp + 2, 3);
+  m.rt.wr32(lp + 4, 0x000000FF);   // red
+  m.rt.wr32(lp + 8, 0x00FFFFFF);   // white
+  m.rt.wr32(lp + 12, 0x00000000);  // black
+  uint16_t pal = uint16_t(api(m, "GDI", "CreatePalette", {l16(lp)}));
+  uint16_t mdc = uint16_t(api(m, "GDI", "CreateCompatibleDC", {w16(sdc)}));
+  api(m, "USER", "SelectPalette", {w16(mdc), w16(pal), w16(0)});
+  CHECK(get(mdc, mono, 8, 40, 37, 3, 3, DIB_PAL_COLORS) == 3 && m.rt.rd16(dib + 40) == 2 &&
+            m.rt.rd16(dib + 40 + 2 * 255) == 1 && bad_pixels(8, false) == 0,
+        "8-bit rows, DIB_PAL_COLORS: black -> 2, white -> 1 (%u %u, %d bad)", m.rt.rd16(dib + 40),
+        m.rt.rd16(dib + 40 + 2 * 255), bad_pixels(8, false));
+  CHECK(get(mdc, mono, 4, 40, 37, 3, 3, DIB_PAL_COLORS) == 3 && m.rt.rd16(dib + 40) == 2 &&
+            m.rt.rd16(dib + 40 + 2 * 15) == 1 && bad_pixels(4, false) == 0,
+        "4-bit rows, DIB_PAL_COLORS: black -> 2, white -> 1 (%u %u)", m.rt.rd16(dib + 40),
+        m.rt.rd16(dib + 40 + 2 * 15));
+  // 16- and 32-bit rows: refused, nothing written.
+  for (uint16_t bpp : {16, 32}) {
+    CHECK(get(sdc, mono, bpp, 40, 37, 3, 3, DIB_RGB_COLORS) == 0 && header().biBitCount == bpp &&
+              m.rt.rd32(dib + 40) == 0xAAAAAAAA && m.rt.rd8(bits) == 0xAA,
+          "%u-bit rows: refused", bpp);
+  }
+  // The stock 1x1 bitmap a memory DC starts with has no pixels here.
+  uint16_t other = uint16_t(api(m, "GDI", "CreateBitmap", {w16(8), w16(8), w16(1), w16(1), l16(0)}));
+  uint16_t stock = uint16_t(api(m, "GDI", "SelectObject", {w16(mdc), w16(other)}));
+  CHECK(stock && get(sdc, stock, 8, 40, 1, 1, 1, DIB_RGB_COLORS) == 0, "the stock bitmap %04X: refused", stock);
+  // No host buffer ran over.
+  CHECK(HeapValidate(GetProcessHeap(), 0, nullptr), "the host heap is intact");
+  api(m, "GDI", "SelectObject", {w16(mdc), w16(stock)});
+  api(m, "GDI", "DeleteDC", {w16(mdc)});
+  api(m, "GDI", "DeleteObject", {w16(other)});
+  api(m, "GDI", "DeleteObject", {w16(pal)});
+  api(m, "GDI", "DeleteObject", {w16(mono)});
+}
+
+// CreateBitmapIndirect and CreatePatternBrush (Little Mermaid's "Plain"
+// sea): an 8x8 monochrome BITMAP made a brush and deleted before the brush
+// is used — the brush has its own copy —, which paints its 0 bits in the
+// text colour and its 1 bits in the background colour; of a larger colour
+// bitmap (selected into a DC, at that) the top-left 8x8 alone; the brush's
+// copy goes with it.
+void test_pattern_brush() {
+  Machine m;
+  Screen screen(64, 48);
+  m.rt.attach_display(screen);
+  Gdi16& g = m.rt.state<Gdi16>();
+  uint16_t sdc = gdi16_screen_dc(m.rt, user16_saver_window(m.rt));
+  uint16_t mdc = uint16_t(api(m, "GDI", "CreateCompatibleDC", {w16(sdc)}));
+  uint16_t canvas = uint16_t(api(m, "GDI", "CreateCompatibleBitmap", {w16(sdc), w16(16), w16(16)}));
+  api(m, "GDI", "SelectObject", {w16(mdc), w16(canvas)});
+  Obj16* co = g.get(canvas, G16::bitmap);
+  auto at = [&](int x, int y) {
+    GdiFlush();
+    return int(co->bmp.bits[size_t(y) * co->bmp.stride + size_t(x)]);
+  };
+  uint32_t rc = uint32_t(m.data(16)) << 16;
+  write16(m.rt, rc, RECT16{0, 0, 16, 16});
+  // The BITMAP: 8x8, one plane, one bit, WORD rows alternately 0F and F0.
+  uint32_t bm = uint32_t(m.data(512)) << 16, bits = bm + 16;
+  write16(m.rt, bm, BITMAP16{0, 8, 8, 2, 1, 1, bits});
+  for (uint32_t y = 0; y < 8; y++) {
+    m.rt.wr8(bits + 2 * y, (y & 1) ? 0xF0 : 0x0F);
+    m.rt.wr8(bits + 2 * y + 1, 0);
+  }
+  uint16_t hbm = uint16_t(api(m, "GDI", "CreateBitmapIndirect", {l16(bm)}));
+  Obj16* bo = g.get(hbm, G16::bitmap);
+  CHECK(bo && bo->bmp.bpp == 1 && bo->bmp.w == 8 && bo->bmp.h == 8, "CreateBitmapIndirect: an 8x8 monochrome bitmap");
+  uint16_t hbr = uint16_t(api(m, "GDI", "CreatePatternBrush", {w16(hbm)}));
+  Obj16* br = g.get(hbr, G16::brush);
+  uint16_t own = br ? br->pattern : 0;
+  CHECK(br && br->style == BS_PATTERN && own && own != hbm && g.get(own, G16::bitmap),
+        "CreatePatternBrush: a brush with a bitmap of its own");
+  CHECK((api(m, "GDI", "DeleteObject", {w16(hbm)}) & 0xFFFF) == 1 && !g.get(hbm), "the bitmap deleted before the brush is used");
+  api(m, "GDI", "SetTextColor", {w16(mdc), l16(RGB(255, 0, 0))});
+  api(m, "GDI", "SetBkColor", {w16(mdc), l16(RGB(0, 0, 255))});
+  CHECK((api(m, "USER", "FillRect", {w16(mdc), l16(rc), w16(hbr)}) & 0xFFFF) == 1, "FillRect with it");
+  CHECK(at(0, 0) == 249 && at(3, 0) == 249 && at(4, 0) == 252 && at(7, 0) == 252 && at(0, 1) == 252 && at(4, 1) == 249 &&
+            at(8, 0) == 249 && at(12, 2) == 252 && at(15, 15) == 249,
+        "0 bits red (the text colour), 1 bits blue (the background), tiled (%d %d %d %d %d)", at(0, 0), at(4, 0), at(0, 1),
+        at(12, 2), at(15, 15));
+  CHECK((api(m, "GDI", "DeleteObject", {w16(hbr)}) & 0xFFFF) == 1 && !g.get(own), "DeleteObject takes the brush's copy with it");
+  // An 8-bit BITMAP keeps its bits as given (WORD rows).
+  write16(m.rt, bm, BITMAP16{0, 4, 2, 4, 1, 8, bits});
+  for (uint32_t i = 0; i < 8; i++) m.rt.wr8(bits + i, uint8_t(0x31 + i));
+  uint16_t h8 = uint16_t(api(m, "GDI", "CreateBitmapIndirect", {l16(bm)}));
+  uint32_t buf = bits + 64;
+  CHECK(h8 && api(m, "GDI", "GetBitmapBits", {w16(h8), l16(8), l16(buf)}) == 8 && m.rt.rd8(buf) == 0x31 &&
+            m.rt.rd8(buf + 3) == 0x34 && m.rt.rd8(buf + 4) == 0x35 && m.rt.rd8(buf + 7) == 0x38,
+        "an 8-bit CreateBitmapIndirect: its bits");
+  // A 16x16 colour bitmap, selected into a DC: its top-left 8x8 — a checker
+  // of 21h and 22h — alone; the other quarters (23h) never show.
+  uint32_t big = bits + 128;
+  for (uint32_t y = 0; y < 16; y++) {
+    for (uint32_t x = 0; x < 16; x++) m.rt.wr8(big + y * 16 + x, uint8_t(y < 8 && x < 8 ? ((x + y) & 1 ? 0x22 : 0x21) : 0x23));
+  }
+  uint16_t hbig = uint16_t(api(m, "GDI", "CreateBitmap", {w16(16), w16(16), w16(1), w16(8), l16(big)}));
+  uint16_t bdc = uint16_t(api(m, "GDI", "CreateCompatibleDC", {w16(sdc)}));
+  api(m, "GDI", "SelectObject", {w16(bdc), w16(hbig)});
+  uint16_t hbr2 = uint16_t(api(m, "GDI", "CreatePatternBrush", {w16(hbig)}));
+  api(m, "USER", "FillRect", {w16(mdc), l16(rc), w16(hbr2)});
+  std::set<int> seen;
+  for (int y = 0; y < 16; y++) {
+    for (int x = 0; x < 16; x++) seen.insert(at(x, y));
+  }
+  CHECK(seen == std::set<int>({0x21, 0x22}) && at(0, 0) == 0x21 && at(1, 0) == 0x22 && at(8, 8) == 0x21 && at(9, 8) == 0x22,
+        "a 16x16 bitmap: its top-left 8x8 alone (%zu values; %02X %02X %02X)", seen.size(), at(0, 0), at(1, 0), at(8, 8));
+  CHECK((api(m, "GDI", "CreatePatternBrush", {w16(0x1234)}) & 0xFFFF) == 0, "no bitmap: 0");
+  api(m, "GDI", "DeleteObject", {w16(hbr2)});
+  api(m, "GDI", "DeleteDC", {w16(bdc)});
+  api(m, "GDI", "DeleteDC", {w16(mdc)});
+}
+
 // GetMenu, GetWindowTask, GetNextWindow, EnumChildWindows — with the
 // synthetic desktop JAWAS walks (EnumWindows, EnumChildWindows).
 void test_window_queries() {
@@ -2432,6 +3034,290 @@ void test_after_dark2_seeds() {
   RemoveDirectoryA(upper.c_str());
 }
 
+// After Dark 3.x's profile seeds (seed_after_dark3): the keys ADW30.EXE wrote
+// into AD_PREFS.INI at every start — [After Dark] Path without a backslash,
+// [Sound] SoundDriver — read through the guest's own calls as ADXPL100 makes
+// them (4:00FB); a module's write never carries them.
+void test_after_dark3_seeds() {
+  char base[MAX_PATH];
+  GetTempPathA(MAX_PATH, base);
+  std::string upper = std::string(base) + "adw_win16_ad3seed_" + std::to_string(GetCurrentProcessId());
+  {
+    Machine m;
+    m.rt.vfs().mount_overlay("C:\\WINDOWS", "", upper);
+    CHECK(!profiles16(m.rt).get("C:\\WINDOWS\\AD_PREFS.INI", "After Dark", "Path"), "no Path before the seeds");
+    seed_after_dark3(m.rt);
+    win32::IniStore& ini = profiles16(m.rt);
+    CHECK(ini.get("C:\\WINDOWS\\AD_PREFS.INI", "After Dark", "Path").value_or("") == "C:\\AFTERDRK" &&
+              ini.get("C:\\WINDOWS\\AD_PREFS.INI", "Sound", "SoundDriver").value_or("") == "AD_MME.DRV",
+          "[After Dark] Path=C:\\AFTERDRK (ADW30's spelling), [Sound] SoundDriver=AD_MME.DRV");
+    uint16_t ds = m.data(256);
+    uint32_t buf = uint32_t(ds) << 16;
+    uint32_t ad = m.rt.static_bytes("t ad", "After Dark"), path = m.rt.static_bytes("t path", "PATH"),
+             empty = m.rt.static_bytes("t empty", ""), prefs = m.rt.static_bytes("t prefs", "ad_prefs.ini"),
+             sound = m.rt.static_bytes("t sound", "Sound"), mute = m.rt.static_bytes("t mute", "Mute"),
+             yes = m.rt.static_bytes("t yes", "1");
+    uint32_t n =
+        api(m, "KERNEL", "GetPrivateProfileString", {l16(ad), l16(path), l16(empty), l16(buf), w16(0xA0), l16(prefs)});
+    CHECK((n & 0xFFFF) == 11 && m.rt.read_str(buf) == "C:\\AFTERDRK", "ADXPL100's read: %s (%u)",
+          m.rt.read_str(buf).c_str(), n & 0xFFFF);
+    CHECK((api(m, "KERNEL", "WritePrivateProfileString", {l16(sound), l16(mute), l16(yes), l16(prefs)}) & 0xFFFF) == 1,
+          "a module's [Sound] Mute write");
+  }
+  std::string ini;
+  if (FILE* f = fopen((upper + "\\AD_PREFS.INI").c_str(), "rb")) {
+    char b[256] = {};
+    fread(b, 1, 255, f);
+    fclose(f);
+    ini = b;
+  }
+  CHECK(ini.find("Mute=1") != std::string::npos && ini.find("Path") == std::string::npos &&
+            ini.find("SoundDriver") == std::string::npos,
+        "the written AD_PREFS.INI has the module's key and no seeds (%s)", ini.c_str());
+  DeleteFileA((upper + "\\AD_PREFS.INI").c_str());
+  RemoveDirectoryA(upper.c_str());
+}
+
+// ---- KERNEL: heap spaces, code handles, selectors, the freed-selector rule; TOOLHELP's heap walk -----------
+
+// Guest code for the tests below: 16-bit instructions.
+std::vector<uint8_t> mov_ax(uint16_t v) { return {0xB8, uint8_t(v), uint8_t(v >> 8)}; }
+std::vector<uint8_t> push_imm(uint16_t v) { return {0x68, uint8_t(v), uint8_t(v >> 8)}; }
+constexpr uint8_t kMovEsAx[] = {0x8E, 0xC0}, kMovDsAx[] = {0x8E, 0xD8}, kMovFsAx[] = {0x8E, 0xE0},
+                  kMovGsAx[] = {0x8E, 0xE8}, kMovAxEs[] = {0x8C, 0xC0}, kMovAxDs[] = {0x8C, 0xD8};
+std::vector<uint8_t> ops(std::initializer_list<std::vector<uint8_t>> parts) {
+  std::vector<uint8_t> v;
+  for (const auto& p : parts) append(v, p);
+  return v;
+}
+std::vector<uint8_t> op(const uint8_t (&b)[2]) { return {b[0], b[1]}; }
+
+// Runs guest code (a far procedure) and returns DX:AX; *fault (when given)
+// says whether it ended in a guest fault instead.
+uint32_t run_guest(Machine& m, const std::vector<uint8_t>& code, bool* fault = nullptr) {
+  if (fault) *fault = false;
+  try {
+    return m.rt.call_far(uint32_t(m.code(code)) << 16, {});
+  } catch (const GuestError16& e) {
+    if (!fault || e.kind() != GuestError16::Kind::fault) throw;
+    *fault = true;
+    return 0;
+  }
+}
+
+// KERNEL.138 GetHeapSpaces (MARVEL.AD's INITIALIZE divides by the size and
+// refuses below 20% free) and KERNEL.93 GetCodeHandle (DECO.DLL locks its
+// decoder with LockSegment(GetCodeHandle(fn))).
+void test_heap_spaces_code_handle() {
+  Machine m;
+  for (const char* name : {"USER", "GDI"}) {
+    uint16_t h = uint16_t(api(m, "KERNEL", "GetModuleHandle", {l16(m.rt.static_bytes(name, name))}));
+    uint32_t hs = api(m, "KERNEL", "GetHeapSpaces", {w16(h)});
+    CHECK(h && hs == 0xFA00E100 && (hs & 0xFFFF) * 100 / (hs >> 16) == 90,
+          "GetHeapSpaces(%s): %u of %u bytes free, the 90%% GetFreeSystemResources reports", name, hs & 0xFFFF, hs >> 16);
+  }
+  CHECK(api(m, "KERNEL", "GetHeapSpaces", {w16(0)}) == 0 && api(m, "KERNEL", "GetHeapSpaces", {w16(m.data(16))}) == 0,
+        "GetHeapSpaces of no module: 0");
+  char tmp[MAX_PATH], dir[MAX_PATH];
+  GetTempPathA(MAX_PATH, dir);
+  snprintf(tmp, sizeof(tmp), "%sadw_win16_codehandle_%lu.dll", dir, GetCurrentProcessId());
+  std::string img = build_ne();
+  FILE* fh = fopen(tmp, "wb");
+  fwrite(img.data(), 1, img.size(), fh);
+  fclose(fh);
+  uint16_t err = 0;
+  Module16* mod = m.rt.modules().load_host(tmp, &err);
+  CHECK(mod != nullptr, "the synthetic NE DLL loads (error %u)", err);
+  if (mod) {
+    uint32_t fn = m.rt.modules().proc_address(mod, "func");
+    uint16_t sel = uint16_t(fn >> 16);
+    uint32_t ch = api(m, "KERNEL", "GetCodeHandle", {l16(fn)});
+    CHECK(ch && ch == m.rt.global().handle(sel) && (ch >> 16) == sel && m.rt.modules().segment_index(*mod, uint16_t(ch)),
+          "GetCodeHandle(func): DX:AX = %04X:%04X, its segment's selector and handle", ch >> 16, ch & 0xFFFF);
+    CHECK(uint16_t(api(m, "KERNEL", "LockSegment", {w16(uint16_t(ch))})) != 0, "LockSegment(GetCodeHandle(func))");
+    m.rt.modules().free(mod);
+  }
+  DeleteFileA(tmp);
+  CHECK(api(m, "KERNEL", "GetCodeHandle", {l16(uint32_t(m.code({0xCB})) << 16)}) == 0 &&
+            api(m, "KERNEL", "GetCodeHandle", {l16(0)}) == 0,
+        "GetCodeHandle of code that is no module's: 0");
+}
+
+// The selector calls (AllocSelector, FreeSelector, AllocCStoDSAlias,
+// AllocDStoCSAlias, Get/SetSelectorBase, Get/SetSelectorLimit), limited to
+// the selectors they make themselves.
+void test_selector_calls() {
+  Machine m;
+  Ldt& ldt = m.rt.ldt();
+  auto k = [&](const char* fn, std::initializer_list<Arg16> args) { return api(m, "KERNEL", fn, args); };
+  auto k16 = [&](const char* fn, std::initializer_list<Arg16> args) { return uint16_t(api(m, "KERNEL", fn, args)); };
+  uint16_t blk = m.data(0x100);  // a global block: not the selector calls' own
+  uint32_t base = ldt.base_of(blk);
+  m.rt.wr16((uint32_t(blk) << 16) | 0x20, 0x5A5A);
+  // AllocSelector: an exact copy.
+  uint16_t s = k16("AllocSelector", {w16(blk)});
+  CHECK(s && s != blk && (s & 7) == 7 && ldt.base_of(s) == base && ldt.limit_of(s) == ldt.limit_of(blk) &&
+            ldt.get(s)->present && !ldt.get(s)->code && ldt.get(s)->readable_or_writable,
+        "AllocSelector(block): a copy of its descriptor (%04X, base %X, limit %X)", s, ldt.base_of(s), ldt.limit_of(s));
+  m.rt.wr16((uint32_t(s) << 16) | 0x10, 0xBEEF);
+  CHECK(m.rt.rd16((uint32_t(blk) << 16) | 0x10) == 0xBEEF, "a write through the copy lands in the block");
+  // Get/SetSelectorBase, Get/SetSelectorLimit on it.
+  CHECK(k16("SetSelectorBase", {w16(s), l16(base + 0x10)}) == s && k("GetSelectorBase", {w16(s)}) == base + 0x10 &&
+            m.rt.rd16(uint32_t(s) << 16) == 0xBEEF && m.rt.rd16((uint32_t(s) << 16) | 0x10) == 0x5A5A,
+        "SetSelectorBase: the copy now starts 16 bytes on, and returns the selector");
+  CHECK(k16("SetSelectorLimit", {w16(s), l16(0x1F)}) == 0 && k("GetSelectorLimit", {w16(s)}) == 0x1F,
+        "SetSelectorLimit returns 0 (always); GetSelectorLimit reads the new limit");
+  k16("SetSelectorLimit", {w16(s), l16(0x12345678)});
+  CHECK(ldt.limit_of(s) == 0x45678, "a limit's 20 bits, byte-granular, as KRNL386 wrote them (%X)", ldt.limit_of(s));
+  // A segment register holding it sees a new base at once:
+  // mov ax,s; mov es,ax; push ax; push hi; push lo; lcall SetSelectorBase; mov ax,es:[0]; retf
+  uint32_t nb = base + 0x20;
+  uint32_t r = run_guest(m, ops({mov_ax(s), op(kMovEsAx), {0x50}, push_imm(uint16_t(nb >> 16)), push_imm(uint16_t(nb)),
+                                 m.lcall("KERNEL", "SetSelectorBase"), {0x26, 0xA1, 0x00, 0x00, 0xCB}}));
+  CHECK((r & 0xFFFF) == 0x5A5A, "ES holding the selector reads through the new base at once (%04X)", r & 0xFFFF);
+  // The Sets leave a selector the calls did not make as it is; the Gets read any.
+  CHECK(k16("SetSelectorBase", {w16(blk), l16(0x1234)}) == 0 && ldt.base_of(blk) == base, "SetSelectorBase(block) refused");
+  k16("SetSelectorLimit", {w16(blk), l16(7)});
+  CHECK(ldt.limit_of(blk) == 0xFF, "SetSelectorLimit(block) refused (%X)", ldt.limit_of(blk));
+  CHECK(k("GetSelectorBase", {w16(blk)}) == base && k("GetSelectorLimit", {w16(blk)}) == 0xFF &&
+            k("GetSelectorBase", {w16(0)}) == 0 && k("GetSelectorLimit", {w16(0x1234)}) == 0,
+        "the Gets read any selector, 0 for one that is no good");
+  // AllocSelector(0), or of a selector that is no good: one uninitialized
+  // selector, not present, so a load of it faults.
+  uint16_t raw = k16("AllocSelector", {w16(0)}), raw2 = k16("AllocSelector", {w16(0x7FF7)});
+  CHECK(raw && raw2 && ldt.in_use(raw) && !ldt.get(raw)->present && !ldt.get(raw2)->present,
+        "AllocSelector(0) and of a bad selector: uninitialized (not present) selectors");
+  bool fault = false;
+  run_guest(m, ops({mov_ax(raw), op(kMovEsAx), {0xCB}}), &fault);
+  CHECK(fault, "loading an uninitialized selector faults");
+  // A copy of a huge block's selector: one tile per 64 KiB, as the block's.
+  uint16_t big = m.data(0x28000);
+  uint16_t t = k16("AllocSelector", {w16(big)});
+  const uint16_t t1 = uint16_t(t + Ldt::kAhIncr), t2 = uint16_t(t + 2 * Ldt::kAhIncr);
+  CHECK(t && ldt.base_of(t) == ldt.base_of(big) && ldt.base_of(t1) == ldt.base_of(big) + 0x10000 &&
+            ldt.base_of(t2) == ldt.base_of(big) + 0x20000 && ldt.limit_of(t) == ldt.limit_of(big) &&
+            ldt.limit_of(t2) == ldt.limit_of(uint16_t(big + 2 * Ldt::kAhIncr)),
+        "AllocSelector(160 KiB block): three tiles, 64 KiB apart, limits running to the end");
+  CHECK(k16("FreeSelector", {w16(t1)}) == t1 && ldt.in_use(t1), "a tile alone: refused");
+  CHECK(k16("SetSelectorBase", {w16(t1), l16(ldt.base_of(t1))}) == t1, "SetSelectorBase of a tile of theirs: allowed");
+  CHECK(k16("FreeSelector", {w16(t)}) == 0 && !ldt.in_use(t) && !ldt.in_use(t1) && !ldt.in_use(t2),
+        "FreeSelector frees every tile");
+  // AllocCStoDSAlias: a writable data selector over a code segment; code
+  // written through it runs (the CPU reads live memory).
+  uint16_t cs = m.code({0x90, 0x90, 0x90, 0x90, 0xCB});
+  uint16_t alias = k16("AllocCStoDSAlias", {w16(cs)});
+  CHECK(alias && !ldt.get(alias)->code && ldt.get(alias)->readable_or_writable && ldt.base_of(alias) == ldt.base_of(cs) &&
+            ldt.limit_of(alias) == ldt.limit_of(cs),
+        "AllocCStoDSAlias: a data selector over the code segment");
+  const uint8_t mov_ret[] = {0xB8, 0x34, 0x12, 0xCB};  // mov ax,1234h; retf
+  m.rt.write_bytes(uint32_t(alias) << 16, mov_ret, sizeof(mov_ret));
+  CHECK((m.rt.call_far(uint32_t(cs) << 16, {}) & 0xFFFF) == 0x1234, "code written through the alias runs");
+  // AllocDStoCSAlias: code built in a data block runs through a code selector.
+  uint16_t data = m.data(16);
+  const uint8_t mov_ret2[] = {0xB8, 0x78, 0x56, 0xCB};
+  m.rt.write_bytes(uint32_t(data) << 16, mov_ret2, sizeof(mov_ret2));
+  uint16_t code = k16("AllocDStoCSAlias", {w16(data)});
+  CHECK(code && ldt.get(code)->code && ldt.base_of(code) == ldt.base_of(data) &&
+            (m.rt.call_far(uint32_t(code) << 16, {}) & 0xFFFF) == 0x5678,
+        "AllocDStoCSAlias: the data block's code runs through it");
+  CHECK(k16("AllocCStoDSAlias", {w16(0x7FF7)}) == 0 && k16("AllocDStoCSAlias", {w16(0)}) == 0, "an alias of no selector: 0");
+  // FreeSelector: its own selectors only.
+  CHECK(k16("FreeSelector", {w16(s)}) == 0 && !ldt.in_use(s), "FreeSelector(copy): 0, freed");
+  CHECK(k16("FreeSelector", {w16(s)}) == s, "the same selector again: refused");
+  CHECK(k16("FreeSelector", {w16(alias)}) == 0 && k16("FreeSelector", {w16(code)}) == 0 &&
+            k16("FreeSelector", {w16(raw)}) == 0,
+        "the aliases and an uninitialized selector are the caller's to free");
+  uint16_t sys = m.rt.sys_sel();
+  CHECK(k16("FreeSelector", {w16(blk)}) == blk && k16("FreeSelector", {w16(cs)}) == cs &&
+            k16("FreeSelector", {w16(sys)}) == sys && k16("FreeSelector", {w16(0x40)}) == 0x40 &&
+            k16("FreeSelector", {w16(0)}) == 0,
+        "a global block's, the host's, the BIOS selector: refused (0 itself answers 0)");
+  CHECK(ldt.in_use(blk) && m.rt.global().size(blk) == 0x100 && m.rt.rd16((uint32_t(blk) << 16) | 0x10) == 0xBEEF &&
+            ldt.in_use(sys),
+        "the refused selectors are intact");
+  // A selector of theirs freed another way (as INT 31h AX=0001h frees one)
+  // and handed out again, here to a global block, is theirs no longer.
+  Machine m2;
+  uint16_t s2 = uint16_t(api(m2, "KERNEL", "AllocSelector", {w16(m2.data(16))}));
+  m2.rt.ldt().free(s2, 1);
+  uint16_t h2 = uint16_t(api(m2, "KERNEL", "GlobalAlloc", {w16(0), l16(64)}));
+  CHECK(h2 == s2 && uint16_t(api(m2, "KERNEL", "FreeSelector", {w16(s2)})) == s2 &&
+            uint16_t(api(m2, "KERNEL", "SetSelectorBase", {w16(s2), l16(0)})) == 0 && m2.rt.global().size(h2) == 64,
+        "its index reused for a global block: FreeSelector and SetSelectorBase refuse it (%04X %04X)", s2, h2);
+}
+
+// The freed-selector rule (Runtime16::null_freed_segments): a call that
+// frees a selector held in DS, ES, FS or GS returns with that register null;
+// nothing else changes.
+void test_freed_selector_rule() {
+  Machine m;
+  auto block = [&](uint16_t* h) {
+    *h = uint16_t(api(m, "KERNEL", "GlobalAlloc", {w16(GlobalHeap16::kMoveable), l16(64)}));
+    return uint16_t(api(m, "KERNEL", "GlobalLock", {w16(*h)}) >> 16);
+  };
+  uint16_t h1 = 0, h2 = 0, h3 = 0;
+  // Borland C++'s far-heap free (IS_FLY 1:6B71, then 1:6B16..1:6B20): ES
+  // holds the block GlobalFree frees; push es / pop es follows.
+  uint16_t s1 = block(&h1);
+  bool fault = false;
+  uint32_t r = run_guest(m, ops({mov_ax(s1), op(kMovEsAx), push_imm(h1), m.lcall("KERNEL", "GlobalFree"), {0x06, 0x07},
+                                 op(kMovAxEs), {0xCB}}),
+                         &fault);
+  CHECK(!fault && (r & 0xFFFF) == 0, "GlobalFree of ES's block: ES comes back null, push es/pop es loads it (%04X)",
+        r & 0xFFFF);
+  // DECO.DLL's work buffer (GlobalFree at 6:A0F2 with DS holding it; push ds
+  // at 7:002D, pop ds at 7:008A).
+  uint16_t s2 = block(&h2);
+  r = run_guest(m, ops({mov_ax(s2), op(kMovDsAx), push_imm(h2), m.lcall("KERNEL", "GlobalFree"), {0x1E, 0x1F},
+                        op(kMovAxDs), {0xCB}}),
+                &fault);
+  CHECK(!fault && (r & 0xFFFF) == 0, "GlobalFree of DS's block: DS comes back null (%04X)", r & 0xFFFF);
+  // FreeSelector of a selector held in ES, FS and GS: all three null.
+  uint16_t blk = m.data(64);
+  uint16_t s3 = uint16_t(api(m, "KERNEL", "AllocSelector", {w16(blk)}));
+  // mov ax,s3; mov es,ax; mov fs,ax; mov gs,ax; push ax; lcall FreeSelector;
+  // mov ax,es; mov dx,fs; or ax,dx; mov dx,gs; or ax,dx; retf
+  r = run_guest(m, ops({mov_ax(s3), op(kMovEsAx), op(kMovFsAx), op(kMovGsAx), {0x50}, m.lcall("KERNEL", "FreeSelector"),
+                        op(kMovAxEs), {0x8C, 0xE2, 0x09, 0xD0, 0x8C, 0xEA, 0x09, 0xD0, 0xCB}}),
+                &fault);
+  CHECK(!fault && (r & 0xFFFF) == 0 && !m.rt.ldt().in_use(s3), "FreeSelector of a selector in ES, FS and GS: all null");
+  // A selector FreeSelector refuses (a global block's) stays in ES, usable.
+  // mov ax,blk; mov es,ax; push ax; lcall FreeSelector; mov dx,es; mov bx,es:[0]; retf
+  m.rt.wr16(uint32_t(blk) << 16, 0x7777);
+  r = run_guest(m, ops({mov_ax(blk), op(kMovEsAx), {0x50}, m.lcall("KERNEL", "FreeSelector"),
+                        {0x8C, 0xC2, 0x26, 0x8B, 0x1E, 0x00, 0x00, 0xCB}}),
+                &fault);
+  CHECK(!fault && (r & 0xFFFF) == blk && (r >> 16) == blk, "a foreign selector: refused, ES keeps it (%08X)", r);
+  // A register holding a selector the call did not free keeps it.
+  uint16_t s4 = block(&h3);
+  r = run_guest(m, ops({mov_ax(blk), op(kMovEsAx), push_imm(h3), m.lcall("KERNEL", "GlobalFree"), op(kMovAxEs), {0xCB}}),
+                &fault);
+  CHECK(!fault && (r & 0xFFFF) == blk && !m.rt.global().find(s4), "GlobalFree of another block: ES keeps its selector");
+  // The rule fixes no load: a selector pushed before the free and popped
+  // after it still faults, as it did on Windows.
+  uint16_t h5 = 0, s5 = block(&h5);
+  run_guest(m, ops({mov_ax(s5), op(kMovEsAx), {0x06}, push_imm(h5), m.lcall("KERNEL", "GlobalFree"), {0x07, 0xCB}}), &fault);
+  CHECK(fault, "push es, GlobalFree, pop es: the pop faults");
+  // DPMI 1.0's Free LDT Descriptor (INT 31h AX=0001h) zeroes a segment register holding it.
+  uint16_t d = m.rt.ldt().alloc(1);
+  r = run_guest(m, ops({mov_ax(d), op(kMovEsAx), {0x89, 0xC3}, mov_ax(1), {0xCD, 0x31}, op(kMovAxEs), {0xCB}}), &fault);
+  CHECK(!fault && (r & 0xFFFF) == 0 && !m.rt.ldt().in_use(d), "INT 31h 0001h of ES's selector: ES null");
+}
+
+// TOOLHELP's GlobalFirst/GlobalNext answer an empty walk (ADXPL100's
+// lock_sequencer_down_hard_now notes the error and plays on).
+void test_toolhelp_walk() {
+  Machine m;
+  uint16_t ds = m.data(64);
+  uint32_t ge = uint32_t(ds) << 16;
+  m.rt.wr32(ge, 0x24);  // dwSize = sizeof(GLOBALENTRY)
+  m.rt.wr32(ge + 4, 0xDEADBEEF);
+  CHECK((api(m, "TOOLHELP", "GlobalFirst", {l16(ge), w16(0)}) & 0xFFFF) == 0 &&
+            (api(m, "TOOLHELP", "GlobalNext", {l16(ge), w16(0)}) & 0xFFFF) == 0,
+        "GlobalFirst/GlobalNext(GLOBAL_ALL): FALSE");
+  CHECK(m.rt.rd32(ge) == 0x24 && m.rt.rd32(ge + 4) == 0xDEADBEEF, "the GLOBALENTRY is left as it was");
+}
+
 // GetKeyState's toggle bit (bit 0): Caps Lock's from the CAPS line, Num
 // Lock's from the NUMLOCK line (Final Exam starts its exam when it changes);
 // GetAsyncKeyState's bit 0 stays "pressed since the last call".
@@ -2638,6 +3524,184 @@ void test_dir_list_drives() {
   RemoveDirectoryA(hdir.c_str());
 }
 
+// Configure mode keeps the guest's screen coordinates and lays its emulated
+// desktop over the owner window (guest_screen_origin16): a top-level real
+// window the guest places goes to origin + (x, y), a child stays in its
+// parent's client area, and window rectangles, ClientToScreen/ScreenToClient,
+// CB_GETDROPPEDCONTROLRECT and a top-level window's WM_MOVE come back on the
+// guest's screen. Before, Marvel's Saver.. and Lunatic Fringe's Keys...
+// centred themselves on 640 × 480 at the primary monitor's top left, far
+// from the settings window. No owner, or a hidden run: (0, 0). Real windows
+// only, never shown.
+void test_configure_placement() {
+  auto origin = [](RECT o, RECT wa, int w, int h) { return guest_screen_origin16(o, wa, w, h); };
+  auto at = [](POINT p, LONG x, LONG y) { return p.x == x && p.y == y; };
+  POINT p = origin({1000, 500, 1800, 1100}, {0, 0, 2560, 1392}, 640, 480);
+  CHECK(at(p, 1080, 560), "centred on the owner (%ld,%ld)", p.x, p.y);
+  p = origin({0, 0, 400, 300}, {0, 0, 2560, 1392}, 640, 480);
+  CHECK(at(p, 0, 0), "an owner at the top left: the work area's corner (%ld,%ld)", p.x, p.y);
+  p = origin({2400, 1300, 2560, 1392}, {0, 0, 2560, 1392}, 640, 480);
+  CHECK(at(p, 1920, 912), "an owner at the bottom right: inside the work area (%ld,%ld)", p.x, p.y);
+  p = origin({-1500, 200, -700, 800}, {-1920, 0, 0, 1040}, 640, 480);
+  CHECK(at(p, -1420, 260), "a monitor left of the primary (%ld,%ld)", p.x, p.y);
+  p = origin({100, 100, 300, 300}, {0, 0, 512, 384}, 640, 480);
+  CHECK(at(p, -64, -48), "a work area smaller than the desktop: centred on it (%ld,%ld)", p.x, p.y);
+  p = origin({1000, 500, 1800, 1100}, {0, 0, 2560, 1392}, 800, 600);
+  CHECK(at(p, 1000, 500), "another desktop size (%ld,%ld)", p.x, p.y);
+
+  // The wraps: an owner in the middle of the primary monitor's work area, a
+  // top-level window it owns and a child of that.
+  MONITORINFO pmi{};
+  pmi.cbSize = sizeof(pmi);
+  GetMonitorInfoW(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY), &pmi);
+  const RECT pwa = pmi.rcWork;
+  HWND owner = CreateWindowExW(0, L"STATIC", L"", WS_POPUP, (pwa.left + pwa.right) / 2 - 350, (pwa.top + pwa.bottom) / 2 - 250,
+                               700, 500, nullptr, nullptr, nullptr, nullptr);
+  CHECK(owner != nullptr, "the owner window (error %lu)", GetLastError());
+  auto real_rect = [](HWND h) {
+    RECT r{};
+    GetWindowRect(h, &r);
+    return r;
+  };
+  {
+    Machine m;
+    Screen screen(640, 480);
+    m.rt.attach_display(screen);
+    win32::ConfigScript script;
+    Configure16 cfg;
+    cfg.script = &script;
+    cfg.owner = owner;
+    enable_real_dialogs16(m.rt, &cfg);
+    // What enable_real_dialogs16 measured, in this thread's coordinates.
+    const RECT orc = real_rect(owner);
+    MONITORINFO omi{};
+    omi.cbSize = sizeof(omi);
+    GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &omi);
+    const POINT o = guest_screen_origin16(orc, omi.rcWork, 640, 480);
+    const RECT& wa = omi.rcWork;
+    if (wa.right - wa.left >= 700 && wa.bottom - wa.top >= 500) {
+      CHECK(at(o, (orc.left + orc.right) / 2 - 320, (orc.top + orc.bottom) / 2 - 240),
+            "the guest's screen centred on the owner (%ld,%ld)", o.x, o.y);
+    }
+    HWND top = CreateWindowExW(0, L"STATIC", L"", WS_POPUP, 0, 0, 200, 150, owner, nullptr, nullptr, nullptr);
+    HWND kid = CreateWindowExW(0, L"STATIC", L"", WS_CHILD, 0, 0, 50, 20, top, reinterpret_cast<HMENU>(uintptr_t(101)), nullptr,
+                               nullptr);
+    CHECK(top && kid, "the real windows (error %lu)", GetLastError());
+    uint16_t t16 = real_hwnd16(m.rt, top), k16 = real_hwnd16(m.rt, kid);
+    uint16_t ds = m.data(64);
+    uint32_t buf = uint32_t(ds) << 16;
+    auto guest_rect = [&](uint16_t h16) {
+      api(m, "USER", "GetWindowRect", {w16(h16), l16(buf)});
+      return read16<RECT16>(m.rt, buf);
+    };
+    auto guest_point = [&](const char* fn, uint16_t h16, int16_t x, int16_t y) {
+      write16(m.rt, buf, POINT16{x, y});
+      api(m, "USER", fn, {w16(h16), l16(buf)});
+      return read16<POINT16>(m.rt, buf);
+    };
+    api(m, "USER", "MoveWindow", {w16(t16), w16(10), w16(20), w16(200), w16(150), w16(0)});
+    RECT r = real_rect(top);
+    CHECK(r.left == o.x + 10 && r.top == o.y + 20 && r.right == o.x + 210 && r.bottom == o.y + 170,
+          "MoveWindow of a top-level window: origin + (10,20) (%ld,%ld)-(%ld,%ld)", r.left, r.top, r.right, r.bottom);
+    RECT16 g = guest_rect(t16);
+    CHECK(g.left == 10 && g.top == 20 && g.right == 210 && g.bottom == 170, "its GetWindowRect: on the guest's screen (%d,%d)-(%d,%d)",
+          g.left, g.top, g.right, g.bottom);
+    api(m, "USER", "SetWindowPos", {w16(t16), w16(0), w16(30), w16(40), w16(0), w16(0), w16(SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)});
+    r = real_rect(top);
+    CHECK(r.left == o.x + 30 && r.top == o.y + 40 && r.right - r.left == 200, "SetWindowPos: origin + (30,40) (%ld,%ld)", r.left,
+          r.top);
+    api(m, "USER", "SetWindowPos",
+        {w16(t16), w16(0), w16(500), w16(500), w16(220), w16(160), w16(SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE)});
+    r = real_rect(top);
+    CHECK(r.left == o.x + 30 && r.top == o.y + 40 && r.right - r.left == 220 && r.bottom - r.top == 160,
+          "SetWindowPos with SWP_NOMOVE: resized where it was (%ld,%ld)-(%ld,%ld)", r.left, r.top, r.right, r.bottom);
+    // A child: its position is in its parent's client area.
+    api(m, "USER", "MoveWindow", {w16(k16), w16(5), w16(6), w16(50), w16(20), w16(0)});
+    POINT co{0, 0};
+    ClientToScreen(top, &co);
+    RECT kr = real_rect(kid);
+    CHECK(kr.left - co.x == 5 && kr.top - co.y == 6, "MoveWindow of a child: in its parent's client area (%ld,%ld)", kr.left - co.x,
+          kr.top - co.y);
+    g = guest_rect(k16);
+    CHECK(g.left == 35 && g.top == 46 && g.right == 85 && g.bottom == 66, "a child's GetWindowRect: on the guest's screen (%d,%d)-(%d,%d)",
+          g.left, g.top, g.right, g.bottom);
+    POINT16 q = guest_point("ClientToScreen", t16, 1, 2);
+    CHECK(q.x == 31 && q.y == 42, "ClientToScreen: on the guest's screen (%d,%d)", q.x, q.y);
+    q = guest_point("ScreenToClient", t16, 31, 42);
+    CHECK(q.x == 1 && q.y == 2, "ScreenToClient: from the guest's screen (%d,%d)", q.x, q.y);
+    q = guest_point("ScreenToClient", k16, 35, 46);
+    CHECK(q.x == 0 && q.y == 0, "ScreenToClient of a child's corner (%d,%d)", q.x, q.y);
+    // CB_GETDROPPEDCONTROLRECT (Win16 WM_USER + 18) is on the screen too.
+    HWND combo = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | CBS_DROPDOWNLIST, 10, 10, 80, 100, top,
+                                 reinterpret_cast<HMENU>(uintptr_t(103)), nullptr, nullptr);
+    RECT dr{};
+    SendMessageW(combo, CB_GETDROPPEDCONTROLRECT, 0, LPARAM(&dr));
+    api(m, "USER", "SendMessage", {w16(real_hwnd16(m.rt, combo)), w16(WM_USER + 18), w16(0), l16(buf)});
+    g = read16<RECT16>(m.rt, buf);
+    CHECK(combo && g.left == dr.left - o.x && g.top == dr.top - o.y && g.right == dr.right - o.x && g.bottom == dr.bottom - o.y,
+          "CB_GETDROPPEDCONTROLRECT: on the guest's screen (%d,%d)-(%d,%d)", g.left, g.top, g.right, g.bottom);
+    // WM_MOVE to a guest procedure (the guest subclassed both): a top-level
+    // window's client origin on the guest's screen; a child's as it is.
+    std::vector<std::pair<uint16_t, uint32_t>> moves;
+    m.rt.shims().add("TESTCB", 4, "WNDPROC", Conv16::pascal_, false, 10, [&](Call16& c) {
+      uint16_t h = c.w(), msg = c.w();
+      c.w();
+      uint32_t lp = c.l();
+      if (msg == WM_MOVE) moves.emplace_back(h, lp);
+      c.ret32(0);
+    });
+    uint32_t proc = m.rt.thunk_far(*m.rt.shims().find_name("TESTCB", "WNDPROC"));
+    uint32_t old_t = api(m, "USER", "SetWindowLong", {w16(t16), w16(uint16_t(-4)), l16(proc)});
+    uint32_t old_k = api(m, "USER", "SetWindowLong", {w16(k16), w16(uint16_t(-4)), l16(proc)});
+    api(m, "USER", "MoveWindow", {w16(t16), w16(70), w16(80), w16(220), w16(160), w16(0)});
+    api(m, "USER", "MoveWindow", {w16(k16), w16(7), w16(8), w16(50), w16(20), w16(0)});
+    CHECK(moves.size() == 2 && moves[0] == std::make_pair(t16, uint32_t((80u << 16) | 70u)) &&
+              moves[1] == std::make_pair(k16, uint32_t((8u << 16) | 7u)),
+          "WM_MOVE: (70,80) for the top-level window, (7,8) for the child (%zu moves, %08X %08X)", moves.size(),
+          moves.empty() ? 0u : moves[0].second, moves.size() < 2 ? 0u : moves[1].second);
+    api(m, "USER", "SetWindowLong", {w16(t16), w16(uint16_t(-4)), l16(old_t)});
+    api(m, "USER", "SetWindowLong", {w16(k16), w16(uint16_t(-4)), l16(old_k)});
+    // CreateWindow on a real parent: an owned popup at a place on the guest's
+    // screen; a child in its parent's client area.
+    uint32_t cls = m.rt.static_bytes("t STATIC", "STATIC");
+    uint16_t pop16 = uint16_t(api(m, "USER", "CreateWindow", {l16(cls), l16(cls), l16(WS_POPUP), w16(12), w16(34), w16(40), w16(30),
+                                                              w16(t16), w16(0), w16(0), l16(0)}));
+    uint16_t kid16 = uint16_t(api(m, "USER", "CreateWindow", {l16(cls), l16(cls), l16(WS_CHILD), w16(3), w16(4), w16(10), w16(10),
+                                                              w16(t16), w16(102), w16(0), l16(0)}));
+    HWND pop = real_window16(m.rt, pop16), kid2 = real_window16(m.rt, kid16);
+    RECT pr = pop ? real_rect(pop) : RECT{};
+    CHECK(pop && pr.left == o.x + 12 && pr.top == o.y + 34, "CreateWindow of an owned popup: origin + (12,34) (%ld,%ld)", pr.left,
+          pr.top);
+    co = POINT{0, 0};
+    ClientToScreen(top, &co);
+    RECT k2 = kid2 ? real_rect(kid2) : RECT{};
+    CHECK(kid2 && k2.left - co.x == 3 && k2.top - co.y == 4, "CreateWindow of a child: in its parent's client area (%ld,%ld)",
+          k2.left - co.x, k2.top - co.y);
+    if (pop) DestroyWindow(pop);
+    DestroyWindow(top);
+  }
+  // No owner, or a hidden run (its dialogs are parked): the guest's screen at (0, 0).
+  for (int hidden = 0; hidden < 2; hidden++) {
+    Machine m;
+    Screen screen(640, 480);
+    m.rt.attach_display(screen);
+    win32::ConfigScript script;
+    script.set_hidden(hidden != 0);
+    Configure16 cfg;
+    cfg.script = &script;
+    cfg.owner = hidden ? owner : nullptr;
+    enable_real_dialogs16(m.rt, &cfg);
+    HWND top = CreateWindowExW(0, L"STATIC", L"", WS_POPUP, 0, 0, 100, 100, cfg.owner, nullptr, nullptr, nullptr);
+    uint16_t t16 = real_hwnd16(m.rt, top);
+    api(m, "USER", "MoveWindow", {w16(t16), w16(10), w16(20), w16(100), w16(100), w16(0)});
+    RECT r = real_rect(top);
+    CHECK(top && r.left == 10 && r.top == 20, "%s: MoveWindow to (10,20) as given (%ld,%ld)", hidden ? "hidden, owner" : "no owner",
+          r.left, r.top);
+    DestroyWindow(top);
+  }
+  DestroyWindow(owner);
+}
+
 // The current drive and directories as DOS kept them (dos16.hh): AH=19h
 // reports the current directory's drive, AH=0Eh selects a drive the guest's
 // disk has (C:, and H: with the host's drives mounted) and reports the letters
@@ -2787,6 +3851,12 @@ int run_unit() {
   test_dib_translation();
   test_mono_dib_targets();
   test_gdi_additions();
+  test_map_mode();
+  test_flood_fill();
+  test_dib_pal_colors();
+  test_getdibits_4bpp();
+  test_getdibits_mono();
+  test_pattern_brush();
   test_window_queries();
   test_wsprintf_bad_pointer();
   test_choosefont();
@@ -2796,8 +3866,14 @@ int run_unit() {
   test_dispatch_guest();
   test_intermission_seeds();
   test_after_dark2_seeds();
+  test_after_dark3_seeds();
+  test_heap_spaces_code_handle();
+  test_selector_calls();
+  test_freed_selector_rule();
+  test_toolhelp_walk();
   test_toggle_keys();
   test_dir_list_drives();
+  test_configure_placement();
   test_dos_drives();
   printf("%d/%d checks passed\n", checks - failures, checks);
   return failures ? 1 : 0;

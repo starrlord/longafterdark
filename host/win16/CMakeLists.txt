@@ -24,6 +24,8 @@ add_library(adw_win16 STATIC
   system16.cc
   # MMSYSTEM's sound half over the host audio engine (sound16.hh, AUDIO.md §8).
   sound16.cc
+  # The host's own AD_SND, for a package that ships none (register_host_ad_snd).
+  adsnd16.cc
 )
 target_include_directories(adw_win16 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 # adw_win32 for the host-level pieces only: Display (win32/display.hh),

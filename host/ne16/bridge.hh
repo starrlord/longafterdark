@@ -31,13 +31,18 @@
 //                    It replaces host code (as the lane already replaces
 //                    OLDMOD32, AFTERDAR.SCR and, for After Dark 2.0, AD.EXE);
 //                    every engine, sound DLL and module still runs as real
-//                    code.
+//                    code — but for a package that ships no AD_SND.DLL
+//                    (Snoopy's Screen Savers; package.hh host_ad_snd), where
+//                    the AD_SND it loads by that path is the host's own
+//                    (win16/adsnd16.cc), registered by the AD3 protocol
+//                    before the bridge opens.
 //
 // All pointers are guest far pointers (sel:off) into memory the lane owns;
 // ctrl4 is four WORDs. Results are what OLDMOD16's exports return.
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -61,6 +66,16 @@ class Bridge16 {
   virtual void set_controls(uint16_t volume, uint16_t mute, uint32_t ctrl4) = 0;
   // SETADPALETTE16(hpal, idx).
   virtual void set_palette(uint16_t hpal, uint16_t idx) = 0;
+  // Palettes handed over at the first palette request instead of at load:
+  // `supply` (which calls set_palette for each) runs once, when a module's
+  // result first asks for a palette (10–13) — After Dark 2.0's computed
+  // ones (package.hh AdPalettes::computed), as AD.EXE 2.0b built a palette
+  // when a module asked for one. A module that asks for none never runs it,
+  // so neither its API calls nor their virtual time happen. The real
+  // OLDMOD16 maps the requests itself: supplied at once.
+  virtual void defer_palettes(std::function<void()> supply) {
+    if (supply) supply();
+  }
   // UNLOADADMODULE16().
   virtual void unload() = 0;
   // BUTTONPUSHED16(path, owner, slot, ctrl4, err, errLen, errId) (OLDMOD16
@@ -86,7 +101,8 @@ std::unique_ptr<Bridge16> open_oldmod16_bridge(win16::Runtime16& rt, const std::
 
 // The native bridge; `ad_snd_guest_path` is the engine dir's AD_SND.DLL as
 // the guest sees it (C:\WINDOWS\SYSTEM\AD_SND.DLL): AD_SND 3.x/4.x, or 1.0
-// (the volume pair above). What DLLENTRYPOINT(1) did — AD_SYSTEM and
+// (the volume pair above), or — a system module AD_SND registered first —
+// the host's own. What DLLENTRYPOINT(1) did — AD_SYSTEM and
 // AD_MODULE allocated and locked — happens here. Null with *why set when
 // guest memory runs out.
 std::unique_ptr<Bridge16> open_native_bridge(win16::Runtime16& rt, const std::string& ad_snd_guest_path,

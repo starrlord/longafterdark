@@ -167,6 +167,21 @@ void seed_intermission(Runtime16& rt, const IntermissionSeeds& seeds);
 // The modules' own writes (AD_SND's [Sound] Mute, Communications' [Communications]
 // MessageText, Sounder's [Sounder] SoundPath) land in the upper layer.
 void seed_after_dark2(Runtime16& rt);
+// The profile seeds an After Dark 3.x package's modules run over (the ne16
+// lane's AD3 protocol, when the engine dir holds ADW30.EXE: ne16/package.hh
+// after_dark3_host), read as seed ⊕ file and never written out — what
+// ADW30.EXE, the After Dark 3.x host the lane stands in for, wrote into
+// C:\WINDOWS\AD_PREFS.INI at every start (its routine 3:0166, called from
+// start-up at 1:0100), with its own directory: the guest directory, without
+// a trailing backslash (ADW30 cut its module path at the last '\'):
+//   [After Dark] Path = C:\AFTERDRK, where ADXPL100 (The Disney Collection's
+//        module library, one of the After Dark 2.0 generation) finds
+//        DIS_SND.DLL and MUSIC\ (without it every Disney module stops with
+//        "File not found.");
+//   [Sound] SoundDriver = AD_MME.DRV.
+// ADW30's third key, WIN.INI [Berkeley Systems] After Dark = its directory,
+// register_dos seeds for every module.
+void seed_after_dark3(Runtime16& rt);
 // A Windows 3.1 Program Manager's files — C:\WINDOWS\PROGMAN.INI [Groups]
 // naming five .GRP files in C:\WINDOWS (Main, Accessories, Games, StartUp,
 // After Dark) — which the desktop-icon gatherers of ADXPL40 and ADXPL310 read

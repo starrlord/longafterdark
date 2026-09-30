@@ -1032,6 +1032,16 @@ void seed_after_dark2(Runtime16& rt) {
   ini.add_seed(prefs, "Sound", "SoundDriver", "AD_MME.DRV");
 }
 
+void seed_after_dark3(Runtime16& rt) {
+  const Runtime16Options& o = rt.options();
+  win32::IniStore& ini = profiles16(rt);
+  std::string prefs = o.windows_dir + "\\AD_PREFS.INI";
+  // ADW30's own spelling of its directory: no backslash (ADXPL100 adds one,
+  // 4:014E, before it appends DIS_SND.DLL and music\).
+  ini.add_seed(prefs, "After Dark", "Path", o.guest_dir);
+  ini.add_seed(prefs, "Sound", "SoundDriver", "AD_MME.DRV");
+}
+
 std::string progman_group_file(const std::string& name) {
   // GROUPHEADER (Windows 3.1): "PMCC", wCheckSum, cbGroup, nCmdShow,
   // rcNormal, ptMin, pName (0x16), wLogPixelsX/Y, bBitsPerPixel, bPlanes,

@@ -12,6 +12,8 @@
 //   * handles: a real window is shown to the guest as an HWND16 from a
 //     reserved range (kRealHwnd16First.., multiples of 4 — no selector, GDI
 //     object, icon or emulated window has one), mapped both ways;
+//   * placement: the guest keeps its emulated desktop's screen coordinates,
+//     and that desktop lies over the owner window (guest_screen_origin16);
 //   * messages Win32 → Win16 (WM_COMMAND, WM_CTLCOLOR*, scroll messages,
 //     the *ITEM structs, …) into the guest, and Win16 → Win32 for what the
 //     guest sends a real control: Win16's control messages are WM_USER-based
@@ -94,5 +96,19 @@ void enable_real_dialogs16(Runtime16& rt, Configure16* cfg);
 uint16_t real_hwnd16(Runtime16& rt, HWND h);
 // The real window behind an HWND16 from the reserved range, or null.
 HWND real_window16(Runtime16& rt, uint16_t h16);
+
+// Where the guest's screen lies on the real one (INTERACTION.md §6.2;
+// host/win16/README.md). The guest keeps the screen coordinates of its w × h
+// emulated desktop (Marvel and Lunatic Fringe centre their dialogs on
+// 640 × 480 without asking for the screen size): a top-level real window it
+// puts at (x, y) goes to origin + (x, y), and what it reads back (window
+// rectangles, ClientToScreen/ScreenToClient, CB_GETDROPPEDCONTROLRECT, a
+// top-level window's WM_MOVE) comes the other way. The origin centres that
+// desktop on the owner window, moved inside the owner monitor's work area
+// (centred on the work area when the desktop is the larger); all in the
+// dialog thread's coordinates. enable_real_dialogs16 takes it from the
+// --owner; with none, or in a hidden run (its dialogs are parked off every
+// monitor), it is (0, 0).
+POINT guest_screen_origin16(const RECT& owner, const RECT& work, int w, int h);
 
 }  // namespace adw::win16

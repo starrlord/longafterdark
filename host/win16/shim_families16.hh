@@ -24,6 +24,13 @@ void register_system16(Runtime16& rt);
 void register_sound16(Runtime16& rt);
 // Every family above plus the DOS/BIOS interrupt services (dos16.hh).
 void register_all16(Runtime16& rt);
+// The host's own AD_SND (adsnd16.cc): After Dark 3.0's sound library as a
+// system module named AD_SND, with AD_SND 3.0.3's entries. Not one of
+// register_all16's families: the ne16 lane's AD3 protocol registers it, for
+// the native bridge, only when the package's engine dir holds no AD_SND.DLL
+// (ne16/package.hh host_ad_snd). Once registered, AD_SND by name — an import
+// or LoadLibrary, whatever the path — is this module.
+void register_host_ad_snd(Runtime16& rt);
 
 // The saver window (full screen, visible): the HWND the lane hands OLDMOD16.
 uint16_t user16_saver_window(Runtime16& rt);

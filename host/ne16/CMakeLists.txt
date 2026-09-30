@@ -63,3 +63,11 @@ set_tests_properties(ne16.swse PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
 # mouse, the wake; headless and streamed).
 add_test(NAME ne16.startrek COMMAND adw_ne16_tests --startrek $<TARGET_FILE:adhostwin>)
 set_tests_properties(ne16.startrek PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
+# Snoopy's Screen Savers' eight modules (PACKAGES.md §7.4: a package with no
+# engine dir, run over the host's own AD_SND with After Dark 2.0's computed
+# palettes) from an imported package: AD_NE16_SNOOPY_ROOT (an assets root),
+# else AD_ASSETS_DIR or the installed assets; skips (77) when none holds it.
+# Every module twice (no fault at close), sound captured twice (the three
+# play flags; the two modules without AD_SND silent), and no wave device.
+add_test(NAME ne16.snoopy COMMAND adw_ne16_tests --snoopy $<TARGET_FILE:adhostwin>)
+set_tests_properties(ne16.snoopy PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)

@@ -34,10 +34,17 @@
 //   * GetModuleHandle finds the system DLLs Windows 95 always has loaded
 //     (KERNEL, USER, GDI, SYSTEM, KEYBOARD, DISPLAY, SOUND and MMSYSTEM, which
 //     SYSTEM.INI's [boot] drivers= line loads) before anything imports them.
+//   * GetHeapSpaces answers a fixed, healthy local heap (90% free, what
+//     GetFreeSystemResources reports). The selector calls (AllocSelector,
+//     FreeSelector, AllocCStoDSAlias, AllocDStoCSAlias, Get/SetSelectorBase
+//     and Get/SetSelectorLimit) do what KRNL386's did, but free and change
+//     only the selectors they made themselves.
+//   * A call that frees a selector the caller holds in DS, ES, FS or GS
+//     returns with that register null (the freed-selector rule, one place:
+//     Runtime16::null_freed_segments).
 //
-// Known gaps, deliberately left (no module of the 202 in the five releases,
-// nor Star Wars Screen Entertainment's 14, needs more; API_SURFACE.md §2
-// KERNEL):
+// Known gaps, deliberately left (no module of the supported releases needs
+// more; API_SURFACE.md §2 KERNEL):
 //   * WinExec refuses (error 2), except "notepad <file>" in configure mode
 //     (dialogs16.cc).
 //   * SetHandleCount reports the task's file handle table size, but the DOS
@@ -107,6 +114,28 @@ struct KernelState : RuntimeState16 {
 };
 
 KernelState& ks(Runtime16& rt) { return rt.state<KernelState>(); }
+
+// ---- selectors -----------------------------------------------------------------------------------------
+
+// `n` new selectors with d's attributes, tiled as a huge block's are (tile i
+// based i * 64 KiB on, its limit running to the end: KRNL386's
+// Fill_In_Selector_Array), marked as the guest's own run (Ldt::mark_guest_run).
+// 0 when the LDT has no room.
+uint16_t alloc_own(Runtime16& rt, const SegDesc& d, uint32_t n, const char* tag) {
+  if (!n || n >= Ldt::kEntries) return 0;
+  uint16_t first = rt.ldt().alloc(uint16_t(n));
+  if (!first) return 0;
+  for (uint32_t i = 0; i < n; i++) {
+    SegDesc t = d;
+    t.base = d.base + (i << 16);
+    t.limit = d.limit - (i << 16);
+    uint16_t s = uint16_t(first + i * Ldt::kAhIncr);
+    rt.ldt().set(s, t);
+    rt.ldt().set_tag(s, tag);
+  }
+  rt.ldt().mark_guest_run(first, uint16_t(n));
+  return first;
+}
 
 // A task database block: the handle only has to be a stable, valid selector.
 uint16_t make_tdb(Runtime16& rt, const char* tag) {
@@ -409,6 +438,17 @@ void register_kernel16(Runtime16& rt) {
     c.w();
     c.ret32(c.rt.arena().bytes_free());
   });
+  // GetHeapSpaces(hModule), KERNEL.138 (undocumented; Undocumented Windows
+  // ch. 1): HIWORD the size of the module's default local heap, LOWORD its
+  // free bytes. A fixed, healthy heap for every module: 57,600 of 64,000
+  // bytes free, the same 90% USER's GetFreeSystemResources reports; 0 for a
+  // handle that is no module's (as Wine answers). MARVEL.AD's INITIALIZE
+  // finds it with GetProcAddress, asks it of USER and GDI (3:3CAC), divides
+  // by the size (5:0678) and refuses to start below 20% free.
+  r.impl(K, "GetHeapSpaces", [](Call16& c) {
+    constexpr uint32_t kSize = 0xFA00, kFree = 0xE100;
+    c.ret32(c.rt.modules().by_handle(c.w()) ? kSize << 16 | kFree : 0);
+  });
   r.impl(K, "LockSegment", [](Call16& c) {
     uint16_t s = c.w();
     c.ret(s == 0xFFFF ? caller_ds(c) : s);
@@ -438,6 +478,99 @@ void register_kernel16(Runtime16& rt) {
     uint32_t dst = c.ptr(), src = c.ptr(), n = c.l();
     huge_copy(c.rt, dst, src, n);
   });
+
+  // ---- segments and selectors ----
+  // GetCodeHandle(lpfn): DX:AX = selector:handle of the module segment lpfn
+  // points into, as GlobalHandle gives them (Windows loaded the segment first
+  // and marked it recently used; every segment is loaded here), 0 when it is
+  // no module's (Wine's GetCodeHandle16). DECO.DLL, Marvel Comics Screen
+  // Posters' Iterated Systems decoder, locks its decoder around each decode
+  // with LockSegment(GetCodeHandle(6:18B2)) and gives up (error 0x6A) on 0
+  // (DECO 5:0B85).
+  r.impl(K, "GetCodeHandle", [](Call16& c) {
+    uint16_t sel = uint16_t(c.ptr() >> 16);
+    c.ret32(c.rt.modules().containing(sel) ? c.rt.global().handle(sel) : 0);
+  });
+  // The selector calls, as Windows 3.1's KRNL386 made them (Pietrek, Windows
+  // Internals ch. 2, 3PROTECT.OBJ; the SDK's entries and KB Q132005): what
+  // DECO.DLL's real-mode-style decoder needs — a writable alias of its code
+  // segment, through which it patches its own code (AllocCStoDSAlias,
+  // DECO 7:0016), copies of a template selector based at paragraph offsets
+  // into its buffers (AllocSelector, Get/SetSelectorBase, 6:3A8E..6:3BAF),
+  // each freed after the decode (FreeSelector, 7:0000). The selectors these
+  // calls make are marked as the guest's own (Ldt::mark_guest_run);
+  // FreeSelector and SetSelectorBase/Limit act on those only — KRNL386 would
+  // bash any LDT entry — so no guest can free or move a global block's, a
+  // module segment's or the host's selectors. A segment register that holds
+  // a selector FreeSelector frees comes back null (the freed-selector rule,
+  // Runtime16::null_freed_segments).
+  //
+  // AllocSelector(sel): a copy of sel's descriptor (base, limit, rights) —
+  // one selector per 64 KiB of its limit, tiled as a huge block's
+  // (KB Q132005) —; for 0 or a selector that is no good (KRNL386's LSL
+  // fails) one uninitialized selector, not present until its rights are set
+  // (DPMI 0009h), as KRNL386's raw Get_Sel(1) is unusable. 0 when the LDT
+  // has no room.
+  r.impl(K, "AllocSelector", [](Call16& c) {
+    uint16_t sel = c.w();
+    const SegDesc* d = sel ? c.rt.ldt().get(sel) : nullptr;
+    const SegDesc raw{0, 0, false, false, true, false, 3};
+    uint16_t s = d ? alloc_own(c.rt, *d, (d->limit >> 16) + 1, "selector (AllocSelector)")
+                   : alloc_own(c.rt, raw, 1, "selector (AllocSelector, uninitialized)");
+    trace("mem16", "AllocSelector(%04X) -> %04X", sel, s);
+    c.ret(s);
+  });
+  // FreeSelector(sel): 0 when freed (every tile of it), else sel — also for
+  // a selector these calls did not make, which stays as it is.
+  r.impl(K, "FreeSelector", [](Call16& c) {
+    uint16_t sel = c.w();
+    uint16_t n = c.rt.ldt().free_guest_run(sel);
+    trace("mem16", "FreeSelector(%04X)%s", sel, n ? "" : ": not one AllocSelector & co. made; refused");
+    c.ret(n ? 0 : sel);
+  });
+  // AllocCStoDSAlias / AllocDStoCSAlias(sel): one new selector over sel's
+  // descriptor with only its code bit changed (KRNL386's AKA(): base, limit
+  // and the R/W bit copied), 0 when sel is no good. Windows fixed a moveable
+  // data block first; nothing moves here.
+  auto alias = [](Call16& c, bool code) {
+    uint16_t sel = c.w();
+    const SegDesc* d = c.rt.ldt().get(sel);
+    if (!d) return c.ret(0);
+    SegDesc a = *d;
+    a.code = code;
+    uint16_t s = alloc_own(c.rt, a, 1, code ? "selector (AllocDStoCSAlias)" : "selector (AllocCStoDSAlias)");
+    trace("mem16", "%s(%04X) -> %04X", code ? "AllocDStoCSAlias" : "AllocCStoDSAlias", sel, s);
+    c.ret(s);
+  };
+  r.impl(K, "AllocCStoDSAlias", [alias](Call16& c) { alias(c, false); });
+  r.impl(K, "AllocDStoCSAlias", [alias](Call16& c) { alias(c, true); });
+  // Get/SetSelectorBase, Get/SetSelectorLimit. The Gets read any selector
+  // (0 for one that is no good: LSL fails). The Sets change the caller's own
+  // selectors only; SetSelectorBase returns the selector (0: refused),
+  // SetSelectorLimit always 0 (the SDK's entry), taking the limit's 20 bits
+  // byte-granular as KRNL386 wrote them. A segment register holding the
+  // selector sees the new descriptor at once (the CPU's caches are
+  // refreshed, as DPMI's Set Segment Base Address/Limit reload them).
+  r.impl(K, "GetSelectorBase", [](Call16& c) { c.ret32(c.rt.ldt().base_of(c.w())); });
+  r.impl(K, "GetSelectorLimit", [](Call16& c) { c.ret32(c.rt.ldt().limit_of(c.w())); });
+  auto set_selector = [](Call16& c, bool base) {
+    uint16_t sel = c.w();
+    uint32_t v = c.l();
+    const SegDesc* d = c.rt.ldt().get(sel);
+    bool own = d && c.rt.ldt().in_guest_run(sel);
+    trace("mem16", "SetSelector%s(%04X, %08X)%s", base ? "Base" : "Limit", sel, v,
+          own ? "" : ": not one AllocSelector & co. made; refused");
+    if (own) {
+      SegDesc n = *d;
+      if (base) n.base = v;
+      else n.limit = v & 0xFFFFF;
+      c.rt.ldt().set(sel, n);
+      c.rt.cpu().reload_segments();
+    }
+    c.ret(base && own ? sel : 0);
+  };
+  r.impl(K, "SetSelectorBase", [set_selector](Call16& c) { set_selector(c, true); });
+  r.impl(K, "SetSelectorLimit", [set_selector](Call16& c) { set_selector(c, false); });
 
   // ---- local memory (the caller's DS) ----
   r.impl(K, "LocalInit", [](Call16& c) {

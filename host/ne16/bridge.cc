@@ -179,6 +179,9 @@ class NativeBridge : public Bridge16 {
     if (n > 0 && n <= 0x100) api("GDI", "GetPaletteEntries", {w16(hpal), w16(0), w16(n), l16(logpal(idx) + 4)});
   }
 
+  // Bridge16::defer_palettes: kept until select_palette first runs.
+  void defer_palettes(std::function<void()> supply) override { deferred_ = std::move(supply); }
+
   // UNLOADADMODULE16 (1:0e26).
   void unload() override {
     if (hmod_) {
@@ -391,8 +394,14 @@ class NativeBridge : public Bridge16 {
     for (uint32_t o = 0x18; o < 0x30; o += 2) rt_.wr16(m + o, 0);
   }
 
-  // 1:0be0: a palette request.
+  // 1:0be0: a palette request. Deferred palettes (defer_palettes) are
+  // handed over first, at the first request.
   uint16_t select_palette(int idx) {
+    if (deferred_) {
+      std::function<void()> supply = std::move(deferred_);
+      deferred_ = nullptr;
+      supply();
+    }
     if (!hdc_ || !hpal_[idx]) return 7;
     rt_.wr16(module_ + 0x18, hpal_[idx]);
     rt_.wr32(module_ + 0x1A, logpal(idx));
@@ -455,6 +464,7 @@ class NativeBridge : public Bridge16 {
   uint32_t entry_ = 0;
   uint16_t hdc_ = 0, hwnd_ = 0, saved_dc_ = 0, region_ = 0;
   uint16_t hpal_[4] = {0, 0, 0, 0};
+  std::function<void()> deferred_;  // defer_palettes' supply, until the first palette request
   bool initialized_ = false;
   uint16_t want_snd_ = 0, last_volume_ = 0, last_mute_ = 0;
 };

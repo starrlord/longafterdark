@@ -2,9 +2,14 @@
 //
 //   adw_ne16_tests                        control-record defaults (synthetic records); the
 //                                         package rule, bridge choice and palette sources
-//                                         (package.hh); the native AD3 bridge (bridge.hh)
-//                                         driving a host-implemented AD_SND (AD 3.x's entry
-//                                         set, and AD_SND 1.0's) and module; the
+//                                         (package.hh), After Dark 2.0's computed palettes
+//                                         against the test's own reading of ABI.md §3.9; the
+//                                         native AD3 bridge (bridge.hh) driving a
+//                                         host-implemented AD_SND (AD 3.x's entry set, and
+//                                         AD_SND 1.0's) and module; the host's own AD_SND
+//                                         (win16/adsnd16.cc) under a made-up NE module that
+//                                         imports it by name, directly and through the AD3
+//                                         protocol for a package without an engine dir; the
 //                                         protocol seam (protocol.hh): the lane driving a
 //                                         scripted protocol — what it does by the
 //                                         protocol's answers (KEY lines, carried overruns
@@ -205,6 +210,27 @@ void test_layout() {
         "a module that does not import AD_MOD (Sounder) is After Dark 2.0's all the same");
   CHECK(!ne16::after_dark2(ne16::resolve_layout(win + "\\packages\\ad32\\AD32\\GUTS.AD", win, exists), exists),
         "an AD 3.2 module: not After Dark 2.0");
+  // After Dark 3.x's host: an engine dir holding ADW30.EXE, by file (any package, any case);
+  // one beside the module does not count.
+  const std::string tw = win + "\\packages\\tt";
+  ne16::Ne16Layout twl = ne16::resolve_layout(tw + "\\TWISTED\\CHAM.AD", win, exists);
+  CHECK(!ne16::after_dark3_host(twl, exists), "no ADW30.EXE: no After Dark 3.x host");
+  add(tw + "\\TWISTED\\ADW30.EXE");
+  CHECK(!ne16::after_dark3_host(twl, exists), "ADW30.EXE beside the module: not the engine's");
+  add(tw + "\\ENGINE\\adw30.exe");
+  CHECK(ne16::after_dark3_host(twl, exists) && ne16::choose_bridge(twl, exists) == BridgeKind::native,
+        "ADW30.EXE in the engine dir: After Dark 3.x's, on the native bridge");
+  CHECK(!ne16::after_dark3_host(stl, exists) && !ne16::after_dark3_host(l, exists),
+        "Star Trek's engine dir and Deluxe's: no ADW30.EXE");
+  // The host's AD_SND: an engine dir without AD_SND.DLL (or none at all), by
+  // file; one beside the module does not count.
+  const std::string sn = win + "\\packages\\snoopy";
+  ne16::Ne16Layout snl = ne16::resolve_layout(sn + "\\AFTERDRK\\IS_FLY.AD", win, exists);
+  CHECK(ne16::host_ad_snd(snl, exists), "no ENGINE\\AD_SND.DLL: the host's AD_SND");
+  add(sn + "\\AFTERDRK\\AD_SND.DLL");
+  CHECK(ne16::host_ad_snd(snl, exists), "AD_SND.DLL beside the module: still the host's");
+  add(sn + "\\ENGINE\\ad_snd.dll");
+  CHECK(!ne16::host_ad_snd(snl, exists), "AD_SND.DLL in the engine dir, any case: that one");
   // ADNE16BRIDGE.
   bool is_auto = false;
   BridgeKind k = BridgeKind::native;
@@ -367,7 +393,7 @@ void test_palettes() {
   ne16::Ne16Layout l;
   l.engine_dir = dir;
   ne16::AdPalettes n = ne16::load_palettes(l, ne16::BridgeKind::native, exists);
-  CHECK(n.pal.size() == 4 && n.source.find("ADTASK.DLL 5000/1..4") != std::string::npos, "native: %s",
+  CHECK(n.pal.size() == 4 && n.source.find("ADTASK.DLL 5000/1..4") != std::string::npos && !n.computed, "native: %s",
         n.source.c_str());
   ne16::AdPalettes o = ne16::load_palettes(l, ne16::BridgeKind::oldmod16, exists);
   CHECK(o.pal.empty() && o.error.find("AFTERDAR.SCR") != std::string::npos, "OLDMOD16 wants AFTERDAR.SCR (%s)",
@@ -378,6 +404,102 @@ void test_palettes() {
   CHECK(b.pal.empty() && b.error.find("5000/") != std::string::npos, "missing resource: %s", b.error.c_str());
   DeleteFileA(adtask.c_str());
   RemoveDirectoryA(dir.c_str());
+}
+
+// After Dark 2.0's four palettes (package.hh palettes_after_dark2), checked
+// against this test's own reading of ABI.md §3.9 — written apart from the
+// host's code, and no byte from Berkeley's files: 235 PC_RESERVED entries
+// each; request 10 a hue sweep (h = 0x217 + 0x11D·i, 16-bit, full
+// saturation and value) through six sectors of the hue circle, each ending
+// at 0x2AAA, 0x5555, 0x7FFF, 0xAAAA, 0xD554 and 0xFFFF and running its
+// channel up or down over the sector's width (0x2AAA, or 0x2AAB for the
+// falling ones); 11 the 6×6×6 cube of 255 − 51·k (blue fastest), then 19
+// greys, 255 and then 12 + 13·k; 12 the grey ramp; 13 seven ramps of 34
+// entries — white, red, orange, yellow, green, blue, magenta — each from its
+// colour down by 245 / 33 = 7 in its channels (orange's green by 3), the
+// last one cut to 31. SETADPALETTE16's order: hpal[0..3] = 12, 10, 13, 11.
+void test_ad2_palettes() {
+  using Pal = std::vector<PALETTEENTRY>;
+  auto rgb = [](int r, int g, int b) { return PALETTEENTRY{BYTE(r), BYTE(g), BYTE(b), PC_RESERVED}; };
+  Pal hue, cube, grey, ramps;
+  struct Sector {
+    uint32_t last, base, width;
+    int rising;          // the channel that runs up (0 r, 1 g, 2 b), or -1
+    int falling;         // … or down, or -1
+    int full[2];         // the channels at 255 (-1: none)
+  };
+  const Sector sectors[6] = {{0x2AAA, 0x0000, 0x2AAA, 1, -1, {0, -1}}, {0x5555, 0x2AAA, 0x2AAB, -1, 0, {1, -1}},
+                             {0x7FFF, 0x5555, 0x2AAA, 2, -1, {1, -1}}, {0xAAAA, 0x7FFF, 0x2AAB, -1, 1, {2, -1}},
+                             {0xD554, 0xAAAA, 0x2AAA, 0, -1, {2, -1}}, {0xFFFF, 0xD554, 0x2AAB, -1, 2, {0, -1}}};
+  for (uint32_t i = 0; i < 235; i++) {
+    uint32_t h = (0x217 + 0x11D * i) % 0x10000;
+    const Sector* s = sectors;
+    while (h > s->last) s++;
+    int c[3] = {0, 0, 0};
+    for (int f : s->full) {
+      if (f >= 0) c[f] = 255;
+    }
+    uint32_t ramp = (h - s->base) * 255 / s->width;
+    if (s->rising >= 0) c[s->rising] = int(ramp);
+    if (s->falling >= 0) c[s->falling] = int(255 - ramp);
+    hue.push_back(rgb(c[0], c[1], c[2]));
+  }
+  for (int r = 0; r < 6; r++) {
+    for (int g = 0; g < 6; g++) {
+      for (int b = 0; b < 6; b++) cube.push_back(rgb(255 - 51 * r, 255 - 51 * g, 255 - 51 * b));
+    }
+  }
+  cube.push_back(rgb(255, 255, 255));
+  for (int k = 0; k < 18; k++) cube.push_back(rgb(12 + 13 * k, 12 + 13 * k, 12 + 13 * k));
+  for (int i = 0; i < 235; i++) grey.push_back(rgb(i, i, i));
+  const int starts[7][3] = {{255, 255, 255}, {255, 0, 0}, {255, 128, 0}, {255, 255, 0}, {0, 255, 0}, {0, 0, 255}, {255, 0, 255}};
+  for (int k = 0; k < 7; k++) {
+    for (int n = 0; n < 34 && ramps.size() < 235; n++) {
+      int c[3];
+      for (int ch = 0; ch < 3; ch++) c[ch] = starts[k][ch] ? starts[k][ch] - n * (k == 2 && ch == 1 ? 3 : 7) : 0;
+      ramps.push_back(rgb(c[0], c[1], c[2]));
+    }
+  }
+  auto same = [](const Pal& a, const Pal& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); i++) {
+      if (memcmp(&a[i], &b[i], sizeof(PALETTEENTRY)) != 0) return false;
+    }
+    return true;
+  };
+  ne16::AdPalettes p = ne16::palettes_after_dark2();
+  CHECK(p.pal.size() == 4 && p.error.empty() && p.computed && p.source.find("computed") != std::string::npos,
+        "four palettes, marked computed (%s)", p.source.c_str());
+  if (p.pal.size() != 4) return;
+  CHECK(hue.size() == 235 && cube.size() == 235 && ramps.size() == 235, "the test's own palettes: 235 entries each");
+  CHECK(same(p.pal[0], grey), "hpal[0]: request 12, the grey ramp");
+  CHECK(same(p.pal[1], hue), "hpal[1]: request 10, the hue sweep");
+  CHECK(same(p.pal[2], ramps), "hpal[2]: request 13, the seven ramps");
+  CHECK(same(p.pal[3], cube), "hpal[3]: request 11, the cube and its greys");
+  // A few entries worked out by hand from the rule.
+  const PALETTEENTRY& h0 = p.pal[1][0];  // h 0x217 in the first sector: green 0x217·255/0x2AAA = 12
+  const PALETTEENTRY& m = p.pal[2][234];  // magenta's 31st: 255 − 30·7 = 45
+  CHECK(h0.peRed == 255 && h0.peGreen == 12 && h0.peBlue == 0 && m.peRed == 45 && m.peGreen == 0 && m.peBlue == 45 &&
+            p.pal[3][216].peRed == 255 && p.pal[3][217].peRed == 12 && p.pal[3][234].peRed == 233 &&
+            p.pal[2][102].peRed == 255 && p.pal[2][102].peGreen == 255 && p.pal[2][102].peBlue == 0,
+        "by hand: hue 0 (%u %u %u), magenta's last (%u %u %u), the greys, yellow's first", h0.peRed, h0.peGreen,
+        h0.peBlue, m.peRed, m.peGreen, m.peBlue);
+  // The native bridge's source: with neither ADTASK.DLL nor AFTERDAR.SCR in
+  // the engine dir (or no engine dir), these; the real OLDMOD16 still wants
+  // AFTERDAR.SCR, and an ADTASK.DLL still wins.
+  auto none = [](const std::string&) { return false; };
+  ne16::Ne16Layout l;
+  l.engine_dir = "C:\\nowhere\\ENGINE";
+  ne16::AdPalettes n = ne16::load_palettes(l, ne16::BridgeKind::native, none);
+  CHECK(n.pal.size() == 4 && same(n.pal[0], grey) && same(n.pal[3], cube) && n.source == p.source && n.computed,
+        "native, neither file: computed (%s)", n.source.c_str());
+  ne16::AdPalettes o = ne16::load_palettes(l, ne16::BridgeKind::oldmod16, none);
+  CHECK(o.pal.empty() && o.error.find("AFTERDAR.SCR") != std::string::npos, "OLDMOD16, neither file: none (%s)",
+        o.error.c_str());
+  auto adtask_only = [](const std::string& f) { return f.size() > 10 && f.substr(f.size() - 10) == "ADTASK.DLL"; };
+  ne16::AdPalettes a = ne16::load_palettes(l, ne16::BridgeKind::native, adtask_only);
+  CHECK(a.pal.empty() && a.source.empty() && a.error.find("ADTASK.DLL") != std::string::npos,
+        "native, an ADTASK.DLL (unreadable here): that one, never the computed ones (%s)", a.error.c_str());
 }
 
 // ---- the native bridge ---------------------------------------------------------------------------------------
@@ -609,6 +731,40 @@ void test_native_bridge() {
         rt.read_str(s + ne16::scratch::kError).c_str());
   g.module_text = 0;
   b5->close();
+
+  // Deferred palettes (Bridge16::defer_palettes): handed over at the first
+  // palette request, once; a module that asks for none never gets them, and
+  // the bridge makes none of their calls.
+  auto b6 = ne16::open_native_bridge(rt, "C:\\WINDOWS\\SYSTEM\\FAKESND.DLL", &why);
+  int supplied = 0;
+  uint16_t dpal[4] = {0, 0, 0, 0};
+  b6->defer_palettes([&] {
+    supplied++;
+    for (uint16_t i = 0; i < 4; i++) {
+      std::vector<PALETTEENTRY> pe(235, PALETTEENTRY{uint8_t(110 + i), 0, 0, PC_RESERVED});
+      dpal[i] = gdi.create_palette(pe);
+      b6->set_palette(dpal[i], i);
+    }
+  });
+  win16::Shim16Entry* gpe = rt.shims().find_name("GDI", "GetPaletteEntries");
+  const uint64_t gpe0 = gpe->calls;
+  g.results.clear();
+  uint16_t ok6 = b6->load(hwnd, hdc, s + ne16::scratch::kCtrl, 40, 1, s + ne16::scratch::kPath,
+                          s + ne16::scratch::kError, ne16::scratch::kErrorSize, s + ne16::scratch::kErrId);
+  uint32_t mod6 = b6->ad_module();
+  CHECK(ok6 == 1 && supplied == 0 && gpe->calls == gpe0 && rt.rd16(mod6 + 0x18) == 0,
+        "deferred palettes: no request, not handed over (%d, %llu calls)", supplied,
+        (unsigned long long)(gpe->calls - gpe0));
+  g.results[2] = {13, 10};
+  b6->message(2, s + ne16::scratch::kError, ne16::scratch::kErrorSize);
+  CHECK(supplied == 1 && gpe->calls - gpe0 == 4 && rt.rd16(mod6 + 0x18) == dpal[2] &&
+            rt.rd8(rt.rd32(mod6 + 0x1A) + 4) == 112,
+        "deferred palettes: the first request (13) hands them over, and selects hpal[2]");
+  b6->message(2, s + ne16::scratch::kError, ne16::scratch::kErrorSize);
+  CHECK(supplied == 1 && gpe->calls - gpe0 == 4 && rt.rd16(mod6 + 0x18) == dpal[1],
+        "deferred palettes: once only; request 10 selects hpal[1]");
+  b6->unload();
+  b6->close();
 }
 
 // AD_SND 1.0 (After Dark 2.0: Star Trek: The Screen Saver) has no
@@ -690,6 +846,485 @@ void test_native_bridge_ad_snd10() {
         "its button the same: no module, nothing restored (%u, error id %u; %s)", r4,
         rt.rd16(s + ne16::scratch::kErrId), g.joined().c_str());
   b4->close();
+}
+
+// ---- the host's AD_SND (win16/adsnd16.cc) --------------------------------------------------------------------
+//
+// A made-up NE module that imports AD_SND by name, in the case it pleases (the
+// loader matches import names case-insensitively, as Windows did): two
+// made-up sounds (type 3000: 1000, 11025 Hz, and "BARK", 22050 Hz), a button
+// record (1000/1), a MODULE entry, and one export per AD_SND entry the tests
+// reach, each a far jump through the module's own import of it — so a test
+// calls AD_SND the way the module's code would. MODULE does what a Snoopy
+// module does (IS_FLY 1:02a5..1:02e7): at INITIALIZE (0) adwOpenSound, then
+// adwLoadSoundResource(its instance, 1000), adwSetSoundMode(h, 0x210: async,
+// looping) and adwPlaySound(h); at CLOSE (3) adwFreeSound(h) and
+// adwCloseSound(2); it answers 0 to every message.
+
+// A made-up PCM WAV image: 8-bit mono at `rate` Hz, a sawtooth.
+std::string made_up_wav(uint32_t rate, uint32_t samples) {
+  std::string w = "RIFF";
+  auto u32 = [&](uint32_t v) {
+    for (int i = 0; i < 4; i++) w += char(v >> (8 * i));
+  };
+  u32(36 + samples);
+  w += "WAVEfmt ";
+  u32(16);
+  w += std::string("\x01\x00\x01\x00", 4);  // PCM, mono
+  u32(rate);
+  u32(rate);
+  w += std::string("\x01\x00\x08\x00", 4);  // block align 1, 8 bits
+  w += "data";
+  u32(samples);
+  for (uint32_t i = 0; i < samples; i++) w += char(0x60 + (i * 5) % 0x40);
+  return w;
+}
+
+// The AD_SND entries SNDMOD imports and exports (its ordinals 2.. in this order).
+const char* const kSndEntries[] = {
+    "adwSoundInit",         "adwSoundCleanup",       "adwOpenSound",         "adwCloseSound",
+    "adwLoadSoundResource", "adwLoadSoundFile",      "adwCreateSound",       "adwSetSoundMode",
+    "adwPlaySound",         "adwPlaySoundResource",  "adwPlaySoundFile",     "adwStopSound",
+    "adwFreeSound",         "adwIsSoundDone",        "adwSoundAsyncCap",     "adwSoundLoopCap",
+    "adwSoundVolumeCap",    "adwSetSoundMute",       "adwGetSoundMute",      "adwSetVolume",
+    "adwGetVolume",         "adwGetSystemVolumes",   "adwSetSystemVolumes",  "adwSavePreviousVolume",
+    "adwRestorePreviousVolume", "adwGetSoundInfo",   "adwSoundDllVer",       "VerStr",
+    "adwQuerySfx",          "adwDoEffect",           "adwPauseSound",        "adwResumeSound"};
+
+std::string sound_module_image() {
+  // Segment 1: MODULE at 0 (its prolog is the one the loader patches to
+  // mov ax, DGROUP), the jumps from 0x60, 8 bytes apart. FF FF 00 00 is an
+  // import's place: the end of its fixup chain.
+  std::vector<uint8_t> code = {
+      0x1E, 0x58, 0x90,                    // 00 push ds; pop ax; nop (→ mov ax, DGROUP)
+      0x45, 0x55, 0x8B, 0xEC, 0x1E,        // 03 inc bp; push bp; mov bp, sp; push ds
+      0x8E, 0xD8,                          // 08 mov ds, ax
+      0x83, 0x7E, 0x0A, 0x00,              // 0A cmp word [bp+0Ah], 0 (msg)
+      0x75, 0x27,                          // 0E jne 37
+      0x9A, 0xFF, 0xFF, 0x00, 0x00,        // 10 call far adwOpenSound
+      0x1E, 0x6A, 0x00, 0x68, 0xE8, 0x03,  // 15 push ds (hInstance); push 0; push 1000
+      0x9A, 0xFF, 0xFF, 0x00, 0x00,        // 1B call far adwLoadSoundResource
+      0xA3, 0x00, 0x00,                    // 20 mov [0], ax
+      0x50, 0x68, 0x10, 0x02,              // 23 push ax; push 0210h
+      0x9A, 0xFF, 0xFF, 0x00, 0x00,        // 27 call far adwSetSoundMode
+      0xFF, 0x36, 0x00, 0x00,              // 2C push word [0]
+      0x9A, 0xFF, 0xFF, 0x00, 0x00,        // 30 call far adwPlaySound
+      0xEB, 0x16,                          // 35 jmp 4D
+      0x83, 0x7E, 0x0A, 0x03,              // 37 cmp word [bp+0Ah], 3
+      0x75, 0x10,                          // 3B jne 4D
+      0xFF, 0x36, 0x00, 0x00,              // 3D push word [0]
+      0x9A, 0xFF, 0xFF, 0x00, 0x00,        // 41 call far adwFreeSound
+      0x6A, 0x02,                          // 46 push 2
+      0x9A, 0xFF, 0xFF, 0x00, 0x00,        // 48 call far adwCloseSound
+      0x31, 0xC0, 0x1F, 0x5D, 0x4D,        // 4D xor ax, ax; pop ds; pop bp; dec bp
+      0xCA, 0x06, 0x00};                   // 52 retf 6
+  code.resize(0x60, 0x90);
+  // The imported names: 0, AD_SND at 1 (the module reference), the entries.
+  std::string imp(1, '\0');
+  imp += char(6) + std::string("AD_SND");
+  std::map<std::string, uint16_t> name_at;
+  for (const char* n : kSndEntries) {
+    name_at[n] = uint16_t(imp.size());
+    imp += char(strlen(n)) + std::string(n);
+  }
+  struct Fixup {
+    uint16_t at;
+    const char* name;
+  };
+  std::vector<Fixup> fixups = {{0x11, "adwOpenSound"}, {0x1C, "adwLoadSoundResource"}, {0x28, "adwSetSoundMode"},
+                               {0x31, "adwPlaySound"}, {0x42, "adwFreeSound"},         {0x49, "adwCloseSound"}};
+  std::vector<uint16_t> jumps;
+  for (const char* n : kSndEntries) {
+    jumps.push_back(uint16_t(code.size()));
+    fixups.push_back({uint16_t(code.size() + 1), n});
+    code.insert(code.end(), {0xEA, 0xFF, 0xFF, 0x00, 0x00, 0x90, 0x90, 0x90});  // jmp far <import>
+  }
+  std::string rel;
+  put16(rel, 0, uint16_t(fixups.size()));
+  for (const Fixup& f : fixups) {
+    size_t p = rel.size();
+    rel.resize(p + 8, '\0');
+    rel[p] = 3;      // a far pointer
+    rel[p + 1] = 2;  // an import by name
+    put16(rel, p + 2, f.at);
+    put16(rel, p + 4, 1);
+    put16(rel, p + 6, name_at[f.name]);
+  }
+  // Names: the module, MODULE (1), the jumps (2..); one bundle of moveable entries.
+  auto name_entry = [](std::string& t, const std::string& n, uint16_t ordinal) {
+    t += char(n.size()) + n + char(ordinal & 0xFF) + char(ordinal >> 8);
+  };
+  std::string resident;
+  name_entry(resident, "SNDMOD", 0);
+  name_entry(resident, "MODULE", 1);
+  for (size_t i = 0; i < std::size(kSndEntries); i++) name_entry(resident, kSndEntries[i], uint16_t(i + 2));
+  resident += '\0';
+  std::string entry;
+  entry += char(1 + jumps.size());
+  entry += char(0xFF);
+  auto moveable = [&](uint16_t off) { entry += std::string{char(0x03), char(0xCD), char(0x3F), char(1), char(off), char(off >> 8)}; };
+  moveable(0);
+  for (uint16_t j : jumps) moveable(j);
+  entry += '\0';
+  std::string modref;
+  put16(modref, 0, 1);
+  // Resources, one type block each (shift 4); "BARK" is a string name.
+  std::string button_rec(0x20, '\0');
+  put16(button_rec, 0, 4);
+  struct Res {
+    uint16_t type, id;
+    std::string name, data;
+  };
+  const Res res[] = {{3000, 1000, "", made_up_wav(11025, 1100)}, {3000, 0, "BARK", made_up_wav(22050, 441)},
+                     {1000, 1, "", button_rec}};
+  std::string rt;
+  put16(rt, 0, 4);
+  std::vector<size_t> res_at;
+  const size_t names_at = 2 + std::size(res) * 20 + 2;
+  std::string names;
+  for (const Res& r : res) {
+    size_t p = rt.size();
+    rt.resize(p + 20, '\0');
+    put16(rt, p, uint16_t(0x8000 | r.type));
+    put16(rt, p + 2, 1);
+    res_at.push_back(p + 8);
+    put16(rt, p + 8 + 4, 0x30);
+    if (r.name.empty()) {
+      put16(rt, p + 8 + 6, uint16_t(0x8000 | r.id));
+    } else {
+      put16(rt, p + 8 + 6, uint16_t(names_at + names.size()));
+      names += char(r.name.size()) + r.name;
+    }
+  }
+  rt.resize(rt.size() + 2, '\0');
+  rt += names + '\0';
+  // The header and the tables after it, then the code with its fixups, then the resources.
+  std::string h(0x40, '\0');
+  h[0] = 'N';
+  h[1] = 'E';
+  const uint16_t seg_off = 0x40, res_off = seg_off + 16, resident_off = uint16_t(res_off + rt.size());
+  const uint16_t modref_off = uint16_t(resident_off + resident.size()), imp_off = uint16_t(modref_off + modref.size());
+  const uint16_t entry_off = uint16_t(imp_off + imp.size()), tables_end = uint16_t(entry_off + entry.size());
+  put16(h, 0x04, entry_off);
+  put16(h, 0x06, uint16_t(entry.size()));
+  put16(h, 0x0C, 0x8001);  // LIBRARY | SINGLEDATA
+  put16(h, 0x0E, 2);       // DGROUP: segment 2
+  put16(h, 0x1C, 2);
+  put16(h, 0x1E, 1);
+  put16(h, 0x22, seg_off);
+  put16(h, 0x24, res_off);
+  put16(h, 0x26, resident_off);
+  put16(h, 0x28, modref_off);
+  put16(h, 0x2A, imp_off);
+  put16(h, 0x30, uint16_t(1 + jumps.size()));
+  put16(h, 0x32, 4);
+  h[0x36] = 2;
+  put16(h, 0x3E, 0x030A);
+  const size_t code_at = (0x40 + size_t(tables_end) + 15) & ~size_t(15);
+  size_t data_at = (code_at + code.size() + rel.size() + 15) & ~size_t(15);
+  for (size_t i = 0; i < std::size(res); i++) {
+    put16(rt, res_at[i], uint16_t(data_at >> 4));
+    put16(rt, res_at[i] + 2, uint16_t((res[i].data.size() + 15) >> 4));
+    data_at += (res[i].data.size() + 15) & ~size_t(15);
+  }
+  std::string seg;
+  put16(seg, 0, uint16_t(code_at >> 4));
+  put16(seg, 2, uint16_t(code.size()));
+  put16(seg, 4, 0x0110);  // RELOCINFO | MOVEABLE: the code
+  put16(seg, 6, uint16_t(code.size()));
+  put16(seg, 8, 0);       // DGROUP: no file data, 16 zero bytes
+  put16(seg, 10, 0);
+  put16(seg, 12, 0x0001);
+  put16(seg, 14, 0x10);
+  std::string f(0x40, '\0');
+  f[0] = 'M';
+  f[1] = 'Z';
+  put16(f, 0x3C, 0x40);
+  f += h + seg + rt + resident + modref + imp + entry;
+  f.resize(code_at, '\0');
+  f += std::string(code.begin(), code.end()) + rel;
+  for (const Res& r : res) {
+    f.resize((f.size() + 15) & ~size_t(15), '\0');
+    f += r.data;
+  }
+  f.resize((f.size() + 15) & ~size_t(15), '\0');
+  return f;
+}
+
+// SNDMOD loaded in a runtime of its own with the host's AD_SND, its MMSYSTEM
+// calls recorded (and a MIDI device with a volume made up for them: without
+// the audio engine there is none).
+struct HostSndRig {
+  VirtualClock clock{VirtualClock::Mode::fixed_step, 16667};
+  win16::Runtime16 rt;
+  win16::Module16* mod = nullptr;
+  std::vector<std::string> mm;
+  uint32_t buf = 0;  // 0x200 bytes of guest memory
+
+  static win16::Runtime16Options options(bool device) {
+    win16::Runtime16Options o;
+    o.sound_device = device;  // ADSOUNDDEV=0 when false
+    return o;
+  }
+  HostSndRig(const std::string& dir, bool device) : rt(options(device), clock) {
+    clock.set_read_step_us(5);
+    win16::register_all16(rt);
+    rt.vfs().mount_overlay("C:\\AFTERDRK", dir, "");
+    win16::register_host_ad_snd(rt);
+    using win16::Call16;
+    auto& r = rt.shims();
+    auto wrap = [&](const char* name, std::function<std::string(Call16&)> what) {
+      win16::Shim16Entry* e = r.find_name("MMSYSTEM", name);
+      win16::Shim16Fn orig = e->fn;
+      e->fn = [this, orig, what](Call16& c) {
+        mm.push_back(what(c));
+        c.rewind();
+        orig(c);
+      };
+    };
+    wrap("sndPlaySound", [](Call16& c) {
+      uint32_t p = c.ptr();
+      uint16_t flags = c.w();
+      char b[64];
+      std::string img = !p ? "NULL" : (flags & 4) ? c.rt.read_str(p, 4) + " " + std::to_string(c.rt.rd32(p + 24)) : "?";
+      snprintf(b, sizeof(b), "snd(%s, %04X)", img.c_str(), flags);
+      return std::string(b);
+    });
+    wrap("waveOutSetVolume", [](Call16& c) {
+      uint16_t dev = c.w();
+      char b[40];
+      snprintf(b, sizeof(b), "wave(%u, %08X)", dev, c.l());
+      return std::string(b);
+    });
+    wrap("waveOutOpen", [](Call16& c) {
+      c.ptr();
+      c.w();
+      uint32_t fmt = c.ptr();
+      c.l();
+      c.l();
+      uint32_t flags = c.l();
+      return "query(" + std::to_string(c.rt.rd32(fmt + 4)) + ", " + std::to_string(flags) + ")";
+    });
+    r.find_name("MMSYSTEM", "midiOutGetNumDevs")->fn = [](Call16& c) { c.ret(1); };
+    r.find_name("MMSYSTEM", "midiOutGetDevCaps")->fn = [](Call16& c) {
+      c.w();
+      uint32_t caps = c.ptr();
+      c.rt.wr32(caps + 46, 1);  // MIDICAPS_VOLUME
+      c.ret(0);
+    };
+    r.find_name("MMSYSTEM", "midiOutGetVolume")->fn = [](Call16& c) {
+      c.w();
+      c.rt.wr32(c.ptr(), 0x12341234);
+      c.ret(0);
+    };
+    r.find_name("MMSYSTEM", "midiOutSetVolume")->fn = [this](Call16& c) {
+      uint16_t dev = c.w();
+      char b[40];
+      snprintf(b, sizeof(b), "midi(%u, %08X)", dev, c.l());
+      mm.push_back(b);
+      c.ret(0);
+    };
+    uint16_t err = 0;
+    mod = rt.modules().load_host(dir + "\\SNDMOD.AD", &err);
+    uint16_t hb = rt.global().alloc(win16::GlobalHeap16::kZeroInit, 0x200);
+    buf = uint32_t(hb) << 16;
+  }
+  // An AD_SND entry through SNDMOD's own import of it.
+  uint32_t call(const char* name, std::initializer_list<win16::Arg16> args = {}) {
+    uint32_t fp = mod ? rt.modules().proc_address(mod, name) : 0;
+    if (!fp) throw std::runtime_error(std::string("SNDMOD has no ") + name);
+    return rt.call_far(fp, args);
+  }
+  uint16_t call16(const char* name, std::initializer_list<win16::Arg16> args = {}) { return uint16_t(call(name, args)); }
+  std::string seen() {
+    std::string s;
+    for (const std::string& x : mm) s += (s.empty() ? "" : " ") + x;
+    mm.clear();
+    return s;
+  }
+  uint64_t calls(const char* module, const char* name) {
+    win16::Shim16Entry* e = rt.shims().find_name(module, name);
+    return e ? e->calls : 0;
+  }
+};
+
+void test_host_ad_snd() {
+  using win16::l16;
+  using win16::w16;
+  std::string dir = temp_dir("hostsnd");
+  write_file(dir + "\\SNDMOD.AD", sound_module_image());
+  write_file(dir + "\\TONE.WAV", made_up_wav(11025, 300));
+  {
+    HostSndRig g(dir, /*device=*/true);
+    win16::Runtime16& rt = g.rt;
+    CHECK(g.mod && !g.mod->system && g.mod->name == "SNDMOD", "the made-up module loads, AD_SND imported by name");
+    if (!g.mod) return;
+    CHECK(rt.shims().has_module("AD_SND") && rt.modules().by_name("AD_SND") && rt.modules().by_name("AD_SND")->system,
+          "AD_SND is the host's system module");
+    const uint16_t hinst = g.mod->hinstance;
+    const uint32_t bark = rt.static_bytes("test BARK", "BARK");
+    // Before adwSoundInit nothing has the device; adwPlaySound answers 1 (its volume is 0).
+    CHECK(g.call16("adwOpenSound") == 0 && g.call16("adwSoundAsyncCap") == 0 &&
+              g.call16("adwLoadSoundResource", {w16(hinst), l16(1000)}) == 0 && g.call16("adwPlaySound", {w16(4)}) == 1 &&
+              g.call16("adwStopSound") == 0 && g.call16("adwGetVolume") == 0,
+          "before adwSoundInit: no device");
+    // adwSoundInit: the probe, then the capabilities.
+    g.seen();
+    uint16_t init = g.call16("adwSoundInit", {w16(0), l16(g.buf)});
+    std::string probe = g.seen();
+    CHECK(init == 0 && rt.read_str(g.buf).empty() && probe == "query(11025, 1) query(22050, 1)",
+          "adwSoundInit: 0, the 11 and 22 kHz queries (%u; %s)", init, probe.c_str());
+    CHECK(g.call16("adwSoundAsyncCap") == 2 && g.call16("adwSoundLoopCap") == 4 && g.call16("adwSoundVolumeCap") == 1 &&
+              g.call16("adwOpenSound") == 1 && g.call16("adwGetVolume") == 25,
+          "with the device: async 2, loop 4, volume 1, open 1, level 25");
+    // Loading: type 3000 from the module's own resources, by number or name.
+    uint16_t h = g.call16("adwLoadSoundResource", {w16(hinst), l16(1000)});
+    uint16_t h2 = g.call16("adwLoadSoundResource", {w16(hinst), l16(bark)});
+    CHECK(h && h2 && h != h2 && g.call16("adwLoadSoundResource", {w16(hinst), l16(999)}) == 0 &&
+              g.call16("adwLoadSoundResource", {w16(hinst), l16(0)}) == 0 && rt.global().find(h),
+          "adwLoadSoundResource: 1000 and \"BARK\" load (%04X %04X), 999 and none do not", h, h2);
+    // The play flags: async 0x07 (the default), async looping 0x0F, synchronous 0x06.
+    g.seen();
+    CHECK(g.call16("adwPlaySound", {w16(h)}) == 1 && g.seen() == "snd(RIFF 11025, 0007)", "the default mode: 0x07");
+    CHECK(g.call16("adwSetSoundMode", {w16(h), w16(0x210)}) == 1 && g.call16("adwPlaySound", {w16(h)}) == 1 &&
+              g.seen() == "snd(RIFF 11025, 000F)",
+          "0x210, looping: 0x0F");
+    CHECK(g.call16("adwSetSoundMode", {w16(h), w16(0x120)}) == 1 && g.call16("adwPlaySound", {w16(h)}) == 1 &&
+              g.seen() == "snd(RIFF 11025, 0006)",
+          "0x120, synchronous: 0x06");
+    CHECK(g.call16("adwSetSoundMode", {w16(h), w16(0x300)}) == 0 && g.call16("adwSetSoundMode", {w16(h), w16(0x30)}) == 0 &&
+              g.call16("adwSetSoundMode", {w16(h), w16(0x220)}) == 0 && g.call16("adwSetSoundMode", {w16(0), w16(0x10)}) == 0,
+          "adwSetSoundMode refuses both of a pair, a synchronous loop, no sound");
+    CHECK(g.call16("adwSetSoundMode", {w16(h), w16(0x200)}) == 1 && g.call16("adwPlaySound", {w16(h)}) == 0 &&
+              g.seen().empty(),
+          "a synchronous loop made in two calls plays nothing: 0");
+    CHECK(g.call16("adwSetSoundMode", {w16(h), w16(0x110)}) == 1, "back to async, no loop");
+    // The current sound.
+    CHECK(g.call16("adwPlaySound", {w16(h2)}) == 1 && g.seen() == "snd(RIFF 22050, 0007)" &&
+              g.call16("adwIsSoundDone", {w16(h2)}) == 1 && g.call16("adwIsSoundDone", {w16(h)}) == 0 &&
+              g.call16("adwIsSoundDone", {w16(0)}) == 1,
+          "adwIsSoundDone: 1 for the current sound (or 0), 0 for another");
+    // Mute: stored, tested by adwPlaySound, which then answers 1 and plays nothing.
+    CHECK(g.call16("adwSetSoundMute", {w16(1)}) == 1 && g.call16("adwGetSoundMute") == 1 &&
+              g.call16("adwPlaySound", {w16(h2)}) == 1 && g.seen().empty(),
+          "muted: adwPlaySound answers 1, plays nothing");
+    g.call16("adwSetSoundMute", {w16(0)});
+    // Volume: v × 0xFFFF / 100 on both channels, the MIDI devices first.
+    CHECK(g.call16("adwSetVolume", {w16(50)}) == 1 && g.seen() == "midi(0, 7FFF7FFF) wave(0, 7FFF7FFF)" &&
+              g.call16("adwGetVolume") == 50,
+          "adwSetVolume(50): MIDI and wave 0x7FFF7FFF, level 50");
+    CHECK(g.call16("adwSetVolume", {w16(50)}) == 1 && g.seen().empty(), "the same value again: 1, nothing set");
+    CHECK(g.call16("adwSetVolume", {w16(101)}) == 0 && g.seen().empty() && g.call16("adwGetVolume") == 50,
+          "101: 0, nothing set, the level kept");
+    CHECK(g.call16("adwSetVolume", {w16(0)}) == 1 && g.seen() == "midi(0, 00000000) wave(0, 00000000)" &&
+              g.call16("adwPlaySound", {w16(h2)}) == 1 && g.seen().empty(),
+          "level 0: adwPlaySound answers 1, plays nothing");
+    CHECK(g.call16("adwSetVolume", {w16(100)}) == 1 && g.seen() == "midi(0, FFFFFFFF) wave(0, FFFFFFFF)", "100: FFFF");
+    g.call16("adwSetSoundMute", {w16(1)});
+    CHECK(g.call16("adwSetVolume", {w16(70)}) == 1 && g.seen() == "midi(0, 00000000) wave(0, 00000000)",
+          "muted, 70 counts as 0");
+    g.call16("adwSetSoundMute", {w16(0)});
+    CHECK(g.call16("adwSetVolume", {w16(70)}) == 1 && g.seen() == "midi(0, B332B332) wave(0, B332B332)", "70: 0xB332");
+    // Stop and close.
+    CHECK(g.call16("adwStopSound") == 1 && g.seen() == "snd(NULL, 0000)" && g.call16("adwIsSoundDone", {w16(h2)}) == 0,
+          "adwStopSound: sndPlaySound(NULL, 0), no current sound");
+    CHECK(g.call16("adwCloseSound", {w16(0)}) == 1 && g.seen().empty() && g.call16("adwCloseSound", {w16(2)}) == 1 &&
+              g.seen() == "snd(NULL, 0000)",
+          "adwCloseSound: 2 stops the sound");
+    // Free: the current sound stopped first; the image (a resource) and the record freed.
+    uint64_t freed = g.calls("KERNEL", "FreeResource");
+    g.call16("adwPlaySound", {w16(h)});
+    g.seen();
+    CHECK(g.call16("adwFreeSound", {w16(h)}) == 1 && g.seen() == "snd(NULL, 0000)" && !rt.global().find(h) &&
+              g.call16("adwPlaySound", {w16(h)}) == 0,
+          "adwFreeSound of the current sound: stopped, freed, gone");
+    CHECK(g.call16("adwFreeSound", {w16(h2)}) == 1 && g.seen().empty() && g.call16("adwFreeSound", {w16(0)}) == 0 &&
+              g.calls("KERNEL", "FreeResource") - freed == 2,
+          "adwFreeSound of another: no stop; both resources freed");
+    // adwGetSoundInfo: the data's length, bytes and samples per second, channels.
+    h = g.call16("adwLoadSoundResource", {w16(hinst), l16(1000)});
+    uint32_t info = g.buf + 0x100;
+    CHECK(g.call16("adwGetSoundInfo", {w16(h), l16(info)}) == 1 && rt.rd32(info) == 1100 && rt.rd32(info + 4) == 11025 &&
+              rt.rd32(info + 8) == 11025 && rt.rd16(info + 12) == 1,
+          "adwGetSoundInfo: %u bytes, %u B/s, %u Hz, %u channel(s)", rt.rd32(info), rt.rd32(info + 4), rt.rd32(info + 8),
+          rt.rd16(info + 12));
+    g.call16("adwFreeSound", {w16(h)});
+    // adwPlaySoundResource: load, mode, play (the sound is never freed, as in the library).
+    g.seen();
+    CHECK(g.call16("adwPlaySoundResource", {w16(hinst), l16(bark), w16(0x10)}) == 1 && g.seen() == "snd(RIFF 22050, 0007)",
+          "adwPlaySoundResource: played");
+    // A file: adwLoadSoundFile reads it into memory, played as an image; a
+    // named file sound is refused (so adwPlaySoundFile fails); a record with
+    // no image plays nothing and answers 1.
+    const uint32_t tone = rt.static_bytes("test TONE", "C:\\AFTERDRK\\TONE.WAV");
+    uint16_t file = g.call16("adwLoadSoundFile", {l16(tone)});
+    CHECK(file && g.call16("adwPlaySound", {w16(file)}) == 1 && g.seen() == "snd(RIFF 11025, 0007)",
+          "adwLoadSoundFile: the file's image played (%04X)", file);
+    CHECK(g.call16("adwPlaySoundFile", {l16(tone), w16(0x10)}) == 0 && g.seen().empty() &&
+              g.call16("adwCreateSound", {l16(tone), w16(0x1010)}) == 0,
+          "a named file sound: refused");
+    uint16_t bare = g.call16("adwCreateSound", {l16(0), w16(0x10)});
+    CHECK(bare && g.call16("adwPlaySound", {w16(bare)}) == 1 && g.seen().empty(), "a record with no image: 1, nothing");
+    CHECK(g.call16("adwLoadSoundFile", {l16(rt.static_bytes("test NOSUCH", "C:\\AFTERDRK\\NOSUCH.WAV"))}) == 0,
+          "adwLoadSoundFile of no file: 0");
+    // The system volumes: every device with a volume saved, written back, the block freed.
+    g.call16("adwSetVolume", {w16(30)});
+    g.seen();
+    uint32_t out = g.buf + 0x180;
+    CHECK(g.call16("adwGetSystemVolumes", {l16(out)}) == 0 && rt.rd16(out) != 0, "adwGetSystemVolumes: a block");
+    uint16_t sys = rt.rd16(out);
+    g.call16("adwSetVolume", {w16(90)});
+    g.seen();
+    CHECK(g.call16("adwSetSystemVolumes", {w16(sys)}) == 0 && g.seen() == "wave(0, 4CCC4CCC) midi(0, 12341234)" &&
+              !rt.global().find(sys),
+          "adwSetSystemVolumes: the saved volumes written back, the block freed");
+    uint16_t other = rt.global().alloc(win16::GlobalHeap16::kMoveable | win16::GlobalHeap16::kZeroInit, 0xB4);
+    CHECK(g.call16("adwSetSystemVolumes", {w16(0)}) == 1 && g.call16("adwSetSystemVolumes", {w16(other)}) == 3 &&
+              !rt.global().find(other),
+          "adwSetSystemVolumes: 1 for no block, 3 (and freed) for another kind of block");
+    // AD_SND 1.0's pair: the wave device's volume alone.
+    g.call16("adwSetVolume", {w16(20)});
+    CHECK(g.call16("adwSavePreviousVolume") == 1, "adwSavePreviousVolume");
+    g.call16("adwSetVolume", {w16(80)});
+    g.seen();
+    CHECK(g.call16("adwRestorePreviousVolume") == 1 && g.seen() == "wave(0, 33333333)", "adwRestorePreviousVolume");
+    // Versions, effects.
+    uint32_t ver = g.call("adwSoundDllVer");
+    CHECK(rt.read_str(ver) == "3.0.3" && g.call16("VerStr", {l16(g.buf), w16(64)}) == 303 &&
+              rt.read_str(g.buf).rfind("AD_SND ver 303", 0) == 0,
+          "adwSoundDllVer \"%s\", VerStr 303 \"%s\"", rt.read_str(ver).c_str(), rt.read_str(g.buf).c_str());
+    CHECK(g.call16("adwQuerySfx", {w16(0)}) == 1 && g.call16("adwQuerySfx", {w16(1)}) == 0 &&
+              g.call16("adwDoEffect", {w16(0), w16(0), w16(0), w16(0)}) == 1 && g.call16("adwPauseSound") == 1 &&
+              g.call16("adwResumeSound") == 1,
+          "no effects but 0; pause and resume answer 1");
+    // Cleanup: no device any more, the mute cleared.
+    g.call16("adwSetSoundMute", {w16(1)});
+    CHECK(g.call16("adwSoundCleanup") == 1 && g.call16("adwOpenSound") == 0 && g.call16("adwSoundAsyncCap") == 0 &&
+              g.call16("adwGetVolume") == 0 && g.call16("adwGetSoundMute") == 0 && g.call16("adwStopSound") == 0,
+          "adwSoundCleanup: no device, the mute cleared");
+    CHECK(g.calls("AD_SND", "ADWPLAYSOUND") > 0 && rt.shims().unimplemented_called().empty(),
+          "every call implemented (census)");
+  }
+  {
+    // No wave device (ADSOUNDDEV=0): adwSoundInit fails with why; every entry
+    // that needs the device answers 0, adwPlaySound 1; nothing is played.
+    HostSndRig g(dir, /*device=*/false);
+    win16::Runtime16& rt = g.rt;
+    CHECK(g.mod != nullptr, "the made-up module loads without a device");
+    if (!g.mod) return;
+    uint16_t init = g.call16("adwSoundInit", {w16(0), l16(g.buf)});
+    CHECK(init == 1 && rt.read_str(g.buf) == "No wave output device is installed.", "no device: adwSoundInit 1, '%s'",
+          rt.read_str(g.buf).c_str());
+    CHECK(g.call16("adwSoundAsyncCap") == 0 && g.call16("adwSoundLoopCap") == 0 && g.call16("adwOpenSound") == 0 &&
+              g.call16("adwLoadSoundResource", {w16(g.mod->hinstance), l16(1000)}) == 0 &&
+              g.call16("adwPlaySound", {w16(0x1234)}) == 1 && g.call16("adwStopSound") == 0 &&
+              g.call16("adwSetVolume", {w16(50)}) == 0 && g.call16("adwGetVolume") == 0,
+          "no device: async cap 0, open 0, load 0, play 1, stop 0, volume 0");
+    CHECK(g.seen().empty(), "no device: no sndPlaySound, no volume set");
+  }
+  DeleteFileA((dir + "\\SNDMOD.AD").c_str());
+  DeleteFileA((dir + "\\TONE.WAV").c_str());
+  RemoveDirectoryA(dir.c_str());
 }
 
 // ---- the protocol seam (protocol.hh) ------------------------------------------------------------------------
@@ -1609,6 +2244,9 @@ void test_ad3_protocol() {
   using Kind = ne16::Protocol16::Call::Kind;
   auto exists = [](const std::string& f) { return GetFileAttributesA(f.c_str()) != INVALID_FILE_ATTRIBUTES; };
   // Two packages: "fake" ships no OLDMOD16 (the native bridge), "old" an OLDMOD16.DLL that is no NE image.
+  // Each has an ENGINE\AD_SND.DLL (no NE image either): the rig's AD_SND, a
+  // system module, answers for it by name — without one the host's own
+  // AD_SND would (package.hh host_ad_snd; below).
   std::string root = temp_dir("ad3");
   std::string slider(0x34, '\0'), check(0x20, '\0'), button(0x20, '\0'), popup(0x20, '\0');
   put16(slider, 0, 2);  // numeric 1..9, default 22 → 9
@@ -1634,6 +2272,8 @@ void test_ad3_protocol() {
     files.push_back(pkg + "\\ENGINE\\ADTASK.DLL");
     write_file(files.back(), ne_image("ADTASK", {{5000, 1, logpal_res(1, 235)}, {5000, 2, logpal_res(2, 235)},
                                                  {5000, 3, logpal_res(3, 235)}, {5000, 4, logpal_res(4, 235)}}));
+    files.push_back(pkg + "\\ENGINE\\AD_SND.DLL");
+    write_file(files.back(), "stands for AD_SND: the rig's answers");
     if (oldmod16) {
       files.push_back(pkg + "\\ENGINE\\OLDMOD16.DLL");
       write_file(files.back(), "not an NE image");
@@ -1786,8 +2426,10 @@ void test_ad3_protocol() {
   }
   // After Dark 2.0 (package.hh after_dark2: AD_MOD.DLL beside the module),
   // with no palette source in its engine dir and AD_SND 1.0: AD_PREFS.INI's
-  // seeds, the load through AD_SND 1.0's volume pair, result 5 its wake, every
-  // other result as before; a package without AD_MOD.DLL gets no seeds.
+  // seeds, the load through AD_SND 1.0's volume pair, After Dark 2.0's
+  // palettes computed (INITIALIZE asks for 12, the grey ramp), result 5 its
+  // wake, every other result as before; a package without AD_MOD.DLL gets no
+  // seeds.
   {
     const std::string pkg = root + "\\packages\\startrek";
     for (const std::string& d : {pkg, pkg + "\\AFTERDRK", pkg + "\\ENGINE"}) {
@@ -1798,6 +2440,8 @@ void test_ad3_protocol() {
     write_file(files.back(), ne_image("FAKEMOD", {{1000, 1, slider}, {1000, 2, check}, {1000, 3, button}, {1000, 4, popup}}));
     files.push_back(pkg + "\\AFTERDRK\\AD_MOD.DLL");
     write_file(files.back(), "no NE image: nothing loads it here");
+    files.push_back(pkg + "\\ENGINE\\AD_SND.DLL");
+    write_file(files.back(), "stands for AD_SND 1.0: the rig's answers");
     const ne16::Ne16Layout st = ne16::resolve_layout(pkg + "\\AFTERDRK\\FAKEMOD.AD", root, exists);
     Ad3Rig g(/*complete=*/true, /*v10=*/true);
     win16::Runtime16& rt = g.rt;
@@ -1815,11 +2459,23 @@ void test_ad3_protocol() {
           ini.get(prefs, "Sound", "SoundDriver").value_or("(none)").c_str());
     uint16_t hwnd = win16::user16_saver_window(rt);
     uint16_t hdc = win16::gdi16_screen_dc(rt, hwnd);
+    g.results[0] = {12};
+    const uint64_t gpe0 = rt.shims().find_name("GDI", "GetPaletteEntries")->calls;
     bool loaded = p->load(rt, hwnd, hdc, ctx);
     CHECK(loaded && g.joined() ==
                         "ADWSOUNDINIT ADWSAVEPREVIOUSVOLUME MODULE(5) ADWSETSOUNDMUTE(0) ADWSETVOLUME(30) MODULE(12) "
                         "MODULE(0) MODULE(1)",
-          "After Dark 2.0: LOADADMODULE16 over AD_SND 1.0, no AD palettes: %s", g.joined().c_str());
+          "After Dark 2.0: LOADADMODULE16 over AD_SND 1.0: %s", g.joined().c_str());
+    if (loaded) {
+      // Request 12 selected hpal[0]: the computed grey ramp, 235 entries (i, i, i).
+      uint32_t mod = g.ad_module(), lp = rt.rd32(mod + 0x1A);
+      CHECK(rt.rd16(mod + 0x18) != 0 && rt.rd16(lp + 2) == 256 && rt.rd8(lp + 4 + 4 * 100) == 100 &&
+                rt.rd8(lp + 4 + 4 * 100 + 2) == 100 && rt.rd8(lp + 4 + 4 * 100 + 3) == PC_RESERVED &&
+                rt.rd8(lp + 4 + 4 * 234) == 234 && rt.rd8(lp + 4 + 4 * 235 + 3) == 0 &&
+                rt.shims().find_name("GDI", "GetPaletteEntries")->calls - gpe0 == 4,
+            "After Dark 2.0's palettes, computed, handed over at the request: 12 is the grey ramp (entry 100: %u)",
+            rt.rd8(lp + 4 + 4 * 100));
+    }
     if (loaded) {
       auto call = [&](uint16_t result) {
         g.results[2] = {result};
@@ -1845,6 +2501,123 @@ void test_ad3_protocol() {
     CHECK(!win16::profiles16(other.rt).get(prefs, "After Dark", "Path") &&
               !win16::profiles16(other.rt).get(prefs, "Sound", "SoundDriver"),
           "no AD_MOD.DLL: no After Dark 2.0 seeds");
+  }
+  // After Dark 3.x (package.hh after_dark3_host: ADW30.EXE in the engine
+  // dir): AD_PREFS.INI's seeds are the keys ADW30 wrote at every start, Path
+  // without a backslash (ADXPL100 finds DIS_SND.DLL and MUSIC\ there); with
+  // AD_MOD.DLL beside the module as well, After Dark 2.0's rule wins; a
+  // package without ADW30.EXE (the "fake" one) gets neither.
+  {
+    const std::string pkg = root + "\\packages\\disney";
+    for (const std::string& d : {pkg, pkg + "\\DISNEY", pkg + "\\ENGINE"}) {
+      CreateDirectoryA(d.c_str(), nullptr);
+      dirs.push_back(d);
+    }
+    files.push_back(pkg + "\\DISNEY\\FAKEMOD.AD");
+    write_file(files.back(), ne_image("FAKEMOD", {{1000, 1, slider}}));
+    files.push_back(pkg + "\\ENGINE\\ADW30.EXE");
+    write_file(files.back(), "no NE image: nothing runs it here");
+    const std::string prefs = "C:\\WINDOWS\\AD_PREFS.INI";
+    auto seeds = [&](const ne16::Ne16Layout& l) {
+      Ad3Rig g;
+      auto p = ne16::make_ad3_protocol(l);
+      p->mount(g.rt, env);
+      win32::IniStore& ini = win16::profiles16(g.rt);
+      return ini.get(prefs, "After Dark", "Path").value_or("(none)") + " " +
+             ini.get(prefs, "Sound", "SoundDriver").value_or("(none)");
+    };
+    const ne16::Ne16Layout dl = ne16::resolve_layout(pkg + "\\DISNEY\\FAKEMOD.AD", root, exists);
+    CHECK(ne16::after_dark3_host(dl, exists) && seeds(dl) == "C:\\AFTERDRK AD_MME.DRV",
+          "ADW30.EXE in the engine dir: AD_PREFS.INI seeds %s", seeds(dl).c_str());
+    CHECK(seeds(layout) == "(none) (none)", "no ADW30.EXE: no seeds (%s)", seeds(layout).c_str());
+    files.push_back(pkg + "\\DISNEY\\AD_MOD.DLL");
+    write_file(files.back(), "no NE image: nothing loads it here");
+    CHECK(seeds(dl) == "C:\\AFTERDRK\\ AD_MME.DRV", "AD_MOD.DLL beside the module too: After Dark 2.0's seeds (%s)",
+          seeds(dl).c_str());
+  }
+  // The host's AD_SND (package.hh host_ad_snd): a package with no engine dir
+  // at all, as the importer installs Snoopy's Screen Savers, and the made-up
+  // module importing AD_SND by name. The protocol registers the host's
+  // AD_SND, the native bridge loads it by its path and the module by its
+  // imports: LOADADMODULE16's sequence, the module's own sound at INITIALIZE
+  // (looping: 0x0F), DRAWFRAME, then CLOSE (the module frees its sound and
+  // closes, stopping it twice) and the bridge's adwStopSound,
+  // adwSetSystemVolumes and adwSoundCleanup; its button the same way.
+  {
+    const std::string pkg = root + "\\packages\\snoopy";
+    for (const std::string& d : {pkg, pkg + "\\AFTERDRK"}) {
+      CreateDirectoryA(d.c_str(), nullptr);
+      dirs.push_back(d);
+    }
+    files.push_back(pkg + "\\AFTERDRK\\SNDMOD.AD");
+    write_file(files.back(), sound_module_image());
+    const ne16::Ne16Layout sl = ne16::resolve_layout(pkg + "\\AFTERDRK\\SNDMOD.AD", root, exists);
+    CHECK(ne16::host_ad_snd(sl, exists), "no engine dir: the host's AD_SND");
+    auto run = [&](bool button) {
+      BridgeRig g;
+      win16::Runtime16& rt = g.rt;
+      std::vector<std::string> played;
+      win16::Shim16Entry* snd = rt.shims().find_name("MMSYSTEM", "sndPlaySound");
+      win16::Shim16Fn orig = snd->fn;
+      snd->fn = [&played, orig](win16::Call16& c) {
+        uint32_t p = c.ptr();
+        char b[32];
+        snprintf(b, sizeof(b), "%s %04X", p ? c.rt.read_str(p, 4).c_str() : "NULL", c.w());
+        played.push_back(b);
+        c.rewind();
+        orig(c);
+      };
+      auto calls = [&](const char* n) {
+        win16::Shim16Entry* e = rt.shims().find_name("AD_SND", n);
+        return e ? e->calls : 0;
+      };
+      auto p = ne16::make_ad3_protocol(sl);
+      LaneContext ctx{env, screen, g.clock, input};
+      std::string why;
+      if (button) {
+        CHECK(p->check_button(0, &why), "SNDMOD's button record (%s)", why.c_str());
+        win16::Runtime16Options opts;
+        p->configure_button_runtime(opts, env);
+        p->mount(rt, env);
+        ne16::Protocol16::Button b = p->button(rt, 0, 0xC004, ctx);
+        CHECK(b.ran && b.failure.empty() && calls("ADWSOUNDINIT") == 1 && calls("ADWGETSYSTEMVOLUMES") == 1 &&
+                  calls("ADWSTOPSOUND") == 1 && calls("ADWSETSYSTEMVOLUMES") == 1 && calls("ADWSOUNDCLEANUP") == 1,
+              "the host's AD_SND: BUTTONPUSHED16 ran (%s)", b.failure.c_str());
+        p->close();
+        return;
+      }
+      win16::Runtime16Options opts;
+      p->configure_runtime(opts, ctx);
+      CHECK(std::string(p->name()) == "ad3/native" && opts.desktop_palette, "no engine dir: the native bridge (%s)",
+            p->name());
+      p->mount(rt, env);
+      uint16_t hwnd = win16::user16_saver_window(rt);
+      uint16_t hdc = win16::gdi16_screen_dc(rt, hwnd);
+      bool loaded = p->load(rt, hwnd, hdc, ctx);
+      win16::Module16* m = rt.modules().by_name("SNDMOD");
+      std::string heard;
+      for (const std::string& s : played) heard += (heard.empty() ? "" : ", ") + s;
+      CHECK(loaded && m && !m->system && rt.modules().by_name("AD_SND")->system && calls("ADWSOUNDINIT") == 1 &&
+                calls("ADWGETSYSTEMVOLUMES") == 1 && calls("adwOpenSound") == 1 && calls("adwLoadSoundResource") == 1 &&
+                calls("adwSetSoundMode") == 1 && calls("adwPlaySound") == 1 && heard == "RIFF 000F",
+            "the host's AD_SND: LOADADMODULE16, the module's own sound at INITIALIZE (%s)", heard.c_str());
+      if (!loaded) return;
+      CHECK(p->call().kind == Kind::ok, "DRAWFRAME: go on");
+      // SNDMOD asks for no palette: After Dark 2.0's computed ones never reach the bridge.
+      CHECK(rt.shims().find_name("GDI", "GetPaletteEntries")->calls == 0,
+            "no palette request: the computed palettes are never handed over");
+      played.clear();
+      p->unload();
+      heard.clear();
+      for (const std::string& s : played) heard += (heard.empty() ? "" : ", ") + s;
+      CHECK(calls("adwFreeSound") == 1 && calls("adwCloseSound") == 1 && calls("ADWSTOPSOUND") == 1 &&
+                calls("ADWSETSYSTEMVOLUMES") == 1 && calls("ADWSOUNDCLEANUP") == 1 &&
+                heard == "NULL 0000, NULL 0000, NULL 0000" && rt.shims().unimplemented_called().empty(),
+            "the host's AD_SND: CLOSE, then AD_SND restored and released (%s)", heard.c_str());
+      p->close();
+    };
+    run(false);
+    run(true);
   }
   for (const std::string& f : files) DeleteFileA(f.c_str());
   for (auto d = dirs.rbegin(); d != dirs.rend(); ++d) RemoveDirectoryA(d->c_str());
@@ -2634,6 +3407,7 @@ int run_all_unit() {
   run_unit();
   test_layout();
   test_palettes();
+  test_ad2_palettes();
   try {
     test_kinds();
   } catch (const std::exception& e) {
@@ -2658,6 +3432,11 @@ int run_all_unit() {
     test_native_bridge_ad_snd10();
   } catch (const std::exception& e) {
     CHECK(false, "native bridge, AD_SND 1.0: exception %s", e.what());
+  }
+  try {
+    test_host_ad_snd();
+  } catch (const std::exception& e) {
+    CHECK(false, "the host's AD_SND: exception %s", e.what());
   }
   try {
     test_protocol_seam();
@@ -3866,7 +4645,7 @@ int run_startrek(const std::string& exe) {
   adw_test::sandbox_spawned_hosts(root, "ne16st");
   const std::string host = "\"" + exe + "\" ", dir = "packages/startrek/AFTERDRK/";
   // Every module: 900 frames twice, identical, nothing unimplemented — AD_SND
-  // 1.0 through the native bridge, AD_PREFS.INI's seeds, the palette note —;
+  // 1.0 through the native bridge, AD_PREFS.INI's seeds, the computed palettes —;
   // and sound captured twice (ADAUDIOOUT, no device), identical, heard from
   // every module that sounds within 15 s (Ion Storm has no sound, Space's one
   // comes after minutes). Sounder draws nothing: it plays JIM.WAV.
@@ -3890,8 +4669,9 @@ int run_startrek(const std::string& exe) {
     CHECK(distinct_of(ha, 900) >= m.min_distinct, "%s: %zu distinct frames of 900 (at least %zu)", m.name,
           distinct_of(ha, 900), m.min_distinct);
     CHECK(a.err.find("seeds: AD_PREFS.INI [After Dark] Path, [Sound] SoundDriver=AD_MME.DRV") != std::string::npos &&
-              a.err.find("After Dark 2.0 modules make no palette requests") != std::string::npos,
-          "%s: After Dark 2.0's seeds and palette note", m.name);
+              a.err.find("palettes After Dark 2.0's four, computed") != std::string::npos &&
+              a.err.find("no AD palettes") == std::string::npos,
+          "%s: After Dark 2.0's seeds and computed palettes", m.name);
     const std::string w1 = snd + "\\" + m.name + "1.wav", w2 = snd + "\\" + m.name + "2.wav";
     Proc s1 = run_cmd(cmd + " ADAUDIOLIVE=0 ADTRACE=sound \"ADAUDIOOUT=" + w1 + "\"", "");
     Proc s2 = run_cmd(cmd + " ADAUDIOLIVE=0 \"ADAUDIOOUT=" + w2 + "\"", "");
@@ -4089,6 +4869,103 @@ int run_startrek(const std::string& exe) {
   return failures ? 1 : 0;
 }
 
+// Snoopy's Screen Savers (PACKAGES.md §7.4): eight After Dark modules made
+// for the user's own After Dark 2.0 or 3.0, from an imported package, which
+// has no engine dir at all — no AD_SND.DLL, no ADTASK.DLL, no AFTERDAR.SCR.
+std::string snoopy_root() {
+  std::vector<std::string> roots;
+  if (const char* r = getenv("AD_NE16_SNOOPY_ROOT"); r && *r) roots.push_back(r);
+  if (const char* a = getenv("AD_ASSETS_DIR"); a && *a) roots.push_back(a);
+  if (roots.empty()) roots.push_back(adw_test::installed_assets_root());
+  for (const std::string& r : roots) {
+    if (!r.empty() &&
+        GetFileAttributesA((r + "\\win\\packages\\snoopy\\AFTERDRK\\IS_FLY.AD").c_str()) != INVALID_FILE_ATTRIBUTES)
+      return r;
+  }
+  return {};
+}
+
+int run_snoopy(const std::string& exe) {
+  const std::string root = snoopy_root();
+  if (root.empty()) {
+    printf("no imported Snoopy's Screen Savers: skipped\n");
+    return 77;
+  }
+  adw_test::sandbox_spawned_hosts(root, "ne16sn");
+  const std::string host = "\"" + exe + "\" ", dir = "packages/snoopy/AFTERDRK/";
+  // Every module: 900 frames twice, identical, nothing unimplemented, no
+  // fault (Borland's far-heap free reloads the segment it has just freed at
+  // CLOSE: the freed-selector rule), the host's AD_SND and After Dark 2.0's
+  // computed palettes named by the lane (Collage fades its line art through
+  // palette 12); sound captured twice (ADAUDIOOUT, no device), identical,
+  // heard from the six modules that import AD_SND and from neither Collage
+  // nor Spotlights, the three play flags between them (Therapy's synchronous
+  // 0x06, 0x07, the loops' 0x0F); with no wave device (ADSOUNDDEV=0) all
+  // eight still run, silent, AD_SND having said why.
+  struct Mod {
+    const char* name;
+    size_t min_distinct;  // of 900
+    bool sounds;
+  };
+  const Mod mods[] = {{"IS_COLAG", 40, false}, {"IS_DANCE", 3, true},  {"IS_FACES", 800, true}, {"IS_FLY", 150, true},
+                      {"IS_LINUS", 60, true},  {"IS_LITRY", 40, true}, {"IS_SPTLT", 150, false}, {"IS_THRPY", 3, true}};
+  const std::string snd = temp_dir("snsnd");
+  std::set<std::string> flags;
+  auto no_fault = [](const std::string& log) {
+    return log.find("#GP") == std::string::npos && log.find("while closing") == std::string::npos;
+  };
+  for (const Mod& m : mods) {
+    const std::string cmd = host + dir + m.name + ".AD ADFRAMES=900 ADFBHASH=1 ADGOWAITMS=0";
+    Proc a = run_cmd(cmd + " ADTRACE=lane", ""), b = run_cmd(cmd, "");
+    std::vector<std::string> ha = hash_list(a.err), hb = hash_list(b.err);
+    CHECK(a.code == 0 && b.code == 0 && ha.size() == 900 && ha == hb, "%s: exit %d/%d, %zu frames, %s\n%s", m.name, a.code,
+          b.code, ha.size(), ha == hb ? "deterministic" : "NOT deterministic", a.code ? a.err.c_str() : "");
+    CHECK(a.err.find(" 0 unimplemented") != std::string::npos && no_fault(a.err) && no_fault(b.err),
+          "%s: no unimplemented call, no fault", m.name);
+    CHECK(distinct_of(ha, 900) >= m.min_distinct, "%s: %zu distinct frames of 900 (at least %zu)", m.name,
+          distinct_of(ha, 900), m.min_distinct);
+    CHECK(a.err.find("AD_SND the host's (no ") != std::string::npos &&
+              a.err.find("palettes After Dark 2.0's four, computed") != std::string::npos,
+          "%s: the host's AD_SND, the computed palettes", m.name);
+    const std::string w1 = snd + "\\" + m.name + "1.wav", w2 = snd + "\\" + m.name + "2.wav";
+    Proc s1 = run_cmd(cmd + " ADAUDIOLIVE=0 ADTRACE=sound \"ADAUDIOOUT=" + w1 + "\"", "");
+    Proc s2 = run_cmd(cmd + " ADAUDIOLIVE=0 \"ADAUDIOOUT=" + w2 + "\"", "");
+    const std::string c1 = read_file(w1), c2 = read_file(w2);
+    size_t voices = 0;
+    for (size_t p = 0; (p = s1.err.find(": voice ", p)) != std::string::npos; p++) voices++;
+    for (size_t p = 0; (p = s1.err.find("sndPlaySound(", p)) != std::string::npos; p++) {
+      size_t comma = s1.err.find(", ", p), close = s1.err.find(')', p);
+      if (comma != std::string::npos && close == comma + 6 && s1.err.compare(p + 13, 4, "NULL") != 0 &&
+          s1.err.compare(p + 13, 8, "00000000") != 0) {
+        flags.insert(s1.err.substr(comma + 2, 4));
+      }
+    }
+    const int peak = wav_peak(c1);
+    std::vector<std::string> h1 = hash_list(s1.err), h2 = hash_list(s2.err);
+    CHECK(s1.code == 0 && s2.code == 0 && c1.size() > 44 && c1 == c2 && h1.size() == 900 && h1 == h2 && no_fault(s1.err),
+          "%s with sound: exit %d/%d, captures %s (%zu bytes), streams %s", m.name, s1.code, s2.code,
+          c1 == c2 ? "identical" : "DIFFER", c1.size(), h1 == h2 ? "identical" : "DIFFER");
+    CHECK(m.sounds ? voices > 0 && peak > 328 : voices == 0 && peak == 0, "%s: %s (%zu voices, peak %d)", m.name,
+          m.sounds ? "heard, above -40 dBFS" : "silent", voices, peak);
+    printf("%s: %zu distinct frames, %zu voices, peak %d\n", m.name, distinct_of(ha, 900), voices, peak);
+    for (const std::string& w : {w1, w2}) {
+      DeleteFileA(w.c_str());
+      DeleteFileA((w.substr(0, w.size() - 4) + ".mid").c_str());
+    }
+    Proc n = run_cmd(host + dir + m.name + ".AD ADFRAMES=300 ADFBHASH=1 ADGOWAITMS=0 ADSOUND=1 ADSOUNDDEV=0 ADTRACE=sound", "");
+    CHECK(n.code == 0 && hash_list(n.err).size() == 300 && no_fault(n.err) &&
+              n.err.find("no sound: No wave output device is installed.") != std::string::npos &&
+              n.err.find(": voice ") == std::string::npos,
+          "%s, no wave device: runs silent (exit %d)", m.name, n.code);
+  }
+  RemoveDirectoryA(snd.c_str());
+  std::string seen;
+  for (const std::string& f : flags) seen += (seen.empty() ? "" : " ") + f;
+  CHECK(seen == "0006 0007 000F", "the play flags: %s", seen.c_str());
+  printf("%d/%d checks passed\n", checks - failures, checks);
+  return failures ? 1 : 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -4097,5 +4974,6 @@ int main(int argc, char** argv) {
   if (argc > 2 && std::string(argv[1]) == "--interaction") return run_interaction(argv[2]);
   if (argc > 2 && std::string(argv[1]) == "--swse") return run_swse(argv[2]);
   if (argc > 2 && std::string(argv[1]) == "--startrek") return run_startrek(argv[2]);
+  if (argc > 2 && std::string(argv[1]) == "--snoopy") return run_snoopy(argv[2]);
   return run_all_unit();
 }

@@ -69,6 +69,18 @@ class Ldt : public cpu::DescriptorProvider {
   void set_tag(uint16_t sel, std::string tag);
   const std::string& tag(uint16_t sel) const;
 
+  // Runs of selectors KERNEL's selector calls made for the guest
+  // (AllocSelector, AllocCStoDSAlias, AllocDStoCSAlias: kernel16.cc): the
+  // first of a run is marked with its length, its other tiles with the first.
+  // FreeSelector frees whole marked runs and SetSelectorBase/Limit change
+  // marked selectors; nothing else is theirs to touch. Freeing or
+  // reallocating an entry clears its mark, so a selector reused for anything
+  // else is never taken for one of theirs.
+  void mark_guest_run(uint16_t first, uint16_t n);
+  uint16_t guest_run(uint16_t sel) const;   // the run's length when sel is its first selector, else 0
+  bool in_guest_run(uint16_t sel) const;    // sel is one of a marked run's selectors
+  uint16_t free_guest_run(uint16_t first);  // frees the run `first` begins; its length, 0 when none
+
   size_t used() const { return used_; }
 
  private:
@@ -76,7 +88,9 @@ class Ldt : public cpu::DescriptorProvider {
     bool used = false;
     SegDesc desc;
     std::string tag;
+    uint16_t run = 0;  // mark_guest_run: the length (first selector), or kRunTile | the first's index
   };
+  static constexpr uint16_t kRunTile = 0x8000;
   std::vector<Entry> entries_;
   SegDesc bios_;
   bool have_bios_ = false;

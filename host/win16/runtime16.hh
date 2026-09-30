@@ -19,6 +19,10 @@
 //   * fatal guest conditions (a CPU fault — Win16 had no SEH, a GP fault
 //     killed the task —, FatalExit/FatalAppExit, INT 21h AH=4Ch, a hung call)
 //     throw GuestError16, which unwinds every run loop at once.
+//   * a call (or software interrupt) that frees a selector the guest holds in
+//     DS, ES, FS or GS returns with that register null: the freed-selector
+//     rule (null_freed_segments), what Windows 3.1's GlobalFree did for DS,
+//     DPMI 1.0 for any register, and Wine's relay does on every return.
 //
 // Shim families keep their own state in state<T>() (a struct deriving from
 // RuntimeState16, created on first use).
@@ -351,6 +355,10 @@ class Runtime16 {
   void on_fault(cpu::X86Emulator& cpu, const cpu::X86Emulator::Fault& f);
   uint32_t on_port(uint16_t port, uint8_t size, bool is_write, uint32_t value);
   void dispatch_thunk(uint16_t id);
+  // The freed-selector rule (runtime16.cc), as an API call (`by`) or a
+  // software interrupt (`by` null, `vector`) returns: DS, ES, FS or GS
+  // holding a selector that no longer exists becomes the null selector.
+  void null_freed_segments(const Shim16Entry* by, uint8_t vector);
 
   Runtime16Options opts_;
   VirtualClock& clock_;

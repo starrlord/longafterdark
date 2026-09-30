@@ -133,4 +133,37 @@ const std::string& Ldt::tag(uint16_t sel) const {
   return entries_[idx].tag;
 }
 
+void Ldt::mark_guest_run(uint16_t first, uint16_t n) {
+  uint32_t idx = index_of(first);
+  if (!is_ldt(first) || !idx || !n || n >= kRunTile || idx + n > kEntries) return;
+  for (uint32_t j = idx; j < idx + n; j++) {
+    if (!entries_[j].used) return;
+  }
+  entries_[idx].run = n;
+  for (uint32_t j = idx + 1; j < idx + n; j++) entries_[j].run = uint16_t(kRunTile | idx);
+}
+
+uint16_t Ldt::guest_run(uint16_t sel) const {
+  uint32_t idx = index_of(sel);
+  if (!is_ldt(sel) || !idx || idx >= kEntries || !entries_[idx].used) return 0;
+  return (entries_[idx].run & kRunTile) ? 0 : entries_[idx].run;
+}
+
+bool Ldt::in_guest_run(uint16_t sel) const {
+  uint32_t idx = index_of(sel);
+  return is_ldt(sel) && idx && idx < kEntries && entries_[idx].used && entries_[idx].run;
+}
+
+uint16_t Ldt::free_guest_run(uint16_t first) {
+  uint16_t n = guest_run(first);
+  if (!n) return 0;
+  uint32_t idx = index_of(first);
+  free(first, 1);
+  // Its tiles, unless one was freed and handed out again meanwhile.
+  for (uint32_t j = idx + 1; j < idx + n; j++) {
+    if (entries_[j].used && entries_[j].run == uint16_t(kRunTile | idx)) free(selector_of(uint16_t(j)), 1);
+  }
+  return n;
+}
+
 }  // namespace adw::win16

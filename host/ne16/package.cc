@@ -99,6 +99,12 @@ bool after_dark2(const Ne16Layout& l, const FileExists& exists) {
   return exists(l.module_dir + "\\" + kAfterDark2Library);
 }
 
+bool after_dark3_host(const Ne16Layout& l, const FileExists& exists) {
+  return exists(l.engine_dir + "\\" + kAfterDark3Host);
+}
+
+bool host_ad_snd(const Ne16Layout& l, const FileExists& exists) { return !exists(l.engine_dir + "\\" + kAdSndLibrary); }
+
 const char* kind_name(ModuleKind k) { return k == ModuleKind::ad3 ? "ad3" : "imx"; }
 
 KindProbe detect_kind(const loader::ne::Image& img, const std::string& file_name) {
@@ -219,6 +225,51 @@ AdPalettes palettes_from_adtask(const std::string& adtask) {
   return out;
 }
 
+// After Dark 2.0's palettes (package.hh; ABI.md §3.9). The algorithm, and
+// only that, of the handlers AD.EXE 2.0b ran for the palette requests 10–13
+// (13:2589): each builds a 235-entry LOGPALETTE of PC_RESERVED entries.
+AdPalettes palettes_after_dark2() {
+  constexpr int kEntries = 235;
+  auto entry = [](int r, int g, int b) { return PALETTEENTRY{BYTE(r & 0xFF), BYTE(g & 0xFF), BYTE(b & 0xFF), PC_RESERVED}; };
+  // 10: the hue sweep, through AD.EXE's HSV → RGB (13:1c1b): six sectors of
+  // the 16-bit hue circle, 0x2AAA or 0x2AAB wide, between p = v·(1 − s) and
+  // v; with full saturation and value, p = 0 and v = 255.
+  auto hsv = [&](int h, int s, int v) {
+    const int p = (v * (0x10000 - s)) >> 16, d = v - p;
+    if (h <= 0x2AAA) return entry(v, h * d / 0x2AAA + p, p);
+    if (h <= 0x5555) return entry(v - (h - 0x2AAA) * d / 0x2AAB, v, p);
+    if (h <= 0x7FFF) return entry(p, v, (h - 0x5555) * d / 0x2AAA + p);
+    if (h <= 0xAAAA) return entry(p, v - (h - 0x7FFF) * d / 0x2AAB, v);
+    if (h <= 0xD554) return entry((h - 0xAAAA) * d / 0x2AAA + p, p, v);
+    return entry(v, p, v - (h - 0xD554) * d / 0x2AAB);
+  };
+  std::vector<PALETTEENTRY> p10, p11, p12, p13;
+  for (int i = 0, h = 0x217; i < kEntries; i++, h = (h + 0x11D) & 0xFFFF) p10.push_back(hsv(h, 0xFFFF, 0xFF));
+  // 11: the cube, blue fastest, then the greys.
+  const int levels[6] = {255, 204, 153, 102, 51, 0};
+  for (int i = 0; i < 216; i++) p11.push_back(entry(levels[i / 36], levels[i / 6 % 6], levels[i % 6]));
+  for (int g = 0xFF; p11.size() < size_t(kEntries); g = (g + 13) & 0xFF) p11.push_back(entry(g, g, g));
+  // 12: the grey ramp (a step of 256 / 235 = 1).
+  for (int i = 0; i < kEntries; i++) p12.push_back(entry(i, i, i));
+  // 13: seven ramps, each from its colour down by 245 / 33 = 7 per entry in
+  // the channels it has (orange's green by 3); a ramp ends after 34 entries.
+  struct Ramp {
+    int r, g, b, dr, dg, db;
+  };
+  const Ramp ramps[7] = {{255, 255, 255, 7, 7, 7}, {255, 0, 0, 7, 0, 0},   {255, 128, 0, 7, 3, 0}, {255, 255, 0, 7, 7, 0},
+                         {0, 255, 0, 0, 7, 0},     {0, 0, 255, 0, 0, 7}, {255, 0, 255, 7, 0, 7}};
+  for (int i = 0; i < kEntries; i++) {
+    const Ramp& k = ramps[i / 34];
+    const int n = i % 34;
+    p13.push_back(entry(k.r - n * k.dr, k.g - n * k.dg, k.b - n * k.db));
+  }
+  AdPalettes out;
+  out.pal = {std::move(p12), std::move(p10), std::move(p13), std::move(p11)};
+  out.source = "After Dark 2.0's four, computed as its AD.EXE computed them";
+  out.computed = true;
+  return out;
+}
+
 AdPalettes load_palettes(const Ne16Layout& l, BridgeKind bridge, const FileExists& exists) {
   std::string scr = l.engine_dir + "\\AFTERDAR.SCR";
   if (bridge == BridgeKind::native) {
@@ -227,6 +278,9 @@ AdPalettes load_palettes(const Ne16Layout& l, BridgeKind bridge, const FileExist
       AdPalettes p = palettes_from_adtask(adtask);
       if (!p.pal.empty() || !exists(scr)) return p;
       log("ne16: %s; using %s", p.error.c_str(), scr.c_str());
+    } else if (!exists(scr)) {
+      // Neither file (package.hh): After Dark 2.0's four, as its host computed them.
+      return palettes_after_dark2();
     }
   }
   if (!exists(scr)) {

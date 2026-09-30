@@ -338,6 +338,7 @@ struct Dialogs16 : RuntimeState16 {
   }
   Runtime16& rt;
   Configure16* cfg = nullptr;
+  POINT origin{0, 0};  // the guest's screen on the real one (guest_screen_origin16)
   std::map<uint16_t, RealWnd16> wnds;
   std::map<HWND, uint16_t> ids;
   uint16_t next = kRealHwnd16First;
@@ -738,13 +739,19 @@ bool to16(Dialogs16& d, HWND h, UINT msg, WPARAM wp, LPARAM lp, Into16* o) {
     case WM_TIMER:
       o->lp = 0;
       break;
+    case WM_MOVE:
+      // A top-level window's client origin, on the guest's screen (a child's
+      // is in its parent's client area).
+      if (!(GetWindowLongW(h, GWL_STYLE) & WS_CHILD)) {
+        o->lp = (uint32_t(uint16_t(int16_t(HIWORD(lp)) - d.origin.y)) << 16) | uint16_t(int16_t(LOWORD(lp)) - d.origin.x);
+      }
+      break;
     case WM_PAINT:
     case WM_CLOSE:
     case WM_DESTROY:
     case WM_SHOWWINDOW:
     case WM_ENABLE:
     case WM_SIZE:
-    case WM_MOVE:
     case WM_CANCELMODE:
       break;
     case WM_SYSCOMMAND:
@@ -1008,9 +1015,10 @@ uint32_t send_real(Dialogs16& d, HWND h, uint16_t msg, uint16_t wp, uint32_t lp,
       if (lp) write16(rt, lp, to_rect16(r));
       return uint32_t(v);
     }
-    case CB_GETDROPPEDCONTROLRECT: {
+    case CB_GETDROPPEDCONTROLRECT: {  // on the screen: the guest's (guest_screen_origin16)
       RECT r{};
       LRESULT v = deliver(m, 0, LPARAM(&r));
+      if (v) OffsetRect(&r, -d.origin.x, -d.origin.y);
       if (lp) write16(rt, lp, to_rect16(r));
       return uint32_t(v);
     }
@@ -1238,6 +1246,15 @@ HWND owner_of(Dialogs16& d, uint16_t owner16) {
   return d.cfg->owner;
 }
 
+// A position the guest gives a real window of this style (MoveWindow,
+// SetWindowPos, CreateWindow): a top-level window's is on the guest's
+// screen, so it moves by the origin (guest_screen_origin16); a child's is in
+// its parent's client area and stays.
+POINT real_pos(const Dialogs16& d, uint32_t style, int x, int y) {
+  if (style & WS_CHILD) return POINT{x, y};
+  return POINT{x + d.origin.x, y + d.origin.y};
+}
+
 // DialogBox & co.: `tmpl` the Win16 template bytes.
 int32_t run_dialog(Call16& c, uint16_t hinst, std::string_view tmpl, uint16_t owner16, uint32_t proc, uint32_t param,
                    bool modal) {
@@ -1345,6 +1362,17 @@ HWND real_window16(Runtime16& rt, uint16_t h16) {
   return w ? w->h : nullptr;
 }
 
+POINT guest_screen_origin16(const RECT& owner, const RECT& work, int w, int h) {
+  // Per axis: the desktop centred on the owner, then kept inside the work
+  // area; one larger than the work area is centred on it.
+  auto axis = [](LONG a, LONG b, LONG lo, LONG hi, int size) -> LONG {
+    if (hi - lo < size) return lo + (hi - lo - size) / 2;
+    return std::clamp<LONG>((a + b) / 2 - size / 2, lo, hi - size);
+  };
+  return POINT{axis(owner.left, owner.right, work.left, work.right, w),
+               axis(owner.top, owner.bottom, work.top, work.bottom, h)};
+}
+
 void enable_real_dialogs16(Runtime16& rt, Configure16* cfg) {
   Dialogs16& d = dl(rt);
   d.cfg = cfg;
@@ -1354,6 +1382,22 @@ void enable_real_dialogs16(Runtime16& rt, Configure16* cfg) {
   using SetCtx = DPI_AWARENESS_CONTEXT(WINAPI*)(DPI_AWARENESS_CONTEXT);
   if (auto f = reinterpret_cast<SetCtx>(GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetThreadDpiAwarenessContext")))
     f(reinterpret_cast<DPI_AWARENESS_CONTEXT>(intptr_t(-5)));  // DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED
+  // The guest's screen over the owner (guest_screen_origin16), measured in
+  // this thread's coordinates, which the wraps below then use. The owner
+  // does not move meanwhile (the settings window stays disabled for the
+  // run). A hidden run parks its dialogs off every monitor: (0, 0).
+  d.origin = POINT{0, 0};
+  RECT orc{};
+  MONITORINFO mi{};
+  mi.cbSize = sizeof(mi);
+  if (cfg && cfg->owner && !(cfg->script && cfg->script->hidden()) && GetWindowRect(cfg->owner, &orc) &&
+      GetMonitorInfoW(MonitorFromWindow(cfg->owner, MONITOR_DEFAULTTONEAREST), &mi)) {
+    int w = rt.display() ? rt.display()->width() : 640, h = rt.display() ? rt.display()->height() : 480;
+    d.origin = guest_screen_origin16(orc, mi.rcWork, w, h);
+    trace("dlg16", "the guest's %dx%d screen at (%ld,%ld): owner (%ld,%ld)-(%ld,%ld), work area (%ld,%ld)-(%ld,%ld)", w, h,
+          d.origin.x, d.origin.y, orc.left, orc.top, orc.right, orc.bottom, mi.rcWork.left, mi.rcWork.top, mi.rcWork.right,
+          mi.rcWork.bottom);
+  }
   Shim16Registry& r = rt.shims();
   auto real = [](Call16& c, uint16_t h16) { return real_window16(c.rt, h16); };
 
@@ -1667,12 +1711,15 @@ void enable_real_dialogs16(Runtime16& rt, Configure16* cfg) {
     c.ret(ShowWindow(rh, cmd) ? 1 : 0);
     return true;
   });
+  // Positions (guest_screen_origin16): a top-level window's from the guest's
+  // screen to the real one; rectangles and points on the screen back.
   wrap(r, U, "MoveWindow", [real](Call16& c) {
     HWND rh = real(c, c.w());
     int16_t x = c.sw(), y = c.sw(), w = c.sw(), h = c.sw();
     uint16_t repaint = c.w();
     if (!rh) return false;
-    c.ret(MoveWindow(rh, x, y, w, h, repaint != 0) ? 1 : 0);
+    POINT p = real_pos(dl(c.rt), uint32_t(GetWindowLongW(rh, GWL_STYLE)), x, y);
+    c.ret(MoveWindow(rh, p.x, p.y, w, h, repaint != 0) ? 1 : 0);
     return true;
   });
   wrap(r, U, "SetWindowPos", [real](Call16& c) {
@@ -1683,7 +1730,9 @@ void enable_real_dialogs16(Runtime16& rt, Configure16* cfg) {
     if (!rh) return false;
     HWND ins = after == 1 ? HWND_BOTTOM : after == 0 ? HWND_TOP : real_window16(c.rt, after);
     if (!ins) flags |= SWP_NOZORDER;
-    c.ret(SetWindowPos(rh, ins, x, y, w, h, flags) ? 1 : 0);
+    POINT p{x, y};
+    if (!(flags & SWP_NOMOVE)) p = real_pos(dl(c.rt), uint32_t(GetWindowLongW(rh, GWL_STYLE)), x, y);
+    c.ret(SetWindowPos(rh, ins, p.x, p.y, w, h, flags) ? 1 : 0);
     return true;
   });
   wrap(r, U, "BringWindowToTop", [real](Call16& c) {
@@ -1759,6 +1808,8 @@ void enable_real_dialogs16(Runtime16& rt, Configure16* cfg) {
     if (!rh) return false;
     RECT rc{};
     GetWindowRect(rh, &rc);
+    const POINT o = dl(c.rt).origin;
+    OffsetRect(&rc, -o.x, -o.y);
     write16(c.rt, p, to_rect16(rc));
     return true;
   });
@@ -1769,7 +1820,8 @@ void enable_real_dialogs16(Runtime16& rt, Configure16* cfg) {
     POINT16 p16 = read16<POINT16>(c.rt, p);
     POINT pt{p16.x, p16.y};
     ClientToScreen(rh, &pt);
-    write16(c.rt, p, POINT16{int16_t(pt.x), int16_t(pt.y)});
+    const POINT o = dl(c.rt).origin;
+    write16(c.rt, p, POINT16{int16_t(pt.x - o.x), int16_t(pt.y - o.y)});
     return true;
   });
   wrap(r, U, "ScreenToClient", [real](Call16& c) {
@@ -1777,7 +1829,8 @@ void enable_real_dialogs16(Runtime16& rt, Configure16* cfg) {
     uint32_t p = c.ptr();
     if (!rh) return false;
     POINT16 p16 = read16<POINT16>(c.rt, p);
-    POINT pt{p16.x, p16.y};
+    const POINT o = dl(c.rt).origin;
+    POINT pt{p16.x + o.x, p16.y + o.y};
     ScreenToClient(rh, &pt);
     write16(c.rt, p, POINT16{int16_t(pt.x), int16_t(pt.y)});
     return true;
@@ -2158,8 +2211,11 @@ void enable_real_dialogs16(Runtime16& rt, Configure16* cfg) {
       return c.ret(0), true;
     }
     auto cx = [](int16_t v) { return v == int16_t(0x8000) ? CW_USEDEFAULT : int(v); };
+    // A top-level (owned) window's position is on the guest's screen.
+    POINT at{cx(x), cx(y)};
+    if (at.x != CW_USEDEFAULT && at.y != CW_USEDEFAULT) at = real_pos(d, style, at.x, at.y);
     d.create_params.push_back(param);
-    HWND hw = CreateWindowExW(exstyle, w1252(cn).c_str(), w1252(c.rt.read_str(title)).c_str(), style, cx(x), cx(y), cx(w), cx(h),
+    HWND hw = CreateWindowExW(exstyle, w1252(cn).c_str(), w1252(c.rt.read_str(title)).c_str(), style, at.x, at.y, cx(w), cx(h),
                               rp, reinterpret_cast<HMENU>(uintptr_t(menu)), GetModuleHandleW(nullptr), nullptr);
     d.create_params.pop_back();
     rethrow(d);

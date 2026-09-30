@@ -51,11 +51,21 @@
 // (bridge.hh). What differs is the host's: its
 // AD_PREFS.INI (mount_disk seeds [After Dark] Path, where AD_MOD.DLL finds
 // ST_RES\, and [Sound] SoundDriver=AD_MME.DRV: win16/dos16.hh
-// seed_after_dark2); no AD palettes (AD.EXE built its four in code; none is
-// computed here, and no module asks for one: a request would fail with 7, as
-// the "no AD palettes" note says); and DRAWFRAME's result 5, which AD.EXE
+// seed_after_dark2); its AD palettes, which AD.EXE built in code when a
+// module asked for one, and which the lane computes the same way and hands to
+// the bridge at the first request (package.hh palettes_after_dark2; no Star
+// Trek module asks for one); and DRAWFRAME's result 5, which AD.EXE
 // took as its wake (it posted itself its wake message, 0x7EE): the module's
 // wake (Input and status). Final Exam ends its exam so, on a mouse move.
+//
+// A package that ships no AD_SND.DLL (package.hh host_ad_snd: Snoopy's Screen
+// Savers, After Dark modules made to run in the user's own After Dark 2.0 or
+// 3.0): the AD3 protocol registers the host's own AD_SND (win16/adsnd16.cc,
+// AD_SND 3.0.3's entries) before the native bridge loads AD_SND, and the
+// bridge and the modules' imports reach it by name; its engine dir holding
+// neither ADTASK.DLL nor AFTERDAR.SCR, the bridge gets After Dark 2.0's
+// computed palettes at the first request (Collage asks for 12, the grey
+// ramp, at INITIALIZE).
 //
 // Intermission (IMX) (imx_protocol.cc, imreader.hh): Star Wars Screen
 // Entertainment's 14 modules are Intermission .IMX DLLs (SAVERINIT,
@@ -196,7 +206,13 @@
 // once, at load (a run's volume and mute are fixed at spawn by ADVOLUME and
 // ADSOUND; SET lines carry only the four control values), for a module that
 // wants sound — every one but Ion Storm —; Communications' [Communications]
-// MessageText; Sounder's [Sounder] SoundPath) land in the upper layer.
+// MessageText; Sounder's [Sounder] SoundPath) land in the upper layer. For
+// After Dark 3.x (package.hh after_dark3_host: the engine dir holds
+// ADW30.EXE), the keys the host the lane stands in for wrote into
+// AD_PREFS.INI at every start, seeded the same way (win16/dos16.hh
+// seed_after_dark3): [After Dark] Path=C:\AFTERDRK, where ADXPL100 (the
+// Disney Collection) finds DIS_SND.DLL and MUSIC\, and [Sound]
+// SoundDriver=AD_MME.DRV.
 //
 // Configure (INTERACTION.md §6.1, configure()): `adhostwin --configure`
 // runs the protocol's button (Protocol16::button) with the module's dialogs,
@@ -334,7 +350,8 @@
 // on the wave bus, the engines' MCI sequencer songs on the MIDI bus (After
 // Dark 2.0's AD_SND 1.0 plays through the plug-in driver its AD_PREFS.INI
 // names, the seeded AD_MME.DRV: sndPlaySound, and waveOutSetVolume for the
-// volume). The
+// volume; the host's own AD_SND, for a package without one, makes the calls
+// AD_SND 3.x makes: sndPlaySound, waveOutSetVolume and midiOutSetVolume). The
 // engines' music gates (§2.9) pass: one MIDI output device, TOOLHELP (a
 // system module) and a stub MCISEQ.DRV; their hidden adwMidiCall window gets
 // MM_MCINOTIFY at a song's end. Callbacks reach the guest at the first API
@@ -408,7 +425,9 @@
 //   ADCALLBUDGET=<n>   instructions one call into the guest may run (default 1e9)
 //   ADHEAPMB=<n>       the Win16 arena (default 64)
 // ADTRACE=lane logs, at init, the package (or "legacy"), module dir, engine
-// dir and, from the AD3 protocol, the bridge, AD_SND and palette source;
+// dir and, from the AD3 protocol, the bridge, AD_SND ("the host's (no …)"
+// when the host's answers) and palette source ("After Dark 2.0's four,
+// computed …" when there is no file to read them from);
 // from the IMX protocol the windows dir, the reader, the module's name,
 // palette type and flags, the disk and seeds, the pixel cost, whether
 // overruns are carried (and the bound), and the passes at close.

@@ -503,6 +503,7 @@ void Runtime16::on_interrupt(X86& cpu, uint8_t vector) {
   auto it = ints_.find(vector);
   if (it != ints_.end()) {
     it->second(*this);
+    null_freed_segments(nullptr, vector);  // DPMI's Free LDT Descriptor (INT 31h AX=0001h)
     return;
   }
   if (!unknown_int_reported_[vector]) {
@@ -517,6 +518,58 @@ void Runtime16::check_deadline() {
   std::function<void()> fn = std::move(deadline_fn_);
   deadline_fn_ = nullptr;
   fn();
+}
+
+// The freed-selector rule. A call that frees a selector the caller holds in
+// DS, ES, FS or GS returns with that register null, so the caller's own later
+// push/pop of the register loads the null selector instead of faulting. One
+// check, here, as every API call (dispatch_thunk) and every software
+// interrupt (on_interrupt) returns, whatever freed the selector: GlobalFree,
+// FreeSelector, FreeResource, FreeLibrary, a GlobalReAlloc that gave a block
+// new selectors, DPMI's Free LDT Descriptor, or a callback the call made.
+// Nothing else changes: null registers, the GDT's 0x40 and live selectors
+// stay, and a selector pushed before the call and popped after it still
+// faults — the rule nulls registers as a call returns, it fixes no load.
+//
+// What Windows did (research/win/pkg/more/l2/FREED_SELECTOR_RULE.md):
+//   * Windows 3.1's GlobalFree (KRNL386 3GINTERF.OBJ, pseudocode in Pietrek,
+//     Windows Internals, 1993, ch. 2) zeroes the caller's DS it saved on
+//     entry when that DS is the block being freed, "so that we don't GP fault
+//     when we restore the value from the stack": it returns with DS = 0.
+//     ES is scratch in the Win16 convention and KERNEL's heap code used it
+//     for its own selectors; Borland C++'s far-heap free, which pushes and
+//     pops ES right after GlobalFree, ran on Windows only because ES never
+//     came back holding the freed selector (the next point).
+//   * KERNEL's fault handler recovered faults only in the system DLLs' __GP
+//     ranges (Undocumented Windows ch. 5): a freed selector loaded by an
+//     application's own code was an Unrecoverable Application Error. Hence
+//     no fault-time fixup here.
+//   * DPMI 1.0's Free LDT Descriptor (INT 31h 0001h; 0101h and 0102h for DOS
+//     blocks): "any segment registers which contain the selector being freed
+//     are zeroed by this function".
+//   * Wine nulls a freed DS/ES/FS/GS its 16-bit relay restores as every API
+//     call returns (dlls/krnl386.exe16/wowthunk.c fix_selector; in 2000
+//     memory/instr.c: "Saved selector may have become invalid when the relay
+//     code tries to restore it. We simply clear it.") and fixes no load in
+//     the application's code but selector 0x40.
+// It serves DECO.DLL (Marvel Comics Screen Posters), which frees its work
+// buffer with DS still holding it (GlobalFree at DECO 6:A0F2, DS loaded at
+// 6:9FB0) and later saves and restores DS (push ds 7:002D .. pop ds 7:008A),
+// and Borland C++'s far-heap free (the Snoopy modules, IS_FLY 1:6B71), which
+// frees the segment in ES and then pushes and pops ES (1:6B16..1:6B20).
+void Runtime16::null_freed_segments(const Shim16Entry* by, uint8_t vector) {
+  for (SegReg s : {SegReg::DS, SegReg::ES, SegReg::FS, SegReg::GS}) {
+    uint16_t sel = cpu_->get_segment(s);
+    if (!(sel & ~3) || !Ldt::is_ldt(sel) || ldt_.in_use(sel)) continue;
+    cpu_->set_segment_null(s);
+    if (tracing("mem16")) {
+      static const char* const kNames[6] = {"ES", "CS", "SS", "DS", "FS", "GS"};
+      char intr[16];
+      snprintf(intr, sizeof(intr), "INT %02Xh", vector);
+      trace("mem16", "%s %04X was freed by %s: null on return", kNames[uint8_t(s)], sel,
+            by ? by->label().c_str() : intr);
+    }
+  }
 }
 
 void Runtime16::dispatch_thunk(uint16_t id) {
@@ -593,6 +646,7 @@ void Runtime16::dispatch_thunk(uint16_t id) {
   }
   // The BP chain behind every call (who called the caller): slow, for debugging.
   if (tracing("bt16") && !c.took_over()) trace("bt16", "%s  [from %s <- %s]", e->label().c_str(), describe(rcs, rip).c_str(), backtrace(12).c_str());
+  null_freed_segments(e, 0);
   if (!c.took_over()) {
     int pop = e->conv == Conv16::cdecl_ ? 0 : std::max(e->arg_bytes, 0);
     r.w_sp(uint16_t(sp + 4 + pop));

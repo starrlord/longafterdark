@@ -25,15 +25,17 @@
 //     other entry (with the key table only index 255 would be 1: Star Trek's
 //     masks came out black);
 //   * colours read back (GetPixel, GetDIBits, GetNearestColor) are converted
-//     from indices to what they mean.
+//     from indices to what they mean;
+//   * a flood fill (FloodFill, ExtFloodFill) compares pixel indices: its
+//     colour is keyed as SetPixel's, and real GDI fills.
 //
 // No module of the corpus draws DIB bits onto a DIB DC, or onto a memory DC
 // compatible with one, nor asks one for GetNearestColor (the 14 SWSE modules
 // traced): those branches are held by win16.unit's test_dib_translation, not
 // by any module's stream.
 //
-// Known gaps, deliberately left (no module of the 202 in the five releases,
-// nor Star Wars Screen Entertainment's 14, needs more; API_SURFACE.md §2 GDI):
+// Known gaps, deliberately left (no module of the supported releases needs
+// more, except for GetDIBits rows, below; API_SURFACE.md §2 GDI):
 //   * the DIB driver takes 8-bit DIBs only (DIB.DRV also took 1 and 4 bits
 //     per pixel: refused and logged). On a DIB DC whose colour table is
 //     RGBQUADs (SWSE's canvases hold index tables) a DIB pattern brush keeps
@@ -42,14 +44,31 @@
 //     indices when the two tables were equal (it differs where a table
 //     repeats a colour).
 //   * EnumFonts calls nothing back (MESSAGE3 only).
-//   * GetDIBits writes 8- and 24-bit rows from 8-bit bitmaps and defers mono
-//     bitmaps to real GDI; 4-bit requests are refused. With DIB_PAL_COLORS it
-//     writes an identity colour table and hardware indices, which Win95
-//     would have expressed as the DC's logical palette indices: the same
-//     whenever that palette is realized in order from index 10 (ADXPL310's
-//     identity palettes), not otherwise.
+//   * GetDIBits writes 4-, 8- and 24-bit rows (a monochrome bitmap's black
+//     and white as hardware indices 0 and 255, real GDI's values) and 1-bit
+//     rows of monochrome bitmaps only (real GDI's, asked in a 40-byte header
+//     of our own); 16- and 32-bit requests are refused. Its rows are the
+//     bitmap's own width and height whatever the header says, where real
+//     GDI follows the header (measured): Haunted asks for 640 pixels of each
+//     648-pixel line and gets 648 (4 bytes more per line, which the next
+//     line overwrites), and ADXPL40 and ADXPL41 (33 modules of Totally
+//     Twisted, the 10th Anniversary and Looney Tunes) ask for 24 scans of a
+//     76-row bitmap with a 24-row header and get its bottom rows where real
+//     GDI gives its top ones: the frozen streams hold the host's answer, and
+//     in Chameleon a stray icon covers the "Accessories" label after half a
+//     minute.
+//     With DIB_PAL_COLORS the bits stay hardware indices and the colour
+//     table describes them (entry h: the DC palette's logical entry nearest
+//     hardware colour h, GetNearestPaletteIndex's rule), so a SetDIBits
+//     through the same palette gives the colours back; Windows NT (and Wine)
+//     return the logical indices themselves, which no module here needs
+//     (tried: ADXPL41's white labels turned cyan, SIMPTRIV moved).
+//   * CreatePatternBrush keeps a copy of the bitmap's top-left 8×8, as
+//     Windows 3.1 and 95 did; CreateBrushIndirect's BS_PATTERN still paints
+//     the guest's bitmap itself, whole, as before (its one known caller,
+//     GUTS, makes solid brushes).
 //   * Mapping modes other than MM_TEXT are passed to real GDI untested
-//     (WMORPH only).
+//     (WMORPH only; ScreamSavers copy the screen DC's MM_TEXT).
 #include <windows.h>
 
 #include <algorithm>
@@ -417,6 +436,144 @@ uint16_t make_font(Gdi16& g, const LOGFONTA& lf) {
 
 HRGN region_of(Gdi16& g, uint16_t h) { return static_cast<HRGN>(g.get(h, G16::region) ? g.host(h) : nullptr); }
 
+// CreateBitmap (and CreateBitmapIndirect): a w×h device bitmap, monochrome
+// when planes × bits per pixel is 1 and an 8-bit key surface otherwise, set
+// from device-dependent bits (WORD-aligned rows, top-down) when there are
+// any — a monochrome or 8-bit bitmap's; other depths' bits are not read.
+uint16_t create_bitmap16(Runtime16& rt, int16_t w, int16_t h, uint16_t planes, uint16_t bpp, uint32_t bits) {
+  Gdi16& g = gt(rt);
+  int depth = planes * bpp == 1 ? 1 : 8;
+  uint16_t hb = g.create_device_bitmap(w, h, depth);
+  Obj16* o = g.get(hb, G16::bitmap);
+  if (o && bits) {
+    uint32_t src_stride = uint32_t(((std::max<int>(w, 1) * planes * bpp + 15) / 16) * 2);
+    std::vector<uint8_t> raw(size_t(src_stride) * std::max<int>(h, 1));
+    rt.read_bytes(bits, raw.data(), raw.size());
+    if (depth == 1) {
+      SetBitmapBits(static_cast<HBITMAP>(o->host), DWORD(raw.size()), raw.data());
+    } else if (bpp == 8) {
+      for (int y = 0; y < o->bmp.h; y++) memcpy(o->bmp.bits + size_t(y) * o->bmp.stride, raw.data() + size_t(y) * src_stride, size_t(o->bmp.w));
+    }
+  }
+  return hb;
+}
+
+// The colour table real GDI writes for GetDIBits' 4-bit rows, whatever the
+// bitmap (measured: Windows 11 on an 8-bit key surface): the 16 VGA
+// colours with dark grey before light grey (DIB.DRV's table, gdi16_objects.cc,
+// has them the other way round). Each pixel becomes its nearest entry
+// (squared distance, the first of equals — as real GDI chose for all 32
+// colours probed, ties included).
+constexpr RGBQUAD kDib4Colors[16] = {
+    {0, 0, 0, 0},          {0, 0, 0x80, 0},    {0, 0x80, 0, 0},    {0, 0x80, 0x80, 0},
+    {0x80, 0, 0, 0},       {0x80, 0, 0x80, 0}, {0x80, 0x80, 0, 0}, {0x80, 0x80, 0x80, 0},
+    {0xC0, 0xC0, 0xC0, 0}, {0, 0, 0xFF, 0},    {0, 0xFF, 0, 0},    {0, 0xFF, 0xFF, 0},
+    {0xFF, 0, 0, 0},       {0xFF, 0, 0xFF, 0}, {0xFF, 0xFF, 0, 0}, {0xFF, 0xFF, 0xFF, 0}};
+
+// ---- flood fills -------------------------------------------------------------------------------------
+
+// A DC's clip region as a w×h mask of device pixels (1 inside); empty when
+// the DC has none.
+std::vector<uint8_t> clip_mask(HDC h, int w, int ht) {
+  std::vector<uint8_t> m;
+  HRGN rgn = CreateRectRgn(0, 0, 0, 0);
+  if (rgn && GetClipRgn(h, rgn) == 1) {
+    m.assign(size_t(w) * size_t(ht), 0);
+    DWORD n = GetRegionData(rgn, 0, nullptr);
+    std::vector<uint8_t> buf(n);
+    RGNDATA* rd = reinterpret_cast<RGNDATA*>(buf.data());
+    if (n >= sizeof(RGNDATAHEADER) && GetRegionData(rgn, n, rd) == n) {
+      const RECT* rc = reinterpret_cast<const RECT*>(rd->Buffer);
+      for (DWORD i = 0; i < rd->rdh.nCount; i++) {
+        int l = std::max<int>(rc[i].left, 0), r = std::min<int>(rc[i].right, w);
+        for (int y = std::max<int>(rc[i].top, 0); y < std::min<int>(rc[i].bottom, ht) && l < r; y++) {
+          uint8_t* row = m.data() + size_t(y) * size_t(w);
+          std::fill(row + l, row + r, uint8_t(1));
+        }
+      }
+    }
+  }
+  if (rgn) DeleteObject(rgn);
+  return m;
+}
+
+// The pixels a flood fill from device point (x, y) paints, as real GDI
+// fills: the 4-connected area of pixels whose value is v (surface) or is not
+// v (border), inside the w×h surface and the clip mask — none when (x, y)
+// itself is not in it (test_flood_fill holds the count to what real GDI
+// painted). px(x, y) reads a pixel's value.
+template <typename Px>
+int64_t flood_area(int w, int h, const std::vector<uint8_t>& clip, Px px, int x, int y, int v, bool surface) {
+  auto inside = [&](int xx, int yy) {
+    return (clip.empty() || clip[size_t(yy) * size_t(w) + size_t(xx)]) && ((px(xx, yy) == v) == surface);
+  };
+  if (x < 0 || y < 0 || x >= w || y >= h || !inside(x, y)) return 0;
+  std::vector<uint8_t> done(size_t(w) * size_t(h), 0);
+  std::vector<POINT> seeds{POINT{x, y}};
+  int64_t n = 0;
+  while (!seeds.empty()) {
+    POINT s = seeds.back();
+    seeds.pop_back();
+    size_t row = size_t(s.y) * size_t(w);
+    if (done[row + size_t(s.x)]) continue;
+    // Its whole run on the row (a run is marked at once, so a seed inside
+    // one already taken is skipped above), then one seed per run of the
+    // rows above and below that touches it.
+    int l = s.x, r = s.x;
+    while (l > 0 && inside(l - 1, s.y)) l--;
+    while (r + 1 < w && inside(r + 1, s.y)) r++;
+    std::fill(done.begin() + ptrdiff_t(row + size_t(l)), done.begin() + ptrdiff_t(row + size_t(r) + 1), uint8_t(1));
+    n += r - l + 1;
+    for (int ny : {s.y - 1, s.y + 1}) {
+      if (ny < 0 || ny >= h) continue;
+      size_t nrow = size_t(ny) * size_t(w);
+      for (int i = l; i <= r; i++) {
+        if (done[nrow + size_t(i)] || !inside(i, ny)) continue;
+        seeds.push_back(POINT{i, ny});
+        while (i < r && inside(i + 1, ny)) i++;
+      }
+    }
+  }
+  return n;
+}
+
+// What FloodFill/ExtFloodFill from logical (x, y) of hdc will paint, in
+// pixels, read from the surface as the fill compares it: an 8-bit surface's
+// values against the key colour's (a DIB DC's in its own row order), a
+// monochrome bitmap's bits against the colour's nearest of black and white.
+int64_t flood_pixels(Runtime16& rt, Gdi16& g, uint16_t hdc, HDC h, int x, int y, COLORREF key, uint16_t type) {
+  Dc16* d = g.dc(hdc);
+  Bitmap16* s = g.dc_surface(hdc);
+  if (!d || !s || (type != FLOODFILLBORDER && type != FLOODFILLSURFACE)) return 0;
+  bool surface = type == FLOODFILLSURFACE;
+  POINT p{x, y};
+  LPtoDP(h, &p, 1);
+  GdiFlush();
+  std::vector<uint8_t> clip = clip_mask(h, s->w, s->h);
+  if (s->bpp == 1) {
+    Obj16* b = g.get(d->s.bitmap, G16::bitmap);
+    if (!b || !b->host) return 0;
+    std::vector<uint8_t> bits(size_t(s->stride) * size_t(s->h));
+    GetBitmapBits(static_cast<HBITMAP>(b->host), LONG(bits.size()), bits.data());
+    int v = (GetNearestColor(h, key) & 0xFFFFFF) == 0xFFFFFF ? 1 : 0;
+    auto bit = [&](int px, int py) { return (bits[size_t(py) * s->stride + size_t(px >> 3)] >> (7 - (px & 7))) & 1; };
+    return flood_area(s->w, s->h, clip, bit, p.x, p.y, v, surface);
+  }
+  if (!s->bits) return 0;
+  bool bottom_up = false;
+  if (d->dib_device) {
+    try {
+      bottom_up = read16<BITMAPINFOHEADER>(rt, d->dib_header).biHeight > 0;
+    } catch (const GuestError16&) {
+      return 0;  // the DIB is gone
+    }
+  }
+  auto value = [&](int px, int py) {
+    return int(s->bits[size_t(bottom_up ? s->h - 1 - py : py) * s->stride + size_t(px)]);
+  };
+  return flood_area(s->w, s->h, clip, value, p.x, p.y, int(GetRValue(key)), surface);
+}
+
 }  // namespace
 
 uint16_t gdi16_bitmap_from_dib(Runtime16& rt, uint16_t hdc, uint32_t packed, uint16_t usage) {
@@ -666,6 +823,43 @@ void register_gdi16(Runtime16& rt) {
     }
     c.ret(h);
   });
+  // CreatePatternBrush(hbm): a brush of the bitmap's top-left 8×8 pixels
+  // (Windows 3.1 and 95 brushes were 8×8, whatever the bitmap; a smaller
+  // one tiles at its own size). Windows copied the pattern into the brush,
+  // so a program may delete the bitmap once the brush is made and the brush
+  // still paints (Windows 11's does too): the brush gets a bitmap of its
+  // own, which DeleteObject deletes with it. A monochrome pattern paints
+  // its 0 bits in the DC's text colour and its 1 bits in its background
+  // colour: Little Mermaid's "Plain" sea fills each row with an 8×8 dither
+  // of the two (MERMAID 8:2F09, then FillRect). 0 for no bitmap.
+  r.impl(G, "CreatePatternBrush", [](Call16& c) {
+    uint16_t hbm = c.w();
+    Gdi16& g = gt(c);
+    Obj16* src = g.get(hbm, G16::bitmap);
+    if (!src || !src->host) return c.ret(0);
+    int w = std::min(src->bmp.w, 8), h = std::min(src->bmp.h, 8);
+    uint16_t own = g.create_device_bitmap(w, h, src->bmp.bpp);
+    Obj16* o = g.get(own, G16::bitmap);
+    if (!o) return c.ret(0);
+    GdiFlush();
+    const uint32_t ss = src->bmp.stride, os = o->bmp.stride;
+    if (src->bmp.bpp == 1) {
+      std::vector<uint8_t> in(size_t(ss) * size_t(src->bmp.h)), out(size_t(os) * size_t(h));
+      GetBitmapBits(static_cast<HBITMAP>(src->host), LONG(in.size()), in.data());
+      for (int y = 0; y < h; y++) memcpy(out.data() + size_t(y) * os, in.data() + size_t(y) * ss, os);
+      SetBitmapBits(static_cast<HBITMAP>(o->host), DWORD(out.size()), out.data());
+    } else {
+      for (int y = 0; y < h; y++) memcpy(o->bmp.bits + size_t(y) * os, src->bmp.bits + size_t(y) * ss, size_t(w));
+    }
+    uint16_t hb = g.create_brush(0, BS_PATTERN);
+    if (Obj16* b = g.get(hb, G16::brush)) {
+      b->pattern = own;
+      o->pattern_of = hb;
+    } else {
+      g.destroy(own);  // no brush (the table is full): nor its bitmap
+    }
+    c.ret(hb);
+  });
   // GetDCOrg(hdc): DX:AX = the DC's origin on the screen — (0, 0) for the
   // full-screen saver window's DC and memory DCs; a child window's corner for
   // GetDC(child).
@@ -705,22 +899,16 @@ void register_gdi16(Runtime16& rt) {
     int16_t w = c.sw(), h = c.sw();
     uint16_t planes = c.w(), bpp = c.w();
     uint32_t bits = c.ptr();
-    Gdi16& g = gt(c);
-    int depth = planes * bpp == 1 ? 1 : 8;
-    uint16_t hb = g.create_device_bitmap(w, h, depth);
-    Obj16* o = g.get(hb, G16::bitmap);
-    if (o && bits) {
-      // Device-dependent bits: WORD-aligned rows, top-down.
-      uint32_t src_stride = uint32_t(((std::max<int>(w, 1) * planes * bpp + 15) / 16) * 2);
-      std::vector<uint8_t> raw(size_t(src_stride) * std::max<int>(h, 1));
-      c.rt.read_bytes(bits, raw.data(), raw.size());
-      if (depth == 1) {
-        SetBitmapBits(static_cast<HBITMAP>(o->host), DWORD(raw.size()), raw.data());
-      } else if (bpp == 8) {
-        for (int y = 0; y < o->bmp.h; y++) memcpy(o->bmp.bits + size_t(y) * o->bmp.stride, raw.data() + size_t(y) * src_stride, size_t(o->bmp.w));
-      }
-    }
-    c.ret(hb);
+    c.ret(create_bitmap16(c.rt, w, h, planes, bpp, bits));
+  });
+  // CreateBitmapIndirect(const BITMAP FAR*): CreateBitmap of the structure's
+  // width, height, planes, bits per pixel and bits, the rows WORD-aligned
+  // as CreateBitmap reads them (what bmWidthBytes must say; it is not
+  // read). Little Mermaid's "Plain" sea makes an 8×8 monochrome pattern
+  // this way for each shade of its rows (MERMAID 8:2EFE).
+  r.impl(G, "CreateBitmapIndirect", [](Call16& c) {
+    BITMAP16 b = read16<BITMAP16>(c.rt, c.ptr());
+    c.ret(create_bitmap16(c.rt, b.bmWidth, b.bmHeight, b.bmPlanes, b.bmBitsPixel, b.bmBits));
   });
   r.impl(G, "CreateCompatibleBitmap", [](Call16& c) {
     uint16_t hdc = c.w();
@@ -833,6 +1021,12 @@ void register_gdi16(Runtime16& rt) {
   r.impl(G, "GetPolyFillMode", [](Call16& c) {
     HDC h = gt(c).host_dc(c.w());
     c.ret(h ? uint16_t(::GetPolyFillMode(h)) : 0);
+  });
+  // GetMapMode(hdc): the ScreamSavers modules give their memory DC the
+  // screen DC's mode, SetMapMode(mem, GetMapMode(screen)) — MM_TEXT.
+  r.impl(G, "GetMapMode", [](Call16& c) {
+    HDC h = gt(c).host_dc(c.w());
+    c.ret(h ? uint16_t(::GetMapMode(h)) : 0);
   });
   auto origin = [&](const char* name, BOOL (*fn)(HDC, int, int, POINT*)) {
     r.impl(G, name, [fn](Call16& c) {
@@ -982,6 +1176,34 @@ void register_gdi16(Runtime16& rt) {
     Bitmap16* s = g.dc_surface(hdc);
     c.ret32(s && s->bpp == 1 ? got : g.surface_rgb(hdc, GetRValue(got)));
   });
+  // FloodFill (GDI.25: up to the colour, FLOODFILLBORDER) and ExtFloodFill
+  // (GDI.372: FLOODFILLBORDER, or FLOODFILLSURFACE: as far as the colour
+  // goes). The colour is keyed as SetPixel's, so the fill compares pixel
+  // indices, as a Win95 palette device compared physical colours; real GDI
+  // fills from the logical point, 4-connected, with the DC's brush and ROP2,
+  // within the surface and the clip region, and answers FALSE when the
+  // point is outside them or not in the area. Snoopy's modules make their
+  // sprite masks so: a white scratch bitmap, the sprite blitted in,
+  // BLACK_BRUSH, ExtFloodFill(2, 2, white, FLOODFILLSURFACE) — the outside
+  // turns black — then two blits to a monochrome mask; without it every
+  // sprite was drawn in a white box. The pixels filled are charged, as a
+  // fill's pixels are (PatBlt's and FillRect's rectangle): counted by the
+  // host by real GDI's rule (flood_pixels), a fill of nothing costing nothing.
+  auto flood = [](Call16& c, bool ext) {
+    uint16_t hdc = c.w();
+    int16_t x = c.sw(), y = c.sw();
+    uint32_t col = c.l();
+    uint16_t type = ext ? c.w() : uint16_t(FLOODFILLBORDER);
+    Gdi16& g = gt(c);
+    HDC h = g.host_dc(hdc);
+    if (!h) return c.ret(0);
+    COLORREF k = g.key(hdc, col);
+    c.rt.charge_pixels(flood_pixels(c.rt, g, hdc, h, x, y, k, type));
+    g.sync(hdc);
+    c.ret_bool(::ExtFloodFill(h, x, y, k, type));
+  };
+  r.impl(G, "FloodFill", [flood](Call16& c) { flood(c, false); });
+  r.impl(G, "ExtFloodFill", [flood](Call16& c) { flood(c, true); });
   r.impl(G, "PatBlt", [](Call16& c) {
     uint16_t hdc = c.w();
     int16_t x = c.sw(), y = c.sw(), w = c.sw(), h = c.sw();
@@ -1445,7 +1667,7 @@ void register_gdi16(Runtime16& rt) {
     c.ret(hb);
   });
   r.impl(G, "GetDIBits", [](Call16& c) {
-    c.w();  // hdc: the bitmap holds hardware indices, whatever the DC
+    uint16_t hdc = c.w();  // hardware indices whatever the DC; a DIB_PAL_COLORS table names its palette's entries
     uint16_t hb = c.w(), start = c.w(), lines = c.w();
     uint32_t bits = c.ptr(), bmi = c.ptr();
     uint16_t usage = c.w();
@@ -1468,14 +1690,25 @@ void register_gdi16(Runtime16& rt) {
       return c.ret(1);
     }
     int bpp = h.biBitCount;
-    if (o->bmp.bpp == 1 || (bpp != 8 && bpp != 24)) {
-      if (o->bmp.bpp != 1) return c.ret(0);
-      // Monochrome: real GDI's own answer.
+    bool mono = o->bmp.bpp == 1;
+    trace("dib16", "GetDIBits(%04X, bitmap %04X %dx%d %d-bit, scans %u+%u, usage %u): header %u bytes, %dx%d, "
+          "%u bpp", hdc, hb, o->bmp.w, o->bmp.h, o->bmp.bpp, start, lines, usage, unsigned(size), int(h.biWidth),
+          int(h.biHeight), bpp);
+    if (mono && bpp == 1) {
+      // Monochrome to 1-bit rows: real GDI's own answer, asked in a header
+      // of our own — 40 bytes, the bitmap's own width and height (the sign
+      // kept), as an 8-bit bitmap is answered below. Real GDI reads biSize
+      // bytes of the header and writes rows as wide as its biWidth says,
+      // whatever the bitmap (measured): the guest's own would run it past bi
+      // and tmp.
       struct {
         BITMAPINFOHEADER h;
         RGBQUAD c[2];
       } bi{};
       bi.h = h;
+      bi.h.biSize = sizeof(BITMAPINFOHEADER);
+      bi.h.biWidth = o->bmp.w;
+      bi.h.biHeight = h.biHeight < 0 ? -o->bmp.h : o->bmp.h;
       uint32_t rows = std::min<uint32_t>(lines, uint32_t(o->bmp.h));
       uint32_t stride = uint32_t(((o->bmp.w + 31) / 32) * 4);
       std::vector<uint8_t> tmp(size_t(stride) * rows);
@@ -1484,21 +1717,42 @@ void register_gdi16(Runtime16& rt) {
                             reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS);
       ReleaseDC(nullptr, screen);
       if (bits && got > 0) c.rt.write_bytes(bits, tmp.data(), size_t(stride) * uint32_t(got));
+      bi.h.biSize = h.biSize;  // the guest's header keeps its size; its table follows it
       write16(c.rt, bmi, bi.h);
-      for (int i = 0; i < 2; i++) c.rt.write_bytes(bmi + bi.h.biSize + 4u * i, &bi.c[i], 4);
+      for (int i = 0; i < 2; i++) c.rt.write_bytes(bmi + h.biSize + 4u * i, &bi.c[i], 4);
       return c.ret(uint16_t(std::max(got, 0)));
     }
+    // 1-bit rows of an 8-bit bitmap, 16- and 32-bit rows: refused; so is the
+    // stock 1x1 bitmap, which has no pixels here.
+    if ((bpp != 4 && bpp != 8 && bpp != 24) || (mono && !o->host)) return c.ret(0);
     int w = o->bmp.w, ht = o->bmp.h;
     bool top_down = h.biHeight < 0;
     uint32_t stride = uint32_t(((w * bpp + 31) / 32) * 4);
-    // The colour table: what each hardware index means.
-    if (bpp == 8) {
-      for (int i = 0; i < 256; i++) {
+    // The colour table: what each value returned means. 8-bit rows are the
+    // hardware indices themselves; 4-bit rows each pixel's nearest of the 16
+    // colours real GDI's table holds (kDib4Colors; Haunted captures the
+    // desktop a line at a time so). A DIB_PAL_COLORS table names for each
+    // value the DC palette's logical entry nearest its colour: the table
+    // that describes the values returned, which a SetDIBits through the same
+    // palette turns back into their colours. ADXPL41 draws its labels on a
+    // canvas it round-trips so, SetDIBits → GDI → GetDIBits → SetDIBits,
+    // through a 255-entry palette holding the high statics at 245..254;
+    // with an identity table white (hardware 255) fell off the palette and
+    // 246..254 moved one static on (Pepe's black label boxes, Sam's and
+    // Taz's broken folders).
+    LogicalPalette* lp = usage == DIB_PAL_COLORS ? g.dc_palette(hdc) : nullptr;
+    std::array<uint8_t, 256> to4{};
+    if (bpp == 4) {
+      for (int i = 0; i < 256; i++) to4[size_t(i)] = uint8_t(Display::nearest_in(kDib4Colors, 16, g.index_rgb(i)));
+    }
+    if (bpp == 8 || bpp == 4) {
+      for (int i = 0; i < (bpp == 8 ? 256 : 16); i++) {
         uint32_t a = bmi + h.biSize + (usage == DIB_PAL_COLORS ? 2u : 4u) * uint32_t(i);
+        const RGBQUAD& q = kDib4Colors[i & 15];
+        COLORREF col = bpp == 8 ? g.index_rgb(i) : RGB(q.rgbRed, q.rgbGreen, q.rgbBlue);
         if (usage == DIB_PAL_COLORS) {
-          c.rt.wr16(a, uint16_t(i));
+          c.rt.wr16(a, uint16_t(lp && !lp->entries.empty() ? Display::nearest_in(*lp, col) : i));
         } else {
-          COLORREF col = g.index_rgb(i);
           c.rt.wr32(a, uint32_t(GetBValue(col)) | (uint32_t(GetGValue(col)) << 8) | (uint32_t(GetRValue(col)) << 16));
         }
       }
@@ -1510,17 +1764,37 @@ void register_gdi16(Runtime16& rt) {
     h.biClrUsed = bpp == 8 ? 256 : 0;
     write16(c.rt, bmi, h);
     if (!bits) return c.ret(uint16_t(ht));
+    // A monochrome bitmap's pixels become the hardware indices of black (0)
+    // and white (255), statics under SYSPAL_STATIC and SYSPAL_NOSTATIC
+    // alike, which the table above describes as for an 8-bit bitmap: real
+    // GDI's values too (black 0 and white 255 in 8-bit rows, 0 and 15 in
+    // 4-bit ones, 000000 and FFFFFF in 24-bit ones; measured).
+    std::vector<uint8_t> packed, wide;
+    if (mono) {
+      packed.resize(size_t(o->bmp.stride) * size_t(ht));
+      GetBitmapBits(static_cast<HBITMAP>(o->host), LONG(packed.size()), packed.data());
+      wide.resize(size_t(w));
+    }
     int n = 0;
     std::vector<uint8_t> row(stride);
     for (int i = 0; i < lines; i++) {
       int scan = start + i;
       if (scan >= ht) break;
       int y = top_down ? scan : ht - 1 - scan;
-      const uint8_t* src = o->bmp.bits + size_t(y) * o->bmp.stride;
+      const uint8_t* src;
+      if (mono) {
+        const uint8_t* p = packed.data() + size_t(y) * o->bmp.stride;
+        for (int x = 0; x < w; x++) wide[size_t(x)] = ((p[x >> 3] >> (7 - (x & 7))) & 1) ? 255 : 0;
+        src = wide.data();
+      } else {
+        src = o->bmp.bits + size_t(y) * o->bmp.stride;
+      }
       std::fill(row.begin(), row.end(), 0);
       for (int x = 0; x < w; x++) {
         if (bpp == 8) {
           row[size_t(x)] = src[x];
+        } else if (bpp == 4) {
+          row[size_t(x) >> 1] |= uint8_t(to4[src[x]] << ((x & 1) ? 0 : 4));
         } else {
           COLORREF col = g.index_rgb(src[x]);
           row[3 * size_t(x)] = GetBValue(col);
