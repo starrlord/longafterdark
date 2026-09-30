@@ -185,8 +185,9 @@ class Preview {
     // A full-size screen, shown scaled down: the preview looks like the
     // saver. The module's own rule (module_screen): an After Dark module's is
     // 480 lines at the preview's aspect (whatever the Resolution setting), a
-    // module's own screen (an Intermission or a Star Trek module's 640x480)
-    // that, pillarboxed in the wide preview as on a widescreen monitor.
+    // module's own screen (an Intermission, Star Trek, ScreamSavers or Marvel
+    // module's 640x480) that, pillarboxed in the wide preview as on a
+    // widescreen monitor.
     const SizeI emu = module_screen(own_screen(target_.abi, target_.screen), std::max(aspect, 4.0 / 3.0), 1.0).emu;
     HostSpec spec;
     spec.exe = target_.host_exe;

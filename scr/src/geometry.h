@@ -49,8 +49,9 @@ RectI fit_rect(int src_w, int src_h, int dst_w, int dst_h);
 //    widescreen), at its full width on a narrower one (5:4, portrait: bars
 //    above and below). Intermission modules (Star Wars Screen Entertainment,
 //    "intermission") have 640x480 by their ABI; a catalog entry gives any
-//    module one with "screen": "WxH" (Star Trek: The Screen Saver's modules,
-//    "640x480": several compose a fixed 640x480 scene).
+//    module one with "screen": "WxH" (Star Trek: The Screen Saver's,
+//    ScreamSavers' and Marvel's modules, "640x480": several compose a fixed
+//    640x480 scene).
 // (/p stays 320x240 for every module: saver.cc.)
 struct ModuleScreen {
   SizeI emu;
@@ -98,7 +99,7 @@ inline constexpr size_t kMaxOwnSeedShots = 2;
 // "screen" of its own, each a picture of up to 48 MB): the one that follows
 // the display (After Dark's, the whole monitor: ...-<window>.ppm) first,
 // then at most kMaxOwnSeedShots of modules' own sizes, 640x480 first
-// (Intermission's and Star Trek's, the frame's part:
+// (Intermission's, Star Trek's, ScreamSavers' and Marvel's, the frame's part:
 // ...-<window>-640x480.ppm), then the smallest. A first host whose screen
 // was left out starts on black ("none taken" in the saver's log);
 // `left_out`, when given, is how many screens were. Where two are the same
@@ -119,9 +120,10 @@ struct ScreenSlot {
   RectI rc;                 // its monitor, virtual-screen pixels
   bool runs_host = false;
   SizeI emu;                // emulated screen its host renders (only when runs_host)
-  // ...which is its module's own (ModuleScreen::fixed: an Intermission or a
-  // Star Trek module's 640x480), the same on any monitor. A slot to be filled
-  // is described by the size its monitor gives (After Dark's) and never fixed.
+  // ...which is its module's own (ModuleScreen::fixed: an Intermission, Star
+  // Trek, ScreamSavers or Marvel module's 640x480), the same on any monitor.
+  // A slot to be filled is described by the size its monitor gives (After
+  // Dark's) and never fixed.
   bool fixed = false;
   bool message = false;     // carries the not-imported / host-missing text
   bool operator==(const ScreenSlot&) const = default;
@@ -139,10 +141,11 @@ struct RelayoutPlan {
 // A window keeps its host when it keeps its role (host or not, message or
 // not) and its host's emulated size — an After Dark module's depends only on
 // the monitor's aspect, so a mode change or a rearrangement moves the window
-// (`moved`) without a restart; a module's own (`fixed`: an Intermission or a
-// Star Trek module's) on nothing, so its window can move to any monitor. Exact matches (same rect) are taken
-// first, then same-size ones in order, then fixed-size ones (so a window whose
-// size matches is never left without a slot by one that fits anywhere).
+// (`moved`) without a restart; a module's own (`fixed`: an Intermission, Star
+// Trek, ScreamSavers or Marvel module's) on nothing, so its window can move
+// to any monitor. Exact matches (same rect) are taken first, then same-size
+// ones in order, then fixed-size ones (so a window whose size matches is
+// never left without a slot by one that fits anywhere).
 // Anything else is a new window with a new host.
 RelayoutPlan plan_relayout(const std::vector<ScreenSlot>& current, const std::vector<ScreenSlot>& next);
 

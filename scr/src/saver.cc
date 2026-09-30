@@ -637,8 +637,8 @@ ModuleScreen SaverWindow::screen_for(const Module* m) const {
   // /p: a thumbnail in someone else's window, 320x240 for every module. The
   // host renders an output that small through a guest display of at least
   // 640x480 (host/ne16 "Small screens"), so a 640x480 scene of a module's own
-  // (an Intermission or a Star Trek module's) fills it too, as it does a 4:3
-  // monitor.
+  // (an Intermission, Star Trek, ScreamSavers or Marvel module's) fills it
+  // too, as it does a 4:3 monitor.
   if (app_.preview) return ModuleScreen{{320, 240}, true};
   // Its own screen when it has one (its catalog "screen", or its ABI's),
   // else the Resolution setting on this monitor.
@@ -654,9 +654,9 @@ ScreenSlot SaverWindow::slot() const {
     // The screen its host renders; between two hosts (a respawn due), the one
     // its module's next host gets here; before its first (the rotation not
     // built yet), the monitor's, as an After Dark module's. A module with a
-    // screen of its own (an Intermission or a Star Trek module) keeps it on
-    // any monitor, so its window can move anywhere and keep its host
-    // (plan_relayout).
+    // screen of its own (an Intermission, Star Trek, ScreamSavers or Marvel
+    // module) keeps it on any monitor, so its window can move anywhere and
+    // keep its host (plan_relayout).
     const ModuleScreen ms = host_ ? screen_ : screen_for(rotation_ ? app_.catalog.find(rotation_->current()) : nullptr);
     s.emu = ms.emu;
     s.fixed = ms.fixed;
@@ -696,9 +696,9 @@ void SaverWindow::spawn() {
   halftone_samples_ = 0;
   halftone_ms_ = 0;
   // Each host its own module's screen (module_screen): a rotation from an
-  // After Dark module to one with a screen of its own (an Intermission or a
-  // Star Trek module), or back, gets a host of the new size, and the
-  // letterbox follows its frames.
+  // After Dark module to one with a screen of its own (an Intermission, Star
+  // Trek, ScreamSavers or Marvel module), or back, gets a host of the new
+  // size, and the letterbox follows its frames.
   const ModuleScreen screen = screen_for(m);
   const SizeI emu = screen.emu;
   std::map<int, int> cv;
@@ -829,9 +829,10 @@ OwnerStatus SaverWindow::status() {
   return st;
 }
 
-// Both by the current host's screen: a module's own 640x480 (an Intermission
-// or a Star Trek module's) is pillarboxed on a widescreen monitor, and its
-// clicks and moves land on it (Final Exam's mouse move ends its exam).
+// Both by the current host's screen: a module's own 640x480 (an Intermission,
+// Star Trek, ScreamSavers or Marvel module's) is pillarboxed on a widescreen
+// monitor, and its clicks and moves land on it (Final Exam's mouse move ends
+// its exam).
 POINT SaverWindow::map_cursor(POINT screen) const {
   RectI fit = fit_rect(screen_.emu.w, screen_.emu.h, rc_.right - rc_.left, rc_.bottom - rc_.top);
   return map_to_frame(screen, rc_, fit, screen_.emu);
@@ -1328,7 +1329,7 @@ bool App::load() {
     }
   }
   if (available.empty()) {
-    // Any release will do (six of After Dark, Star Wars Screen Entertainment).
+    // Any release will do (the eleven of After Dark modules, Star Wars Screen Entertainment).
     message = preview ? L"No modules imported" : L"No modules imported — open Screen Saver Settings…";
     message_code = kExitNotImported;
   } else if (!file_exists(host_exe)) {
@@ -1354,12 +1355,13 @@ bool App::load() {
 // first host's, which depends on that host's module (module_screen). The
 // first module isn't known yet (a rotation's is drawn when it is built, after
 // the host's answer when Random waits for it), so a window that may start
-// with an After Dark module or one with a screen of its own (an Intermission
-// or a Star Trek module) gets both captures: the whole monitor at its After
-// Dark size, as ever, and the part that module's frame covers (640x480 of
-// its own: seed_source). Its first host takes its own. Three at most
-// (plan_seed_shots: a catalog may give every module a screen of its own);
-// a first host whose screen has none starts on black (SaverWindow::spawn).
+// with an After Dark module or one with a screen of its own (an Intermission,
+// Star Trek, ScreamSavers or Marvel module) gets both captures: the whole
+// monitor at its After Dark size, as ever, and the part that module's frame
+// covers (640x480 of its own: seed_source). Its first host takes its own.
+// Three at most (plan_seed_shots: a catalog may give every module a screen
+// of its own); a first host whose screen has none starts on black
+// (SaverWindow::spawn).
 void App::capture_seeds(const std::vector<Monitor>& mons) {
   if (preview || !message.empty()) return;
   if (!settings.start_from_desktop) {

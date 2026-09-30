@@ -7,8 +7,8 @@
 // a binary P6 (maxval 255) at that module's emulated size, written to
 // %TEMP%\LongAfterDark-seed-<pid>-<window index>.ppm (a module that follows
 // the display: After Dark's) or ...-<window index>-640x480.ppm (a module's
-// own screen, an Intermission or a Star Trek module's: paths.h
-// seed_file_path), through a
+// own screen, an Intermission, Star Trek, ScreamSavers or Marvel module's:
+// paths.h seed_file_path), through a
 // handle opened FILE_FLAG_DELETE_ON_CLOSE | FILE_ATTRIBUTE_TEMPORARY with
 // share read + delete. The saver keeps that handle for its lifetime, so the
 // file disappears when the saver ends, however it ends. A host opens it with

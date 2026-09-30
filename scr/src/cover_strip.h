@@ -9,8 +9,9 @@
 // IDC_COVER_TILE_BASE + index; its check state is the selection, its window
 // text the accessible name), custom-drawn through NM_CUSTOMDRAW, with a
 // roving tab stop, and two chevron buttons that scroll the row by whole tiles
-// when it overflows. The status line and the "Show all" link beside the
-// strip are the dialog's own controls.
+// when it overflows (only whole tiles show: ui_model.h, layout_strip). The
+// status line and the "Show all" link beside the strip are the dialog's own
+// controls.
 #pragma once
 
 #include <windows.h>
@@ -62,6 +63,7 @@ class CoverStrip {
   HWND hwnd() const { return container_; }
   // (Re)creates the tiles; `selected` lists the release ids to show selected.
   // Pictures are read here, and read again only when a tile's md5 changes.
+  // The row starts unscrolled, or scrolled to show the first selected tile.
   void set_tiles(const std::vector<StripTile>& tiles, const std::vector<std::string>& selected);
   size_t count() const { return tiles_.size(); }
   const StripTile& tile(int i) const { return tiles_[i]; }
@@ -116,6 +118,7 @@ class CoverStrip {
   StripLayout S_{};
   POINT origin_{};
   int first_ = 0;
+  int reveal_ = -1;        // a tile to scroll into view once the strip has its width (-1: none)
   int hover_override_ = -1;
   int wheel_ = 0;          // wheel delta not yet turned into a tile's scroll
   bool pushing_ = false;   // a chevron is held down

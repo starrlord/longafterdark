@@ -189,19 +189,24 @@ std::vector<DurationChoice> duration_choices(int current) {
 std::wstring rotation_summary(size_t checked, size_t total, long long runnable, long long distinct) {
   if (total == 0) return L"";
   if (checked == 0) return L"None in rotation";
-  const std::wstring selected = checked == total ? L"All " + std::to_wstring(total) + L" selected"
+  // Every row checked is "All 84", but "1" when the list shows one row
+  // (Marvel Comics Screen Posters alone: "All 1" reads wrong).
+  const std::wstring all = (total == 1 ? L"" : L"All ") + std::to_wstring(total);
+  const std::wstring selected = checked == total ? all + L" selected"
                                                  : std::to_wstring(checked) + L" of " + std::to_wstring(total) + L" selected";
   if (runnable >= 0 && (size_t)runnable < checked) return selected + L" · " + std::to_wstring(runnable) + L" can run now";
   if (distinct > 0 && (size_t)distinct < checked) return selected + L" · " + std::to_wstring(distinct) + L" distinct";
-  if (checked == total) return L"All " + std::to_wstring(total) + L" in rotation";
+  if (checked == total) return all + L" in rotation";
   return std::to_wstring(checked) + L" of " + std::to_wstring(total) + L" in rotation";
 }
 
 std::wstring rotation_tip(size_t checked, long long distinct, const std::wstring& lead) {
   std::wstring t;
   if (checked > 0 && distinct > 0 && (size_t)distinct < checked) {
+    // Copies of one module alone: nothing takes turns.
     t = L"A module that is on several of the releases checked plays once in each pass, so " +
-        std::to_wstring(distinct) + L" different modules take turns.";
+        (distinct == 1 ? std::wstring(L"1 module is in rotation.")
+                       : std::to_wstring(distinct) + L" different modules take turns.");
   }
   if (!lead.empty()) {
     if (!t.empty()) t += L"\n\n";
@@ -244,12 +249,13 @@ std::wstring assets_summary(const AssetCounts& a) {
 }
 
 std::wstring welcome_text() {
-  // Seven releases, one of them not After Dark's: the product name stays
+  // Twelve releases, one of them not After Dark's: the product name stays
   // "Long After Dark", the releases are named for what they are. (Star Trek:
-  // The Screen Saver is After Dark 2.0b, on floppies: "discs" covers them.)
+  // The Screen Saver, Marvel Comics Screen Posters, Snoopy's Screen Savers
+  // and ScreamSavers came on floppies: "discs" covers them.)
   return L"The screen saver runs the original modules of After Dark and Star Wars Screen Entertainment from your "
          L"own discs.\n\n"
-         L"Import them from any of your discs (seven releases are supported), a disc image, or the Internet Archive "
+         L"Import them from any of your discs (twelve releases are supported), a disc image, or the Internet Archive "
          L"download. They are copied to your computer once; nothing else is needed.";
 }
 
@@ -406,13 +412,11 @@ StripMetrics strip_metrics(bool compact) {
 
 namespace {
 
-// The last scroll position: the first tile from which the rest all show
-// whole (the left chevron's zone taken, once scrolled).
-int strip_max_first(const StripInput& in, const StripMetrics& m) {
-  const int n = std::max(0, in.tiles);
-  if (n == 0 || n * m.pitch - (m.pitch - m.cell_w) <= in.w) return 0;
-  const int fit = (int)std::floor((in.w - kStripChevronW - m.cell_w) / m.pitch);   // tiles after the first one shown
-  return std::clamp(n - 1 - std::max(0, fit), 1, n - 1);
+// Overflowing, the tiles that show at a time: as many whole cells as fit
+// between the two chevrons' zones, at least one.
+int strip_slots(const StripInput& in, const StripMetrics& m) {
+  const double room = in.w - 2 * (kStripChevronW + kStripChevronGap) + (m.pitch - m.cell_w);
+  return std::max(1, (int)std::floor(room / m.pitch + 1e-9));
 }
 
 } // namespace
@@ -424,14 +428,21 @@ StripLayout layout_strip(const StripInput& in) {
   if (n == 0) return S;
   const StripMetrics m = strip_metrics(in.compact);
   Scaler s{std::max(48, in.dpi)};
-  S.max_first = strip_max_first(in, m);
-  S.overflow = S.max_first > 0;
+  const int gap = m.pitch - m.cell_w;
+  const double zone = kStripChevronW + kStripChevronGap;
+  S.overflow = n > 1 && n * m.pitch - gap > in.w + 0.001;
+  S.slots = S.overflow ? std::min(n - 1, strip_slots(in, m)) : n;
+  S.max_first = n - S.slots;
   S.first = std::clamp(in.first, 0, S.max_first);
-  const double lead = S.first > 0 ? kStripChevronW : 0;
-  const double last_right = in.x + lead + (n - 1 - S.first) * m.pitch + m.cell_w;
-  const bool more_left = S.first > 0, more_right = last_right > in.x + in.w + 0.001;
+  // Overflowing, the view is the slots between the two chevrons' zones at
+  // every scroll position: the tiles start after the left chevron's zone
+  // (unscrolled too, where that zone stays empty) and the view ends with the
+  // last slot, where the right chevron's zone starts. So a stop shows `slots`
+  // tiles, the next one's cell never fitting, and each slot keeps its place
+  // whatever the stop. Without overflow the tiles start at the column's edge.
+  const double lead = S.overflow ? zone : 0;
+  const double vl = in.x + lead, vr = S.overflow ? vl + S.slots * m.pitch - gap : in.x + in.w;
   S.area = s.rc(in.x, in.y, in.w, m.cell_h);
-  const double vl = in.x + (more_left ? kStripChevronW : 0), vr = in.x + in.w - (more_right ? kStripChevronW : 0);
   S.view = s.rc(vl, in.y, vr - vl, m.cell_h);
   for (int i = 0; i < n; ++i) {
     const double cx = in.x + lead + (i - S.first) * m.pitch;
@@ -441,17 +452,15 @@ StripLayout layout_strip(const StripInput& in) {
     S.whole.push_back(cx >= vl - 0.001 && cx + m.cell_w <= vr + 0.001);
   }
   // Chevrons centred on the art (a little taller in the compact form, so
-  // they stay on the 4-DIP grid); fades as tall as the cells.
+  // they stay on the 4-DIP grid), each kStripChevronGap clear of the tiles
+  // and at one place whatever the scroll position: a pointer left on one
+  // keeps clicking it, and its place stays empty at the stop where it hides
+  // (the left one's unscrolled, the right one's at the last stop), so a
+  // click too many lands on no cover.
   const double ch = in.compact ? 28 : kStripChevronW;
   const double cy = in.y + m.art_y + (m.art_h - ch) / 2.0;
-  if (more_left) {
-    S.chevron_left = s.rc(in.x, cy, kStripChevronW, ch);
-    S.fade_left = s.rc(in.x, in.y, kStripFadeW, m.cell_h);
-  }
-  if (more_right) {
-    S.chevron_right = s.rc(in.x + in.w - kStripChevronW, cy, kStripChevronW, ch);
-    S.fade_right = s.rc(in.x + in.w - kStripFadeW, in.y, kStripFadeW, m.cell_h);
-  }
+  if (S.first > 0) S.chevron_left = s.rc(in.x, cy, kStripChevronW, ch);
+  if (S.first < S.max_first) S.chevron_right = s.rc(vr + kStripChevronGap, cy, kStripChevronW, ch);
   return S;
 }
 

@@ -30,8 +30,8 @@ struct LiveTarget {
   std::string id;                // the module's catalog id (what an exit 3 is reported for)
   // Its catalog ABI and "screen" (catalog.h Module::screen), which size its
   // screen (geometry.h: own_screen, module_screen): an After Dark module's is
-  // 480 lines at the preview's aspect, an Intermission or a Star Trek
-  // module's its own 640x480.
+  // 480 lines at the preview's aspect, an Intermission, Star Trek,
+  // ScreamSavers or Marvel module's its own 640x480.
   std::string abi = kAfterDarkAbi;
   SizeI screen;
   std::wstring host_exe;         // adhostwin.exe

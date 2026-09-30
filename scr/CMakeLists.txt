@@ -153,7 +153,7 @@ foreach(_t run preview preview-parent-gone not-imported host-missing respawn sta
            config-buttons
            config-collections config-cover rotate-collections config-details data-root
            sound sound-wake config-sound present config-abi rotate-abi rotate-abi-wait screen-abi screen-field numlock
-           config-credit)
+           config-credit config-twelve)
   add_test(NAME scr_smoke_${_t} COMMAND scr_smoke ${_t} ${_smoke_args})
   set_tests_properties(scr_smoke_${_t} PROPERTIES LABELS gui SKIP_RETURN_CODE 77 TIMEOUT 90)
 endforeach()
@@ -179,6 +179,9 @@ set_tests_properties(scr_smoke_numlock PROPERTIES TIMEOUT 180)
 # The dialog driven by control ID twice (the second time into a Preview, a
 # /s), then seven off-screen renders.
 set_tests_properties(scr_smoke_config-credit PROPERTIES TIMEOUT 180)
+# Seven off-screen renders with twelve releases, the dialog driven by control
+# ID, then a /s rotation.
+set_tests_properties(scr_smoke_config-twelve PROPERTIES TIMEOUT 180)
 # Two /s runs, and a scanner may hold a fresh capture for a while.
 set_tests_properties(scr_smoke_present PROPERTIES TIMEOUT 180)
 set_tests_properties(scr_host_stream PROPERTIES TIMEOUT 60)

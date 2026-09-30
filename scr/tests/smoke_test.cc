@@ -3329,6 +3329,381 @@ int test_screen_field(const Opts& o) {
   return 0;
 }
 
+// ---- twelve releases --------------------------------------------------------------------------
+
+// The settings dialog with twelve releases (catalog-twelve.json: the seven,
+// and Marvel Comics Screen Posters, Snoopy's Screen Savers, The Looney Tunes
+// Screen Saver, ScreamSavers and The Disney Collection Screen Saver). Their
+// regular covers never all fit side by side, nor do their compact ones in a
+// window under 1120 DIP wide, so in these windows the strip scrolls:
+//  * off screen at the first-open size, the smallest and one as narrow but
+//    760 DIP tall, at 100% and 150%, light, dark and high contrast,
+//    unscrolled, at a stop in the middle and at the last: as many tiles show
+//    as the layout says, each wholly in the strip, clear of the chevrons (and
+//    unscrolled, of the left one's place) and the status line, the others
+//    outside the strip; in the picture the strip holds nothing but those
+//    tiles and the chevrons on its base colour (a cover cut at an end would
+//    show there); in Random, every module checked, screen readers call Star
+//    Trek's group "…, all 4 in rotation" and Marvel's, of one module, "…, 1
+//    in rotation" (never "all 1");
+//  * driven by control ID, as many covers at a time as layout_window gives
+//    the window's client: the last release's tile, not shown, takes the
+//    focus and scrolls into view; the left chevron takes it away again, a
+//    stop a click; Space on it (it keeps the focus) filters the list to its
+//    release and brings it back into view; Show all shows every release; the
+//    left chevron back to the first stop leaves its place empty (a click too
+//    many lands on no cover); reopened with that filter saved, the row opens
+//    with its tile showing; and from seven releases (their covers side by
+//    side, no chevron) an import (fakeimport) brings twelve: the row
+//    unscrolled, a right chevron;
+//  * ScreamSavers' modules are After Dark modules with "screen": "640x480":
+//    the live preview runs one at 640x480 where a Disney module runs at the
+//    preview box's 16:9 480 lines, and /s at the 720-line setting on a 16:9
+//    monitor, rotating between the two, asks for 640x480 and 1280x720, host
+//    by host.
+int test_config_twelve(const Opts& o) {
+  Work w = prepare_six(o, "config-twelve", "catalog-twelve.json");
+  auto rect_of = [](const std::string& v) {
+    RectI r{};
+    return sscanf(v.c_str(), "%d,%d,%d,%d", &r.x, &r.y, &r.w, &r.h) == 4 ? r : RectI{};
+  };
+  auto overlap = [](const RectI& a, const RectI& b) {
+    return a.w > 0 && b.w > 0 && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  };
+  auto within = [](const RectI& a, const RectI& b) {
+    return a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
+  };
+  struct Shot {
+    const char* state;
+    const char* mode;
+    int slots, first;
+    const char* file;   // the module the details show, previewed
+  };
+  const Shot shots[] = {
+      {"theme=light;dpi=96;size=1040x800;mode=single;module=screams.papa", "regular", 7, 0, "PAPA.AD"},
+      {"theme=dark;dpi=144;size=1040x800;mode=random;module=disney.sierra", "regular", 7, 0, "SIERRA.AD"},
+      {"theme=light;dpi=144;size=900x680;mode=random;module=marvel.kilo", "compact", 8, 0, "KILO.AD"},
+      {"theme=dark;dpi=96;size=900x800;mode=single;module=screams.quebec", "regular", 5, 0, "QUEBEC.AD"},
+      {"theme=hc;dpi=96;size=1040x800;mode=single;module=disney.tango;collections=disney;focus=strip", "regular", 7, 3,
+       "TANGO.AD"},
+      {"theme=light;dpi=144;size=900x680;mode=random;module=ad10.gamma;collections=ad10;focus=strip", "compact", 8, 4,
+       "GAMMA.AD"},
+      {"theme=dark;dpi=144;size=900x800;mode=single;module=screams.romeo;collections=looney,screams;focus=strip",
+       "regular", 5, 1, "ROMEO.AD"},
+  };
+  for (const Shot& shot : shots) {
+    fs::remove(w.host_log);
+    auto kv = dialog_report(o, w, std::string(shot.state) + ";wait=2500;frames=2");
+    const int dpi = std::max(96, atoi(kv["dpi"].c_str())), fm = std::max(3, MulDiv(3, dpi, 96));
+    const RectI strip = rect_of(kv["strip"]), status = rect_of(kv["strip_status"]);
+    const RectI box{strip.x - fm, strip.y - fm, strip.w + 2 * fm, strip.h + 2 * fm};   // the strip's window
+    const RectI left = rect_of(kv["chevron_left"]), right = rect_of(kv["chevron_right"]);
+    const int first = atoi(kv["strip_first"].c_str()), slots = atoi(kv["strip_slots"].c_str());
+    CHECK(kv["strip_mode"] == shot.mode && slots == shot.slots && first == shot.first);
+    CHECK(atoi(kv["strip_max_first"].c_str()) == 12 - shot.slots && strip.w > 0 && status.w > 0);
+    CHECK((kv["chevron_left"] != "hidden") == (first > 0) && (kv["chevron_right"] != "hidden") == (first < 12 - slots));
+    for (const RectI& c : {left, right}) CHECK(c.w == 0 || (within(c, box) && !overlap(c, status)));
+    std::vector<RectI> shown;
+    // The left chevron's place (the strip's left edge, 24 DIP), empty while
+    // the row is unscrolled: every tile shown starts past it at every stop.
+    const int left_end = strip.x + MulDiv(kStripChevronW, dpi, 96);
+    for (int i = 0; i < 12; ++i) {
+      const std::string v = kv["tile" + std::to_string(i)];
+      const bool want = i >= shot.first && i < shot.first + shot.slots;
+      if (want != (v != "hidden")) failf("config-twelve %s: tile %d is %s", shot.state, i, v.c_str());
+      if (v == "hidden") continue;
+      const RectI t = rect_of(v);
+      shown.push_back(t);
+      CHECK(within(t, box) && !overlap(t, left) && !overlap(t, right) && !overlap(t, status));
+      if (t.x < left_end - 1) failf("config-twelve %s: tile %d in the left chevron's place (%d < %d)", shot.state, i, t.x, left_end);
+    }
+    // In the picture: nothing in the strip but the tiles shown and the
+    // chevrons, on its base colour.
+    int w_px = 0, h_px = 0, off = 0;
+    unsigned base = 0;
+    std::vector<uint8_t> px;
+    if (sscanf(kv["base"].c_str(), "%x", &base) == 1 && load_png(w.dir / "dialog.png", &w_px, &h_px, &px) &&
+        box.x >= 0 && box.y >= 0 && box.x + box.w <= w_px && box.y + box.h <= h_px) {
+      for (int y = box.y; y < box.y + box.h; ++y) {
+        for (int x = box.x; x < box.x + box.w; ++x) {
+          bool owned = false;
+          for (const RectI& t : shown) owned |= x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h;
+          for (const RectI& c : {left, right}) owned |= c.w > 0 && x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h;
+          if (owned) continue;
+          const uint8_t* p = &px[((size_t)y * w_px + x) * 4];
+          off += std::abs(p[2] - (int)((base >> 16) & 0xFF)) > 2 || std::abs(p[1] - (int)((base >> 8) & 0xFF)) > 2 ||
+                 std::abs(p[0] - (int)(base & 0xFF)) > 2;
+        }
+      }
+      if (off) failf("config-twelve %s: %d pixels drawn in the strip outside its tiles and chevrons", shot.state, off);
+    } else {
+      failf("config-twelve %s: no picture of the strip", shot.state);
+    }
+    // What screen readers call the groups in Random, every module checked
+    // (no filter: Star Trek's group first, then Marvel's single module).
+    const std::string state = shot.state;
+    if (state.find("mode=random") != std::string::npos && state.find("collections=") == std::string::npos) {
+      CHECK(kv["group0"] == "Star Trek: The Screen Saver, all 4 in rotation");
+      CHECK(kv["group1"] == "Marvel Comics Screen Posters, 1 in rotation");
+    }
+    // The module the details show, previewed: ScreamSavers' and Marvel's at
+    // their own 640x480, the rest at the box's 16:9 480 lines.
+    int previews = 0;
+    for (auto& e : host_events(w, "start")) {
+      if (!ends_with(e["module"], shot.file)) continue;
+      ++previews;
+      const std::string file = shot.file;
+      const bool own = file == "PAPA.AD" || file == "QUEBEC.AD" || file == "ROMEO.AD" || file == "KILO.AD";
+      if (own) CHECK(screen_is(e, "640", "480"));
+      else CHECK(e["ADSCREENH"] == "480" && e["ADSCREENW"] != "640");   // 856x480 (848x480 in a taller box)
+    }
+    CHECK(previews >= 1);
+    if (g_failures) {
+      fprintf(stderr, "config-twelve %s:\n", shot.state);
+      for (auto& [k, v] : kv) fprintf(stderr, "  %s=%s\n", k.c_str(), v.c_str());
+      dump_logs(w);
+      return 1;
+    }
+  }
+
+  // Driven by control ID, the window at its first-open size, clamped to this
+  // monitor's work area: as many covers at a time as layout_window gives its
+  // client (seven regular ones at 1040x800 DIP; ten compact ones where the
+  // work area clamps the height under 760 DIP, as on 1920x1080 at 125% or
+  // 150%, or 1366x768 at 100%).
+  {
+    fs::remove(w.scr_log);
+    fs::remove(w.host_log);
+    EnvList env = base_env(o, w);
+    // The tile lies wholly in the strip (it shows), or wholly outside it.
+    auto where = [](HWND dlg, int i) {
+      RECT t{}, s{}, both{};
+      GetWindowRect(tile_of(dlg, i), &t);
+      GetWindowRect(strip_of(dlg), &s);
+      return !IntersectRect(&both, &t, &s) ? 'o' : EqualRect(&both, &t) ? 's' : 'c';   // outside, shows, cut
+    };
+    auto row = [&](HWND dlg) {
+      std::string r;
+      for (int i = 0; i < 12; ++i) r += where(dlg, i);
+      return r;
+    };
+    HWND dlg = nullptr;
+    int step = 0, groups3 = -1, groups4 = -1, want = -1, client_dpi = 0;
+    RECT client{};
+    bool left_empty = false;   // back at the first stop, the left chevron's place holds no tile
+    std::string row0, row1, row2, row3, row4, status3, status4;
+    RunResult r = run_scr(o, L"/c", env, 60000, [&](DWORD pid) {
+      if (!dlg) {
+        HWND d = find_dialog(pid);
+        HWND list = d ? GetDlgItem(d, IDC_MODULE_LIST) : nullptr;
+        if (!list || item_count(list) == 0 || !tile_of(d, 11)) return;
+        dlg = d;
+      }
+      HWND list = GetDlgItem(dlg, IDC_MODULE_LIST), strip = strip_of(dlg);
+      if (step == 0) {
+        // The tiles a stop shows in this client, as the dialog lays it out.
+        GetClientRect(dlg, &client);
+        client_dpi = (int)GetDpiForWindow(dlg);
+        LayoutInput li{client.right, client.bottom, client_dpi, true};
+        li.strip_tiles = 12;
+        want = layout_window(li).tiles.slots;
+        row0 = row(dlg);
+        // The last release's tile takes the focus, as Tab or the arrow keys give it.
+        SendMessageW(dlg, WM_NEXTDLGCTL, (WPARAM)tile_of(dlg, 11), TRUE);
+        row1 = row(dlg);
+        // The left chevron, twice: two stops back.
+        HWND prev = GetDlgItem(strip, IDC_STRIP_PREV);
+        for (int k = 0; k < 2; ++k) SendMessageW(strip, WM_COMMAND, MAKEWPARAM(IDC_STRIP_PREV, BN_CLICKED), (LPARAM)prev);
+        row2 = row(dlg);
+        // Space on it: it still has the focus.
+        PostMessageW(tile_of(dlg, 11), WM_KEYDOWN, VK_SPACE, 0x00390001);
+        PostMessageW(tile_of(dlg, 11), WM_KEYUP, VK_SPACE, 0xC0390001);
+        step = 1;
+      } else if (step == 1) {
+        if (SendMessageW(tile_of(dlg, 11), BM_GETCHECK, 0, 0) != BST_CHECKED) return;
+        row3 = row(dlg);
+        groups3 = group_count(list);
+        status3 = window_text(GetDlgItem(dlg, IDC_STRIP_STATUS));
+        click(dlg, IDC_STRIP_SHOW_ALL);
+        groups4 = group_count(list);
+        status4 = window_text(GetDlgItem(dlg, IDC_STRIP_STATUS));
+        // The left chevron back to the first stop, a click a stop and more:
+        // where it showed (a pointer left there), no tile then.
+        HWND prev = GetDlgItem(strip, IDC_STRIP_PREV);
+        RECT place{};
+        const bool showed = IsWindowVisible(prev) && GetWindowRect(prev, &place);
+        for (int k = 0; k < 12; ++k) SendMessageW(strip, WM_COMMAND, MAKEWPARAM(IDC_STRIP_PREV, BN_CLICKED), (LPARAM)prev);
+        row4 = row(dlg);
+        left_empty = showed && !IsWindowVisible(prev);
+        for (int i = 0; i < 12; ++i) {
+          RECT t{}, both{};
+          if (GetWindowRect(tile_of(dlg, i), &t) && IntersectRect(&both, &t, &place)) left_empty = false;
+        }
+        PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED), 0);
+        step = 2;
+      }
+    });
+    CHECK(step == 2);
+    if (!expect_exit(w, r, 0)) return 1;
+    const int k = (int)std::count(row0.begin(), row0.end(), 's');   // tiles at a time
+    CHECK(k == want && k >= 1 && k < 12);
+    if (k >= 1 && k < 12) {
+      const std::string s(k, 's'), rest(12 - k, 'o');
+      const int back2 = std::max(0, 12 - k - 2);
+      CHECK(row0 == s + rest);                                                          // unscrolled: the first k
+      CHECK(row1 == rest + s);                                                          // the last stop: the last k
+      CHECK(row2 == std::string(back2, 'o') + s + std::string(12 - k - back2, 'o'));   // two stops back
+      CHECK(row3 == row1);                                                              // toggled: back in view
+      CHECK(row4 == row0 && left_empty);                                                // unscrolled again
+    }
+    CHECK(groups3 == 1 && status3 == "Showing 1 of 12 releases");
+    CHECK(groups4 == 12 && status4 == "Click covers to filter the list");
+    check_hosts_gone(w);
+    if (g_failures) {
+      fprintf(stderr,
+              "config-twelve driven: client %ldx%ld @%d, %d tiles at a time (the layout's %d), rows %s / %s / %s / %s / %s, "
+              "left chevron's place %s, groups %d / %d, status \"%s\" / \"%s\"\n",
+              client.right, client.bottom, client_dpi, k, want, row0.c_str(), row1.c_str(), row2.c_str(), row3.c_str(),
+              row4.c_str(), left_empty ? "empty" : "not empty", groups3, groups4, status3.c_str(), status4.c_str());
+      dump_logs(w);
+      return 1;
+    }
+    // Reopened with the filter saved on the last release: its cover shows
+    // (the row at its last stop), not only the status line.
+    edit_settings(w, [](Settings& s) { s.collections = {"ad10"}; });
+    dlg = nullptr;
+    step = 0;
+    std::string row_saved, status_saved;
+    r = run_scr(o, L"/c", env, 60000, [&](DWORD pid) {
+      if (step) return;
+      HWND d = find_dialog(pid);
+      HWND list = d ? GetDlgItem(d, IDC_MODULE_LIST) : nullptr;
+      if (!list || item_count(list) == 0 || !tile_of(d, 11)) return;
+      row_saved = row(d);
+      status_saved = window_text(GetDlgItem(d, IDC_STRIP_STATUS));
+      PostMessageW(d, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED), 0);
+      step = 1;
+    });
+    CHECK(step == 1);
+    if (!expect_exit(w, r, 0)) return 1;
+    if (k >= 1 && k < 12) CHECK(row_saved == std::string(12 - k, 'o') + std::string(k, 's'));
+    CHECK(status_saved == "Showing 1 of 12 releases");
+    edit_settings(w, [](Settings& s) { s.collections.clear(); });
+    if (g_failures) {
+      fprintf(stderr, "config-twelve reopened: row %s, status \"%s\"\n", row_saved.c_str(), status_saved.c_str());
+      dump_logs(w);
+      return 1;
+    }
+    // From seven releases to twelve through Import… (fakeimport leaves the
+    // twelve-release catalog): the seven covers side by side, no chevron (as
+    // the first-open window holds them on every monitor but a narrow one);
+    // after the reload twelve, the row unscrolled with the right chevron.
+    const fs::path catalog = w.assets / "win" / "catalog-win.json", imported = w.dir / "catalog-imported.json";
+    std::string twelve, seven;
+    CHECK(read_file(catalog.wstring(), twelve) && write_file_atomic(imported.wstring(), twelve));
+    CHECK(read_file((fs::path(o.fixtures) / "catalog-seven.json").wstring(), seven) &&
+          write_file_atomic(catalog.wstring(), seven));
+    EnvList ienv = base_env(o, w);
+    ienv.push_back({L"FAKEIMPORT_EXIT", L"0"});
+    ienv.push_back({L"FAKEIMPORT_CATALOG", imported.wstring()});
+    dlg = nullptr;
+    step = 0;
+    std::string row7, row12, assets7, assets12;
+    bool chevron7 = true, right12 = false, left12 = true;
+    int want7 = -1;   // the seven's tiles at a time in this client, as the dialog lays it out
+    r = run_scr(o, L"/c", ienv, 60000, [&](DWORD pid) {
+      if (step == 2) return;
+      HWND d = find_dialog(pid);
+      HWND list = d ? GetDlgItem(d, IDC_MODULE_LIST) : nullptr;
+      if (!list || item_count(list) == 0 || !tile_of(d, 6)) return;
+      HWND strip = strip_of(d);
+      if (step == 0) {
+        RECT cr{};
+        GetClientRect(d, &cr);
+        LayoutInput li{cr.right, cr.bottom, (int)GetDpiForWindow(d), true};
+        li.strip_tiles = 7;
+        want7 = layout_window(li).tiles.slots;
+        for (int i = 0; i < 7; ++i) row7 += where(d, i);
+        chevron7 = IsWindowVisible(GetDlgItem(strip, IDC_STRIP_PREV)) || IsWindowVisible(GetDlgItem(strip, IDC_STRIP_NEXT));
+        assets7 = window_text(GetDlgItem(d, IDC_ASSETS_STATUS));
+        click(d, IDC_IMPORT);   // Import… stays greyed until the importer has exited
+        step = 1;
+      } else if (step == 1) {
+        if (!IsWindowEnabled(GetDlgItem(d, IDC_IMPORT)) || !tile_of(d, 11)) return;
+        row12 = row(d);
+        left12 = IsWindowVisible(GetDlgItem(strip, IDC_STRIP_PREV)) != FALSE;
+        right12 = IsWindowVisible(GetDlgItem(strip, IDC_STRIP_NEXT)) != FALSE;
+        assets12 = window_text(GetDlgItem(d, IDC_ASSETS_STATUS));
+        PostMessageW(d, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED), 0);
+        step = 2;
+      }
+    });
+    CHECK(step == 2);
+    if (!expect_exit(w, r, 0)) return 1;
+    CHECK(want7 >= 1 && want7 <= 7 && assets7 == "36 modules from 7 releases");
+    if (want7 >= 1 && want7 <= 7) CHECK(row7 == std::string(want7, 's') + std::string(7 - want7, 'o') && chevron7 == (want7 < 7));
+    if (k >= 1 && k < 12) CHECK(row12 == std::string(k, 's') + std::string(12 - k, 'o'));
+    CHECK(!left12 && right12 && assets12 == "46 modules from 12 releases");
+    CHECK(count_in_log(w.scr_log, "dialog: catalog reloaded") == 1);
+    check_hosts_gone(w);
+    if (g_failures) {
+      fprintf(stderr, "config-twelve import: rows %s / %s (the layout's %d / %d), chevrons %d / %d,%d, assets \"%s\" / \"%s\"\n",
+              row7.c_str(), row12.c_str(), want7, k, chevron7, left12, right12, assets7.c_str(), assets12.c_str());
+      dump_logs(w);
+      return 1;
+    }
+  }
+
+  // /s at the 720-line setting on a 16:9 monitor staged off every real one,
+  // rotating between a ScreamSavers and a Disney module: each host its
+  // module's size, 640x480 and 1280x720, switch after switch.
+  {
+    fs::remove(w.scr_log);
+    fs::remove(w.host_log);
+    edit_settings(w, [](Settings& s) {
+      s.scale = 1.5;
+      s.all_monitors = false;
+      s.module = "random";
+      s.randomize = {"screams.papa", "disney.sierra"};
+      s.collections.clear();
+    });
+    EnvList env = base_env(o, w);
+    env.push_back({L"AD_SCR_TEST_MONITORS", L"-16000,0,1280,720,p"});
+    env.push_back({L"AD_SCR_TEST_ROTATE_MS", L"300"});
+    bool closed = false;
+    const ULONGLONG t0 = GetTickCount64();
+    RunResult r = run_scr(o, L"/s", env, 60000, [&](DWORD pid) {
+      if (!closed && (host_events(w, "start").size() >= 4 || GetTickCount64() - t0 > 20000)) {
+        close_saver(pid);
+        closed = true;
+      }
+    });
+    if (!expect_exit(w, r, 0)) return 1;
+    auto starts = host_events(w, "start");
+    CHECK(starts.size() >= 4);
+    int screams = 0, disney = 0;
+    std::string last;
+    for (auto& e : starts) {
+      if (ends_with(e["module"], "PAPA.AD")) {
+        ++screams;
+        CHECK(screen_is(e, "640", "480"));
+      } else if (ends_with(e["module"], "SIERRA.AD")) {
+        ++disney;
+        CHECK(screen_is(e, "1280", "720"));
+      } else {
+        failf("config-twelve: a host for %s", e["module"].c_str());
+      }
+      CHECK(e["module"] != last);   // two modules: every switch a new host, of the other size
+      last = e["module"];
+    }
+    CHECK(screams >= 2 && disney >= 2);
+    CHECK(count_in_log(w.scr_log, "size=640x480 ") == screams && count_in_log(w.scr_log, "size=1280x720 ") == disney);
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  return 0;
+}
+
 // The tools of the tooltip windows `dlg` owns: each tool's window (a
 // TTF_IDISHWND tool's uId; null for the others) and its text, read through
 // memory in the dialog's process (TOOLINFO carries a pointer, which
@@ -5567,6 +5942,7 @@ int wmain(int argc, wchar_t** argv) {
       {L"rotate-abi-wait", test_rotate_abi_wait},
       {L"screen-abi", test_screen_abi},
       {L"screen-field", test_screen_field},
+      {L"config-twelve", test_config_twelve},
       {L"numlock", test_numlock},
       {L"config-credit", test_config_credit},
       {L"config-details", test_config_details},

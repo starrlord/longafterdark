@@ -397,8 +397,9 @@ void refresh_preview(State& st) {
   }
   LiveTarget t;
   t.id = m.id;
-  // Its screen: its own when it has one (an Intermission or a Star Trek
-  // module's 640x480; geometry.h: own_screen, module_screen).
+  // Its screen: its own when it has one (an Intermission, Star Trek,
+  // ScreamSavers or Marvel module's 640x480; geometry.h: own_screen,
+  // module_screen).
   t.abi = m.abi;
   t.screen = m.screen;
   t.host_exe = host_exe_path();
@@ -1693,14 +1694,15 @@ void set_group_checks(State& st, int group, bool on) {
 // What screen readers call a group (its LVGROUP header; the list's own
 // painting of it is covered by draw_group_headers): the release's title and,
 // in Random mode, its group checkbox's state, "Totally Twisted After Dark, 4
-// of 13 in rotation".
+// of 13 in rotation" ("all 13", "none"; a release of one module, Marvel
+// Comics Screen Posters, "1 in rotation", as the rotation line words it).
 std::wstring group_name(const State& st, const ListGroup& lg) {
   std::wstring name = widen(st.catalog.releases[lg.release].title);
   if (!st.random) return name;
   const GroupChecks gc = group_checks(st, group_id(lg.release));
   if (gc.total == 0) return name;
   return name + L", " +
-         (gc.checked == gc.total ? L"all " + std::to_wstring(gc.total) + L" in rotation"
+         (gc.checked == gc.total ? (gc.total == 1 ? L"" : L"all ") + std::to_wstring(gc.total) + L" in rotation"
           : gc.checked == 0      ? std::wstring(L"none in rotation")
                                  : std::to_wstring(gc.checked) + L" of " + std::to_wstring(gc.total) + L" in rotation");
 }
@@ -2481,8 +2483,8 @@ void on_preview(State& st) {
   // Run exactly what the dialog shows (even unsaved): a throwaway settings
   // file handed to "/s" through AD_SETTINGS (dialog_support.h). Its host gets
   // the module's own screen, as the saver's always do (module_screen: an
-  // Intermission or a Star Trek module's 640x480, whatever the Resolution
-  // setting).
+  // Intermission, Star Trek, ScreamSavers or Marvel module's 640x480,
+  // whatever the Resolution setting).
   Settings s = gather(st);
   s.module = st.catalog.modules[mi].id;
   s.randomize.clear();   // just this module, for as long as the preview runs
@@ -3637,7 +3639,8 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 //     also where the box-cover strip's tiles area shows, strip_mode=regular|compact|hidden,
 //     the base colour and how many rows the list shows; each group's accessible name and
 //     its title as drawn; the host's capabilities line, the modules "Coming soon", and the
-//     shown module's id, chip, whether its buttons are live and Preview is enabled)
+//     shown module's id, chip, whether its buttons are live and Preview is enabled; the
+//     strip's scroll position, each tile's window or "hidden", its chevrons and status line)
 //     collections=<id>,… (the strip's filter)  focus=strip (the first selected tile, else
 //     the first)  hover=strip:<id> (that tile hovered)
 //     sound=off (the Sound dropdown at Off)  volume=<0..100>  focus=sound|volume
@@ -3830,6 +3833,29 @@ int run_screenshot(State& st, const std::wstring& png) {
     // What screen readers call each group (its LVGROUP header), and its
     // title as the header last drew it (whole, or ellipsized: "drawn<g>=").
     std::string report = buf;
+    // The strip's own windows as the picture shows them: its scroll position
+    // and stops, each tile ("hidden" while it lies outside the strip, not
+    // shown), the chevrons and the status line, in the picture's pixels.
+    if (mode != StripMode::hidden && st.strip) {
+      auto shot = [&](HWND h, bool in_strip) {
+        RECT r{}, box{}, both{};
+        if (!h || !IsWindowVisible(h) || !GetWindowRect(h, &r)) return std::string("hidden");
+        GetWindowRect(st.strip->hwnd(), &box);
+        if (in_strip && !IntersectRect(&both, &r, &box)) return std::string("hidden");
+        OffsetRect(&r, -origin.x, -origin.y);
+        return std::to_string(r.left) + "," + std::to_string(r.top) + "," + std::to_string(r.right - r.left) + "," +
+               std::to_string(r.bottom - r.top);
+      };
+      const StripLayout& g = st.strip->geometry();
+      report += "strip_first=" + std::to_string(g.first) + "\nstrip_max_first=" + std::to_string(g.max_first) +
+                "\nstrip_slots=" + std::to_string(g.slots) + "\n";
+      for (size_t i = 0; i < st.strip->count(); ++i) {
+        report += "tile" + std::to_string(i) + "=" + shot(st.strip->tile_hwnd((int)i), true) + "\n";
+      }
+      report += "chevron_left=" + shot(GetDlgItem(st.strip->hwnd(), IDC_STRIP_PREV), true) +
+                "\nchevron_right=" + shot(GetDlgItem(st.strip->hwnd(), IDC_STRIP_NEXT), true) +
+                "\nstrip_status=" + shot(GetDlgItem(dlg, IDC_STRIP_STATUS), false) + "\n";
+    }
     for (size_t g = 0; g < st.model.groups.size(); ++g) {
       wchar_t name[256] = {};
       LVGROUP info{};

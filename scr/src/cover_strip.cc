@@ -224,6 +224,9 @@ void CoverStrip::set_tiles(const std::vector<StripTile>& tiles, const std::vecto
   const int home = home_tile();
   set_tab_stop(home);
   first_ = 0;
+  // A filter on a cover past the first stop (a saved Collections, a reload
+  // keeping the filter): the first selected cover shows, not only the status.
+  reveal_ = home > 0 ? home : -1;
   place_tiles();
   if (had_focus && home >= 0) SetFocus(buttons_[home]);
 }
@@ -285,16 +288,25 @@ void CoverStrip::layout(const StripInput& in, POINT origin) {
 void CoverStrip::place_tiles() {
   in_.first = first_;
   in_.tiles = (int)tiles_.size();
+  if (reveal_ >= 0 && in_.w > 0) {
+    in_.first = first_ = strip_first_showing(in_, reveal_);
+    reveal_ = -1;
+  }
   S_ = layout_strip(in_);
   first_ = S_.first;
   const int fm = focus_margin(t_->dpi);
+  RECT box{};
+  GetClientRect(container_, &box);
   HDWP dwp = BeginDeferWindowPos((int)buttons_.size() + 2);
   for (size_t i = 0; i < buttons_.size() && i < S_.cells.size(); ++i) {
     const Rc& c = S_.cells[i];
-    if (dwp) {
-      dwp = DeferWindowPos(dwp, buttons_[i], nullptr, c.x - fm - origin_.x, c.y - fm - origin_.y, c.w + 2 * fm, c.h + 2 * fm,
-                           SWP_NOZORDER | SWP_NOACTIVATE);
-    }
+    const int w = c.w + 2 * fm, h = c.h + 2 * fm;
+    int x = c.x - fm - origin_.x;
+    // A tile the view can't hold whole isn't shown at all: it waits just
+    // outside the container, on its side of the row (still a window for the
+    // dialog manager and screen readers; taking the focus scrolls it in).
+    if (!S_.whole[i]) x = (int)i < first_ ? box.left - w - 1 : box.right + 1;
+    if (dwp) dwp = DeferWindowPos(dwp, buttons_[i], nullptr, x, c.y - fm - origin_.y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
   }
   auto chevron = [&](HWND b, const Rc& r) {
     if (!dwp) return;
@@ -356,7 +368,8 @@ void CoverStrip::on_command(int id, int code, HWND from) {
   if (i < 0) return;
   (void)id;
   if (code == BN_CLICKED || code == BN_DOUBLECLICKED) {
-    refresh();   // every cover's dimming follows the filter
+    ensure_visible(i);   // Space on a focused tile the chevrons scrolled away: back in view
+    refresh();           // every cover's dimming follows the filter
     if (cb_.changed) cb_.changed();
   }
 }
@@ -563,16 +576,6 @@ void CoverStrip::draw_tile(NMCUSTOMDRAW* cd, int i) {
     const int size = strip_caption_size(c.right - c.left, [&](int sz) { return (int)measure_text(dc, text, caption_font(sz)).cx; });
     draw_text(dc, text, c, caption_font(size), dimmed && !p.high_contrast ? p.text2 : p.text,
               DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
-  }
-  // Fading into the strip's ends where more tiles lie beyond them.
-  const RECT area = offset(rc_of(S_.area), dx, dy);
-  if (!S_.fade_right.empty()) {
-    fade_in_right(dc, offset(rc_of(S_.fade_right), dx, dy), p.base);
-    if (area.right < cr.right) fill_rect(dc, RECT{area.right, cr.top, cr.right, cr.bottom}, p.base);
-  }
-  if (!S_.fade_left.empty()) {
-    fade_in_left(dc, offset(rc_of(S_.fade_left), dx, dy), p.base);
-    if (area.left > cr.left) fill_rect(dc, RECT{cr.left, cr.top, area.left, cr.bottom}, p.base);
   }
   const bool focus = ((cd->uItemState & CDIS_FOCUS) || focused_window() == h) && keyboard_cues(h);
   if (focus) draw_focus_ring(dc, cr, t.pxf(6) + fm, p, s);

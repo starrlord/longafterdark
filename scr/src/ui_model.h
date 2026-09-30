@@ -46,6 +46,8 @@ std::wstring duration_label(int minutes);
 // counted): a module several releases ship byte for byte plays once per pass
 // (COVERS.md §1.8), so with copies checked the line says what rotates, "All
 // 202 selected · 129 distinct". What can't run is said first.
+// A list of one module (Marvel Comics Screen Posters, alone or filtered to)
+// is "1 in rotation" or "1 selected · 0 can run now", never "All 1".
 std::wstring rotation_summary(size_t checked, size_t total, long long runnable = -1, long long distinct = -1);
 
 // The rotation line's tooltip ("" = none): that identical copies play once
@@ -66,8 +68,8 @@ AssetCounts count_assets(const Catalog& c, const std::vector<bool>& present);
 std::wstring assets_summary(const AssetCounts& a);
 
 // The not-imported welcome's text (under "Welcome to Long After Dark"): what
-// importing does, for every release (six of After Dark, and Star Wars
-// Screen Entertainment).
+// importing does, for every release (eleven of After Dark modules, and Star
+// Wars Screen Entertainment).
 std::wstring welcome_text();
 
 // ---- string-slider stops ---------------------------------------------------------
@@ -145,8 +147,9 @@ inline constexpr int kMinClientW = 900, kMinClientH = 600;          // the windo
 inline constexpr int kDesignClientHStrip = 800, kMinClientHStrip = 680, kStripCompactBelow = 760;
 
 // ---- the box-cover strip (COVERS.md §1.2, §1.3) ------------------------------------
-// One 4:5 tile per release across the top of the content column, left-aligned,
-// with a status box at the column's right edge. DIPs.
+// One 4:5 tile per release across the top of the content column, left-aligned
+// (a row that overflows starts after the left chevron's zone), with a status
+// box at the column's right edge. DIPs.
 enum class StripMode { hidden, regular, compact };
 struct StripMetrics {
   int art_w, art_h;       // the cover (4:5)
@@ -157,7 +160,10 @@ struct StripMetrics {
   int band;               // cells + the 12-DIP gap under them
 };
 StripMetrics strip_metrics(bool compact);
-inline constexpr int kStripStatusW = 200, kStripStatusGap = 16, kStripChevronW = 24, kStripFadeW = 24;
+inline constexpr int kStripStatusW = 200, kStripStatusGap = 16, kStripChevronW = 24;
+// A chevron's zone is the button and this gap, which keeps it clear of the
+// tiles beside it (of a tile's focus ring too, drawn a focus margin past its cell).
+inline constexpr int kStripChevronGap = 4;
 
 struct StripInput {
   int tiles = 0;
@@ -169,16 +175,25 @@ struct StripInput {
 struct StripLayout {
   StripMode mode = StripMode::hidden;
   int first = 0, max_first = 0;     // scroll position (whole tiles) and its last stop
-  bool overflow = false;            // more tiles than the area holds: the row scrolls
-  Rc area;                          // the tiles area (tiles are clipped to it)
-  Rc view;                          // where a tile shows whole: the area less the chevrons' zones
+  bool overflow = false;            // more tiles than the area holds side by side: the row scrolls
+  int slots = 0;                    // how many tiles show at a time (all of them without overflow)
+  Rc area;                          // the tiles area
+  Rc view;                          // where tiles show: the area, or overflowing, the slots between the chevrons' zones
   std::vector<Rc> cells, arts, captions;   // per tile (captions empty when compact)
-  std::vector<bool> whole;          // the cell lies wholly inside `view`
+  std::vector<bool> whole;          // the cell lies wholly inside `view`: the tile shows (the others don't, at all)
   Rc chevron_left, chevron_right;   // 24-DIP buttons at an end with more beyond it (empty otherwise)
-  Rc fade_left, fade_right;         // 24-DIP fades into the base colour at those ends
 };
-// Pure: whole-cell scrolling. Tile i sits at x + lead + (i - first) * pitch,
-// where lead is the left chevron's zone once the row has scrolled.
+// Pure: whole-cell scrolling. Overflowing, the row shows `slots` tiles at
+// every scroll stop, as many whole cells as fit between the two chevrons'
+// zones. Tile i sits at x + lead + (i - first) * pitch, where lead is the
+// left chevron's zone whenever the row overflows (unscrolled too, where that
+// zone stays empty: each slot keeps one place across the stops), and 0
+// otherwise (the tiles left-aligned on the column). Each chevron has one
+// place whatever the scroll position: the left one at the area's left edge,
+// the right one just past the last slot, and no tile shows in either place
+// at any stop (a click too many on a chevron that hides lands on no cover).
+// A tile the view can't hold whole is not shown, so no cover or caption is
+// ever cut and nothing lies under a chevron.
 StripLayout layout_strip(const StripInput& in);
 // The scroll position that brings `tile` wholly into view, moving as little as can be.
 int strip_first_showing(const StripInput& in, int tile);
@@ -271,7 +286,7 @@ WindowLayout layout_window(const LayoutInput& in);
 
 // ---- the footer's credit ---------------------------------------------------------------
 // "Made With Love by StarrLord" in the footer, in the free space between the
-// assets line ("232 modules from 7 releases") and Preview: one link to the
+// assets line ("284 modules from 12 releases") and Preview: one link to the
 // project's page in the dialog's link look (adw_ui's ButtonRole::subtle, as
 // "Show all" and "Get the covers": its box kLinkPad past its text, a fill on
 // hover and a deeper one pressed, the focus ring around it, a hand pointer),

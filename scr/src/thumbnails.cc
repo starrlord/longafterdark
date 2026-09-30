@@ -232,9 +232,9 @@ void ThumbnailQueue::start_next() {
     spec.working_dir = j.win_dir;
     // The screen the modules were made for, 640x480, a third of which fills
     // a tile: the module's own rule (module_screen) on a 4:3 display at 480
-    // lines, which is 640x480 for an After Dark, an Intermission and a Star
-    // Trek module alike (a module whose catalog "screen" is another size gets
-    // that one).
+    // lines, which is 640x480 for an After Dark module and for an
+    // Intermission, Star Trek, ScreamSavers or Marvel one alike (a module
+    // whose catalog "screen" is another size gets that one).
     const SizeI emu = module_screen(own_screen(j.abi, j.screen), 4.0 / 3.0, 1.0).emu;
     spec.env = {
         {L"ADSTREAM", L"1"},

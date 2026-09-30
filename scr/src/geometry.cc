@@ -66,8 +66,9 @@ std::vector<SeedShotPlan> plan_seed_shots(const std::vector<ModuleScreen>& scree
                                           size_t* left_out) {
   // Each screen once (sets: a catalog may hold any number): After Dark's
   // first (the first one given; its file keeps the name it has always had),
-  // then modules' own sizes, 640x480 (Intermission's and Star Trek's) and
-  // then the smallest (the fewest bytes), whatever order they came in.
+  // then modules' own sizes, 640x480 (Intermission's, Star Trek's,
+  // ScreamSavers' and Marvel's) and then the smallest (the fewest bytes),
+  // whatever order they came in.
   auto own_before = [](const SizeI& a, const SizeI& b) {
     const bool a_vga = a == SizeI{640, 480}, b_vga = b == SizeI{640, 480};
     if (a_vga != b_vga) return a_vga;

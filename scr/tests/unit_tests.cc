@@ -18,6 +18,7 @@
 #include <random>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "args.h"
@@ -645,6 +646,23 @@ void test_catalog() {
   const Module* comms = c.find("startrek.comms");
   CHECK(comms && comms->controls.size() == 1 && comms->controls[0].type == ControlType::button &&
         comms->controls[0].index == 3);
+  // The twelve-release fixture: ScreamSavers' and Marvel Comics Screen
+  // Posters' modules (After Dark's ABI, lane ne16) each with "screen":
+  // "640x480", as Star Trek's; Snoopy's, Looney Tunes' and Disney's without
+  // one; after the seven releases' entries (registry order).
+  CHECK(parse_catalog(fixture("catalog-twelve.json"), c, &err));
+  CHECK_EQ(c.modules.size(), (size_t)46);
+  size_t own = 0;
+  for (const Module& m : c.modules) {
+    if (m.package != "screams" && m.package != "marvel" && m.package != "startrek") {
+      CHECK((m.screen == SizeI{}));
+      continue;
+    }
+    ++own;
+    CHECK((m.screen == SizeI{640, 480}) && m.abi == kAfterDarkAbi && m.lane == "ne16");
+  }
+  CHECK_EQ(own, (size_t)8);   // Star Trek's 4, Marvel's 1, ScreamSavers' 3
+  CHECK(c.modules.size() == 46 && c.modules[36].id == "marvel.kilo" && c.modules[45].id == "disney.tango");
 
   CHECK(resolve_module_path(L"C:\\a\\win", "FILES/AD40/X.AD") == L"C:\\a\\win\\FILES\\AD40\\X.AD");
   CHECK(resolve_module_path(L"C:\\a\\win\\", "/FILES/X.AD") == L"C:\\a\\win\\FILES\\X.AD");
@@ -1481,11 +1499,27 @@ void test_ui() {
   CHECK(rotation_summary(12, 84, -1, 12) == L"12 of 84 in rotation");
   CHECK(rotation_summary(202, 202, 150, 129) == L"All 202 selected · 150 can run now");
   CHECK(rotation_summary(0, 202, 0, 0) == L"None in rotation");
+  // A list of one module (Marvel Comics Screen Posters, alone or filtered
+  // to): "1", never "All 1"; two are "All 2" again.
+  CHECK(rotation_summary(1, 1) == L"1 in rotation");
+  CHECK(rotation_summary(1, 1, 1, 1) == L"1 in rotation");
+  CHECK(rotation_summary(1, 1, 0) == L"1 selected · 0 can run now");
+  CHECK(rotation_summary(1, 1, 0, 1) == L"1 selected · 0 can run now");
+  CHECK(rotation_summary(0, 1) == L"None in rotation" && rotation_summary(0, 1, 0, 0) == L"None in rotation");
+  CHECK(rotation_summary(2, 2) == L"All 2 in rotation" && rotation_summary(1, 2) == L"1 of 2 in rotation");
+  CHECK(rotation_summary(2, 284, 2, 1) == L"2 of 284 selected · 1 distinct");
   // Its tooltip: the copies, and the module the file names to play first.
   CHECK(rotation_tip(202, 202, L"").empty() && rotation_tip(0, 0, L"").empty());
   CHECK(rotation_tip(202, 129, L"") ==
         L"A module that is on several of the releases checked plays once in each pass, so 129 different modules "
         L"take turns.");
+  // Copies of one module alone (the same module checked on two releases):
+  // nothing takes turns.
+  CHECK(rotation_tip(2, 1, L"") ==
+        L"A module that is on several of the releases checked plays once in each pass, so 1 module is in rotation.");
+  CHECK(rotation_tip(3, 2, L"") ==
+        L"A module that is on several of the releases checked plays once in each pass, so 2 different modules take "
+        L"turns.");
   CHECK(rotation_tip(12, 12, L"Flying Toasters") ==
         L"Flying Toasters plays first (your settings name it), then the rotation.");
   CHECK(rotation_tip(202, 129, L"Fish") == rotation_tip(202, 129, L"") + L"\n\n" + rotation_tip(1, 1, L"Fish"));
@@ -1534,12 +1568,12 @@ void test_ui() {
   }
 
   // Status text: no closing full stop (the releases' own line is checked in
-  // the releases suite). Not every release is After Dark's: the words fit all seven.
+  // the releases suite). Not every release is After Dark's: the words fit all twelve.
   CHECK(assets_summary({}) == L"Nothing imported yet");
   // The not-imported welcome: what importing does.
   CHECK(welcome_text().find(L"The screen saver runs the original modules of After Dark and Star Wars Screen "
                             L"Entertainment from your own discs.\n\n"
-                            L"Import them from any of your discs (seven releases are supported), a disc image, or the "
+                            L"Import them from any of your discs (twelve releases are supported), a disc image, or the "
                             L"Internet Archive download.") == 0);
   CHECK(welcome_text().find(L"After Dark discs") == std::wstring::npos);
   Catalog c;
@@ -1605,15 +1639,15 @@ void test_ui() {
   // doesn't show, there was no room for it.
   {
     HDC dc = CreateCompatibleDC(nullptr);
-    // The seven releases' line, "232 modules from 7 releases", has as many
-    // characters as the six's had ("216 modules from 6 releases"), but its
-    // digits are wider in the caption face, Segoe UI Variable Small (2-5 px
-    // at 100-250%; the same width in Segoe UI).
-    const wchar_t* texts[] = {L"Nothing imported yet", L"232 modules from 7 releases",
+    // The twelve releases' line, "284 modules from 12 releases", is a digit
+    // longer than the seven's ("232 modules from 7 releases"), whose digits
+    // were already wider in the caption face, Segoe UI Variable Small, than
+    // the six's ("216 modules from 6 releases").
+    const wchar_t* texts[] = {L"Nothing imported yet", L"284 modules from 12 releases",
                               L"84 modules from After Dark 4.0 Deluxe",
-                              L"232 modules from 7 releases · 2 missing — import again to restore"};
-    int shown = 0, hidden = 0, min_seven = 0;
-    std::string min_seven_at;   // the scales it fits the narrowest window at
+                              L"284 modules from 12 releases · 2 missing — import again to restore"};
+    int shown = 0, hidden = 0, min_twelve = 0;
+    std::string min_twelve_at;   // the scales it fits the narrowest window at
     for (int dpi = 96; dpi <= 240; dpi += 24) {
       adw::ui::Theme t;
       t.set_dpi(dpi);
@@ -1629,8 +1663,8 @@ void test_ui() {
       struct Size {
         int w, h, tiles;
       };
-      for (const Size& sz : {Size{kDesignClientW, kDesignClientHStrip, 6}, Size{kMinClientW, kMinClientHStrip, 6},
-                             Size{kMinClientW, kMinClientH, 0}, Size{1600, 1000, 6}}) {
+      for (const Size& sz : {Size{kDesignClientW, kDesignClientHStrip, 12}, Size{kMinClientW, kMinClientHStrip, 12},
+                             Size{kMinClientW, kMinClientH, 0}, Size{1600, 1000, 12}}) {
         LayoutInput li{dip(sz.w, dpi), dip(sz.h, dpi), dpi, true};
         li.strip_tiles = sz.tiles;
         const WindowLayout L = layout_window(li);
@@ -1668,14 +1702,14 @@ void test_ui() {
           // The status line it sits beside is never under it.
           CHECK(C.box.x > in.assets_right);
         }
-        // Where it matters: with seven releases it shows at the first-open size
-        // (with room to spare) at every scale; one release's long title and
-        // the assets line at its longest (files missing) leave it no room in
-        // the minimum window. (In the minimum window beside "232 modules from
-        // 7 releases" it fits at some scales only: in Segoe UI Variable at 5
-        // of 7 on Windows 11, not at 150% or 200%, where it fit beside the
-        // six's line at all 7. So that case is only reported: whether it
-        // shows there depends on the face, and where it has no room it
+        // Where it matters: with twelve releases it shows at the first-open
+        // size (with room to spare) at every scale; one release's long title
+        // and the assets line at its longest (files missing) leave it no room
+        // in the minimum window. (In the minimum window beside the releases'
+        // line it fits at some scales only: beside the seven's, in Segoe UI
+        // Variable at 5 of 7 on Windows 11, not at 150% or 200%, where it fit
+        // beside the six's at all 7. So that case is only reported: whether
+        // it shows there depends on the face, and where it has no room it
         // hides, as it should, never clipped.)
         auto credit_for = [&](const wchar_t* text) {
           RECT m{0, 0, L.assets.w, 0};
@@ -1686,18 +1720,18 @@ void test_ui() {
           i2.assets_right = L.assets.x + std::min<int>(L.assets.w, m.right - m.left);
           return layout_footer_credit(L, i2);
         };
-        if (sz.w == kDesignClientW) CHECK(credit_for(L"232 modules from 7 releases").shown);
+        if (sz.w == kDesignClientW) CHECK(credit_for(texts[1]).shown);
         if (sz.w == kMinClientW) {
           CHECK(!credit_for(texts[2]).shown && !credit_for(texts[3]).shown);
-          if (sz.h == kMinClientHStrip && credit_for(L"232 modules from 7 releases").shown) {
-            ++min_seven;
-            min_seven_at += (min_seven_at.empty() ? "" : ",") + std::to_string(dpi * 100 / 96) + "%";
+          if (sz.h == kMinClientHStrip && credit_for(texts[1]).shown) {
+            ++min_twelve;
+            min_twelve_at += (min_twelve_at.empty() ? "" : ",") + std::to_string(dpi * 100 / 96) + "%";
           }
         }
       }
     }
-    printf("ui: the credit fits beside \"232 modules from 7 releases\" in the narrowest window at %d of 7 scales (%s)\n",
-           min_seven, min_seven_at.c_str());
+    printf("ui: the credit fits beside \"284 modules from 12 releases\" in the narrowest window at %d of 7 scales (%s)\n",
+           min_twelve, min_twelve_at.c_str());
     CHECK(shown > 0 && hidden > 0);
     DeleteDC(dc);
     // Degenerate input: nothing measured, no credit.
@@ -2340,6 +2374,11 @@ void test_releases_list() {
   CHECK(assets_summary(count_assets(deluxe, {true, true})) == L"2 modules from After Dark 4.0 Deluxe");
 }
 
+// A focusable control's focus margin, px: adw_ui's focus_margin (widgets.cc,
+// which this program doesn't link: it needs comctl32 6, and scr_unit has no
+// manifest asking for it).
+int focus_margin_px(int dpi) { return std::max(3, MulDiv(3, dpi, 96)); }
+
 // Everything about the strip that must hold at a scale and a count of releases.
 void check_strip(const StripInput& in, const char* what) {
   const StripLayout S = layout_strip(in);
@@ -2365,14 +2404,42 @@ void check_strip(const StripInput& in, const char* what) {
     if (!S.view.contains(S.cells[i])) fail("whole tile outside the view");
   }
   if (whole < 1 || first_whole != S.first) fail("the first tile shown is not whole");
-  // The chevrons (24 DIP) and fades at the ends with more beyond them.
+  // As many at every stop: all of them, or overflowing, the slots between
+  // the chevrons' zones (at least one, and fewer than all).
+  if (S.slots != (overflow ? whole : n) || (overflow && (S.slots < 1 || S.slots >= n)) || S.max_first != n - S.slots)
+    fail("tiles shown at a stop");
+  // The chevrons (24 DIP) at the ends with more beyond them.
   const bool more_left = S.first > 0, more_right = !S.whole[n - 1];
-  if (S.chevron_left.empty() == more_left || S.fade_left.empty() == more_left) fail("left chevron");
-  if (S.chevron_right.empty() == more_right || S.fade_right.empty() == more_right) fail("right chevron");
-  if (!S.chevron_right.empty() && (std::abs(S.chevron_right.w - dip(kStripChevronW, d)) > 1 || !S.area.contains(S.chevron_right)))
-    fail("right chevron size");
+  if (S.chevron_left.empty() == more_left) fail("left chevron");
+  if (S.chevron_right.empty() == more_right) fail("right chevron");
+  for (const Rc* c : {&S.chevron_left, &S.chevron_right}) {
+    if (!c->empty() && (std::abs(c->w - dip(kStripChevronW, d)) > 1 || !S.area.contains(*c))) fail("chevron size");
+  }
+  // Beside the tiles: the left one at the area's edge, the first tile shown
+  // just past its zone; the right one just past the last slot.
+  const int chevron_gap = dip(kStripChevronGap, d);
+  if (!S.chevron_left.empty() &&
+      (S.chevron_left.x != S.area.x || std::abs(S.cells[S.first].x - S.chevron_left.right() - chevron_gap) > 1))
+    fail("left chevron place");
+  if (!S.chevron_right.empty() && std::abs(S.chevron_right.x - S.view.right() - chevron_gap) > 1) fail("right chevron place");
+  // The first tile shown: overflowing, just past the left chevron's zone at
+  // every stop (unscrolled too, the zone empty then); else at the area's edge.
+  const int lead = overflow ? dip(kStripChevronW + kStripChevronGap, d) : 0;
+  if (std::abs(S.cells[S.first].x - S.area.x - lead) > 1) fail("the first tile shown out of its place");
   if (S.first == S.max_first && more_right) fail("the last stop leaves tiles beyond");
   if (!overflow && (more_left || more_right)) fail("chevrons without overflow");
+  // Nothing of a tile shown lies under a chevron, its focus ring included
+  // (its window: the cell and a focus margin each side), nor outside the
+  // strip's window (the area and a focus margin each side).
+  const int fm = focus_margin_px(d);
+  for (int i = 0; i < n; ++i) {
+    if (!S.whole[i]) continue;
+    const Rc win{S.cells[i].x - fm, S.cells[i].y - fm, S.cells[i].w + 2 * fm, S.cells[i].h + 2 * fm};
+    for (const Rc* c : {&S.chevron_left, &S.chevron_right}) {
+      if (!c->empty() && win.overlaps(*c)) fail("a tile shown under a chevron");
+    }
+    if (!Rc{S.area.x - fm, S.area.y - fm, S.area.w + 2 * fm, S.area.h + 2 * fm}.contains(win)) fail("a tile outside the strip");
+  }
   // Tiles and their parts.
   for (int i = 0; i < n; ++i) {
     if (!S.cells[i].contains(S.arts[i])) fail("art outside its cell");
@@ -2386,6 +2453,49 @@ void check_strip(const StripInput& in, const char* what) {
     t.first = strip_first_showing(in, i);
     if (!layout_strip(t).whole[i]) fail("strip_first_showing");
   }
+}
+
+// Across a row's scroll stops: each chevron at one place whenever it shows,
+// and that place clear of every tile shown at the stop where it hides (the
+// left one's unscrolled, the right one's at the last stop: a pointer left on
+// it after a click too many lands on nothing), and each step moving the
+// tiles by one pitch (every slot keeps its place across the stops).
+void check_strip_stops(StripInput in, const char* what) {
+  const StripMetrics m = strip_metrics(in.compact);
+  const int d = in.dpi, fm = focus_margin_px(d);
+  auto fail = [&](const char* why) {
+    fprintf(stderr, "strip %s n=%d %s @%d w=%g first=%d: %s\n", what, in.tiles, in.compact ? "compact" : "regular", d, in.w,
+            in.first, why);
+    ++g_failures;
+  };
+  in.first = 0;
+  const int stops = layout_strip(in).max_first;
+  Rc left, right;
+  std::vector<StripLayout> at;
+  for (int f = 0; f <= stops; ++f) {
+    in.first = f;
+    at.push_back(layout_strip(in));
+    const StripLayout& S = at.back();
+    for (auto [c, seen] : {std::pair{S.chevron_left, &left}, std::pair{S.chevron_right, &right}}) {
+      if (c.empty()) continue;
+      if (seen->empty()) *seen = c;
+      else if (!(c == *seen)) fail("a chevron moved between stops");
+    }
+    if (f > 0) {
+      const int step = dip(m.pitch, d);
+      for (size_t i = 0; i < S.cells.size(); ++i) {
+        if (std::abs(at[f - 1].cells[i].x - S.cells[i].x - step) > 1) fail("a step is not one pitch");
+      }
+    }
+  }
+  auto clear_of = [&](const StripLayout& S, const Rc& chevron, const char* why) {
+    for (size_t i = 0; i < S.cells.size() && !chevron.empty(); ++i) {
+      const Rc win{S.cells[i].x - fm, S.cells[i].y - fm, S.cells[i].w + 2 * fm, S.cells[i].h + 2 * fm};
+      if (S.whole[i] && win.overlaps(chevron)) fail(why);
+    }
+  };
+  clear_of(at.front(), left, "a tile where the left chevron was, unscrolled");
+  clear_of(at.back(), right, "a tile where the right chevron was, at the last stop");
 }
 
 void test_releases_layout() {
@@ -2415,8 +2525,9 @@ void test_releases_layout() {
   for (int dpi = 96; dpi <= 240; dpi += 24) {
     for (int n = 1; n <= 12; ++n) {
       for (bool compact : {false, true}) {
-        for (double w : {min_area, 776.0, 1024.0, 300.0}) {
+        for (double w : {min_area, 776.0, 1024.0, 300.0, 850.0, 855.5, 856.0}) {
           for (int first = 0; first <= n; ++first) check_strip(StripInput{n, compact, 24, 48, w, first, dpi}, "sweep");
+          check_strip_stops(StripInput{n, compact, 24, 48, w, 0, dpi}, "sweep");
         }
       }
     }
@@ -2530,8 +2641,9 @@ void test_releases_layout() {
     CHECK(strip_caption_size(80, eight_per_dip) == 10);
     CHECK(strip_caption_size(10, eight_per_dip) == 10);   // nothing fits: the smallest, ellipsized
     CHECK(strip_caption_room(96, 96) == 102 && strip_caption_room(120, 120) == 128);
-    const char* titles[] = {"Deluxe",   "10th Anniversary", "After Dark 3.2", "Totally Twisted",
-                            "Simpsons", "Star Wars",        "Star Trek"};
+    const char* titles[] = {"Deluxe",    "10th Anniversary", "After Dark 3.2", "Totally Twisted",
+                            "Simpsons",  "Star Wars",        "Star Trek",      "Marvel",
+                            "Snoopy",    "Looney Tunes",     "ScreamSavers",   "Disney"};
     HDC dc = CreateCompatibleDC(nullptr);
     for (int dpi : {96, 120, 144, 168, 192, 216, 240}) {
       adw::ui::Theme t;
@@ -2855,9 +2967,8 @@ void test_releases_seven() {
   // Seven covers (COVERS.md §1.2): they fit the first-open window, and the
   // smallest one with its compact covers, at every scale without scrolling;
   // a window as narrow but 760 DIP or more tall has regular covers and shows
-  // six (the sixth's art clear of the right chevron, though its cell's focus
-  // margin is not, so `whole` counts five): its row scrolls, by two tiles at
-  // most, to the third cover, and shows five at each stop after the first.
+  // five at a time (only whole tiles show, clear of the chevrons): its row
+  // scrolls, by two tiles at most, to the third cover.
   auto shown = [](const StripLayout& t) {
     return (int)std::count_if(t.arts.begin(), t.arts.end(), [&](const Rc& a) { return t.view.contains(a); });
   };
@@ -2875,7 +2986,7 @@ void test_releases_seven() {
     CHECK(first.strip_mode == StripMode::regular && first.tiles.cells.size() == 7 && !first.tiles.overflow);
     CHECK(small.strip_mode == StripMode::compact && small.tiles.cells.size() == 7 && !small.tiles.overflow);
     CHECK(tall.strip_mode == StripMode::regular && tall.tiles.overflow);
-    CHECK(tall.tiles.max_first == 2 && shown(tall.tiles) == 6 && whole(tall.tiles) == 5);
+    CHECK(tall.tiles.max_first == 2 && shown(tall.tiles) == 5 && whole(tall.tiles) == 5 && tall.tiles.slots == 5);
     for (int stop : {1, 2}) {
       const StripLayout t = strip_at(kMinClientW, kDesignClientHStrip, stop).tiles;
       CHECK(t.first == stop && shown(t) == 5 && whole(t) == 5);
@@ -2885,6 +2996,236 @@ void test_releases_seven() {
              shown(tall.tiles), tall.tiles.max_first, tall.tiles.max_first + 1);
     }
   }
+}
+
+// Twelve releases (catalog-twelve.json): the seven and, among them by date,
+// Marvel Comics Screen Posters (1993-12), Snoopy's Screen Savers (1994-10),
+// The Looney Tunes Screen Saver and ScreamSavers (1995-04, registry order on
+// the tie) and The Disney Collection Screen Saver (1995-09). Their modules
+// (placeholder names) are all After Dark's (lane ne16), ScreamSavers' and
+// Marvel's each with "screen": "640x480". The list and its words, Random,
+// their screens, twelve covers in the strip, and every release's title in
+// the list's group headers, measured in the real faces.
+void test_releases_twelve() {
+  using Strs = std::vector<std::string>;
+  Catalog c;
+  std::string err;
+  CHECK(parse_catalog(fixture("catalog-twelve.json"), c, &err));
+  CHECK_EQ(c.releases.size(), (size_t)12);
+  if (c.releases.size() != 12) return;
+  Strs ids, shorts;
+  for (const Release& r : c.releases) {
+    ids.push_back(r.id);
+    shorts.push_back(r.short_title);
+  }
+  // Oldest first, as adimport orders them.
+  CHECK((ids ==
+         Strs{"startrek", "marvel", "simpsons", "swse", "snoopy", "looney", "screams", "ad32", "tt", "disney", "deluxe", "ad10"}));
+  CHECK((shorts == Strs{"Star Trek", "Marvel", "Simpsons", "Star Wars", "Snoopy", "Looney Tunes", "ScreamSavers",
+                        "After Dark 3.2", "Totally Twisted", "Disney", "Deluxe", "10th Anniversary"}));
+  CHECK(c.releases[1].title == "Marvel Comics Screen Posters" && c.releases[4].title == "Snoopy's Screen Savers" &&
+        c.releases[5].title == "The Looney Tunes Screen Saver" && c.releases[6].title == "ScreamSavers" &&
+        c.releases[9].title == "The Disney Collection Screen Saver");
+  CHECK(c.releases[4].cover.generated() && !c.releases[6].cover.generated() && c.modules_in(9) == 2);
+  ListModel all = build_list(c, {});
+  CHECK(all.shown == 46 && all.groups.size() == 12);
+  if (all.groups.size() == 12) {
+    for (int g = 0; g < 12; ++g) CHECK_EQ(all.groups[g].release, g);
+    CHECK((labels_of(all.groups[6]) == Strs{"Papa Ghoul", "Quebec Spin", "Romeo Grin"}));
+    CHECK((labels_of(all.groups[9]) == Strs{"Sierra Clocks", "Tango Flower"}));
+  }
+  CHECK(assets_summary(count_assets(c, std::vector<bool>(46, true))) == L"46 modules from 12 releases");
+  CHECK(tile_name(c.releases[4], 2) == L"Snoopy's Screen Savers, 2 screen savers");
+  CHECK(strip_status(1, 12) == L"Showing 1 of 12 releases" && strip_status(11, 12) == L"Showing 11 of 12 releases" &&
+        strip_status(12, 12) == L"Showing all 12 releases");
+  // Random: every module, one per sameAs set (the new releases ship no
+  // copies); theirs are After Dark's ABI, so no rotation waits for the
+  // host's answer on their account.
+  Settings s;
+  CHECK_EQ(effective_rotation(s, c).ids.size(), (size_t)41);   // 31 as with seven releases, and their 10
+  Settings fresh;
+  fresh.collections = {"marvel", "snoopy", "looney", "screams", "disney"};
+  CHECK(!rotation_needs_capabilities(fresh, c) && effective_rotation(fresh, c).ids.size() == 10);
+  // Their screens (module_screen over own_screen): ScreamSavers' and
+  // Marvel's catalog 640x480 whatever the display and the Resolution
+  // setting, as Star Trek's and the Intermission modules'; Snoopy's, Looney
+  // Tunes' and Disney's follow the display, as every other After Dark module.
+  for (const Module& m : c.modules) {
+    const bool own = m.package == "screams" || m.package == "marvel" || m.package == "startrek" || m.package == "swse";
+    if (m.package == "screams" || m.package == "marvel") CHECK(m.abi == kAfterDarkAbi && (m.screen == SizeI{640, 480}));
+    if (m.package == "snoopy" || m.package == "looney" || m.package == "disney") CHECK((m.screen == SizeI{}));
+    for (auto [aspect, scale, display] : {std::tuple{1920.0 / 1080.0, 1.5, SizeI{1280, 720}},
+                                          std::tuple{1024.0 / 768.0, 1.0, SizeI{640, 480}},
+                                          std::tuple{2560.0 / 1080.0, 1.0, SizeI{1136, 480}}}) {
+      const ModuleScreen ms = module_screen(own_screen(m.abi, m.screen), aspect, scale);
+      if (own) CHECK((ms.emu == SizeI{640, 480}) && ms.fixed);
+      else CHECK(ms.emu == display && !ms.fixed);
+    }
+  }
+  // The screens a window's first host may be given (first_module_screens),
+  // and a 16:9 monitor's pictures (plan_seed_shots).
+  {
+    using Screens = std::set<SizeI>;
+    const Screens both{SizeI{}, SizeI{640, 480}}, display{SizeI{}}, own{SizeI{640, 480}};
+    Settings one;
+    one.module = "screams.papa";
+    CHECK(first_module_screens(one, c) == own);
+    one.module = "marvel.kilo";
+    CHECK(first_module_screens(one, c) == own);
+    one.module = "disney.sierra";
+    CHECK(first_module_screens(one, c) == display);
+    Settings sel;
+    sel.collections = {"screams"};
+    CHECK(first_module_screens(sel, c) == own);
+    sel.collections = {"screams", "marvel", "startrek"};   // one screen for all of theirs
+    CHECK(first_module_screens(sel, c) == own);
+    sel.collections = {"snoopy", "looney", "disney"};
+    CHECK(first_module_screens(sel, c) == display);
+    sel.collections = {"screams", "disney"};
+    CHECK(first_module_screens(sel, c) == both);
+    std::vector<ModuleScreen> screens;
+    for (const SizeI& o : first_module_screens(sel, c)) screens.push_back(module_screen(o, 1920.0 / 1080.0, 1.5));
+    const std::vector<SeedShotPlan> plan = plan_seed_shots(screens, 1920, 1080);
+    CHECK(plan.size() == 2);
+    if (plan.size() == 2) {
+      CHECK(!plan[0].screen.fixed && (plan[0].src == RectI{0, 0, 1920, 1080}));
+      CHECK((plan[1].screen.emu == SizeI{640, 480}) && plan[1].screen.fixed && (plan[1].src == RectI{240, 0, 1440, 1080}));
+    }
+  }
+
+  // Twelve covers (COVERS.md §1.2, §1.3), at every scale, only whole tiles
+  // shown, as many at every stop, none of them under a chevron and none
+  // reaching the status box. Regular ones (a client 760 DIP or more tall)
+  // never all fit side by side (twelve need 1240 DIP; the tiles area stops
+  // growing at 1024, the content column at 1240), so their row always
+  // scrolls: the first-open window 7 at a time (6 stops), one as narrow 5 (8
+  // stops), a large one 9 (4 stops). Compact ones (under 760 DIP tall)
+  // scroll up to 1119 DIP wide: 8 at a time in the smallest window (5 stops),
+  // 9 from 960 DIP wide, 10 from 1032 (so in a first-open window whose height
+  // the monitor's work area clamps under 760 DIP: 1920x1080 at 125% or 150%,
+  // 1366x768 at 100%), 11 from 1104; from 1120 DIP wide all twelve show side
+  // by side, left-aligned, with no chevron.
+  struct Want {
+    int w, h;
+    StripMode mode;
+    int slots;
+  };
+  auto whole = [](const StripLayout& t) { return (int)std::count(t.whole.begin(), t.whole.end(), true); };
+  for (int dpi = 96; dpi <= 240; dpi += 24) {
+    for (const Want& want : {Want{kDesignClientW, kDesignClientHStrip, StripMode::regular, 7},
+                             Want{kMinClientW, kMinClientHStrip, StripMode::compact, 8},
+                             Want{kMinClientW, kDesignClientHStrip, StripMode::regular, 5},
+                             Want{1600, 1000, StripMode::regular, 9},
+                             Want{959, 700, StripMode::compact, 8},
+                             Want{960, 700, StripMode::compact, 9},
+                             Want{kDesignClientW, kMinClientHStrip, StripMode::compact, 10},
+                             Want{kDesignClientW, 759, StripMode::compact, 10},
+                             Want{1103, 700, StripMode::compact, 10},
+                             Want{1104, 700, StripMode::compact, 11},
+                             Want{1119, 740, StripMode::compact, 11},
+                             Want{1120, 700, StripMode::compact, 12},
+                             Want{1600, 759, StripMode::compact, 12}}) {
+      StripInput stops{};
+      const bool scrolls = want.slots < 12;
+      for (int stop = 0; stop <= 12; ++stop) {
+        LayoutInput in{dip(want.w, dpi), dip(want.h, dpi), dpi, true};
+        in.strip_tiles = 12;
+        in.strip_first = stop;
+        const WindowLayout L = layout_window(in);
+        const StripLayout& t = L.tiles;
+        check_layout(L, in.client_w, in.client_h, true);
+        check_strip(L.strip_in, "twelve");
+        stops = L.strip_in;
+        CHECK(L.strip_mode == want.mode && t.overflow == scrolls && t.slots == want.slots && t.max_first == 12 - want.slots);
+        CHECK(t.first == std::min(stop, t.max_first) && whole(t) == want.slots);
+        CHECK(t.chevron_left.empty() == (t.first == 0) && t.chevron_right.empty() == (t.first == t.max_first));
+        if (!scrolls) CHECK(t.cells[0].x == L.strip.x);   // side by side: left-aligned on the column
+        for (size_t i = 0; i < t.cells.size(); ++i) {
+          if (t.whole[i]) CHECK(L.strip.contains(t.cells[i]) && !t.cells[i].overlaps(L.strip_status));
+        }
+        for (const Rc* ch : {&t.chevron_left, &t.chevron_right}) CHECK(ch->empty() || !ch->overlaps(L.strip_status));
+      }
+      check_strip_stops(stops, "twelve");
+    }
+  }
+  {
+    LayoutInput in{kDesignClientW, kDesignClientHStrip, 96, true};
+    in.strip_tiles = 12;
+    const WindowLayout L = layout_window(in);
+    printf("releases: twelve covers in the first-open window: %d at a time, %d stops\n", L.tiles.slots, L.tiles.max_first + 1);
+    in.client_h = kMinClientHStrip;
+    const WindowLayout C = layout_window(in);
+    printf("releases: twelve covers in a first-open window clamped to %d DIP tall: %d compact at a time, %d stops\n",
+           kMinClientHStrip, C.tiles.slots, C.tiles.max_first + 1);
+  }
+
+  // Every release's title in the list's group header, in the narrowest and
+  // the first-open list, in both modes (in Random the group checkbox takes
+  // room at the left), at 100-250%: the count shows whole, and so does
+  // "Coming soon" when the release can't run, the title ellipsized for them.
+  // Without a pill only the long titles give way (Star Wars Screen
+  // Entertainment's, The Disney Collection Screen Saver's, The Looney Tunes
+  // Screen Saver's, Marvel Comics Screen Posters'), never the After Dark ones
+  // or the short ones, and none in the first-open list in Single. Their
+  // whole title is the header's tooltip and what screen readers hear. Each
+  // count is the release's real one (the seven's 232 modules, the five's 52).
+  HDC dc = CreateCompatibleDC(nullptr);
+  const std::set<std::string> long_titles = {"swse", "disney", "looney", "marvel"};
+  const std::map<std::string, int> real_count = {{"startrek", 16}, {"marvel", 1},  {"simpsons", 15}, {"swse", 14},
+                                                 {"snoopy", 8},    {"looney", 12}, {"screams", 15},  {"ad32", 44},
+                                                 {"tt", 13},       {"disney", 16}, {"deluxe", 84},   {"ad10", 46}};
+  int modules = 0;
+  for (const auto& [id, n] : real_count) modules += n;
+  CHECK(modules == 284 && real_count.size() == c.releases.size());
+  for (int dpi = 96; dpi <= 240; dpi += 24) {
+    adw::ui::Theme t;
+    t.set_dpi(dpi);
+    auto title_w = [&](const std::wstring& s) { return (int)adw::ui::measure_text(dc, s, t.fonts.body_strong).cx; };
+    const int pill_w = (int)adw::ui::measure_text(dc, L"Coming soon", t.fonts.caption).cx + t.px(16);
+    for (const auto [w, h] : {std::pair{kMinClientW, kMinClientHStrip}, std::pair{kDesignClientW, kDesignClientHStrip}}) {
+      for (bool random : {true, false}) {
+        LayoutInput in{dip(w, dpi), dip(h, dpi), dpi, random};
+        in.strip_tiles = 12;
+        const WindowLayout L = layout_window(in);
+        std::string cut;   // the titles ellipsized without a pill here
+        for (bool scrolls : {false, true}) {
+          for (bool pill : {false, true}) {
+            GroupHeaderInput hd = group_header_frame(L.list.w, dpi, random, scrolls);
+            hd.pill_w = pill ? pill_w : 0;
+            for (size_t ri = 0; ri < c.releases.size(); ++ri) {
+              const Release& r = c.releases[ri];
+              hd.title = widen(r.title);
+              const auto real = real_count.find(r.id);
+              const int count = real != real_count.end() ? real->second : (int)c.modules_in((int)ri);
+              hd.count_w = (int)adw::ui::measure_text(dc, std::to_wstring(count), t.fonts.caption).cx;
+              const GroupHeaderLayout g = layout_group_header(hd, title_w);
+              const int count_end = g.count_x + hd.count_w;
+              if (count_end > hd.right || (pill && count_end + hd.gap > g.pill_x) || g.title.empty()) {
+                fprintf(stderr, "group header \"%s\" @%d %dx%d%s%s%s: count ends at %d, right %d, pill at %d, title \"%s\"\n",
+                        r.title.c_str(), dpi, w, h, random ? " random" : "", pill ? " (pill)" : "",
+                        scrolls ? " (scrolls)" : "", count_end, hd.right, g.pill_x, narrow(g.title).c_str());
+                ++g_failures;
+              }
+              if (!pill && g.ellipsized) {
+                if (!long_titles.count(r.id)) {
+                  fprintf(stderr, "group header \"%s\" @%d %dx%d ellipsized without a pill\n", r.title.c_str(), dpi, w, h);
+                  ++g_failures;
+                }
+                if (!scrolls) cut += (cut.empty() ? "" : ", ") + r.id;
+              }
+            }
+          }
+        }
+        // The first-open window in Single: every title whole beside its count.
+        if (w == kDesignClientW && !random) CHECK(cut.empty());
+        if (dpi == 96 || dpi == 144) {
+          printf("releases: group headers ellipsized without a pill @%d%% %dx%d %s: %s\n", dpi * 100 / 96, w, h,
+                 random ? "random" : "single", cut.empty() ? "none" : cut.c_str());
+        }
+      }
+    }
+  }
+  DeleteDC(dc);
 }
 
 // A catalog whose modules each give a "screen" of their own (a hand-edited
@@ -2953,6 +3294,7 @@ void test_releases() {
   test_releases_layout();
   test_releases_six();
   test_releases_seven();
+  test_releases_twelve();
   test_releases_many_screens();
 }
 
