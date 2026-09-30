@@ -359,7 +359,10 @@ jobs:
   # The build job's dist, zipped, on a GitHub Release:
   #   a v* tag  the release of that name, "Long After Dark <version>", with
   #             LongAfterDark-<version>-x64.zip and generated notes; a tag
-  #             with a -suffix (v1.2.0-rc1) is a pre-release.
+  #             with a -suffix (v1.2.0-rc1) is a pre-release. What the
+  #             version adds, .github/release-notes/<version>.md at the
+  #             tag's commit (a pre-release takes its version's), opens
+  #             the notes, above the zips' paragraphs.
   #   main      one pre-release, latest-main, moved to each new commit with
   #             its LongAfterDark-x64.zip replaced: always the newest build,
   #             at the same URL. A pre-release is never marked Latest.
@@ -376,6 +379,14 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
+      # A tag's notes (.github/release-notes), from its commit: that folder
+      # and the files at the top alone.
+      - uses: actions/checkout@v7
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          sparse-checkout: .github/release-notes
+          persist-credentials: false
+
       - uses: actions/download-artifact@v8
         with:
           name: LongAfterDark-x64
@@ -385,12 +396,18 @@ jobs:
         run: |
           set -euo pipefail
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          about="Unzip it anywhere and keep the three programs together; README.txt inside says what to do next. The programs are not code-signed yet, so Windows SmartScreen may warn before running them."
+          # The Windows zip's paragraph, after "For Windows: `<zip>`"; its
+          # checksum follows, and release-linux adds the Linux zip's after it.
+          about="holds the three programs. Unzip it anywhere and keep them together; README.txt inside says what to do next. The programs are not code-signed yet, so Windows SmartScreen may warn before running them."
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             version=${GITHUB_REF_NAME#v}
             zip="LongAfterDark-$version-x64.zip"
             zip -qr "$zip" LongAfterDark
-            notes=$(printf '%s\n\nSHA-256 of `%s`: `%s`\n' "$about" "$zip" "$(sha256sum "$zip" | cut -d' ' -f1)")
+            notes=$(printf 'For Windows: `%s` %s\n\nSHA-256 of `%s`: `%s`\n' "$zip" "$about" "$zip" "$(sha256sum "$zip" | cut -d' ' -f1)")
+            # What the version adds opens the notes; release-linux's paragraph
+            # still goes after the Windows checksum.
+            news=".github/release-notes/${version%%-*}.md"
+            if [ -f "$news" ]; then notes="$(tr -d '\r' < "$news")"$'\n\n'"$notes"; fi
             pre=()
             if [[ "$version" == *-* ]]; then pre=(--prerelease); fi
             # --notes goes before the generated notes.
@@ -400,8 +417,8 @@ jobs:
             tag=latest-main
             zip=LongAfterDark-x64.zip
             zip -qr "$zip" LongAfterDark
-            notes=$(printf 'The newest build of main: commit %s, built %s by %s. It is replaced on every push to main.\n\n%s\n\nSHA-256 of `%s`: `%s`\n' \
-              "${GITHUB_SHA:0:7}" "$(date -u '+%Y-%m-%d %H:%M UTC')" "$run_url" "$about" "$zip" "$(sha256sum "$zip" | cut -d' ' -f1)")
+            notes=$(printf 'The newest build of main: commit %s, built %s by %s. It is replaced on every push to main.\n\nFor Windows: `%s` %s\n\nSHA-256 of `%s`: `%s`\n' \
+              "${GITHUB_SHA:0:7}" "$(date -u '+%Y-%m-%d %H:%M UTC')" "$run_url" "$zip" "$about" "$zip" "$(sha256sum "$zip" | cut -d' ' -f1)")
             if gh release view "$tag" >/dev/null 2>&1; then
               # Move the tag to this commit, then replace the zip and the notes.
               gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$tag" -f sha="$GITHUB_SHA" -F force=true >/dev/null

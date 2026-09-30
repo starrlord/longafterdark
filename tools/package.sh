@@ -182,19 +182,19 @@ Long After Dark is a screen saver that runs the original modules of After
 Dark and of LucasArts' Star Wars Screen Entertainment, unchanged, under x86
 emulation. It knows twelve releases, 284 modules:
 
-  id        Release                                    Internet Archive download
-  deluxe    After Dark 4.0 Deluxe (1996)               CD image, 381.7 MB
-  ad10      After Dark 10th Anniversary (1999)         CD image, 143.3 MB
-  ad32      After Dark 3.2 (1995)                      CD image, 58.8 MB
-  tt        Totally Twisted After Dark (1995)          CD image, 37.9 MB
-  simpsons  The Simpsons Screen Saver (1994)           install files (ZIP), 2.6 MB
-  swse      Star Wars Screen Entertainment (1994)      CD image, 6.9 MB
-  startrek  Star Trek: The Screen Saver (1992)         two floppy images, 2.8 MB
-  marvel    Marvel Comics Screen Posters (1993)        install files (ZIP), 1.9 MB
-  snoopy    Snoopy's Screen Savers (1994)              install files (ZIP), 1.9 MB
-  looney    The Looney Tunes Screen Saver (1995)       install files (ZIP), 2.8 MB
-  screams   ScreamSavers (1995)                        install files (ZIP), 3.3 MB
-  disney    The Disney Collection Screen Saver (1995)  install files (ZIP), 3.4 MB
+id        Release                                    Internet Archive download
+deluxe    After Dark 4.0 Deluxe (1996)               CD image, 381.7 MB
+ad10      After Dark 10th Anniversary (1999)         CD image, 143.3 MB
+ad32      After Dark 3.2 (1995)                      CD image, 58.8 MB
+tt        Totally Twisted After Dark (1995)          CD image, 37.9 MB
+simpsons  The Simpsons Screen Saver (1994)           install files (ZIP), 2.6 MB
+swse      Star Wars Screen Entertainment (1994)      CD image, 6.9 MB
+startrek  Star Trek: The Screen Saver (1992)         two floppy images, 2.8 MB
+marvel    Marvel Comics Screen Posters (1993)        install files (ZIP), 1.9 MB
+snoopy    Snoopy's Screen Savers (1994)              install files (ZIP), 1.9 MB
+looney    The Looney Tunes Screen Saver (1995)       install files (ZIP), 2.8 MB
+screams   ScreamSavers (1995)                        install files (ZIP), 3.3 MB
+disney    The Disney Collection Screen Saver (1995)  install files (ZIP), 3.4 MB
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
 Trek modules. Star Wars Screen Entertainment is not an After Dark release
@@ -358,6 +358,20 @@ Updating
    Make sure the screen saver is not running, and unzip the new release
    over this folder. Imported releases, downloads and saved state are kept.
 
+Status
+
+   The 284 modules of the twelve releases, with their sound, their Caps
+   Lock games and Final Exam's Num Lock exam. Still being finished, as on
+   Windows:
+     - Speed: each module's pace follows a model of a mid-1990s PC; not
+       every module has been compared with the original yet. Marvel's
+       poster transitions show at once where the original swept them.
+     - Chameleon (Totally Twisted, 10th Anniversary): after about half a
+       minute a stray icon covers the "Accessories" label.
+   The Linux player is newer still: docs/LINUX.md (Status) says what has
+   not been tried with it yet. "./longafterdark --version" says which
+   version you have.
+
 More
 
    https://github.com/starrlord/longafterdark: docs/LINUX.md there has the
@@ -380,19 +394,19 @@ Long After Dark is a screen saver for Windows that runs the original modules
 of After Dark and of LucasArts' Star Wars Screen Entertainment, unchanged,
 under x86 emulation. It knows twelve releases, 284 modules:
 
-  id        Release                                    Internet Archive download
-  deluxe    After Dark 4.0 Deluxe (1996)               CD image, 381.7 MB
-  ad10      After Dark 10th Anniversary (1999)         CD image, 143.3 MB
-  ad32      After Dark 3.2 (1995)                      CD image, 58.8 MB
-  tt        Totally Twisted After Dark (1995)          CD image, 37.9 MB
-  simpsons  The Simpsons Screen Saver (1994)           install files (ZIP), 2.6 MB
-  swse      Star Wars Screen Entertainment (1994)      CD image, 6.9 MB
-  startrek  Star Trek: The Screen Saver (1992)         two floppy images, 2.8 MB
-  marvel    Marvel Comics Screen Posters (1993)        install files (ZIP), 1.9 MB
-  snoopy    Snoopy's Screen Savers (1994)              install files (ZIP), 1.9 MB
-  looney    The Looney Tunes Screen Saver (1995)       install files (ZIP), 2.8 MB
-  screams   ScreamSavers (1995)                        install files (ZIP), 3.3 MB
-  disney    The Disney Collection Screen Saver (1995)  install files (ZIP), 3.4 MB
+id        Release                                    Internet Archive download
+deluxe    After Dark 4.0 Deluxe (1996)               CD image, 381.7 MB
+ad10      After Dark 10th Anniversary (1999)         CD image, 143.3 MB
+ad32      After Dark 3.2 (1995)                      CD image, 58.8 MB
+tt        Totally Twisted After Dark (1995)          CD image, 37.9 MB
+simpsons  The Simpsons Screen Saver (1994)           install files (ZIP), 2.6 MB
+swse      Star Wars Screen Entertainment (1994)      CD image, 6.9 MB
+startrek  Star Trek: The Screen Saver (1992)         two floppy images, 2.8 MB
+marvel    Marvel Comics Screen Posters (1993)        install files (ZIP), 1.9 MB
+snoopy    Snoopy's Screen Savers (1994)              install files (ZIP), 1.9 MB
+looney    The Looney Tunes Screen Saver (1995)       install files (ZIP), 2.8 MB
+screams   ScreamSavers (1995)                        install files (ZIP), 3.3 MB
+disney    The Disney Collection Screen Saver (1995)  install files (ZIP), 3.4 MB
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
 Trek modules. Star Wars Screen Entertainment is not an After Dark release
@@ -507,8 +521,7 @@ for the other two next to itself.
    choose its posters and "Posters..." to make one a wallpaper, which stays
    inside the emulated PC: your own desktop never changes. The resolution
    applies to the other modules: the Star Wars, Star Trek, ScreamSavers and
-   Marvel modules always draw at their original 640x480, scaled up to fit
-   the screen.
+   Marvel modules always get 640x480, scaled up to fit the screen.
 
    Sound is on by default. Only the primary monitor's screen saver plays
    it, at the default volume (50): the modules' wave effects, their MIDI

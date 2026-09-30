@@ -171,10 +171,10 @@ After Dark 3.2's engine files in place of the April release's.
   only: your own desktop stays as it is.
 - **Sound** plays only from the main monitor's screen saver. The small live
   preview is always silent.
-- **Star Wars, Star Trek, ScreamSavers and Marvel modules** always draw at
-  their original 640×480, scaled up to fit the screen in its 4:3 shape
-  (with bars at the sides on a widescreen monitor). The Resolution setting
-  applies to the rest.
+- **Star Wars, Star Trek, ScreamSavers and Marvel modules** always get
+  640×480, scaled up to fit the screen in its 4:3 shape (with bars at the
+  sides on a widescreen monitor). The Resolution setting applies to the
+  rest.
 - **Your files** are all in `%LOCALAPPDATA%\LongAfterDark` (paste that into
   File Explorer's address bar): the imported releases, downloads, your
   settings and what the modules save themselves, such as message texts and

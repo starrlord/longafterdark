@@ -470,3 +470,7 @@ Full screen, it finds the monitors when it starts: one plugged in while it
 runs isn't blacked out. Under Wine the importer's window may not take files
 dropped on it (use its buttons instead), and its icons can show as empty
 boxes.
+
+The modules themselves run as on Windows, with the same known differences
+([README.md](../README.md#status): Marvel's poster transitions, and
+Chameleon's stray icon).

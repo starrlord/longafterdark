@@ -1228,7 +1228,7 @@ failed and cancelled re-imports, the lock; recovery from every interrupted
 swap and removal; `--catalog-only` without `FILES`, `--remove`,
 `--list-packages`; a source missing a known file verified `partial`, a known
 file of another size refused before the copy; the merged catalog's ids, order, names, overrides,
-`sameAs`, `packages` (`startrek` first), `screen` on `startrek`'s entries alone, After Dark 2.0's About
+`sameAs`, `packages` (`startrek` first), `screen` on `startrek`'s, `marvel`'s and `screams`' entries alone, After Dark 2.0's About
 rules, and Deluxe's entries unchanged; `adimport.exe`'s
 options and exit codes; the registry's cover sources — at least one per
 package, HTTPS URLs with 32-hex md5s, sizes and unique file names, disc

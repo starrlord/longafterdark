@@ -35,6 +35,8 @@ Delrina's Intermission screen saver engine, which Long After Dark stands in
 for as it does for After Dark's.
 
 Requirements: 64-bit Windows on an x64 PC. It was developed on Windows 11.
+On Linux, see [LINUX.md](LINUX.md): it runs there under Wine, with a
+player of its own.
 
 ## The programs
 

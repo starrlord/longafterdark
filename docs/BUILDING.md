@@ -530,7 +530,10 @@ keeps the modules' state in `$XDG_DATA_HOME/longafterdark/state` instead
   zips that onto a GitHub Release: every push to `main` replaces the
   `latest-main` pre-release, and a `v<version>` tag makes the release of
   that version (the tag must match `project(VERSION)` in `CMakeLists.txt`;
-  a `-suffix`, as in `v1.1.0-rc1`, makes it a pre-release).
+  a `-suffix`, as in `v1.1.0-rc1`, makes it a pre-release). What the
+  version adds goes in `.github/release-notes/<version>.md` before the
+  tag: the release's notes carry it above GitHub's generated list, which
+  names merged pull requests only, not commits made on `main` itself.
   A second job, `build-linux`, does the same on an Ubuntu 24.04 runner (the
   cross build and its tests under Wine and Xvfb, without the twelve tests
   above), builds the player in an Ubuntu 22.04 container (`AD_WERROR=1
@@ -541,7 +544,10 @@ keeps the modules' state in `$XDG_DATA_HOME/longafterdark/state` instead
   `continue-on-error` with a timeout of its own (a job that reaches its
   own timeout is cancelled, which `continue-on-error` doesn't cover), so
   the job succeeds, a warning on the run and the job's summary name the
-  step that failed, and that run makes no Linux zip. When it has passed,
+  step that failed, and that run makes no Linux zip. Since the job
+  succeeds, **Re-run failed jobs** passes it over: to add a release's
+  missing Linux zip, re-run `build-linux` itself, and `release-linux`
+  runs again after it. When it has passed,
   `release-linux` adds its zip to the release that the release job
   published (`LongAfterDark-<version>-linux-x64.zip` for a tag,
   `LongAfterDark-linux-x64.zip` on `latest-main`, where the release job
