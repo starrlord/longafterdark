@@ -2,7 +2,7 @@
 // GetAsyncKeyState's bit 0 and the MOUSE button bitmask, the wake flag,
 // KERNEL32's files and profiles through the Vfs overlay, the desktop seed
 // read from a delete-on-close file another handle keeps open, the
-// configure-script parser and its PICK, and the real-window handle map. Linked into
+// configure-script parser, its PICK and PRESS, and the real-window handle map. Linked into
 // adw_win32_tests.
 #include <windows.h>
 
@@ -300,6 +300,109 @@ TEST(config_script_pick) {
   a.id = 207;
   CHECK(!ConfigScript::apply(dlg, a));  // missing
   DestroyWindow(dlg);
+}
+
+// PRESS clicks where a user's click lands: the system's hit test from the
+// dialog down (children first, the top of the z-order first) passes over a
+// frame that answers WM_NCHITTEST with HTTRANSPARENT (Intermission's ANT3DBOX
+// over its check boxes) and over a disabled control, and stops at an opaque
+// one; the window found gets WM_LBUTTONDOWN/UP at the point, and what it posted
+// is handled before PRESS returns. A point outside every client area (a list
+// box's scroll bar) is refused, as are malformed lines.
+TEST(config_script_press) {
+  ConfigScript s;
+  std::string err;
+  CHECK(s.parse("PRESS 101\nPRESS 0x66 3 4\n", &err));
+  CHECK(!s.parse("PRESS 101 3\n", &err) && err.find("PRESS takes") != std::string::npos);
+  CHECK(!s.parse("PRESS 101 -1 4\n", &err));
+  CHECK(!s.parse("PRESS\n", &err));
+  // The parent counts the BN_CLICKED it gets (sent by a button, or posted).
+  static int clicked[8];
+  static int frame_clicks;
+  for (int& n : clicked) n = 0;
+  frame_clicks = 0;
+  WNDCLASSEXW pc{sizeof(pc)};
+  pc.lpfnWndProc = [](HWND h, UINT m, WPARAM w, LPARAM l) -> LRESULT {
+    if (m == WM_COMMAND && HIWORD(w) == BN_CLICKED && LOWORD(w) >= 100 && LOWORD(w) < 108) clicked[LOWORD(w) - 100]++;
+    return DefWindowProcW(h, m, w, l);
+  };
+  pc.hInstance = GetModuleHandleW(nullptr);
+  pc.lpszClassName = L"AdwPressParent";
+  RegisterClassExW(&pc);
+  // A frame transparent to the hit test, as ANTSW's are.
+  WNDCLASSEXW fc{sizeof(fc)};
+  fc.lpfnWndProc = [](HWND h, UINT m, WPARAM w, LPARAM l) -> LRESULT {
+    if (m == WM_NCHITTEST) return HTTRANSPARENT;
+    if (m == WM_LBUTTONDOWN) frame_clicks++;
+    return DefWindowProcW(h, m, w, l);
+  };
+  fc.hInstance = GetModuleHandleW(nullptr);
+  fc.lpszClassName = L"AdwPressFrame";
+  RegisterClassExW(&fc);
+  // A control of its own that posts its BN_CLICKED, as ANTSW's check box does.
+  WNDCLASSEXW cc{sizeof(cc)};
+  cc.lpfnWndProc = [](HWND h, UINT m, WPARAM w, LPARAM l) -> LRESULT {
+    if (m == WM_LBUTTONUP)
+      PostMessageW(GetParent(h), WM_COMMAND, MAKEWPARAM(GetDlgCtrlID(h), BN_CLICKED), LPARAM(h));
+    return DefWindowProcW(h, m, w, l);
+  };
+  cc.hInstance = GetModuleHandleW(nullptr);
+  cc.lpszClassName = L"AdwPressPoster";
+  RegisterClassExW(&cc);
+  HWND dlg = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"AdwPressParent", L"", WS_POPUP | WS_VISIBLE, -32000, -32000,
+                             400, 300, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+  auto child = [&](const wchar_t* cls, DWORD style, int x, int y, int w, int h, int id) {
+    return CreateWindowExW(0, cls, L"", WS_CHILD | WS_VISIBLE | style, x, y, w, h, dlg, reinterpret_cast<HMENU>(uintptr_t(id)),
+                           GetModuleHandleW(nullptr), nullptr);
+  };
+  // Created first, so on top: a transparent frame over 101 and 102, an opaque
+  // one (a notifying static: HTCLIENT) over 103.
+  HWND frame = child(L"AdwPressFrame", 0, 0, 0, 200, 100, 100);
+  HWND opaque = child(L"STATIC", SS_NOTIFY, 0, 150, 200, 50, 107);
+  HWND b101 = child(L"BUTTON", BS_AUTOCHECKBOX, 10, 10, 100, 20, 101);
+  HWND b102 = child(L"BUTTON", BS_AUTOCHECKBOX | WS_DISABLED, 10, 40, 100, 20, 102);
+  HWND b103 = child(L"BUTTON", BS_AUTOCHECKBOX, 10, 160, 100, 20, 103);
+  HWND poster = child(L"AdwPressPoster", 0, 10, 70, 100, 20, 104);
+  HWND list = child(L"LISTBOX", WS_VSCROLL | LBS_NOTIFY | LBS_DISABLENOSCROLL, 250, 10, 100, 80, 105);
+  CHECK(dlg && frame && opaque && b101 && b102 && b103 && poster && list);
+  CHECK(GetWindow(dlg, GW_CHILD) == frame);
+  ConfigScript::Action a;
+  a.kind = ConfigScript::Action::Kind::press;
+  RECT r{};
+  GetWindowRect(b101, &r);
+  LRESULT ht = 0;
+  CHECK(ConfigScript::hit_window(dlg, POINT{r.left + 5, r.top + 5}, &ht) == b101 && ht == HTCLIENT);
+  GetWindowRect(frame, &r);
+  CHECK(ConfigScript::hit_window(dlg, POINT{r.right - 5, r.bottom - 5}, &ht) == dlg);  // the frame alone: through it
+  a.id = 101;
+  CHECK(ConfigScript::apply(dlg, a));
+  CHECK_EQ(SendMessageW(b101, BM_GETCHECK, 0, 0), LRESULT(BST_CHECKED));
+  CHECK_EQ(clicked[1], 1);
+  CHECK_EQ(frame_clicks, 0);
+  a.id = 102;  // disabled: the click goes past it, to the dialog
+  CHECK(ConfigScript::apply(dlg, a));
+  CHECK_EQ(SendMessageW(b102, BM_GETCHECK, 0, 0), LRESULT(BST_UNCHECKED));
+  a.id = 103;  // under the opaque frame, which takes the click
+  CHECK(ConfigScript::apply(dlg, a));
+  CHECK_EQ(SendMessageW(b103, BM_GETCHECK, 0, 0), LRESULT(BST_UNCHECKED));
+  CHECK_EQ(clicked[3], 0);
+  a.id = 104;  // its posted BN_CLICKED is handled before PRESS returns
+  CHECK(ConfigScript::apply(dlg, a));
+  CHECK_EQ(clicked[4], 1);
+  // At a point in the list's client area; and in its scroll bar: refused.
+  RECT lc{};
+  GetClientRect(list, &lc);
+  a.id = 105;
+  a.at = true;
+  a.x = 5;
+  a.y = 5;
+  CHECK(ConfigScript::apply(dlg, a));
+  a.x = lc.right + 3;
+  CHECK(!ConfigScript::apply(dlg, a));
+  a.id = 106;  // missing
+  CHECK(!ConfigScript::apply(dlg, a));
+  DestroyWindow(dlg);
+  for (const wchar_t* c : {L"AdwPressParent", L"AdwPressFrame", L"AdwPressPoster"}) UnregisterClassW(c, GetModuleHandleW(nullptr));
 }
 
 // Real windows get small guest handles with a zero high word (Windows 95's

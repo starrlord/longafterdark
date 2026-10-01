@@ -725,8 +725,12 @@ the saver.
   (`MoveWindow`, `SetWindowPos` without `SWP_NOMOVE`, `CreateWindow(Ex)` of
   an owned popup) goes to origin + (x, y); a child's position, in its
   parent's client area, is left alone. `GetWindowRect` of a real window,
-  `ClientToScreen`, `CB_GETDROPPEDCONTROLRECT` and a top-level window's
-  `WM_MOVE` subtract the origin and `ScreenToClient` adds it first, so a
+  `ClientToScreen`, `CB_GETDROPPEDCONTROLRECT`, a top-level window's
+  `WM_MOVE`, `WM_NCHITTEST`'s point and `GetCursorPos` (the real cursor:
+  ANTSW's slider drags its thumb to it and repeats an arrow while the cursor
+  stays on it; on a desktop that is not the input desktop, where the real
+  one cannot be read, the emulated one answers) subtract the origin and
+  `ScreenToClient` adds it first, so a
   module that reads positions back stays consistent. The dialogs that place
   themselves on that screen (Marvel's Saver.. and Posters..., Lunatic
   Fringe's Keys..., Messages' Edit / Select, Globe's Map..., Slides...,
@@ -749,6 +753,25 @@ the saver.
   created on a real parent get a real class whose procedure forwards the
   same way (`WM_CREATE` with a 16-bit `CREATESTRUCT`); `SendMessage` to such
   a window calls the guest's procedure directly with the Win16 values.
+  A guest's window procedure (a guest class's, or its subclass of a real
+  control; never a `DLGPROC`, whose answer would be its `DWL_MSGRESULT`)
+  also gets `WM_NCHITTEST`, its point on the guest's screen, and its answer
+  is the real hit test's (an int: `HTTRANSPARENT` is AX = 0xFFFF, whatever
+  DX holds). Intermission's frames (ANTSW's `ANT3DBOX`, `ANT3DGROUP`,
+  `ASW3DBOX`, `ASW3DGROUP`) come first in every Configure template, so they
+  lie above the check boxes, sliders and edits they frame, and answer
+  `HTTRANSPARENT`: a click goes on to the control under them, as on Windows
+  3.1. (Before, the real default procedure answered `HTCLIENT` for them: no
+  option under a frame in a Far Side, Dilbert or Star Wars Configure dialog
+  could be clicked, only reached with the keyboard.) A
+  real `BM_GETCHECK`…`BM_SETSTYLE` to a guest class's window, or to a real
+  button the guest subclassed, arrives as Win16's `WM_USER` + n, as Windows
+  3.1's `CheckDlgButton`, `IsDlgButtonChecked` and `CheckRadioButton` sent
+  it (ANTSW's check box takes `WM_USER` and `WM_USER + 1`), and a `GET`'s
+  answer is the WORD in AX. `WM_SETFONT` brings a guest's control the
+  dialog's font as a guest font object (`guest_font`), which ANTSW's check
+  boxes, texts and frames draw their labels in (given 0, as a `DLGPROC`
+  still is, they drew in the system font and their labels were cut short).
 * Messages from the guest to a real control (Win16 → Win32): numbers by the
   target's class (`msg16_to_32`: EM 0x400+n ↔ 0xB0+n, BM 0x400+n ↔ 0xF0+n,
   LB 0x401+n ↔ 0x180+n, CB 0x400+n ↔ 0x140+n; the local-handle and
@@ -778,7 +801,9 @@ the saver.
 * `ADCONFIGSCRIPT`/`ADCONFIGHIDDEN`/`ADCONFIGDUMP`/`ADCONFIGTIMEOUTMS`
   (`win32/config_script.hh`) attach once the guest has filled the dialog
   and it has been shown (a DialogBox shows when its queue first goes idle;
-  MESSAGE3 builds its edit box on `WM_SHOWWINDOW`).
+  MESSAGE3 builds its edit box on `WM_SHOWWINDOW`). The script's `PRESS`
+  clicks where a user's click lands (through the frames above), and `CHECK`
+  reaches a guest's check box (the real `BM_SETCHECK`, as `WM_USER + 1`).
 * A guest failure inside a real callback is kept, every real dialog ends,
   and the failure is rethrown when the real call returns.
 

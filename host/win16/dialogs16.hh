@@ -14,12 +14,16 @@
 //     object, icon or emulated window has one), mapped both ways;
 //   * placement: the guest keeps its emulated desktop's screen coordinates,
 //     and that desktop lies over the owner window (guest_screen_origin16);
+//     GetCursorPos is the real cursor on it;
 //   * messages Win32 → Win16 (WM_COMMAND, WM_CTLCOLOR*, scroll messages,
 //     the *ITEM structs, …) into the guest, and Win16 → Win32 for what the
 //     guest sends a real control: Win16's control messages are WM_USER-based
 //     and depend on the target's class (msg16_to_32) — EM 0x400+n ↔ 0xB0+n,
 //     BM 0x400+n ↔ 0xF0+n, LB 0x401+n ↔ 0x180+n, CB 0x400+n ↔ 0x140+n —
-//     with far pointers marshalled and EM_SETSEL/EM_LINESCROLL repacked;
+//     with far pointers marshalled and EM_SETSEL/EM_LINESCROLL repacked; a
+//     real BM_* to a guest's control arrives as BM 0x400+n; WM_NCHITTEST
+//     reaches a guest's window procedure, and its answer is the real one
+//     (Intermission's frames are transparent to clicks: HTTRANSPARENT);
 //   * DCs: a real HDC reaches the guest as a gdi16 DC wrapper for the length
 //     of one message (WM_CTLCOLOR: its colours and the returned brush go back
 //     to the real DC; WM_DRAWITEM, WM_PAINT, GetDC: the guest draws on an
@@ -34,7 +38,8 @@
 //     real Notepad on the file's upper-layer copy (NONSENSE's Edit Names).
 //
 // The ADCONFIG* test hooks (win32/config_script.hh) script the real
-// dialogs. In the saver nothing here is installed: dialogs stay refused.
+// dialogs (PRESS clicks where a user's click lands). In the saver nothing
+// here is installed: dialogs stay refused.
 #pragma once
 
 #include <windows.h>

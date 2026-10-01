@@ -68,6 +68,12 @@ std::string upper(std::string_view s) {
   return u;
 }
 
+std::wstring class_of(HWND h) {
+  wchar_t buf[64] = {};
+  GetClassNameW(h, buf, 64);
+  return buf;
+}
+
 // ---- the template converter's byte readers ------------------------------------------------------------------
 
 struct Reader {
@@ -622,6 +628,16 @@ void rethrow(Dialogs16& d) {
   }
 }
 
+// A point on the screen (an lParam's MAKELONG(x, y)): from the real screen to
+// the guest's (guest_screen_origin16), and back.
+uint32_t guest_screen_point(const Dialogs16& d, LPARAM lp) {
+  return (uint32_t(uint16_t(int16_t(HIWORD(lp)) - d.origin.y)) << 16) | uint16_t(int16_t(LOWORD(lp)) - d.origin.x);
+}
+
+LPARAM real_screen_point(const Dialogs16& d, uint32_t lp) {
+  return MAKELPARAM(int16_t(LOWORD(lp)) + d.origin.x, int16_t(HIWORD(lp)) + d.origin.y);
+}
+
 // ---- Win32 → Win16: a real message into the guest -----------------------------------------------------------------
 
 struct Into16 {
@@ -633,9 +649,9 @@ struct Into16 {
   HDC ctlcolor_dc = nullptr;   // WM_CTLCOLOR*: the real DC
 };
 
-// Messages a guest window or dialog procedure receives. The rest stay with
-// the real default procedures.
-bool to16(Dialogs16& d, HWND h, UINT msg, WPARAM wp, LPARAM lp, Into16* o) {
+// Messages a guest window or dialog procedure (`dialog`: a DLGPROC) receives.
+// The rest stay with the real default procedures.
+bool to16(Dialogs16& d, HWND h, UINT msg, WPARAM wp, LPARAM lp, bool dialog, Into16* o) {
   auto h16 = [&](HWND x) { return real_hwnd16(d.rt, x); };
   o->msg = uint16_t(msg);
   o->wp = uint16_t(wp);
@@ -734,7 +750,12 @@ bool to16(Dialogs16& d, HWND h, UINT msg, WPARAM wp, LPARAM lp, Into16* o) {
       o->lp = 0;  // Win16's LPMSG is not given
       break;
     case WM_SETFONT:
-      o->wp = 0;  // the real font is not a guest object: the guest keeps its system font
+      // To a guest's control, the real font as a guest font object (the
+      // dialog's, from its template): it draws its label in it, as on
+      // Windows 3.1 (ANTSW's check boxes, texts and frames keep it in a window
+      // long; given 0, they drew in the system font and their labels were cut
+      // short). A DLGPROC keeps 0: its controls get the font themselves.
+      o->wp = dialog ? 0 : guest_font(d, reinterpret_cast<HFONT>(wp));
       break;
     case WM_TIMER:
       o->lp = 0;
@@ -742,10 +763,37 @@ bool to16(Dialogs16& d, HWND h, UINT msg, WPARAM wp, LPARAM lp, Into16* o) {
     case WM_MOVE:
       // A top-level window's client origin, on the guest's screen (a child's
       // is in its parent's client area).
-      if (!(GetWindowLongW(h, GWL_STYLE) & WS_CHILD)) {
-        o->lp = (uint32_t(uint16_t(int16_t(HIWORD(lp)) - d.origin.y)) << 16) | uint16_t(int16_t(LOWORD(lp)) - d.origin.x);
-      }
+      if (!(GetWindowLongW(h, GWL_STYLE) & WS_CHILD)) o->lp = guest_screen_point(d, lp);
       break;
+    case WM_NCHITTEST:
+      // To a window procedure: the point on the guest's screen, and its answer
+      // is the real one. Intermission's frames (ANTSW's ANT3DBOX, ANT3DGROUP,
+      // ASW3DBOX, ASW3DGROUP) lie above the check boxes, sliders and edits
+      // they frame (they come first in the template) and answer HTTRANSPARENT,
+      // so the click goes on to the control under them, as on Windows 3.1;
+      // the real default procedure's HTCLIENT, which answered for them before,
+      // gave them every click. Not to a DLGPROC: its answer would be its
+      // DWL_MSGRESULT, which the guest keeps to itself.
+      if (dialog) return false;
+      o->lp = guest_screen_point(d, lp);
+      break;
+    case BM_GETCHECK:
+    case BM_SETCHECK:
+    case BM_GETSTATE:
+    case BM_SETSTATE:
+    case BM_SETSTYLE: {
+      // A button message to a guest's control (a window of a guest class, or
+      // a real button the guest subclassed): Win16 numbered them WM_USER + n
+      // (msg32_to_16), as Windows 3.1's CheckDlgButton, IsDlgButtonChecked and
+      // CheckRadioButton sent them. The real ones, the dialog manager's and the
+      // configure script's CHECK so reach ANTSW's check box, which takes
+      // WM_USER (get) and WM_USER + 1 (set). To a DLGPROC, WM_USER + n are DM_*.
+      if (dialog) return false;
+      RealWnd16* w = rw_of(d, h);
+      if (!w || (w->real_old && control_kind16(class_of(h)) != Ctl16::button)) return false;
+      o->msg = msg32_to_16(Ctl16::button, msg);
+      break;
+    }
     case WM_PAINT:
     case WM_CLOSE:
     case WM_DESTROY:
@@ -802,7 +850,11 @@ LRESULT from16(Dialogs16& d, UINT msg, LPARAM lp, const Into16& o, uint32_t r, b
       return TRUE;
     }
     case WM_COMPAREITEM:
+    case WM_NCHITTEST:  // an int: HTTRANSPARENT is AX = 0xFFFF, whatever DX holds
       return LRESULT(int16_t(r));
+    case BM_GETCHECK:
+    case BM_GETSTATE:  // a WORD
+      return LRESULT(uint16_t(r));
     default:
       break;
   }
@@ -811,12 +863,6 @@ LRESULT from16(Dialogs16& d, UINT msg, LPARAM lp, const Into16& o, uint32_t r, b
 }
 
 // ---- Win16 → Win32: what the guest sends a real window ---------------------------------------------------------------
-
-std::wstring class_of(HWND h) {
-  wchar_t buf[64] = {};
-  GetClassNameW(h, buf, 64);
-  return buf;
-}
 
 bool has_strings(HWND h, Ctl16 kind) {
   LONG st = GetWindowLongW(h, GWL_STYLE);
@@ -918,6 +964,8 @@ uint32_t send_real(Dialogs16& d, HWND h, uint16_t msg, uint16_t wp, uint32_t lp,
     }
     case WM_COMMAND:
       return uint32_t(send(WM_COMMAND, MAKEWPARAM(wp, HIWORD(lp)), LPARAM(real_window16(rt, LOWORD(lp)))));
+    case WM_NCHITTEST:  // a point on the guest's screen
+      return uint32_t(send(m, WPARAM(wp), real_screen_point(d, lp)));
     case WM_NEXTDLGCTL:
       return uint32_t(send(m, LOWORD(lp) ? WPARAM(real_window16(rt, wp)) : WPARAM(sx(wp)), LOWORD(lp)));
     case WM_SETFONT: {
@@ -1064,7 +1112,7 @@ LRESULT forward_to_guest(Dialogs16& d, RealWnd16& w, uint32_t proc, HWND h, UINT
   }
   ScratchMark mark(d);
   Into16 o;
-  if (!to16(d, h, msg, wp, lp, &o)) return 0;
+  if (!to16(d, h, msg, wp, lp, dialog, &o)) return 0;
   d.forwarding.push_back(Forwarding{h, msg, wp, lp, o.msg, o.wp, o.lp});
   uint32_t r = 0;
   try {
@@ -1833,6 +1881,20 @@ void enable_real_dialogs16(Runtime16& rt, Configure16* cfg) {
     POINT pt{p16.x + o.x, p16.y + o.y};
     ScreenToClient(rh, &pt);
     write16(c.rt, p, POINT16{int16_t(pt.x), int16_t(pt.y)});
+    return true;
+  });
+  // The real cursor, on the guest's screen: a guest control follows it while
+  // a button is held (ANTSW's slider drags its thumb to it and repeats an
+  // arrow while the cursor stays on it), and the saver's input state, which
+  // the emulated GetCursorPos reads, never moves here. On a desktop that is
+  // not the input desktop the real one fails (access denied): the emulated
+  // one answers.
+  wrap(r, U, "GetCursorPos", [](Call16& c) {
+    uint32_t p = c.ptr();
+    POINT pt{};
+    if (!GetCursorPos(&pt)) return false;
+    const POINT o = dl(c.rt).origin;
+    write16(c.rt, p, POINT16{int16_t(pt.x - o.x), int16_t(pt.y - o.y)});
     return true;
   });
   wrap(r, U, "InvalidateRect", [real](Call16& c) {

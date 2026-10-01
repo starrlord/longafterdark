@@ -4764,6 +4764,21 @@ int run_swse(const std::string& exe) {
     // STRESS's temporary file (GetTempFileName, deleted again) is not reported as written.
     CHECK(p.out.find("TEMP") == std::string::npos && p.out.find(".TMP") == std::string::npos,
           "VADER button 0: 'written' holds only what is still there\n%s", p.out.c_str());
+    // Clicks where a user's land (PRESS): the dialog's ANT3DBOX frames lie
+    // over its check boxes and answer WM_NCHITTEST with HTTRANSPARENT, so the
+    // clicks reach Voice (100) and Breath (104) under them, and OK saves them
+    // off. (The frames took every click before: SWSE.INI kept 1 and 1.)
+    write_file(script, "PRESS 100\nPRESS 104\nCLICK 1\n");
+    Proc pc = run_cmd(host + "--configure packages/swse/SAVER/VADER.IMX --button 0 ADCONFIGHIDDEN=1 ADCONFIGTIMEOUTMS=8000 \"ADSTATE=" +
+                          state + "\" \"ADCONFIGSCRIPT=" + script + "\"",
+                      "");
+    std::string clicked = read_file(state + "\\swse\\WINDOWS\\SWSE.INI");
+    CHECK(pc.code == 0 && profile_value(ini, "Voice") == "1" && profile_value(ini, "Breath") == "1" &&
+              profile_value(clicked, "Voice") == "0" && profile_value(clicked, "Breath") == "0" &&
+              pc.err.find("lands on") == std::string::npos,
+          "VADER button 0, its check boxes clicked under their frames: Voice %s -> %s, Breath %s -> %s (exit %d)\n%s",
+          profile_value(ini, "Voice").c_str(), profile_value(clicked, "Voice").c_str(), profile_value(ini, "Breath").c_str(),
+          profile_value(clicked, "Breath").c_str(), pc.code, pc.err.c_str());
     Proc q = run_cmd(host + "--configure packages/swse/SAVER/VADER.IMX --button 1 ADCONFIGHIDDEN=1 \"ADSTATE=" + state + "\"", "");
     CHECK(q.code == 1 && q.out.find("control 1 is not a button") != std::string::npos, "VADER button 1: fails (exit %d)", q.code);
     DeleteFileA(script.c_str());

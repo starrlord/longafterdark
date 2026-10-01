@@ -226,11 +226,11 @@ the Disney Collection's modules have none (`--configure --button 0` on one
 of them exits 1, "control 0 is not a button"). With the two Delrina releases
 (314 modules) it has 93 on 87 modules, from 69 binaries: each of The Far
 Side's 14 modules and Dilbert's 16 has one, and all 30 showed their dialog
-on a hidden desktop. Marvel's thumbnails are not
-scriptable, in either dialog: their nine buttons (ids 1007–1015) are
-children of the Images window (1006), and a configure script's `CLICK` goes
-to the dialog (§6.6). Saver..'s All (1000) and None (1001) are the dialog's
-own buttons, which a script can click.
+on a hidden desktop. Marvel's thumbnails (ids 1007–1015) are children of
+the Images window (1006), so a configure script's `CLICK`, which goes to
+the dialog, can't reach them, but `PRESS 1006 <x> <y>` clicks the thumbnail
+under that point (§6.6). Saver..'s All (1000) and None (1001) are the
+dialog's own buttons, which a script can click.
 
 ### 1.7 After Dark 2.0 (`AD.EXE` 2.0b, Star Trek: The Screen Saver) — VERIFIED
 
@@ -769,7 +769,9 @@ adhostwin.exe --configure <module> --button <slot> [--owner <hwnd>] [NAME=VALUE 
     `ABI.md` §3.8.4). The reader's `DialogBox` of the module's `DIALOGBOX`
     becomes a real modal dialog (§6.2), its ANT3D controls (classes
     INTRMLIB's LibMain registered in the guest) real windows forwarding to
-    the guest. The reader answers 0 only for a module without a
+    the guest; the frames among them, which lie above the options they
+    frame, are transparent to clicks, as on Windows 3.1 (`WM_NCHITTEST`,
+    §6.2). The reader answers 0 only for a module without a
     `SAVERDLGPROC` (none of the 14), which exits 4; any other slot is
     refused ("control N is not a button", exit 1). The module
     writes its settings to `C:\WINDOWS\SWSE.INI`, which lands in
@@ -883,8 +885,12 @@ Windows 95; emulated windows start at `0x00010010`.
   (`MoveWindow`, `SetWindowPos` without `SWP_NOMOVE`, `CreateWindow(Ex)` of
   an owned popup) goes to origin + (x, y); a child's position, in its
   parent's client area, is left alone. `GetWindowRect` of a real window,
-  `ClientToScreen`, `CB_GETDROPPEDCONTROLRECT` and a top-level window's
-  `WM_MOVE` subtract the origin, and `ScreenToClient` adds it first, so a
+  `ClientToScreen`, `CB_GETDROPPEDCONTROLRECT`, a top-level window's
+  `WM_MOVE`, `WM_NCHITTEST`'s point and `GetCursorPos` (the real cursor,
+  which Intermission's sliders follow while their thumb is dragged or an
+  arrow held; the emulated one where the real one cannot be read, on a
+  desktop that is not the input desktop) subtract the origin, and
+  `ScreenToClient` adds it first, so a
   module that reads positions back stays consistent: the Star Wars modules
   centre their dialog on the owner's rectangle, clamped to the 640×480
   screen. Marvel's Saver.. and Posters..., Lunatic Fringe's Keys...,
@@ -921,9 +927,32 @@ Windows 95; emulated windows start at `0x00010010`.
     `lParam = MAKELONG(start, end)`, Win32 `wParam = start, lParam = end`;
     likewise `EM_LINESCROLL`). Static and scroll-bar class messages follow
     the same class-based rule.
+  * The other way, a real `BM_GETCHECK`…`BM_SETSTYLE` to a control whose
+    procedure is the guest's (a guest class's window, or a real button the
+    guest subclassed) arrives as Win16's `WM_USER` + n, as Windows 3.1's
+    `CheckDlgButton`, `IsDlgButtonChecked` and `CheckRadioButton` sent it.
+    So the real functions (the guest's own calls end in them), the dialog
+    manager's messages and the configure script's `CHECK` reach
+    Intermission's `ANT3DCHECK`, which takes `WM_USER` and `WM_USER + 1`. A
+    `GET`'s answer is the WORD in AX.
+  * `WM_NCHITTEST` to a guest's window procedure (not a `DLGPROC`, whose
+    answer would be its `DWL_MSGRESULT`): the point on the guest's screen;
+    the answer, an int in AX, is the real hit test's. Intermission's frames
+    (ANTSW's `ANT3DBOX`, `ANT3DGROUP`, `ASW3DBOX`, `ASW3DGROUP`) come first
+    in every Configure template, so the dialog manager puts them above the
+    check boxes, sliders and edits they frame, and they answer
+    `HTTRANSPARENT` (`mov ax,-1`): Windows passes the click on to the
+    control under them, as Windows 3.1 did. Before, the real default
+    procedure answered `HTCLIENT` for them, and the frames took every click:
+    no option under a frame in The Far Side's, Dilbert's or 13 of Star
+    Wars' 14 Configure dialogs could be clicked (the keyboard still reached
+    them).
   * `WM_GETTEXT`/`WM_SETTEXT`, `WM_INITDIALOG` (`lParam` = the guest's init
     param), `WM_CLOSE`, `WM_DESTROY`, `WM_TIMER`, `WM_PAINT`, `WM_SETFONT`
-    (`hfont16`), `WM_SYSCOMMAND`: numbers equal, handles mapped.
+    (to a guest's control `hfont16`, the dialog's font as a guest font
+    object, which Intermission's controls draw their labels in, as on
+    Windows 3.1; a `DLGPROC` gets 0), `WM_SYSCOMMAND`: numbers equal,
+    handles mapped.
 * `COMMDLG.GetOpenFileName`/`GetSaveFileName` (16-bit `OPENFILENAME`):
   real dialog, **8.3 short paths** returned (`GetShortPathNameW`, under `H:`,
   §7.4), since Win16 modules expect them.
@@ -1027,10 +1056,25 @@ it (frames differ from a run without, PNG checked by eye once).
   SELECT <id> <index>        LB/CB current selection + LBN_/CBN_SELCHANGE
   MULTI <id> <i,j,…>         multi-select list box selection
   CLICK <id>                 BN_CLICKED (1 = IDOK, 2 = IDCANCEL)
+  PRESS <id> [<x> <y>]       a click where a user's lands (see below)
   FILE <host path>           answer the next file dialog without showing it
   ANSWER <IDOK|IDCANCEL|IDYES|IDNO|n>   answer the next message box without showing it
   NEXT                       the following lines apply to the next dialog opened
   ```
+
+  `CHECK`, `SELECT` and `CLICK` act on the control by its id, whatever
+  covers it. `PRESS` clicks as the user does: at the control's centre (or
+  at x, y in its client area), the window the system's hit test finds
+  there (the dialog's children top-down in z-order, a disabled one passed
+  over, one answering `WM_NCHITTEST` with `HTTRANSPARENT` passed through,
+  the dialog parked or not) gets `WM_LBUTTONDOWN` and `WM_LBUTTONUP`, and
+  the dialog handles what they posted before the next line (Intermission's
+  check box posts its `BN_CLICKED`). A click that lands on another control
+  is logged; a point in no window's client area (a scroll bar, a caption)
+  is refused. `PRESS` shows what a user's click does where `CHECK` cannot:
+  `CHECK` sets a control by its id, past any frame above it (a guest's
+  check box through the real `BM_SETCHECK`, §6.2), so no scripted test saw
+  Intermission's frames take every click.
 * `ADCONFIGHIDDEN=1`: dialogs never appear (parked off every monitor,
   cloaked with `DWMWA_CLOAK`, `WS_EX_NOACTIVATE`, never activated, as the
   settings dialog's screenshot hook does); message boxes and file dialogs are

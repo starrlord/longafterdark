@@ -24,6 +24,13 @@
 //                              list holds it: "PICK 204 [-h-]"
 //   MULTI <id> <i,j,…>         multi-select list box selection + LBN_SELCHANGE
 //   CLICK <id>                 BN_CLICKED (1 = IDOK, 2 = IDCANCEL)
+//   PRESS <id> [<x> <y>]       a click where a user's lands: at the control's
+//                              centre (or at x, y in its client area), the
+//                              window the system's hit test finds there (see
+//                              hit_window) gets WM_LBUTTONDOWN and WM_LBUTTONUP,
+//                              and the dialog then handles what they posted;
+//                              refused when that point is in no window's client
+//                              area (a scroll bar, a caption)
 //   FILE <host path>           answer the next file dialog without showing it
 //   ANSWER <IDOK|IDCANCEL|IDYES|IDNO|IDABORT|IDRETRY|IDIGNORE|n>
 //                              answer the next message box without showing it
@@ -60,11 +67,13 @@ namespace adw::win32 {
 class ConfigScript {
  public:
   struct Action {
-    enum class Kind { text, check, select, pick, multi, click } kind = Kind::click;
+    enum class Kind { text, check, select, pick, multi, click, press } kind = Kind::click;
     int id = 0;
     int value = 0;           // CHECK state, SELECT index
     std::vector<int> items;  // MULTI
     std::wstring text;       // TEXT, PICK
+    bool at = false;         // PRESS: at (x, y) in the control's client area, not its centre
+    int x = 0, y = 0;
     int line = 0;            // script line (for logs)
   };
 
@@ -105,8 +114,16 @@ class ConfigScript {
 
   // One action on a dialog, through its real controls. False when the
   // control is missing or the action does not fit its class (PICK: or no
-  // item has that text).
+  // item has that text; PRESS: or the point is in no window's client area).
   static bool apply(HWND dlg, const Action& a);
+  // The window a click at `pt` (screen) lands on, found as the system's hit
+  // test finds it among windows of the calling thread: from `top` down,
+  // children before their parent, the top of the z-order first, only visible
+  // windows whose rectangle holds the point; a disabled child is passed over,
+  // and a window that answers WM_NCHITTEST with HTTRANSPARENT leaves the point
+  // to what lies under it (Intermission's frames over their check boxes).
+  // *ht = the hit-test code (HTCLIENT: the client area). Null: none.
+  static HWND hit_window(HWND top, POINT pt, LRESULT* ht);
   // Logs the dialog's controls on stderr.
   static void dump_dialog(HWND dlg);
   // Off every monitor, cloaked, never activated.

@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -431,8 +432,10 @@ constexpr char kTestResource[16] = "hello, resource";
 // has LibEntry at 0 (returns AX=1 after calling KERNEL.GetVersion through an
 // import) and an exported function at 0x20 with the MSVC prolog
 // `push ds; pop ax; nop; …` that returns DS. With `resource`, a resource
-// table holding RT_RCDATA 7 (kTestResource) follows the segment table.
-std::string build_ne(bool resource = false) {
+// table holding one resource follows the segment table: RT_RCDATA 7
+// (kTestResource), or `type` `id` holding `data`.
+std::string build_ne(bool resource = false, uint16_t type = 10, uint16_t id = 7,
+                     std::string_view data = std::string_view(kTestResource, sizeof(kTestResource))) {
   std::string f(0x40, '\0');
   f[0] = 'M';
   f[1] = 'Z';
@@ -466,13 +469,14 @@ std::string build_ne(bool resource = false) {
   entry += char(0x00);
   entry += '\0';
   // Resource table: alignment shift 4; one type (RT_RCDATA) of one resource
-  // (id 7, 16 bytes at 0x310 = 0x31 << 4); the type list's end; no names.
+  // (id 7, 16 bytes at 0x310 = 0x31 << 4; or the caller's, its length in
+  // 16-byte units); the type list's end; no names.
   if (resource) {
     w16(res, 0, 4);
-    w16(res, 2, 0x8000 | 10);
+    w16(res, 2, 0x8000 | type);
     w16(res, 4, 1);
     w16(res, 6, 0), w16(res, 8, 0);
-    w16(res, 10, 0x31), w16(res, 12, 1), w16(res, 14, 0x30), w16(res, 16, 0x8007);
+    w16(res, 10, 0x31), w16(res, 12, uint16_t((data.size() + 15) >> 4)), w16(res, 14, 0x30), w16(res, 16, 0x8000 | id);
     w16(res, 18, 0), w16(res, 20, 0);
     w16(res, 22, 0);
     res.push_back('\0');
@@ -548,7 +552,10 @@ std::string build_ne(bool resource = false) {
   all += rel;
   all.resize(0x300, '\0');
   all += std::string(0x10, '\0');
-  if (resource) all += std::string(kTestResource, sizeof(kTestResource));
+  if (resource) {
+    all += std::string(data);
+    all.resize((all.size() + 15) & ~size_t(15), '\0');
+  }
   return all;
 }
 
@@ -3750,6 +3757,396 @@ void test_configure_placement() {
   DestroyWindow(owner);
 }
 
+// Registers a guest window class `name` (WNDCLASS at at + 0x10, the name at
+// at) whose procedure is `proc`.
+uint16_t register_guest_class(Machine& m, uint32_t at, const char* name, uint32_t proc, uint16_t hinst) {
+  m.rt.write_str(at, name, 16);
+  m.rt.wr32(at + 0x10 + 2, proc);
+  m.rt.wr16(at + 0x10 + 10, hinst);
+  m.rt.wr32(at + 0x10 + 22, at);
+  return uint16_t(api(m, "USER", "RegisterClass", {l16(at + 0x10)}));
+}
+
+// Configure mode: what a guest's control answers of itself is the real
+// answer, and what the real window manager asks of it arrives as Win16 asked.
+// WM_NCHITTEST reaches a window procedure of the guest's with the point on the
+// guest's screen, and its answer is an int: HTTRANSPARENT in AX alone is -1
+// (Intermission's frames answer so, and the click goes on to the control under
+// them); one it leaves to DefWindowProc is answered from the real point, and
+// the guest's own WM_NCHITTEST to a real window has its point moved to the
+// real screen. A real BM_SETCHECK/BM_GETCHECK (the real CheckDlgButton,
+// IsDlgButtonChecked and CheckRadioButton, the guest's, which call them, the
+// configure script's CHECK) reaches a guest class's procedure, or the guest's
+// subclass of a real button, as Win16's WM_USER + 1 / WM_USER, and its answer
+// is the WORD in AX; the guest's subclass of another real control is not
+// asked. GetCursorPos is the real cursor on the guest's screen, or the
+// emulated one where the real one cannot be read (not the input desktop).
+// Before, WM_NCHITTEST and the BM_* messages stayed with the real default
+// procedure (HTCLIENT, 0), and GetCursorPos answered the saver's (320, 240).
+// Real windows only, never shown.
+void test_configure_guest_controls() {
+  MONITORINFO pmi{};
+  pmi.cbSize = sizeof(pmi);
+  GetMonitorInfoW(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY), &pmi);
+  const RECT pwa = pmi.rcWork;
+  HWND owner = CreateWindowExW(0, L"STATIC", L"", WS_POPUP, (pwa.left + pwa.right) / 2 - 350, (pwa.top + pwa.bottom) / 2 - 250,
+                               700, 500, nullptr, nullptr, nullptr, nullptr);
+  CHECK(owner != nullptr, "the owner window (error %lu)", GetLastError());
+  {
+    Machine m;
+    Screen screen(640, 480);
+    m.rt.attach_display(screen);
+    win32::ConfigScript script;
+    Configure16 cfg;
+    cfg.script = &script;
+    cfg.owner = owner;
+    enable_real_dialogs16(m.rt, &cfg);
+    RECT orc{};
+    GetWindowRect(owner, &orc);
+    MONITORINFO omi{};
+    omi.cbSize = sizeof(omi);
+    GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &omi);
+    const POINT o = guest_screen_origin16(orc, omi.rcWork, 640, 480);
+    auto pack = [](LONG x, LONG y) { return (uint32_t(uint16_t(y)) << 16) | uint16_t(x); };
+    struct Seen {
+      uint16_t msg, wp;
+      uint32_t lp;
+    };
+    std::vector<Seen> frame, check, sub_button, sub_edit;
+    uint16_t state = 0, b16 = 0;
+    std::map<uint16_t, uint32_t> old_proc;
+    auto def = [&](uint16_t h, uint16_t msg, uint16_t wp, uint32_t lp) {
+      return api(m, "USER", "DefWindowProc", {w16(h), w16(msg), w16(wp), l16(lp)});
+    };
+    // A frame (HTTRANSPARENT, in AX alone) and a check box (WM_USER, WM_USER +
+    // 1; its state's WORD with junk above it), the rest DefWindowProc's.
+    m.rt.shims().add("TESTGC", 1, "FRAMEPROC", Conv16::pascal_, false, 10, [&](Call16& c) {
+      uint16_t h = c.w(), msg = c.w(), wp = c.w();
+      uint32_t lp = c.l();
+      frame.push_back({msg, wp, lp});
+      c.ret32(msg == WM_NCHITTEST ? 0x0000FFFFu : def(h, msg, wp, lp));
+    });
+    m.rt.shims().add("TESTGC", 2, "CHECKPROC", Conv16::pascal_, false, 10, [&](Call16& c) {
+      uint16_t h = c.w(), msg = c.w(), wp = c.w();
+      uint32_t lp = c.l();
+      check.push_back({msg, wp, lp});
+      if (msg == WM_USER) return c.ret32(0xBEEF0000u | state);
+      if (msg == WM_USER + 1) {
+        state = wp;
+        return c.ret32(0);
+      }
+      c.ret32(def(h, msg, wp, lp));
+    });
+    // The guest's subclass of a real button and of a real edit.
+    m.rt.shims().add("TESTGC", 3, "SUBPROC", Conv16::pascal_, false, 10, [&](Call16& c) {
+      uint16_t h = c.w(), msg = c.w(), wp = c.w();
+      uint32_t lp = c.l();
+      (h == b16 ? sub_button : sub_edit).push_back({msg, wp, lp});
+      c.ret32(api(m, "USER", "CallWindowProc", {l16(old_proc[h]), w16(h), w16(msg), w16(wp), l16(lp)}));
+    });
+    auto thunk = [&](const char* name) { return m.rt.thunk_far(*m.rt.shims().find_name("TESTGC", name)); };
+    uint16_t ds = m.data(512);
+    const uint32_t mem = uint32_t(ds) << 16;
+    CHECK(register_guest_class(m, mem, "TESTFRAME", thunk("FRAMEPROC"), 0) &&
+              register_guest_class(m, mem + 0x40, "TESTCHECK", thunk("CHECKPROC"), 0),
+          "the guest's classes");
+    HWND top = CreateWindowExW(0, L"STATIC", L"", WS_POPUP, 0, 0, 300, 200, owner, nullptr, nullptr, nullptr);
+    uint16_t t16 = real_hwnd16(m.rt, top);
+    auto create = [&](uint32_t cls, int16_t x, int16_t y, uint16_t id) {
+      return uint16_t(api(m, "USER", "CreateWindow", {l16(cls), l16(cls), l16(WS_CHILD | WS_VISIBLE), w16(x), w16(y), w16(100),
+                                                      w16(30), w16(t16), w16(id), w16(0), l16(0)}));
+    };
+    uint16_t f16 = create(mem, 10, 10, 100), c16 = create(mem + 0x40, 10, 50, 101);
+    HWND button = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | BS_CHECKBOX, 150, 10, 100, 30, top,
+                                  reinterpret_cast<HMENU>(uintptr_t(102)), nullptr, nullptr);
+    HWND edit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE, 150, 50, 100, 30, top, reinterpret_cast<HMENU>(uintptr_t(103)),
+                                nullptr, nullptr);
+    HWND fr = real_window16(m.rt, f16), ck = real_window16(m.rt, c16);
+    CHECK(top && fr && ck && button && edit, "the real windows (error %lu)", GetLastError());
+    RECT r{};
+    // WM_NCHITTEST to the frame: its HTTRANSPARENT; the point it saw is on the guest's screen.
+    GetWindowRect(fr, &r);
+    frame.clear();
+    LRESULT ht = SendMessageW(fr, WM_NCHITTEST, 0, MAKELPARAM(r.left + 5, r.top + 6));
+    CHECK(ht == HTTRANSPARENT, "WM_NCHITTEST: the guest's HTTRANSPARENT (AX = FFFF, DX = 0) is -1 (%lld)", (long long)ht);
+    const uint32_t want = pack(r.left + 5 - o.x, r.top + 6 - o.y);
+    CHECK(frame.size() == 1 && frame[0].msg == WM_NCHITTEST && frame[0].lp == want,
+          "the guest saw WM_NCHITTEST at the point on its screen (%zu, %08X; want %08X, origin %ld,%ld)", frame.size(),
+          frame.empty() ? 0u : frame[0].lp, want, o.x, o.y);
+    // To the check box, which leaves it to DefWindowProc: answered from the real point.
+    GetWindowRect(ck, &r);
+    check.clear();
+    LRESULT in = SendMessageW(ck, WM_NCHITTEST, 0, MAKELPARAM(r.left + 2, r.top + 2));
+    LRESULT out = SendMessageW(ck, WM_NCHITTEST, 0, MAKELPARAM(r.right + 40, r.top + 2));
+    CHECK(in == HTCLIENT && out == HTNOWHERE && check.size() == 2 && check[0].msg == WM_NCHITTEST,
+          "WM_NCHITTEST the guest leaves to DefWindowProc: HTCLIENT inside, HTNOWHERE outside (%lld, %lld; %zu seen)", (long long)in,
+          (long long)out, check.size());
+    // The guest's own WM_NCHITTEST to a real button: the point from its screen.
+    b16 = real_hwnd16(m.rt, button);
+    GetWindowRect(button, &r);
+    uint32_t gh = api(m, "USER", "SendMessage", {w16(b16), w16(WM_NCHITTEST), w16(0), l16(pack(r.left + 3 - o.x, r.top + 3 - o.y))});
+    CHECK(int16_t(gh) == HTCLIENT, "the guest's WM_NCHITTEST to a real button at a point of it on the guest's screen: HTCLIENT (%d)",
+          int16_t(gh));
+    // BM_SETCHECK / BM_GETCHECK to the guest's check box: WM_USER + 1 / WM_USER.
+    check.clear();
+    CheckDlgButton(top, 101, BST_CHECKED);
+    CHECK(state == 1 && check.size() == 1 && check[0].msg == WM_USER + 1 && check[0].wp == 1,
+          "the real CheckDlgButton: the guest's WM_USER + 1 (state %u, %zu seen)", state, check.size());
+    UINT got = IsDlgButtonChecked(top, 101);
+    CHECK(got == BST_CHECKED, "the real IsDlgButtonChecked: the WORD of the guest's WM_USER answer (%u)", got);
+    api(m, "USER", "CheckDlgButton", {w16(t16), w16(101), w16(0)});
+    CHECK(state == 0 && (api(m, "USER", "IsDlgButtonChecked", {w16(t16), w16(101)}) & 0xFFFF) == 0,
+          "the guest's CheckDlgButton and IsDlgButtonChecked (state %u)", state);
+    CheckRadioButton(top, 101, 101, 101);
+    CHECK(state == 1, "the real CheckRadioButton (state %u)", state);
+    win32::ConfigScript::Action a;
+    a.kind = win32::ConfigScript::Action::Kind::check;
+    a.id = 101;
+    a.value = 0;
+    CHECK(win32::ConfigScript::apply(top, a) && state == 0, "the configure script's CHECK (state %u)", state);
+    // The guest's subclass of a real button sees them as WM_USER + n (and
+    // passes them on to the button); its subclass of an edit is not asked.
+    uint16_t e16 = real_hwnd16(m.rt, edit);
+    old_proc[b16] = api(m, "USER", "SetWindowLong", {w16(b16), w16(uint16_t(-4)), l16(thunk("SUBPROC"))});
+    old_proc[e16] = api(m, "USER", "SetWindowLong", {w16(e16), w16(uint16_t(-4)), l16(thunk("SUBPROC"))});
+    sub_button.clear();
+    sub_edit.clear();
+    CheckDlgButton(top, 102, BST_CHECKED);
+    got = IsDlgButtonChecked(top, 102);
+    bool set = false, get = false;
+    for (const Seen& s : sub_button) {
+      set |= s.msg == WM_USER + 1 && s.wp == 1;
+      get |= s.msg == WM_USER;
+    }
+    CHECK(set && get && got == BST_CHECKED, "a real button the guest subclassed: WM_USER + 1 and WM_USER, on to the button (%u)", got);
+    SendMessageW(edit, BM_GETCHECK, 0, 0);
+    CHECK(sub_edit.empty(), "a real edit the guest subclassed is not asked a button's question (%zu)", sub_edit.size());
+    api(m, "USER", "SetWindowLong", {w16(b16), w16(uint16_t(-4)), l16(old_proc[b16])});
+    api(m, "USER", "SetWindowLong", {w16(e16), w16(uint16_t(-4)), l16(old_proc[e16])});
+    // GetCursorPos: the real cursor, on the guest's screen.
+    POINT c0{}, c1{};
+    BOOL r0 = GetCursorPos(&c0);
+    api(m, "USER", "GetCursorPos", {l16(mem + 0x100)});
+    BOOL r1 = GetCursorPos(&c1);
+    POINT16 g = read16<POINT16>(m.rt, mem + 0x100);
+    if (r0 && r1) {
+      CHECK((g.x == c0.x - o.x && g.y == c0.y - o.y) || (g.x == c1.x - o.x && g.y == c1.y - o.y),
+            "GetCursorPos: the real cursor less the origin (%d,%d; real %ld,%ld, origin %ld,%ld)", g.x, g.y, c0.x, c0.y, o.x, o.y);
+    } else {
+      CHECK(g.x == 320 && g.y == 240, "GetCursorPos where the real cursor cannot be read: the emulated one (%d,%d)", g.x, g.y);
+    }
+    DestroyWindow(top);
+  }
+  DestroyWindow(owner);
+}
+
+// Configure mode: a click lands where a user's would, in a real dialog made
+// from a module's template. A made-up NE module (CLICKS.DLL) holds the dialog:
+// a frame of a class the guest registered lies over a check box of another of
+// its classes, as Intermission's ANT3DBOX over ANT3DCHECK (first in the
+// template, so on top), and over a plain BS_CHECKBOX and two plain
+// BS_RADIOBUTTONs, which its DLGPROC checks itself on BN_CLICKED
+// (CheckDlgButton, CheckRadioButton); a list box and OK lie beside it. The
+// configure script's PRESS clicks each where a user would (the dialog hidden):
+// the frame answers WM_NCHITTEST with HTTRANSPARENT (AX alone), so every click
+// goes on to the control under it. The guest's check box takes the click and
+// posts its BN_CLICKED, which arrives before the next action; the real buttons
+// send theirs; the list box selects the item under the point. On OK the
+// DLGPROC reads them back with IsDlgButtonChecked (the guest's check box
+// through the real BM_GETCHECK, as Win16's WM_USER) and LB_GETCURSEL. Then the
+// script's CHECK sets the guest's check box (the real BM_SETCHECK, as Win16's
+// WM_USER + 1). Before, the frame answered HTCLIENT (the real default
+// procedure's answer) and took every click under it: nothing changed there,
+// and CHECK did not reach the guest's check box.
+void test_configure_dialog_clicks() {
+  char dir[MAX_PATH];
+  GetTempPathA(MAX_PATH, dir);
+  std::string file = std::string(dir) + "adw_win16_clicks_" + std::to_string(GetCurrentProcessId()) + ".dll";
+  // The dialog (Win16 DLGTEMPLATE), its items top of the z-order first.
+  std::string t;
+  put32(t, WS_POPUP | WS_CAPTION | DS_MODALFRAME | DS_SETFONT);
+  t.push_back(8);
+  put16(t, 0), put16(t, 0), put16(t, 200), put16(t, 110);
+  t.push_back('\0');  // no menu
+  t.push_back('\0');  // the dialog class
+  t += "Clicks";
+  t.push_back('\0');
+  put16(t, 8);
+  t += "Helv";
+  t.push_back('\0');
+  auto item = [&](int16_t x, int16_t y, int16_t cx, int16_t cy, uint16_t id, uint32_t style, const std::string& cls,
+                  const std::string& text) {
+    put16(t, uint16_t(x)), put16(t, uint16_t(y)), put16(t, uint16_t(cx)), put16(t, uint16_t(cy)), put16(t, id);
+    put32(t, WS_CHILD | WS_VISIBLE | style);
+    t += cls;  // a predefined class's atom byte, or a name
+    if (uint8_t(cls[0]) < 0x80) t.push_back('\0');
+    t += text;
+    t.push_back('\0');
+    t.push_back('\0');  // no extra bytes
+  };
+  item(5, 5, 120, 75, 100, 0, "TESTFRAME", "");
+  item(10, 10, 100, 12, 201, WS_TABSTOP, "TESTCHECK", "&Guest");
+  item(10, 25, 100, 12, 202, BS_CHECKBOX | WS_TABSTOP, "\x80", "&Plain");
+  item(10, 40, 100, 12, 203, BS_RADIOBUTTON | WS_GROUP | WS_TABSTOP, "\x80", "&One");
+  item(10, 55, 100, 12, 204, BS_RADIOBUTTON, "\x80", "&Two");
+  item(135, 5, 60, 60, 205, LBS_NOTIFY | WS_BORDER | WS_VSCROLL | WS_GROUP | WS_TABSTOP, "\x83", "");
+  item(130, 90, 30, 14, IDOK, BS_DEFPUSHBUTTON | WS_GROUP | WS_TABSTOP, "\x80", "OK");
+  item(165, 90, 30, 14, IDCANCEL, BS_PUSHBUTTON | WS_TABSTOP, "\x80", "Cancel");
+  {
+    std::string img = build_ne(true, 5, 100, t);  // RT_DIALOG 100
+    FILE* fh = fopen(file.c_str(), "wb");
+    fwrite(img.data(), 1, img.size(), fh);
+    fclose(fh);
+  }
+  {
+    Machine m;
+    Screen screen(640, 480);
+    m.rt.attach_display(screen);
+    uint16_t err = 0;
+    Module16* mod = m.rt.modules().load_host(file, &err);
+    CHECK(mod != nullptr, "the module holding the dialog loads (error %u)", err);
+    win32::ConfigScript script;
+    script.set_hidden(true);
+    script.set_timeout_ms(8000);
+    Configure16 cfg;
+    cfg.script = &script;
+    enable_real_dialogs16(m.rt, &cfg);
+    struct State {
+      std::vector<uint32_t> frame_hits;  // the WM_NCHITTEST points the frame saw
+      int frame_clicks = 0;              // mouse buttons that reached the frame
+      uint16_t check = 0;                // the guest's check box
+      bool pressed = false;
+      int check_sets = 0;  // its WM_USER + 1
+      int notified = 0;    // its BN_CLICKED at the DLGPROC
+      int selchange = 0;
+      int dlg_hittests = 0;  // WM_NCHITTEST at the DLGPROC
+      int ok = 0;
+      uint16_t got[5] = {};  // on OK: 201, 202, 203, 204, the list's selection
+    } s;
+    auto user = [&](const char* fn, std::initializer_list<Arg16> a) { return api(m, "USER", fn, a); };
+    uint16_t ds = m.data(512);
+    const uint32_t mem = uint32_t(ds) << 16;
+    m.rt.write_str(mem + 0x100, "One", 8);
+    m.rt.write_str(mem + 0x108, "Two", 8);
+    m.rt.write_str(mem + 0x110, "Three", 8);
+    m.rt.shims().add("TESTDLG", 1, "DLGPROC", Conv16::pascal_, true, 10, [&](Call16& c) {
+      uint16_t h = c.w(), msg = c.w(), wp = c.w();
+      uint32_t lp = c.l();
+      if (msg == WM_NCHITTEST) s.dlg_hittests++;
+      if (msg == WM_INITDIALOG) {
+        user("CheckRadioButton", {w16(h), w16(203), w16(204), w16(203)});
+        user("CheckDlgButton", {w16(h), w16(201), w16(0)});
+        for (uint32_t str : {0x100u, 0x108u, 0x110u})
+          user("SendDlgItemMessage", {w16(h), w16(205), w16(WM_USER + 1), w16(0), l16(mem + str)});  // LB_ADDSTRING
+        user("SendDlgItemMessage", {w16(h), w16(205), w16(WM_USER + 0x21), w16(0), l16(16)});       // LB_SETITEMHEIGHT
+        return c.ret(1);
+      }
+      if (msg != WM_COMMAND) return c.ret(0);
+      const uint16_t code = uint16_t(lp >> 16);
+      switch (wp) {
+        case 201:
+          if (code == BN_CLICKED) s.notified++;
+          break;
+        case 202:
+          if (code == BN_CLICKED) user("CheckDlgButton", {w16(h), w16(202), w16(!(user("IsDlgButtonChecked", {w16(h), w16(202)}) & 0xFFFF))});
+          break;
+        case 203:
+        case 204:
+          if (code == BN_CLICKED) user("CheckRadioButton", {w16(h), w16(203), w16(204), w16(wp)});
+          break;
+        case 205:
+          if (code == LBN_SELCHANGE) s.selchange++;
+          break;
+        case IDOK:
+          for (uint16_t i = 0; i < 4; i++) s.got[i] = uint16_t(user("IsDlgButtonChecked", {w16(h), w16(uint16_t(201 + i))}));
+          s.got[4] = uint16_t(user("SendDlgItemMessage", {w16(h), w16(205), w16(WM_USER + 9), w16(0), l16(0)}));  // LB_GETCURSEL
+          s.ok++;
+          user("EndDialog", {w16(h), w16(1)});
+          break;
+        case IDCANCEL:
+          user("EndDialog", {w16(h), w16(2)});
+          break;
+        default:
+          return c.ret(0);
+      }
+      c.ret(1);
+    });
+    // The frame: transparent to the hit test (AX alone), and nothing else of its own.
+    m.rt.shims().add("TESTDLG", 2, "FRAMEPROC", Conv16::pascal_, false, 10, [&](Call16& c) {
+      uint16_t h = c.w(), msg = c.w(), wp = c.w();
+      uint32_t lp = c.l();
+      if (msg == WM_NCHITTEST) {
+        s.frame_hits.push_back(lp);
+        return c.ret32(0x0000FFFF);
+      }
+      if (msg >= WM_LBUTTONDOWN && msg <= WM_MBUTTONDBLCLK) s.frame_clicks++;
+      c.ret32(user("DefWindowProc", {w16(h), w16(msg), w16(wp), l16(lp)}));
+    });
+    // The check box: a click (down, then up inside) toggles it and posts
+    // BN_CLICKED to its parent; WM_USER / WM_USER + 1 read and set it.
+    m.rt.shims().add("TESTDLG", 3, "CHECKPROC", Conv16::pascal_, false, 10, [&](Call16& c) {
+      uint16_t h = c.w(), msg = c.w(), wp = c.w();
+      uint32_t lp = c.l();
+      switch (msg) {
+        case WM_GETDLGCODE:
+          return c.ret32(DLGC_BUTTON);
+        case WM_LBUTTONDOWN:
+          s.pressed = true;
+          return c.ret32(0);
+        case WM_LBUTTONUP: {
+          RECT cr{};
+          GetClientRect(real_window16(m.rt, h), &cr);
+          const int16_t x = int16_t(lp & 0xFFFF), y = int16_t(lp >> 16);
+          if (s.pressed && x >= 0 && y >= 0 && x < cr.right && y < cr.bottom) {
+            s.check ^= 1;
+            user("PostMessage", {w16(uint16_t(user("GetParent", {w16(h)}))), w16(WM_COMMAND), w16(201), l16((uint32_t(BN_CLICKED) << 16) | h)});
+          }
+          s.pressed = false;
+          return c.ret32(0);
+        }
+        case WM_USER:
+          return c.ret32(s.check);
+        case WM_USER + 1:
+          s.check = wp != 0;
+          s.check_sets++;
+          return c.ret32(0);
+        default:
+          c.ret32(user("DefWindowProc", {w16(h), w16(msg), w16(wp), l16(lp)}));
+      }
+    });
+    auto thunk = [&](const char* name) { return m.rt.thunk_far(*m.rt.shims().find_name("TESTDLG", name)); };
+    const uint16_t hinst = mod ? mod->hinstance : 0;
+    CHECK(register_guest_class(m, mem, "TESTFRAME", thunk("FRAMEPROC"), hinst) &&
+              register_guest_class(m, mem + 0x40, "TESTCHECK", thunk("CHECKPROC"), hinst),
+          "the module's classes");
+    // Clicks: the guest's check box, the plain check box and the second radio
+    // button under the frame; the list's second item (16 pixels high).
+    std::string why;
+    CHECK(script.parse("PRESS 201\nPRESS 202\nPRESS 204\nPRESS 205 10 24\nCLICK 1\n", &why), "the script (%s)", why.c_str());
+    uint32_t r = mod ? api(m, "USER", "DialogBox", {w16(hinst), l16(100), w16(0), l16(thunk("DLGPROC"))}) : 0;
+    CHECK(int16_t(r) == 1 && s.ok == 1 && !cfg.failed, "the dialog ran and ended on OK (%d, %d)", int16_t(r), s.ok);
+    CHECK(!s.frame_hits.empty() && s.frame_clicks == 0, "the frame was asked (%zu times) and took no click (%d)", s.frame_hits.size(),
+          s.frame_clicks);
+    CHECK(s.got[0] == 1 && s.notified == 1 && s.check_sets == 1,
+          "the guest's check box under the frame: clicked, checked, its BN_CLICKED before OK; CheckDlgButton reached it "
+          "(%u, %d, %d)",
+          s.got[0], s.notified, s.check_sets);
+    CHECK(s.got[1] == 1, "the plain BS_CHECKBOX under the frame: checked by the DLGPROC on its BN_CLICKED (%u)", s.got[1]);
+    CHECK(s.got[2] == 0 && s.got[3] == 1, "the plain BS_RADIOBUTTONs under the frame: the second checked by the DLGPROC (%u %u)",
+          s.got[2], s.got[3]);
+    CHECK(s.got[4] == 1 && s.selchange == 1, "the list box: the item under the click (%u), LBN_SELCHANGE (%d)", s.got[4], s.selchange);
+    CHECK(s.dlg_hittests == 0, "the DLGPROC is never asked WM_NCHITTEST (%d)", s.dlg_hittests);
+    // The script's CHECK on the guest's check box: the real BM_SETCHECK as WM_USER + 1.
+    s.ok = 0;
+    CHECK(script.parse("CHECK 201 1\nCLICK 1\n", &why), "the second script (%s)", why.c_str());
+    r = mod ? api(m, "USER", "DialogBox", {w16(hinst), l16(100), w16(0), l16(thunk("DLGPROC"))}) : 0;
+    CHECK(int16_t(r) == 1 && s.ok == 1 && s.got[0] == 1 && s.got[1] == 0 && s.got[2] == 1,
+          "CHECK 201 1: the guest's check box set (%u; plain %u, first radio %u)", s.got[0], s.got[1], s.got[2]);
+    m.rt.modules().free_all();
+  }
+  DeleteFileA(file.c_str());
+}
+
 // The current drive and directories as DOS kept them (dos16.hh): AH=19h
 // reports the current directory's drive, AH=0Eh selects a drive the guest's
 // disk has (C:, and H: with the host's drives mounted) and reports the letters
@@ -3923,6 +4320,8 @@ int run_unit() {
   test_toggle_keys();
   test_dir_list_drives();
   test_configure_placement();
+  test_configure_guest_controls();
+  test_configure_dialog_clicks();
   test_dos_drives();
   printf("%d/%d checks passed\n", checks - failures, checks);
   return failures ? 1 : 0;

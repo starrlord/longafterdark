@@ -207,6 +207,15 @@ bool ConfigScript::parse(std::string_view text, std::string* error) {
     } else if (verb == "CLICK") {
       a.kind = Action::Kind::click;
       if (!tail.empty()) return fail("CLICK takes only an id");
+    } else if (verb == "PRESS") {
+      a.kind = Action::Kind::press;
+      if (!tail.empty()) {
+        std::string_view ys;
+        std::string_view xs = split1(tail, &ys);
+        if (!parse_int(xs, &a.x) || !parse_int(ys, &a.y) || a.x < 0 || a.y < 0)
+          return fail("PRESS takes an id, or an id and a point x y in the control");
+        a.at = true;
+      }
     } else {
       return fail("unknown action '" + verb + "'");
     }
@@ -270,8 +279,66 @@ bool ConfigScript::apply(HWND dlg, const Action& a) {
     case Action::Kind::click:
       SendMessageW(dlg, WM_COMMAND, MAKEWPARAM(a.id, BN_CLICKED), LPARAM(c));
       return true;
+    case Action::Kind::press: {
+      // The point, on the screen; the window a user's click there reaches.
+      if (!c || !IsWindowVisible(c)) return false;
+      RECT cr{};
+      GetClientRect(c, &cr);
+      POINT pt = a.at ? POINT{a.x, a.y} : POINT{(cr.left + cr.right) / 2, (cr.top + cr.bottom) / 2};
+      ClientToScreen(c, &pt);
+      LRESULT ht = HTNOWHERE;
+      HWND hit = hit_window(dlg, pt, &ht);
+      if (!hit || ht != HTCLIENT) return false;
+      if (hit != c && !IsChild(c, hit)) {
+        log("ADCONFIGSCRIPT line %d: the click on control %d lands on control %d (class %s)", a.line, a.id, GetDlgCtrlID(hit),
+            narrow(class_of(hit)).c_str());
+      }
+      // As the user's click arrives (sent, so it is over before the next
+      // action), then what the controls posted (a guest's check box posts its
+      // BN_CLICKED), as the dialog handles it before the user's next action.
+      POINT cp = pt;
+      ScreenToClient(hit, &cp);
+      const LPARAM at = MAKELPARAM(cp.x, cp.y);
+      SendMessageW(hit, WM_MOUSEMOVE, 0, at);
+      SendMessageW(hit, WM_LBUTTONDOWN, MK_LBUTTON, at);
+      if (IsWindow(hit)) SendMessageW(hit, WM_LBUTTONUP, 0, at);
+      MSG m;
+      for (int i = 0; i < 256 && IsWindow(dlg) && PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE | PM_QS_POSTMESSAGE); i++) {
+        if (m.message == WM_QUIT) {
+          PostQuitMessage(int(m.wParam));
+          break;
+        }
+        if (IsDialogMessageW(dlg, &m)) continue;
+        TranslateMessage(&m);
+        DispatchMessageW(&m);
+      }
+      return true;
+    }
   }
   return false;
+}
+
+HWND ConfigScript::hit_window(HWND top, POINT pt, LRESULT* ht) {
+  const LONG style = GetWindowLongW(top, GWL_STYLE);
+  RECT r{};
+  if (!(style & WS_VISIBLE) || !GetWindowRect(top, &r) || !PtInRect(&r, pt)) return nullptr;
+  if (style & WS_DISABLED) {
+    if ((style & (WS_CHILD | WS_POPUP)) == WS_CHILD) return nullptr;
+    *ht = HTERROR;
+    return top;
+  }
+  POINT cp = pt;
+  ScreenToClient(top, &cp);
+  RECT cr{};
+  GetClientRect(top, &cr);
+  if (!(style & WS_MINIMIZE) && PtInRect(&cr, cp)) {
+    for (HWND k = GetWindow(top, GW_CHILD); k; k = GetWindow(k, GW_HWNDNEXT)) {
+      if (HWND h = hit_window(k, pt, ht)) return h;
+    }
+  }
+  *ht = SendMessageW(top, WM_NCHITTEST, 0, MAKELPARAM(pt.x, pt.y));
+  if (int16_t(*ht) == HTTRANSPARENT) return nullptr;
+  return top;
 }
 
 void ConfigScript::dump_dialog(HWND dlg) {
