@@ -18,7 +18,7 @@ modules, unchanged, on an emulated PC of the time: the x86 processor and
 the parts of Windows 95 they talk to. So they look, move and sound the way
 they did.
 
-It works with fourteen releases for Windows, 314 modules in all: nine of
+It works with fifteen releases for Windows, 327 modules in all: ten of
 Berkeley Systems' After Dark, two of other companies' modules for After
 Dark, and the three Intermission releases. Import one or all of them; each
 works on its own.
@@ -32,6 +32,7 @@ works on its own.
 | Star Wars Screen Entertainment (LucasArts) | 1994 | 14 |
 | Snoopy's Screen Savers (Image Smith) | 1994 | 8 |
 | Scott Adams' Dilbert Screen Saver Collection (Delrina) | 1994 | 16 |
+| Star Trek: The Next Generation Screen Saver | 1994 | 13 |
 | The Looney Tunes Screen Saver | 1995 | 12 |
 | ScreamSavers (Binary Software) | 1995 | 15 |
 | After Dark 3.2 | 1995 | 44 |
@@ -62,6 +63,13 @@ original series, from 1992: The Mission, Final Frontier, Tribbles, Spock,
 Horta, Tholian Web, Scotty's Files, Sickbay, Communications, Planetary
 Atlas and more, with the show's theme, its sounds and McCoy's quotes. Its
 Final Exam is a game: press Num Lock to take the Starfleet Academy exam.
+
+Star Trek: The Next Generation Screen Saver is Berkeley Systems' After
+Dark 3.0 release of 1994, made under licence from Paramount: 13 modules of
+the series, among them Data Dances, Encounters, The Borg, Starbase, Warp
+Effect, Worf's Weapons, Counselor Troi, Personnel Files and Starfleet
+Messages, with music. Its Officer's Review is a game: press Caps Lock to
+take the exam and type the number of your answer.
 
 Marvel Comics Screen Posters (1993) is one module, a slide show of 36
 Marvel posters with their captions, which you choose with its own
@@ -113,8 +121,9 @@ settings window or the modules' own options (see [On Linux](#on-linux)).
     and Snoopy do, or a folder unzipped from one;
   - the Internet Archive. The importer can download each release for you:
     a CD image of 381.7 MB (4.0 Deluxe), 143.3 MB (10th Anniversary),
-    58.8 MB (3.2), 37.9 MB (Totally Twisted) or 6.9 MB (Star Wars Screen
-    Entertainment), Star Trek's two floppy images (2.8 MB), or a ZIP of the
+    58.8 MB (3.2), 37.9 MB (Totally Twisted), 6.9 MB (Star Wars Screen
+    Entertainment) or 5.8 MB (Star Trek: The Next Generation), Star Trek's
+    two floppy images (2.8 MB), or a ZIP of the
     install files: the Simpsons' (2.6 MB), Marvel's (1.9 MB), Snoopy's
     (1.9 MB), the Looney Tunes' (2.8 MB), ScreamSavers' (3.3 MB), the
     Disney Collection's (3.4 MB) or Dilbert's (4.3 MB), or for The Far
@@ -179,10 +188,10 @@ carry beside the release's files are never opened.
 
 - **Caps Lock never closes the screen saver.** In some modules it does
   something, like scaring the fish, or starts a game (Rodger Dodger, Lunatic
-  Fringe, You Bet Your Head, Simpsons Trivia and others). While a game is
-  on, the keys and the mouse belong to it. Press Caps Lock again to stop
-  playing, or Alt to close the screen saver at once. Otherwise most keys, a
-  click or moving the mouse close it.
+  Fringe, You Bet Your Head, Simpsons Trivia, Officer's Review and
+  others). While a game is on, the keys and the mouse belong to it. Press
+  Caps Lock again to stop playing, or Alt to close the screen saver at
+  once. Otherwise most keys, a click or moving the mouse close it.
 - **Num Lock never closes it either.** In Star Trek's Final Exam it starts
   the exam: type the number of your answer. Moving the mouse ends the exam
   and the screen saver.
@@ -199,8 +208,8 @@ carry beside the release's files are never opened.
   changes it on all of them at once. For a different module on each, check
   **A different module on each monitor** under **Change module every** (it
   shows only when two or more monitors are connected).
-- **Star Wars, Far Side, Dilbert, Star Trek, ScreamSavers and Marvel
-  modules** always get 640×480, scaled up to fit the screen in its 4:3 shape (with bars at the
+- **Star Wars, Far Side, Dilbert, Star Trek (both releases), ScreamSavers
+  and Marvel modules** always get 640×480, scaled up to fit the screen in its 4:3 shape (with bars at the
   sides on a widescreen monitor). The Resolution setting applies to the
   rest. To have them fill the screen instead, stretched, with no bars,
   check **Stretch to fit the screen** under Resolution and Monitors.
@@ -293,7 +302,7 @@ screen saver.
 - [docs/BUILDING.md](docs/BUILDING.md): building, testing and the source
   tree.
 - [docs/DESIGN.md](docs/DESIGN.md): how the emulation works.
-- [docs/PACKAGES.md](docs/PACKAGES.md): the fourteen releases and how each one
+- [docs/PACKAGES.md](docs/PACKAGES.md): the fifteen releases and how each one
   is imported.
 
 ## License

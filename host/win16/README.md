@@ -1,18 +1,20 @@
 # host/win16 — the Win16 guest runtime and API shims
 
 `adw_win16` is one emulated Win16 "task" for Long After Dark's Classic lane
-(`host/ne16`). That lane runs the 16-bit modules of all fourteen releases:
+(`host/ne16`). That lane runs the 16-bit modules of all fifteen releases:
 the After Dark 2.x/3.x modules in After Dark 4.0 Deluxe's `FILES\CLASSIC`,
 After Dark 3.2, Totally Twisted, The Simpsons Screen Saver, the 16-bit
 modules of After Dark 10th Anniversary, Star Trek: The Screen Saver's After
 Dark 2.0 modules (below), Star Wars Screen Entertainment's Intermission
 modules (below), those of the five later releases, Marvel Comics Screen
 Posters, Snoopy's Screen Savers, The Looney Tunes Screen Saver,
-ScreamSavers and The Disney Collection Screen Saver (below), and the
+ScreamSavers and The Disney Collection Screen Saver (below), Star Trek: The
+Next Generation Screen Saver's (an After Dark 3.0 release, which runs as
+the other AD 3.x releases do, with no addition to the runtime), and the
 Intermission modules of The Far Side Screen Saver Collection and Scott
 Adams' Dilbert Screen Saver Collection (below). The module,
-its package's engine when it uses one (`ADXPL300.DLL`, `ADXPL40.DLL`,
-`ADXPL310.DLL`, `ADXPL41.DLL` or `ADXPL100.DLL`; After Dark 2.0's module
+its package's engine when it uses one (`ADXPL300.DLL`, `ADXPL320.DLL`,
+`ADXPL40.DLL`, `ADXPL310.DLL`, `ADXPL41.DLL` or `ADXPL100.DLL`; After Dark 2.0's module
 library `AD_MOD.DLL` with `AD_RSRC.DLL`; Marvel's decoder `DECO.DLL`),
 `AD_SND.DLL` (and After Dark 2.0's sound driver `AD_MME.DRV`), the helper
 DLLs and, where the package ships it (Deluxe, 10th Anniversary), the real

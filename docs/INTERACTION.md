@@ -167,8 +167,13 @@ crosshairs — click the mouse" (Mime Hunt), "Press Caps-lock to display the
 edit window" (Magic Turtle), "press Caps-lock and click and drag the pins"
 (Marbles), "Press Caps-lock to choose your fighter" (RPS), "Depress the
 Num Lock key to begin, and type the number of your answer. Move the mouse
-to end the exam." (Final Exam), and "click the Caps Lock key … Pinocchio
-will follow" (Pinocchio). The ScreamSavers, Snoopy's and Marvel's modules
+to end the exam." (Final Exam), "click the Caps Lock key … Pinocchio
+will follow" (Pinocchio), and, with The Next Generation, "press the Caps
+Lock key once After Dark is asleep. Answer each multiple choice question
+by pressing the appropriate number on the keyboard" (Officer's Review);
+its Data Dances (with "Random" dances), Encounters, Personnel Files and
+Science Stations (set to "Random") say Caps Lock moves on to the next
+dance or screen. The ScreamSavers, Snoopy's and Marvel's modules
 read neither the keyboard nor the mouse (none imports `GetKeyState`,
 `GetAsyncKeyState` or `GetCursorPos`), so none of them is interactive.
 
@@ -208,6 +213,7 @@ read neither the keyboard nor the mouse (none imports `GetKeyState`,
 | BUGS, FISHPRO (ne16) | Bug Type, Select Fish… | `DialogBoxParam` | engine/helper prefs (trace with `ADTRACE=file`) |
 | MESSAGE3, NONSENSE, SLIDE, GLOBE, WMORPH, LUNATIC (ne16) | Edit / Select, Edit Names…, Slides…, Map…, Edit…/Revert, Clear Scores/Keys… | `DialogBox`, `EndDialog`, `MessageBox` (LUNATIC's "Do you really want to clear…") | `MESG_AD3.DAT`, `NONSENSE.TXT`, `LunData.dat` (`_lcreat`/`_lwrite`/`OpenFile`), `MODULES.INI`/`AFTERDRK.INI`/`AD_PREFS.INI`/`WriteProfileString` |
 | `tt` MESSYGES, `ad32` LOGO, `ad32` BUGS, `simpsons` HOW2DRAW (ne16) | Edit Custom, Picture…, Bug Type, Help | `DialogBox` (+ engine prefs) | as above |
+| `tng` TNGMESG, Starfleet Messages (ne16) | Edit Custom... | `DialogBox` (+ engine prefs) | as above |
 | the 14 `swse` modules (ne16, Intermission) | Configure... | `SAVERMAIN(8)` → `DialogBox` of `"DIALOGBOX"` (named through the module's `NAMETABLE`), with INTRMLIB's `ANT3DBOX`/`ANT3DCHECK`/`ANT3DSCROLL`/`ANT3DTEXT`/`ANT3DONEORMORE` controls and SWSE's animated credits box; Scrolling Text adds `GetOpenFileName`, `GetSaveFileName` and `ChooseFont` | `WritePrivateProfileString` into `SWSE.INI` in the Windows directory, one section per module (Scrolling Text also writes its edit box to `SWTXEDBX.TXT` there) |
 | the 30 `farside` and `dilbert` modules (ne16, Intermission: 25 ASA animations, 5 IMQ modules; with the two Delrina releases) | Configure... | `SAVERMAIN(8)`: for an ASA animation, `IMASAPLY.IMQ`'s "Animation Player Options" (sound effects and MIDI on or off, colour options); for an IMQ module, its own dialog (Pterodactyl's: the banner text) | `WritePrivateProfileString` into `ANTSW.INI` in the Windows directory, in a section named for the module (`[FS-Pterodactyl]`); the next load reads it (Out to Lunch with its sound effects off plays none) |
 | `startrek` COMMS, SOUNDER (ne16, After Dark 2.0) | Edit Custom... (Communications, MODULE 10), Sounds.. (Sounder, MODULE 9) | `DialogBox`: "Edit Message" (a multi-line edit, id 103); "Select Directory", whose folder list is `DlgDirList(…, DDL_EXCLUSIVE \| DDL_DRIVES \| DDL_DIRECTORY)` beside the folder's `*.WAV` (§6.2) | `WritePrivateProfileString` into `AD_PREFS.INI`: `[Communications] MessageText`, `[Sounder] SoundPath` (nothing for a folder without a `.WAV`) |
@@ -226,7 +232,9 @@ the Disney Collection's modules have none (`--configure --button 0` on one
 of them exits 1, "control 0 is not a button"). With the two Delrina releases
 (314 modules) it has 93 on 87 modules, from 69 binaries: each of The Far
 Side's 14 modules and Dilbert's 16 has one, and all 30 showed their dialog
-on a hidden desktop. Marvel's thumbnails (ids 1007–1015) are children of
+on a hidden desktop. With The Next Generation (327 modules) it has 94 on
+88 modules, from 70 binaries: Starfleet Messages' Edit Custom... is the
+release's one button. Marvel's thumbnails (ids 1007–1015) are children of
 the Images window (1006), so a configure script's `CLICK`, which goes to
 the dialog, can't reach them, but `PRESS 1006 <x> <y>` clicks the thumbnail
 under that point (§6.6). Saver..'s All (1000) and None (1001) are the

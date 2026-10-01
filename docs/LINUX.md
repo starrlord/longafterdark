@@ -11,15 +11,16 @@ for ending it and for the modules' games, and the picture keeps its shape.
 
 The same as on Windows:
 
-* all fourteen releases and their 314 modules, imported by the same importer
+* all fifteen releases and their 327 modules, imported by the same importer
   and checked file by file against the originals;
 * the modules' sound effects, their MIDI music and the Simpsons' voices,
   from one player only (the primary monitor's);
-* the Caps Lock games, and Star Trek's Final Exam with Num Lock;
+* the Caps Lock games (Officer's Review among them), and Star Trek's Final
+  Exam with Num Lock;
 * the picture's shape: After Dark modules get a screen of the display's
   shape, 480 lines high, or 720 with `--lines 720` (the Windows setting
-  **Sharp — 720 lines**); Star Wars, Far Side, Dilbert, Star Trek,
-  ScreamSavers and Marvel modules always get 640×480, with black bars at the
+  **Sharp — 720 lines**); Star Wars, Far Side, Dilbert, Star Trek (both
+  releases), ScreamSavers and Marvel modules always get 640×480, with black bars at the
   sides on a widescreen display, or stretched to fill it with `--stretch`
   (the Windows setting **Stretch to fit the screen**);
 * what the modules save themselves (message texts, high scores, the Star
@@ -133,7 +134,7 @@ follow it; with none, it opens the importer's window:
 cd LongAfterDark
 ./longafterdark --import                                # the importer's window
 ./longafterdark --import --download simpsons            # from the Internet Archive (2.6 MB)
-./longafterdark --import --download all                 # all fourteen releases (657 MB), those imported already too
+./longafterdark --import --download all                 # all fifteen releases (663 MB), those imported already too
 ./longafterdark --import --image ~/Downloads/afterdark-20b_startrek.zip
 ./longafterdark --import --image ~/Downloads/"After Dark - Scream Savers.zip"   # its disks in DISK1, DISK2, ... folders
 ./longafterdark --import --image disk1.img --image disk2.img
@@ -147,7 +148,8 @@ keeps Wine's messages quiet, and stops a new Wine prefix from offering to
 install Mono and Gecko, which nothing here needs (`wine adimport.exe`
 works too, given Windows paths such as `Z:\home\you\disc.iso`). The
 release ids are `deluxe`, `ad10`, `ad32`, `tt`, `simpsons`, `swse`,
-`startrek`, `marvel`, `snoopy`, `looney`, `screams` and `disney`. The
+`startrek`, `marvel`, `snoopy`, `looney`, `screams`, `disney`, `farside`,
+`dilbert` and `tng`. The
 sources the importer takes (a disc or floppy image; a ZIP of the install
 files, of the floppy images, or of the install disks in `DISK1`, `DISK2`,
 … folders; a folder; or a download), and how it checks them, are in

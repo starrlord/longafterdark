@@ -45,7 +45,8 @@ twelfth, `marvel`, `snoopy`, `looney`, `screams` and `disney` (Marvel
 Comics Screen Posters, Snoopy's Screen Savers, The Looney Tunes Screen
 Saver, ScreamSavers, The Disney Collection Screen Saver), and as the
 thirteenth and fourteenth, Delrina's `farside` and `dilbert` (The Far Side
-Screen Saver Collection, Scott Adams' Dilbert Screen Saver Collection). The UI calls a release by
+Screen Saver Collection, Scott Adams' Dilbert Screen Saver Collection), and
+as the fifteenth `tng` (Star Trek: The Next Generation Screen Saver). The UI calls a release by
 its `title`, or by its `shortTitle` where space is tight. A **cover** is the
 art that stands for a release. A **tile** is the cover rendered as a 4:5
 portrait PNG for display. The **filter** is the set of releases whose tiles
@@ -115,7 +116,9 @@ control and the details card) moves down by the band's height.
   all twelve: Star Trek, Marvel, Simpsons, Star Wars, Snoopy, Looney Tunes,
   ScreamSavers, 3.2, Totally Twisted, Disney, Deluxe, 10th Anniversary.
   With all fourteen, Far Side (1994-06) comes third, after Marvel, and
-  Dilbert (1994-10) seventh, after Snoopy. A release without a date comes
+  Dilbert (1994-10) seventh, after Snoopy. With all fifteen, the Next
+  Generation (1994-10) comes eighth, after Dilbert (the same month, so
+  registry order). A release without a date comes
   last. (As built for twelve: a row that
   scrolls starts after the left chevron's place, §1.3.)
 * **Status box.** A status box 200 DIP wide sits at the column's right
@@ -206,7 +209,8 @@ so every cover now shows, on as many rows as they need
 
 * **Rows.** As few as hold every cover, and as even as can be: fourteen
   where a row holds seven are 7 and 7, where it holds ten (compact) still 7
-  and 7, eight are 4 and 4, never 7 and 1. The rows are left-aligned on the
+  and 7, eight are 4 and 4, never 7 and 1; fifteen are 5, 5 and 5 regular,
+  8 and 7 compact. The rows are left-aligned on the
   column and `kStripRowGap` (8 DIP) apart, the gap between two covers of a
   row; only the last row may be shorter. The band is the rows of cells and
   the 12-DIP gap under them: 236 DIP for two regular rows, 156 for two
@@ -223,8 +227,9 @@ so every cover now shows, on as many rows as they need
   covers at a time; the minimum window size is unchanged.
 * **First-open size.** The design height plus the band of the regular rows
   at the first-open width (`design_client_h`): 1040 × 836 DIP for two to
-  seven releases, as before, and 1040 × 952 for eight to fourteen (two rows
-  of regular covers, the columns at their design heights), clamped to the
+  seven releases, as before, 1040 × 952 for eight to fourteen (two rows
+  of regular covers, the columns at their design heights), and 1040 × 1068
+  for fifteen to twenty-one (three regular rows, 352 DIP), clamped to the
   work area as before (a clamped height then gets the compact rows, or the
   scrolling row).
 * **The status box** stays at the column's right edge, as tall as a cover,
@@ -665,6 +670,7 @@ photos are those two releases' covers of choice, through `--set-cover`).
 | `disney` (the same) | download `https://web.archive.org/web/19970720111656id_/http://www.berksys.com:80/lite/products/afterdark/box.disneyL.jpg` (the box front from Berkeley Systems' 1997 product page, the only capture, 128×162), md5 `ffcd41dd737b125af0a4e4a1bfee6610`, 20983 B, art `box` ("Box front", Wayback Machine) | disc `SETUP.BMP` (the installer splash, 387×220), md5 `39e1bfb21fdf7fe2396525d13798cf50`, **crop 0,0,387,172** (the warning text band starts at row 172), art `splash` ("Installer art", your disks) | — | — |
 | `farside` (added with the two Delrina releases) | download `https://archive.org/download/the-far-side-screen-saver-collection-1-of-5/far-side-software-v0-z46qj0d0a2fc1.webp` (a photo of two boxes on a couch, 1080×813 WebP, in the item of the release's damaged floppy images), md5 `4e7ebc4e9dbced47a3fc37e55054486f`, 270222 B, **crop 546,122,408,508** (the release's box, on the right), art `box` ("Box front", Internet Archive) | — | — | — |
 | `dilbert` (the same) | download `https://archive.org/download/dilbert_screensaver_collection/box.jpg` (a photo of the box front, 1200×1600, in the item of the flat ZIP), md5 `aa8fe2600200685504ea9f15feaf4352`, 167593 B, **crop 100,215,965,1315** (the box), art `box` ("Box front", Internet Archive) | disc `INSTALL.BMP` (the picture beside the installer's pages on disk 1: Dogbert, 63×123), md5 `47199572d43fb457b952dcba197a19c5`, art `panel` ("Setup art", your disks) | — | — |
+| `tng` (added as the fifteenth release) | download `https://web.archive.org/web/19970720113647id_/http://www.berksys.com:80/products/afterdark/box.stngL.jpg` (the box front from Berkeley Systems' 1997 product page, 126×160, like the Looney Tunes' and the Disney Collection's; the same bytes in the `/lite/` captures), md5 `d7286d0d288c5f8c9982c2a97470a2f8`, 23278 B, art `box` ("Box front", Wayback Machine) | disc `SETUP.BMP` (the installer splash, 387×228), md5 `b54082b26b50a8bf44653fa079f36320`, **crop 0,0,387,168** (above the warning text), art `splash` ("Installer art", your disc) | download `https://archive.org/download/star-trek-the-next-generation-screensaver/Star%20Trek%3A%20The%20Next%20Generation%20-%20screensaver_disc.jpg` (the Internet Archive's photo of the disc, 6000×4000, in the ISO's own item), md5 `419a2ba9a3c762531365cef84d02ef45`, 11258025 B, **crop 1200,270,3600,3600** (the disc, normalized to 2048×2048), art `disc` ("Disc label", Internet Archive) | — |
 
 Notes:
 * **ad32** starts with its disc art because the user chose it: no box scan
@@ -744,6 +750,14 @@ Notes:
   Its installer's picture, `INSTALL.BMP`, is a plain file on disk 1, drawn
   as a picture when the photo cannot be fetched. A search of the Wayback
   Machine's captures of Delrina's site found nothing for either.
+* **tng.** Star Trek: The Next Generation's art belongs to Paramount, with
+  Berkeley Systems', and is handled like the Looney Tunes' and the Disney
+  Collection's: the box front from Berkeley's 1997 product page through the
+  Wayback Machine, then the installer splash on the user's own disc, cropped
+  above its warning text, then the Internet Archive's photo of the disc,
+  cropped to the disc; fetched onto the user's machine at import time, or
+  read from the user's own disc, and never bundled, committed or
+  redistributed.
 
 ### 2.4 Capture during an import
 

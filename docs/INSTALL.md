@@ -3,7 +3,7 @@
 **Long After Dark** is a screen saver for Windows that runs the original
 modules of After Dark, of LucasArts' Star Wars Screen Entertainment and of
 Delrina's The Far Side and Dilbert collections, unchanged, under x86
-emulation. It knows fourteen releases, 314 modules:
+emulation. It knows fifteen releases, 327 modules:
 
 | id | Release | Internet Archive download |
 |---|---|---|
@@ -21,6 +21,7 @@ emulation. It knows fourteen releases, 314 modules:
 | `disney` | The Disney Collection Screen Saver (1995) | install files (ZIP), 3.4 MB |
 | `farside` | The Far Side Screen Saver Collection (1994) | install files (5 ZIPs, one per disk), 5.5 MB |
 | `dilbert` | Scott Adams' Dilbert Screen Saver Collection (1994) | install files (ZIP), 4.3 MB |
+| `tng` | Star Trek: The Next Generation Screen Saver (1994) | CD image, 5.8 MB |
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
 Trek modules, on two floppies. Marvel Comics Screen Posters (After Dark
@@ -31,6 +32,13 @@ Snoopy's Screen Savers (Image Smith) are other companies' modules for After
 Dark: ScreamSavers shipped the After Dark engine it licensed, and Snoopy's
 modules were made for an After Dark already installed, so Long After Dark
 supplies the sound library they would have found there.
+
+Star Trek: The Next Generation Screen Saver (1994) is Berkeley Systems'
+After Dark 3.0 release of 13 modules of the series, on a CD with After
+Dark 3.0's installer: Data Dances, Encounters, Nanites, Officer's Review,
+Personnel Files, Starbase, Science Stations, Tachyon Particle Field, The
+Borg, Starfleet Messages, Counselor Troi, Warp Effect and Worf's Weapons,
+with their music.
 
 Star Wars Screen Entertainment is not an After Dark release, though it is
 sometimes listed as "After Dark Star Wars": its 14 modules were made for
@@ -82,7 +90,7 @@ Double-click `adimport.exe`, or open the screen saver's settings and click
 - **A drive or folder:** the CD itself, or a folder copied from it (for
   floppies, one folder holding the files of every disk, or one holding
   nothing but a `DISK1`, `DISK2`, … folder per disk).
-- **A download from the Internet Archive:** a list of the fourteen releases
+- **A download from the Internet Archive:** a list of the fifteen releases
   with their sizes, plus one entry that fetches every release not imported
   yet. An interrupted download resumes, and each file is checked against its
   published MD5 before it is used.
@@ -258,6 +266,14 @@ root: as in DOS, its short path after the drive letter must fit in 63
 characters. After Dark's Globe ("Map..." in After Dark 4.0 Deluxe and 3.2)
 reaches your drives the same way.
 
+The Next Generation's modules always get 640×480 too, scaled to fit:
+several of them (Science Stations, Encounters, Personnel Files, Officer's
+Review, Starfleet Messages) compose their scenes for that screen. Starfleet
+Messages has one button, **Edit Custom...**, which edits your own message
+(choose "Custom" under **Text** to show it). Officer's Review is a game:
+press Caps Lock to start the exam, type the number of each answer, and
+press Caps Lock again to stop.
+
 Several ScreamSavers modules and Marvel's poster module compose their
 pictures for 640×480 too, so all the ScreamSavers modules and Marvel's
 always get 640×480, scaled to fit. Marvel's
@@ -292,10 +308,10 @@ Any key except Shift, Ctrl, Caps Lock and Num Lock, a click, the mouse
 wheel, moving the mouse or switching away (the Windows key, Alt+Tab,
 Ctrl+Alt+Del) ends the screen saver. Caps Lock never does: in some modules
 it changes something (it scares the fish, changes the colours, or in many
-Looney Tunes and Disney modules moves on to the next scene) or starts a
-game, as in Rodger Dodger, You Bet Your Head, Simpsons Trivia, Mime Hunt,
-Frankenscreen, Marbles and Pinocchio (the Wishing Star: Pinocchio follows
-the mouse).
+Looney Tunes, Disney and Next Generation modules moves on to the next
+scene) or starts a game, as in Rodger Dodger, You Bet Your Head, Simpsons
+Trivia, Officer's Review, Mime Hunt, Frankenscreen, Marbles and Pinocchio
+(the Wishing Star: Pinocchio follows the mouse).
 
 While a game is playing, keys, clicks and the mouse belong to it, and the
 pointer stays on the primary monitor. Press Caps Lock again to stop playing

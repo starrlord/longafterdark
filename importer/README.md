@@ -3,9 +3,11 @@
 Puts the original Windows screen saver modules where the hosts read them
 (DESIGN.md §6, §7; the full specification is `docs/PACKAGES.md`), and keeps
 each release's box cover (DESIGN.md §9, `docs/COVERS.md` §2). It is Long
-After Dark's importer, and it knows fourteen releases, the *packages* of its
-built-in registry (`packages.h`): nine of Berkeley Systems' After Dark, the
-oldest being Star Trek: The Screen Saver (1992, After Dark 2.0b); two of
+After Dark's importer, and it knows fifteen releases, the *packages* of its
+built-in registry (`packages.h`): ten of Berkeley Systems' After Dark, the
+oldest being Star Trek: The Screen Saver (1992, After Dark 2.0b) and the
+latest added Star Trek: The Next Generation Screen Saver (1994, After Dark
+3.0); two of
 other companies' modules for After Dark, Binary Software's ScreamSavers and
 Image Smith's Snoopy's Screen Savers; and three whose modules run on
 Delrina's Intermission engine, not After Dark's: LucasArts' Star Wars Screen
@@ -28,6 +30,7 @@ and Scott Adams' Dilbert Screen Saver Collection (both 1994).
 | `disney` | The Disney Collection Screen Saver | three floppies, InstallShield 3 + encrypted PKZIP | `ad3zip` | `packages\disney\{DISNEY,ENGINE}` | 16 | a ZIP of the install files, 3.4 MB |
 | `farside` | The Far Side Screen Saver Collection | five 1.44 MB floppies, Delrina's Intermission Installer: loose files, most SZDD | `intermission` | `packages\farside\{SAVER,ENGINE}` | 14 | a ZIP of each install disk's files, 5.5 MB in all (a 1994 bulletin-board copy, the only intact one) |
 | `dilbert` | Scott Adams' Dilbert Screen Saver Collection | four 1.44 MB floppies, Delrina's Intermission Installer | `intermission` | `packages\dilbert\{SAVER,ENGINE}` | 16 | a ZIP of the install files, 4.3 MB (2 copies: flat, and a ZIP per disk) |
+| `tng` | Star Trek: The Next Generation Screen Saver | CD (ISO-9660), InstallShield 3 + encrypted PKZIP | `ad3zip` | `packages\tng\{ST-TNG,ENGINE}` | 13 | the CD image, 5.8 MB |
 
 ```
 adimport --image <image> [--image <image2> …] | --iso <image> | --from <drive or folder>
@@ -130,6 +133,7 @@ another ZIP fetched whole, as below):
 | `disney` | `after-dark-collection/After Dark - Disney Collection.zip` | the same name | 3560012 | `2f38df15…` | zip (a known image) |
 | `farside` | `prog47_55/prog47_55.zip/prog47_55%2FPROG_52%2FPNX-FSC1.ZIP` … `PNX-FSC5.ZIP` (a 1994 bulletin-board copy of the five floppies, one ZIP per disk, inside the item's ZIP; the only intact copy online) | `PNX-FSC1.ZIP` … `PNX-FSC5.ZIP` | 977668 + 1210777 + 1202730 + 1106810 + 1248997 | `bfbe4874…` + `36430726…` + `5ac67d84…` + `7902b2a2…` + `58351b2e…` | zip, five parts (known images) |
 | `dilbert` | `dilbert_screensaver_collection/DilbertS.zip` (the four floppies' files, flat), then `prog70_75/prog70_75.zip/prog70_75%2FPROG_70%2FDILBERT1.ZIP` … `DILBERT4.ZIP` (the same disks, one ZIP per disk, inside the item's ZIP) | the same names | 4511167 / 1077844 + 1146156 + 1193935 + 1155239 | `ea6e1846…` / `1158cc63…` + `43473862…` + `0f5408c7…` + `9064065c…` | zip / zip, four parts (known images) |
+| `tng` | `star-trek-the-next-generation-screensaver/Star Trek: The Next Generation - screensaver.iso` (a clean read of the CD; the other item, of the 1994 floppies, is not listed) | `Star Trek - The Next Generation - screensaver.iso` (no Windows file name can hold the published name's colon) | 6133760 | `0b95b927…` | image |
 
 * **Disc images** (`kind` image): the md5 is one of the package's known
   images, so the import is exactly an `--image` import of that file:
@@ -362,17 +366,20 @@ same way, from memory (`FatImage` over the member's bytes).
      holding `INSTALL.INS`, `SETUP.PKG`, `ENGINE.ZIP`, `MODMISC.ZIP` and
      `AFI.ZIP`; the package is the one whose engine DLL is a member of
      `MODMISC.ZIP` (`ADXPL300.DLL` / `ADXPL40.DLL` / `ADXPL310.DLL` /
-     `ADXPL41.DLL` / `ADXPL300.DLL` / `ADXPL100.DLL` for `ad32` / `tt` /
-     `simpsons` / `looney` / `screams` / `disney`), whose folder file is a
-     member of `AFI.ZIP` (`AD3.AFI` / `PHLEM.AFI` / `SAX.AFI` /
-     `LNYTUNES.AFI` / `SCREAMS.AFI` / `DISNEY.AFI`), and whose `marker`, when
+     `ADXPL41.DLL` / `ADXPL300.DLL` / `ADXPL100.DLL` / `ADXPL320.DLL` for
+     `ad32` / `tt` / `simpsons` / `looney` / `screams` / `disney` / `tng`),
+     whose folder file is a member of `AFI.ZIP` (`AD3.AFI` / `PHLEM.AFI` /
+     `SAX.AFI` / `LNYTUNES.AFI` / `SCREAMS.AFI` / `DISNEY.AFI` /
+     `ST-TNG.AFI`), and whose `marker`, when
      it has one, is a member of `MODMISC.ZIP` too (`ad32`: `AD30RSDB.DLL`).
      Neither archive alone tells the family apart: ScreamSavers ships After
      Dark 3.2's own `ADXPL300.DLL` (1.1.0 took every flat form of it for
      3.2, and `--no-verify` installed it over `packages\ad32`), and every
-     `AFI.ZIP` carries other products' folder files. Checked over every known
-     source form of the six, disk 1 alone included: each matches exactly one
-     package, or none. Central-directory names are not encrypted, so no
+     `AFI.ZIP` carries other products' folder files (the Next Generation's
+     holds `DISNEY.AFI`, `STARTREK.AFI`, `MARVEL.AFI` and others beside its
+     own `ST-TNG.AFI`; no other package has `ADXPL320.DLL`). Checked over
+     every known source form of the seven, disk 1 alone included: each
+     matches exactly one package, or none. Central-directory names are not encrypted, so no
      password is needed to identify.
    * `intermission` packages: Presage's installer script `INSTALL.DAT` at the
      source's root (the CD, disk 1, a flat ZIP or a copy of one), a plain file
@@ -463,7 +470,9 @@ Looney Tunes install 34 files (12 modules, `ADXPL41`, `LT_SOUND`,
 modules, After Dark 3.2's `ADXPL300`, which nothing loads but the installer
 put there, `AD_RSRC`, `FOLDER.AFI`; `ENGINE` 5) and the Disney Collection 31
 (16 modules, `ADXPL100`, `DIS_SND`, `AD_RSRC`, `FOLDER.AFI`, 6 MIDI from
-`MUSICG.ZIP`; `ENGINE` 5).
+`MUSICG.ZIP`; `ENGINE` 5). `tng` requires its 13 module archives and
+`MUSIC.ZIP` too; it installs 31 files (13 modules, `ADXPL320`, `TNG_ART`,
+`TNG_SND`, `AD_RSRC`, `FOLDER.AFI` from `ST-TNG.AFI`, 8 MIDI; `ENGINE` 5).
 
 **`intermission`** reproduces what Presage's installer did for Star Wars
 Screen Entertainment, flattened into the module dir `M` = `SAVER` (the ne16
@@ -662,7 +671,8 @@ sound database (a `*_SND.DLL` other than `AD_SND.DLL`, or a `*_SOUND.DLL`:
 the Looney Tunes' `LT_SOUND.DLL`) in a module folder, and (`ad3zip`) every
 MIDI in `M\MUSIC\`. The Looney Tunes require `LNYTUNES\ADXPL41.DLL` and
 `LT_SOUND.DLL`, ScreamSavers only `ENGINE\AD_SND.DLL` and `ADTASK.DLL`, the
-Disney Collection `DISNEY\ADXPL100.DLL` and `DIS_SND.DLL`, each with its
+Disney Collection `DISNEY\ADXPL100.DLL` and `DIS_SND.DLL`, the Next Generation
+`ST-TNG\ADXPL320.DLL`, `TNG_ART.DLL` and `TNG_SND.DLL`, each with its
 `ENGINE\AD_SND.DLL` and `ADTASK.DLL`. An `intermission` package has its own: I1 also no
 `INTERMIS.EXE` or `*.IMQ` beside the modules (they live in `ENGINE`); I2 also
 every non-system DLL that the NE DLLs beside the modules import is beside them
@@ -763,7 +773,7 @@ Each package has a manifest (path, size, md5 of every installed file,
 fix-ups included — never After Dark bytes): `known_files.inc` (Deluxe, 175
 files) and `known_files_<id>.inc` (`ad10` 147, `ad32` 89, `tt` 26,
 `simpsons` 30, `swse` 29, `startrek` 27, `marvel` 64, `snoopy` 8, `looney`
-34, `screams` 23, `disney` 31, `farside` 20, `dilbert` 23). `"verified"` is `image` (the image md5 is one of
+34, `screams` 23, `disney` 31, `farside` 20, `dilbert` 23, `tng` 31). `"verified"` is `image` (the image md5 is one of
 the package's known images — a disc or floppy image, or a known ZIP of the
 install files —, or the images are a known disk set), `files` (every file of the manifest is there and matched it, and
 nothing else was installed), `partial` (some installed files are not in the
@@ -985,11 +995,14 @@ the prototype never parses exports, so it lists STARRYNI's entry as
 empty: their About texts are blank), `looney` 12 (one button), `screams` 15
 (each with `screen`), `disney` 16 (no buttons), `farside` 14 and `dilbert`
 16 (all `ne16`, Intermission: 12 and 13 ASA animations, 2 and 3 IMQ
-modules, one button each): 314 with all fourteen installed, 232 over the
+modules, one button each), `tng` 13 (all `ne16`, each with `screen`, one
+button: Starfleet Messages' Edit Custom...): 327 with all fifteen
+installed, 232 over the
 first seven, 73 of them `sameAs` an earlier entry (swse, startrek and the
 seven after them add none); the `packages` list, oldest first, reads
 `startrek` (1992-11), `marvel`, `farside`, `simpsons`, `swse`, `snoopy`,
-`dilbert`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
+`dilbert`, `tng`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`,
+`ad10`.
 
 ## Covers
 
@@ -1018,6 +1031,7 @@ dialog's release strip shows them). The tile shows the first of:
 | `disney` | the box front from Berkeley Systems' 1997 product page (`box.disneyL.jpg`, through the Wayback Machine), then the installer splash (`SETUP.BMP`, cropped to 387×172 above its warning text) | 128×162 / 387×172 |
 | `farside` | the Internet Archive's photo of the box beside another, in the item of the damaged floppy images (`far-side-software-v0-z46qj0d0a2fc1.webp`, cropped to the box at 546,122, 408×508); a WebP, decoded where Windows has its WebP codec, else the generated cover; nothing on the disks (the installer's picture is SZDD-compressed) | 408×508 |
 | `dilbert` | the Internet Archive's photo of the box front (`dilbert_screensaver_collection/box.jpg`, the flat ZIP's item; cropped to the box at 100,215, 965×1315, a previous owner's handwritten name on it kept), then the installer's picture on disk 1 (`INSTALL.BMP`, Dogbert, art `panel`, "Setup art") | 965×1315 / 63×123 |
+| `tng` | the box front from Berkeley Systems' 1997 product page (`box.stngL.jpg`, through the Wayback Machine), then the installer splash (`SETUP.BMP`, cropped to 387×168 above its warning text), then the Internet Archive's photo of the disc in the ISO's own item (`…screensaver_disc.jpg`, 6000×4000, cropped to the disc at 1200,270, 3600×3600) | 126×160 / 387×168 / 2048×2048 |
 
 The box fronts are small (a tile is never shown larger than 160×200 px),
 but they are the retail boxes; a disc label or an installer splash is what
@@ -1033,7 +1047,7 @@ refresh reuses them without a request. A disc source is read from the source
 being imported (only the named file; with its md5 checked, so another pressing
 is skipped); a bitmap resource of an NE or PE file gets a `BITMAPFILEHEADER`
 before it is decoded. The Simpsons art belongs to Fox, Star Wars Screen
-Entertainment's to Lucasfilm and Star Trek's to Paramount; the Looney
+Entertainment's to Lucasfilm and both Star Trek releases' to Paramount; the Looney
 Tunes' to Warner Bros., the Disney Collection's to Disney and Marvel's to
 Marvel (with Berkeley's): each is fetched onto the user's machine at import
 time and never bundled.

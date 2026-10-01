@@ -8,14 +8,14 @@ The screen saver presents the frames. It runs the modules of LucasArts'
 Star Wars Screen Entertainment the same way: they were made for Delrina's
 Intermission, whose reader, library and modules run as real code too.
 
-It supports fourteen releases: After Dark 4.0 Deluxe, After Dark 10th
+It supports fifteen releases: After Dark 4.0 Deluxe, After Dark 10th
 Anniversary, After Dark 3.2, Totally Twisted After Dark, The Simpsons
 Screen Saver, Star Trek: The Screen Saver (After Dark 2.0b), Marvel Comics
 Screen Posters, The Looney Tunes Screen Saver, The Disney Collection Screen
-Saver, two other companies' modules for After Dark (Binary Software's
+Saver, Star Trek: The Next Generation Screen Saver (After Dark 3.0), two other companies' modules for After Dark (Binary Software's
 ScreamSavers and Image Smith's Snoopy's Screen Savers), and three for
 Delrina's Intermission (Star Wars Screen Entertainment, The Far Side Screen
-Saver Collection and Scott Adams' Dilbert Screen Saver Collection), 314
+Saver Collection and Scott Adams' Dilbert Screen Saver Collection), 327
 catalog entries in all
 (`docs/PACKAGES.md`). Installing
 and using it is covered in [INSTALL.md](INSTALL.md). This page is for
@@ -60,7 +60,8 @@ LongAfterDark.scr ──spawns──► adhostwin.exe  one process per monitor, 
   After Dark 4-generation modules (PE32 DLLs) with the real `ADXPL510.DLL`.
   `ne16` runs 16-bit modules (NE DLLs: the AD 2.x/3.x "Classic" modules and
   those of AD 3.2, Totally Twisted, the Simpsons, the 10th Anniversary,
-  Star Trek: The Screen Saver and the five later releases) with their real
+  Star Trek: The Screen Saver, the five later releases and The Next
+  Generation) with their real
   engines. Where a disc ships Berkeley's `OLDMOD16.DLL` bridge, the lane
   runs it; otherwise a host-native AD3 bridge implements OLDMOD16's
   verified behaviour (`docs/PACKAGES.md` §7.4), standing in for Star
@@ -502,8 +503,8 @@ Everything the programs keep is under **`%LOCALAPPDATA%\LongAfterDark`**
 ```
 
 Package ids are `deluxe` (its files stay in `FILES\`), `ad10`, `ad32`, `tt`,
-`simpsons`, `swse`, `startrek`, `marvel`, `snoopy`, `looney`, `screams` and
-`disney`. `ADSTATE` is unset in headless runs, so
+`simpsons`, `swse`, `startrek`, `marvel`, `snoopy`, `looney`, `screams`,
+`disney`, `farside`, `dilbert` and `tng`. `ADSTATE` is unset in headless runs, so
 the state overlay lives in memory and no user state is read or written.
 Build trees go to `build/` (gitignored); on Linux the player goes to
 `build/linux/`.
