@@ -1,20 +1,23 @@
 # Long After Dark — packages
 
-How the host imports and runs modules from twelve releases, not just the
+How the host imports and runs modules from fourteen releases, not just the
 After Dark 4.0 Deluxe CD: nine of Berkeley Systems' After Dark, the oldest
 being Star Trek: The Screen Saver (1992, After Dark 2.0b); two of other
 publishers' modules for After Dark, Binary Software's ScreamSavers (1995,
 on the After Dark 3.0.6 engine it licensed from Berkeley) and Image Smith's
 Snoopy's Screen Savers (1994, modules for an After Dark already installed);
-and LucasArts' Star Wars Screen Entertainment (1994), whose modules run on
-Delrina's Intermission screen saver engine, not on After Dark's. DESIGN.md
+and three whose modules run on Delrina's Intermission screen saver engine,
+not on After Dark's: LucasArts' Star Wars Screen Entertainment (1994), and
+Delrina's own The Far Side Screen Saver Collection and Scott Adams' Dilbert
+Screen Saver Collection (both 1994). DESIGN.md
 §6, §6a and §7 give the contract in brief; this file is the full
 specification and the plan that implements it.
 
-**Status: implemented.** The importer reads all twelve releases (284
+**Status: implemented.** The importer reads all fourteen releases (314
 catalog modules, 73 of them `sameAs` an earlier entry). The 270 modules of
 the eleven After Dark releases run headless, deterministically, and each
-release also runs on its own; Star Wars Screen Entertainment's 14 are
+release also runs on its own; the 44 of the three Intermission releases
+(Star Wars Screen Entertainment's 14, The Far Side's 14, Dilbert's 16) are
 driven by the Intermission protocol of §7.5. This file keeps the
 specification and the plan as they were written, so tables that say
 "today" or "current" describe the host before this work. Star Wars Screen
@@ -29,8 +32,14 @@ ScreamSavers and The Disney Collection Screen Saver (the `marvel`,
 `snoopy`, `looney`, `screams` and `disney` rows and paragraphs, the `islib`
 recipe and §8.9, the disk sets of §5.2, the After Dark 3.x seeds of §7.3,
 and the host's own AD_SND and After Dark 2.0's computed palettes of §7.4);
-there, "before this release" means the seven-release host (1.1.0). Where
-the implementation went further, the component
+there, "before this release" means the seven-release host (1.1.0). The
+Far Side Screen Saver Collection and Scott Adams' Dilbert Screen Saver
+Collection, both installed by Delrina's own Intermission Installer, were
+added in a fifth round (the `farside` and `dilbert` rows and paragraphs,
+the `intermission` recipe's second installer in §3 and §4.3, the ASA
+animations and IMQ modules of §6 and §7.5, and SZDD's version stamps in
+§8.7); there, "before this release" means the twelve-release host (1.2.1).
+Where the implementation went further, the component
 READMEs are authoritative: `importer/README.md` (every release can also be
 downloaded from the Internet Archive, and a ZIP of install files, or of a
 release's floppy images, is a valid source), and `host/win32/README.md` and
@@ -45,16 +54,22 @@ and about Star Trek: The Screen Saver from four more of its floppies (Sept
 modules' content), and about the fourth round's five from a survey of each
 and one of the InstallShield 2 format that two of them share (Sept 2026;
 `research/win/pkg/{marvel,snoopy,looney,scream,disney}/`, the ScreamSavers
-survey's folder being `scream`, and `research/win/pkg/installshield/`).
+survey's folder being `scream`, and `research/win/pkg/installshield/`),
+and about the fifth round's two from a survey of each (Sept 2026: the
+online copies, the installer and layout, the modules and their runs;
+`research/win/pkg/{farside,dilbert}/`).
 Their artifacts are in `research/win/pkg/<id>/`, which is gitignored:
 extraction scripts, inventories, trial runs, contact sheets and
 disassembly. **No After Dark (Berkeley Systems), LucasArts, Paramount,
 Disney, Warner Bros., Marvel, Image Smith, United Feature Syndicate
-(Peanuts), Binary Software or IMPart bytes, extracted files or disassembly
-are ever committed.** Manifests hold only path, size and md5. The ZIP
-password is derived at import time, never stored (§8.4). The previous
-owners' notes some copies carry (serial numbers, registration files) are
-never opened, copied, hashed or listed (§4.2 I5).
+(Peanuts, Dilbert), Binary Software, IMPart, Delrina, Gary Larson, FarWorks,
+Universal Press Syndicate, Scott Adams or United Media bytes, extracted
+files or disassembly are ever committed.** Manifests hold only path, size
+and md5. The ZIP password is derived at import time, never stored (§8.4).
+The previous owners' notes some copies carry (serial numbers, registration
+files) are never opened, copied, hashed or listed, and the notes of the
+bulletin boards whose copies of the fifth round's floppies are the ones
+online are never opened (§4.2 I5).
 
 ## 0. Decisions at a glance
 
@@ -70,12 +85,13 @@ never opened, copied, hashed or listed (§4.2 I5).
 | 16-bit host for AD 3.x | Real OLDMOD16 where the package ships it (`deluxe`, `ad10`). Otherwise a host-native AD3 bridge that implements OLDMOD16's verified behaviour. It uses the package's own AD_SND 3.x and ADTASK palettes. Deluxe is never needed (§7.4). The keys the After Dark 3.x host `ADW30.EXE` wrote into `AD_PREFS.INI` at every start are profile seeds, a rule by file on `ENGINE\ADW30.EXE` (§7.3): the Disney Collection's library needs them |
 | After Dark 2.0 (`startrek`) | The same AD3 protocol and native bridge: After Dark 2.0's `AD.EXE` drove its modules with the same messages and blocks as OLDMOD16, and the host replaces it, an NE application, as it replaces `AFTERDAR.SCR` (ABI.md §3.9). The bridge takes AD_SND 1.0's own volume pair (§7.4). The lane's other differences are rules by file, keyed on `AD_MOD.DLL` in the module folder: `AD_PREFS.INI` profile seeds and result 5 as the module's wake (§7.3). Its four AD palettes, which `AD.EXE` built in code, are computed the same way, a rule by file too (§7.4). Every catalog entry has `"screen": "640x480"`: several of the modules compose a fixed 640×480 scene, and all 16 get that screen so the release looks as it did at 640×480 (§6) |
 | No sound library, no palettes (`snoopy`; fourth round) | A package whose engine dir holds no `AD_SND.DLL` gets the host's own AD_SND, a Win16 system module with AD_SND 3.0.3's entries, our own code (§7.4); one whose engine dir holds neither `ADTASK.DLL` nor `AFTERDAR.SCR` (`startrek`, `marvel`, `snoopy`) gets After Dark 2.0's four palettes, generated in code the way `AD.EXE` 2.0 generated them, never copied from Berkeley's files, handed over at the first palette request (§7.4). Both are rules by file: a package that ships its own files runs exactly as before |
-| Intermission modules (`swse`) | A second module protocol inside the ne16 lane, chosen by the module's exports. Intermission's own IMX reader, `IMIMXPLY.IMQ`, runs as real code, as OLDMOD16 does; a native C++ reader is the oracle and the fallback. The host replaces `INTERMIS.EXE`, an NE application, as it replaces `AFTERDAR.SCR` (§7.5; the protocol is ABI.md §3.8) |
-| Known images | An image md5 names a release, or since the seventh release one install disk of a release on several floppies: every disk exactly once, from any known copy of each, is that release's known image (`verified: image`, §3). Since the fourth round a ZIP of the install files is a known image too where no image of the original disks exists online, or none can be listed: the Internet Archive's stored file, the user's copy byte for byte (`marvel`, `snoopy`, `looney`, `screams`, `disney`) |
+| Intermission modules (`swse`) | A second module protocol inside the ne16 lane, chosen by the module's exports. Intermission's own IMX reader, `IMIMXPLY.IMQ`, runs as real code, as OLDMOD16 does; a native C++ reader is the oracle and the fallback. The host replaces `INTERMIS.EXE`, an NE application, as it replaces `AFTERDAR.SCR` (§7.5; the protocol is ABI.md §3.8). Since the fifth round (`farside`, `dilbert`) a module's form picks its reader: an IMX module `IMIMXPLY.IMQ`, an ASA animation (data that starts `AniN` or `AniM`) Intermission's ASA reader `IMASAPLY.IMQ`, run as real code with no native fallback, and an IMQ module, which exports `SAVERMAIN`, itself (ABI.md §3.8.9) |
+| Known images | An image md5 names a release, or since the seventh release one install disk of a release on several floppies: every disk exactly once, from any known copy of each, is that release's known image (`verified: image`, §3). Since the fourth round a ZIP of the install files is a known image too where no image of the original disks exists online, or none can be listed: the Internet Archive's stored file, the user's copy byte for byte (`marvel`, `snoopy`, `looney`, `screams`, `disney`). Since the fifth round a disk of a set may be a ZIP of that disk's files (`farside`'s five, `dilbert`'s four: 1994 bulletin-board copies) |
 | Install-time fix-ups | A baked table per package: file copies under the names the modules open (§4.3). No INF, IS-script, Presage-script or MS-Test interpreter: `intermission`, `ad2kwaj` and `islib` are baked too |
 | Formats to implement | FAT12/16 image reader; PKZIP with traditional PKWARE (ZipCrypto) decryption and raw inflate (zlib). The existing ISO-9660/Joliet reader already handles all three hybrid CDs (§8). For `swse`: multi-volume ARJ 2.x (§8.6) and SZDD (§8.7). For `startrek`: KWAJ method 3 (§8.8), and a ZIP of floppy images read as those images (§5.2). For `marvel` and `snoopy`: InstallShield 2's compressed libraries, single or split over two floppies, with PKWARE DCL implode (§8.9) |
 | Disk sets (fourth round) | A ZIP or a folder whose root holds nothing but `DISK<n>` folders is the union of those folders, as several floppy images are (§5.2): the Internet Archive's copies of ScreamSavers, Marvel Comics Screen Posters and Snoopy's Screen Savers keep their disks so |
 | InstallShield 2 installs (`marvel`, `snoopy`; fourth round) | A new recipe, `islib`: the libraries read with a strict reader of our own and each member placed by a table baked from the installer's script; the package list `SETUP.PKG` is read only to identify the release (§3, §4.3) |
+| Delrina's Intermission Installer (`farside`, `dilbert`; fifth round) | The `intermission` recipe's second installer (`Package::delrina_installer`: no `INSTALL.DAT` name): the release is named by file names alone (disk 1's tag `DISK1`, the installer `IMINST2.EXE` and a file of its own), every disk's tag must be there, and every installed file is a loose file under its own name, most SZDD-compressed; no archive, nothing read to identify (§3, §4.3) |
 | Work split | A: importer (`importer/**`). B: pe32 lane + core. C: ne16 lane + win16 + cpu. File ownership is disjoint (§10) |
 
 ## 1. Scope and starting point
@@ -97,11 +113,14 @@ hybrid discs hold is noted in §12; the importer skips them.
 | `looney` | 12 ne16 on their own engine, `ADXPL41.DLL`, with a sound database, `LT_SOUND.DLL` | all 12 exit 0 with 0 unimplemented calls; Pepe, Yosemite Sam and Taz drew wrongly | the importer refused every form (no registry entry); `GetDIBits(DIB_PAL_COLORS)` wrote an identity colour table (Pepe's black label boxes, Sam's and Taz's broken folders) |
 | `screams` | 15 ne16, Binary Software's modules on After Dark 3.0.6, which it licensed from Berkeley | all 15 exit 0; one unimplemented call, `GDI.81 GetMapMode`, which changes no pixel | the user's ZIP refused (its `DISK1/`–`DISK3/` folders); every other form taken for After Dark 3.2, whose `ADXPL300.DLL` its `MODMISC.ZIP` holds: exit 3, and with `--no-verify` installed over `packages\ad32` |
 | `disney` | 16 ne16 on the After Dark 2.0-era library `ADXPL100.DLL` with a sound library, `DIS_SND.DLL`, re-released on the After Dark 3.2 engine | none: all 16 stopped at load, "File not found." | the importer refused every form (no registry entry; its `BEAUTYOL.ZIP` would map a second `BEAUTY.AD`); `AD_PREFS.INI [After Dark] Path`, which `ADW30.EXE` wrote; `GetDIBits` to 4-bit rows (Haunted), `CreateBitmapIndirect` and `CreatePatternBrush` (Little Mermaid's "Plain" sea), and `TOOLHELP.51 GlobalFirst` in the census |
+| `farside` | 14 ne16, Intermission: 12 ASA animations, data that Intermission's ASA reader `IMASAPLY.IMQ` plays, and two IMQ modules, `PTERY` and `NERDCLOK`, NE DLLs that export `SAVERMAIN` (surveyed with `dilbert`, against the twelve-release host, 1.2.1) | none: every ASA exited 2 ("not a module this host can run (not an MZ executable)"), both IMQs 1 at lane init ("an Intermission reader (it exports SAVERMAIN), not a module") | the importer refused every form ("not a known release": no `INSTALL.DAT`, no ARJ; Delrina's own installer); the floppy images in the item named for the release are damaged (disk 1's sectors shifted, disk 3's image 1 KB short, bad sectors in disks 2 and 4); no ASA or IMQ form in the lane; `GDI.22 IntersectClipRect`; SZDD libraries ending in Delrina's version stamps |
+| `dilbert` | 16 ne16, Intermission: 13 ASA animations and three IMQ modules, `DB-BEST`, `DB-CLOCK`, `DIL-WHAK` | none, as `farside`'s; with staging tricks (each IMQ copied over `IMIMXPLY.IMQ`; an ASA behind a stub, IMASAPLY as the reader) all 16 ran 900 frames, the ASAs with one unimplemented call, `IntersectClipRect` | the same as `farside`'s; QUERY returns an empty name for every module; two IMQ modules set the input flag `0x2000` |
 
-In total, 284 catalog entries over the twelve packages: 232 over the first
+In total, 314 catalog entries over the fourteen packages: 232 over the first
 seven (218 over their six After Dark releases, and Star Wars Screen
-Entertainment's 14) and 52 over the fourth round's five (1 + 8 + 12 + 15 +
-16), so 270 over the eleven After Dark ones.
+Entertainment's 14), 52 over the fourth round's five (1 + 8 + 12 + 15 +
+16) and 30 over the fifth round's two (14 + 16), so 270 over the eleven
+After Dark ones and 44 over the three Intermission ones.
 
 ## 2. The package registry
 
@@ -122,6 +141,8 @@ the catalog order and the precedence order for name disambiguation:
 | `looney` | The Looney Tunes Screen Saver | Looney Tunes | `ad3zip` | `packages/looney` | `LNYTUNES` |
 | `screams` | ScreamSavers | ScreamSavers | `ad3zip` | `packages/screams` | `SCREAMS` |
 | `disney` | The Disney Collection Screen Saver | Disney | `ad3zip` | `packages/disney` | `DISNEY` |
+| `farside` | The Far Side Screen Saver Collection | Far Side | `intermission` (Delrina's installer) | `packages/farside` | `SAVER` |
+| `dilbert` | Scott Adams' Dilbert Screen Saver Collection | Dilbert | `intermission` (Delrina's installer) | `packages/dilbert` | `SAVER` |
 
 Ids match `[a-z0-9]+`. `ad40` and `classic` are reserved: they are Deluxe's
 legacy id prefixes. `swse` is the product's own short name (its installer's
@@ -141,7 +162,13 @@ titles are what each release calls itself: its installer, readme and folder
 file ("Marvel Comics Screen Posters", where the box says "Marvel Screen
 Posters"; "The Looney Tunes Screen Saver", where the box says "Looney Tunes
 Animated Screen Saver"; "ScreamSavers", where the splash says "Stephen
-Blickenstaff's ScreamSavers").
+Blickenstaff's ScreamSavers"). The fifth round's two follow, `farside`
+then `dilbert`, so the first twelve keep their places and command ids;
+neither has a key of Berkeley's, so the ids are the releases' names. Their
+titles are their readmes' ("The Far Side Screen Saver Collection", where
+the box says "Gary Larson's The Far Side Screen Saver Collection") and the
+box's ("Scott Adams' Dilbert Screen Saver Collection", where the readme
+says "Dilbert Screen Saver Collection").
 
 Known images (identification + `verified: image`):
 
@@ -165,6 +192,16 @@ Known images (identification + `verified: image`):
 | `looney` | `6ad72e19b2cf6fcb9e67427f8e600449` | 6,625,280 | ISO-9660 CD of the same files, known by md5, size and volume id only: its one copy online is named, URL and all, after what another item publishes as the product's serial number, so it is never listed as a download | `LOONEY_T` |
 | `screams` | `37a47b25dd35b214f94f57b6a0c2bd02` | 3,453,163 | ZIP of the three floppies' files in `DISK1`–`DISK3` folders (`after-dark-collection`: the user's copy, and the only one online) | — |
 | `disney` | `2f38df15494728b5bc20d26c36ba84c7` | 3,560,012 | ZIP of the install files of the three floppies, flat (`after-dark-collection`: the user's copy) | — |
+| `farside` | `bfbe487438204b3573e913a774ee964d` | 977,668 | ZIP of install disk 1's files (of 5): `PNX-FSC1.ZIP`, a 1994 bulletin-board copy of the five floppies, inside the Internet Archive item `prog47_55`'s ZIP; the only intact copy online | — |
+| `farside` | `364307265d011ba3e31d383bc178d56d` | 1,210,777 | ZIP of install disk 2's files (`PNX-FSC2.ZIP`, the same) | — |
+| `farside` | `5ac67d84f9a5262f40c92e9f143fdb03` | 1,202,730 | ZIP of install disk 3's files (`PNX-FSC3.ZIP`) | — |
+| `farside` | `7902b2a2a89eb7ed391e179a27958061` | 1,106,810 | ZIP of install disk 4's files (`PNX-FSC4.ZIP`) | — |
+| `farside` | `58351b2eedd8f6ef5ec51fa00c4d8d17` | 1,248,997 | ZIP of install disk 5's files (`PNX-FSC5.ZIP`) | — |
+| `dilbert` | `ea6e18463d156fbb5c70401e39b45962` | 4,511,167 | ZIP of the four floppies' files, flat (item `dilbert_screensaver_collection`, `DilbertS.zip`) | — |
+| `dilbert` | `1158cc6333d3b22dcd401a0593006e6f` | 1,077,844 | ZIP of install disk 1's files (of 4): `DILBERT1.ZIP`, a 1994 bulletin-board copy, inside item `prog70_75`'s ZIP; each file is the flat ZIP's, byte for byte | — |
+| `dilbert` | `4347386255e85cddb39a5d69ab65bc81` | 1,146,156 | ZIP of install disk 2's files (`DILBERT2.ZIP`) | — |
+| `dilbert` | `0f5408c77ed018db8b99b6b70f2a6a29` | 1,193,935 | ZIP of install disk 3's files (`DILBERT3.ZIP`) | — |
+| `dilbert` | `9064065cfb1edd12cc659823b5ca88ad` | 1,155,239 | ZIP of install disk 4's files (`DILBERT4.ZIP`) | — |
 
 A known image is the whole release, or, since the seventh release, one
 install disk of a release on several (`KnownImage::disk` n of N):
@@ -175,7 +212,14 @@ disks exists online or none can be listed, as the Simpsons' known image is
 the owner's own merge of both floppies: the user's file and the download
 then verify `image`. Such an image's medium starts with "ZIP", and the
 importer's window then says "verified against the known ZIP"
-(`importer/gui/README.md`).
+(`importer/gui/README.md`). Since the fifth round a disk of a set may be
+such a ZIP too, one of each disk's files: The Far Side's only intact copy
+is five of them, and Dilbert is known both ways, as one ZIP of the whole
+release and as a ZIP per disk. The md5s of these per-disk ZIPs are ours:
+the Internet Archive publishes none for a file inside another ZIP. The
+floppy images of the item named for The Far Side
+(`the-far-side-screen-saver-collection-1-of-5`) are damaged in four of
+the five disks and are no known images.
 
 Other registry fields:
 
@@ -191,13 +235,16 @@ Other registry fields:
   * `looney`: `LNYTUNES/ADXPL41.DLL`, `LNYTUNES/LT_SOUND.DLL`, `ENGINE/AD_SND.DLL`, `ENGINE/ADTASK.DLL`, plus the 12 module ZIPs and `MUSIC.ZIP`
   * `screams`: `ENGINE/AD_SND.DLL`, `ENGINE/ADTASK.DLL` (its modules import only AD_SND), plus the 15 module ZIPs
   * `disney`: `DISNEY/ADXPL100.DLL` (the library the modules import), `DISNEY/DIS_SND.DLL` (the one it loads by name from the After Dark directory), `ENGINE/AD_SND.DLL`, `ENGINE/ADTASK.DLL`, plus the 16 module ZIPs
+  * `farside`: `SAVER/INTRMLIB.DLL`, `SAVER/ANTSW.DLL`, `SAVER/DIBDLL.DLL`, `SAVER/MEMMIDI.DLL` (what the modules load: INTRMLIB → ANTSW, PTERY also DIBDLL, the ASA reader MEMMIDI by name), `ENGINE/IMASAPLY.IMQ` (the ASA reader), plus every install disk's tag file (`DISK1`–`DISK5`)
+  * `dilbert`: the same and `SAVER/IM4_EXP.DLL` (DB-BEST's picture decoder), plus `DISK1`–`DISK4`
 * `ad3zip` parameters: `moduleDir` (`AD32` / `TWISTED` / `SIMPSONS` / `LNYTUNES` / `SCREAMS` / `DISNEY`); `engineDll`, the member of `MODMISC.ZIP` that identifies the package (`ADXPL300.DLL` / `ADXPL40.DLL` / `ADXPL310.DLL` / `ADXPL41.DLL` / `ADXPL300.DLL` / `ADXPL100.DLL`); `folderAfi`, the `AFI.ZIP` member that becomes `FOLDER.AFI` and identifies the package too (`AD3.AFI` / `PHLEM.AFI` / `SAX.AFI` / `LNYTUNES.AFI` / `SCREAMS.AFI` / `DISNEY.AFI`); since the fourth round `marker`, a second `MODMISC.ZIP` member the fingerprint wants (`ad32`: `AD30RSDB.DLL`, §3), and `never_opened`, archives of the install dir the recipe skips by name, unread (`disney`: `BEAUTYOL.ZIP`, §4.3).
 * `islib` parameters (`marvel`, `snoopy`; fourth round): `moduleDir` (`AFTERDRK` for both); the library volumes the recipe reads, every install disk's, disk 1's first (`required_archives`, above); the tag, `SETUP.PKG`'s logical library name and the member it must list there (`tag_library` `modules.lib` and `tag_member` `MARVEL.AD`; `AD_MODS.z` and `IS_FLY.AD`); and the placement table (`LibraryMember`: a library, by its file or a split set's first volume, a member, and where it goes: 64 rows for `marvel`, 8 for `snoopy`).
 * `intermission` parameters (`swse`): `moduleDir` (`SAVER`); `installName`, the `[data] shortname` of the installer's `INSTALL.DAT` that identifies the package (`SWSE`); the archives (`SWSE1.ARJ`, `SWSE2.ARJ`, `SWSE2.A01`, `SWSE2.A02`, `SWSE2.A03`: disk 1, then one archive over disks 2–5); `looseFiles`, what the recipe takes from outside the archives, with the name the installer gave it and whether it is SZDD (§4.3).
+* `intermission` parameters with Delrina's installer (`farside`, `dilbert`; fifth round; `Package::delrina_installer()`, true when `installName` is null): `moduleDir` (`SAVER`); every install disk's tag file in place of the archives (`DISK1`–`DISK5`, `DISK1`–`DISK4`: two-byte files the installer checks for; disk 1's is the fingerprint's); `marker`, a file of the release's own on disk 1 that the fingerprint wants beside the tag and the installer (`PTERY.IMQ`, `DB-CLOCK.IMQ`); `looseFiles`, every file the recipe installs, under its own name, plain or SZDD (20 rows for `farside`, 23 for `dilbert`, §4.3).
 * `ad2kwaj` parameters (`startrek`): `moduleDir` (`AFTERDRK`); `setupTitle`, the `[Params] WndTitle` of Microsoft Setup's `SETUP.LST` that identifies the package (`Star Trek\xAE: The Screen Saver`, 0xAE being Windows-1252's ®); the install disks' tag files, from `ST_NSTLL.INF [Source Media Descriptions]` (`MISSION.AD_` on disk 1, which the fingerprint wants beside `SETUP.LST`, and `ST_SND.DL_` on disk 2); `looseFiles`, every file the recipe installs, each KWAJ-compressed (§4.3); `screen` (`640x480`) and the About rules (`ad20`), for the catalog (§6).
-* `fixups` (§4.3), `nameOverrides` (§6), `manifest` (`known_files_<id>.inc`, generated like today's `known_files.inc`; `swse` 29 files, `startrek` 27, `marvel` 64, `snoopy` 8, `looney` 34, `screams` 23, `disney` 31), `downloadUrl` (Deluxe only, as planned; the importer now lists Internet Archive copies for every package, `importer/README.md` "Downloads"; `swse` has three: the ISO, the Redump BIN and a flat ZIP of the disc's 40 files, 6.9, 8.6 and 6.7 MB; `startrek` two, each the images of both disks, 2.8 MB: a copy is used only when both of its images are fetched and verify, §5.2; `marvel` two, the flat ZIP of item `afterdarkmarvelscreenposters` first, then the `after-dark-collection` ZIP, 1.9 and 2.0 MB; `snoopy`, `looney`, `screams` and `disney` the `after-dark-collection` ZIPs, 1.9, 2.8, 3.3 and 3.4 MB; each of the six is a known image, so a download verifies `image`; neither the items' serial-number files nor any URL that carries a serial is ever fetched).
-* `released` (`YYYY-MM[-DD]`, §6): `swse` is `1994-08`. Every Windows build of it found dates from 1994-08-20 at the earliest (`INTERMIS.EXE`), LucasArts announced it for July 1994 on both platforms, and this CD is a later build (its files are from October 1994). It ties with the Simpsons (`1994-08`) and sorts after it by registry order. `startrek` is `1992-11`: its newest files are dated 1992-11-16 (15 of the 16 modules, all but Sounder, with `AD_MOD.DL_`, `ST_NSTLL.IN_`, `AD_NSTLL.DL_` and `AD_NSTLL.MS_`), so it is the oldest release and comes first in the catalog's `packages` list. Of the fourth round: `marvel` is `1993-12` (the libraries and `MARVEL.AD` are dated 1993-12-13, its readme December 15, 1993); `snoopy` `1994-10` (its library is dated 1994-10-19, the newest modules 1994-10-13); `looney` `1995-04` (every file of the April build is dated 1995-04-11/12; Berkeley announced it on 1995-04-25); `screams` `1995-04` (the newest file on its disks is `ENGINE.ZIP`, 1995-04-11); `disney` `1995-09` (its script, package list and `AFI.ZIP` are dated 1995-09-13). `looney` and `screams` tie and sort by registry order, so the catalog's `packages` list reads `startrek`, `marvel`, `simpsons`, `swse`, `snoopy`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
-* `screen` (§6): `"640x480"` on `startrek`, `marvel` (each poster is a fixed 640×480 picture, drawn in the middle of a larger screen with its caption at the bottom of the whole screen) and `screams` (four modules paint a 640×480 scene and Belcho composes one 640 wide, drawn small in the middle of a larger screen); none elsewhere: the Disney, Looney Tunes and Snoopy modules lay out for any screen.
+* `fixups` (§4.3), `nameOverrides` (§6), `manifest` (`known_files_<id>.inc`, generated like today's `known_files.inc`; `swse` 29 files, `startrek` 27, `marvel` 64, `snoopy` 8, `looney` 34, `screams` 23, `disney` 31, `farside` 20, `dilbert` 23), `downloadUrl` (Deluxe only, as planned; the importer now lists Internet Archive copies for every package, `importer/README.md` "Downloads"; `swse` has three: the ISO, the Redump BIN and a flat ZIP of the disc's 40 files, 6.9, 8.6 and 6.7 MB; `startrek` two, each the images of both disks, 2.8 MB: a copy is used only when both of its images are fetched and verify, §5.2; `marvel` two, the flat ZIP of item `afterdarkmarvelscreenposters` first, then the `after-dark-collection` ZIP, 1.9 and 2.0 MB; `snoopy`, `looney`, `screams` and `disney` the `after-dark-collection` ZIPs, 1.9, 2.8, 3.3 and 3.4 MB; each of the six is a known image, so a download verifies `image`; neither the items' serial-number files nor any URL that carries a serial is ever fetched; `farside` one, the five ZIPs `PNX-FSC1.ZIP`–`PNX-FSC5.ZIP` fetched from inside item `prog47_55`'s ZIP, 5.5 MB; `dilbert` two, the flat `DilbertS.zip` of item `dilbert_screensaver_collection`, 4.3 MB, then `DILBERT1.ZIP`–`DILBERT4.ZIP` from inside item `prog70_75`'s ZIP, 4.4 MB; every one of these files is a known image, so these downloads verify `image` too).
+* `released` (`YYYY-MM[-DD]`, §6): `swse` is `1994-08`. Every Windows build of it found dates from 1994-08-20 at the earliest (`INTERMIS.EXE`), LucasArts announced it for July 1994 on both platforms, and this CD is a later build (its files are from October 1994). It ties with the Simpsons (`1994-08`) and sorts after it by registry order. `startrek` is `1992-11`: its newest files are dated 1992-11-16 (15 of the 16 modules, all but Sounder, with `AD_MOD.DL_`, `ST_NSTLL.IN_`, `AD_NSTLL.DL_` and `AD_NSTLL.MS_`), so it is the oldest release and comes first in the catalog's `packages` list. Of the fourth round: `marvel` is `1993-12` (the libraries and `MARVEL.AD` are dated 1993-12-13, its readme December 15, 1993); `snoopy` `1994-10` (its library is dated 1994-10-19, the newest modules 1994-10-13); `looney` `1995-04` (every file of the April build is dated 1995-04-11/12; Berkeley announced it on 1995-04-25); `screams` `1995-04` (the newest file on its disks is `ENGINE.ZIP`, 1995-04-11); `disney` `1995-09` (its script, package list and `AFI.ZIP` are dated 1995-09-13). `looney` and `screams` tie and sort by registry order, so the catalog's `packages` list reads `startrek`, `marvel`, `simpsons`, `swse`, `snoopy`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the fifth round: `farside` is `1994-06` (every file of its disks is dated 1994-06-19, the bulletin-board copy 1994-06-30); `dilbert` `1994-10` (its files are dated 1994-10-06; its readme names The Far Side's collection as an earlier release). `dilbert` ties with `snoopy` and follows it, so the list reads `startrek`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
+* `screen` (§6): `"640x480"` on `startrek`, `marvel` (each poster is a fixed 640×480 picture, drawn in the middle of a larger screen with its caption at the bottom of the whole screen) and `screams` (four modules paint a 640×480 scene and Belcho composes one 640 wide, drawn small in the middle of a larger screen); none elsewhere: the Disney, Looney Tunes and Snoopy modules lay out for any screen, and `farside`'s and `dilbert`'s are Intermission modules, which the front-ends give 640×480 by their ABI.
 
 ## 3. Identification
 
@@ -231,7 +278,11 @@ union of those folders (§5.2), so the steps below see one install folder.
    of … (by their md5s) but not the rest of it; …". The whole set with
    another image beside it (a stranger, or a second copy of a disk) is no
    known set: it is identified by its fingerprint and verified file by
-   file.
+   file. Since the fifth round a set's disks may be ZIPs of each disk's
+   files (`farside`'s `PNX-FSC1.ZIP`–`PNX-FSC5.ZIP`, `dilbert`'s
+   `DILBERT1.ZIP`–`DILBERT4.ZIP`), given as several `--image`s and read as
+   one install folder; the log says "ZIPs of the install disks' files, the
+   known copies of <title> (by their md5s)".
 2. **Fingerprints**, tried for every package in registry order (for folders,
    and for images with an unknown md5). Exactly one package must match: none
    → 2 ("not a known After Dark disc; known: …", since the sixth release
@@ -241,6 +292,7 @@ union of those folders (§5.2), so the steps below see one install folder.
    * `ad3zip` family: an install dir (`INSTALL\`, or the root for floppies and floppy copies) holding `INSTALL.INS`, `SETUP.PKG`, `ENGINE.ZIP` and `MODMISC.ZIP`, and since the fourth round `AFI.ZIP`. The package is the one whose `engineDll` is a member of `MODMISC.ZIP`, whose `folderAfi` is a member of `AFI.ZIP`, and whose `marker`, when it has one, is a member of `MODMISC.ZIP` too. Central-directory names are not encrypted, so no password is needed to identify. Before the fourth round the engine DLL alone decided, which no longer tells this family apart: ScreamSavers' `MODMISC.ZIP` holds After Dark 3.2's own `ADXPL300.DLL`, so every flat form of it was taken for 3.2 (exit 3, and with `--no-verify` it replaced an installed 3.2); every `AFI.ZIP` carries other products' folder files (`DISNEY.AFI` is on all six known releases' disks, `AD3.AFI` on three), so the AFI alone would not do either. Hence both, and for `ad32`, whose engine DLL and folder file ScreamSavers both ship, the marker `AD30RSDB.DLL`, which of every known AD 3.x install only 3.2's `MODMISC.ZIP` holds (`research/win/pkg/more/i2/members.json`). Checked over every known source form of `ad32`, `tt`, `simpsons`, `looney`, `screams` and `disney` (their CDs, floppies, ZIPs, flat folders and `DISK<n>` copies): each matches exactly one package. Disk 1 alone of ScreamSavers is identified and then refused by the recipe (every install disk is needed, §4.3); disk 1 alone of the others matches nothing, 3.2's among them, whose `AFI.ZIP` is on its disk 2 (before, a 3.2 disk 1 was identified, and imported a partial 3.2, since `ad32` lists no required archives).
    * `islib` (`marvel`, `snoopy`; fourth round): InstallShield 2's package list `SETUP.PKG` at the source's root (disk 1, the disks together, a flat folder or ZIP of their files), with disk 1's library volume (`required_archives[0]`: `IMAGES.1`, `AD_MODS.1`) beside it. Only then is it read, once: a plain file of at most 64 KiB (the real ones are 1,650 and 194 bytes) that starts with `4A A3` and parses strictly (each group's body adds up to its size, the groups end at the disk table, every library in the disk table points at a group, and every group is pointed at); anything else is no package list and identifies nothing, whatever it holds. The package is the one whose tag member the list names in its tag library (`MARVEL.AD` in `modules.lib`; `IS_FLY.AD` in `AD_MODS.z`; both compared without ASCII case). `INSTALL.INS` and `SETUP.INS` are not needed. Since the list is opened only beside a first library volume, an AD 3.x install's `SETUP.PKG` is never read. Disk 1 alone is identified and then refused (every install disk is needed, §4.3); disk 2 alone matches nothing.
    * `intermission` (`swse`): Presage's installer script `INSTALL.DAT` at the source's root (the CD, disk 1, a flat ZIP, or a folder copy of the disks), a plain file of at most 64 KiB (a larger one is simply no match), whose `[data] shortname` is the package's `installName` (`SWSE`; sections and keys compared without case, values trimmed), with the first archive, `SWSE1.ARJ`, beside it. The script is read for nothing else. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); disks 2–5 without it match nothing.
+   * `intermission` with Delrina's installer (`farside`, `dilbert`; fifth round): disk 1's tag file `DISK1`, the installer `IMINST2.EXE` and the release's `marker` (`PTERY.IMQ`, `DB-CLOCK.IMQ`), side by side at the source's root (disk 1, the disks together, or a flat folder or ZIP of their files). Nothing is read: the names alone name the release, as an AD 3.x install's archive members do; the installer has no script (it copies by wildcard), and `PACKING.LST`, Dilbert's list of its modules, is not needed. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); any other disk alone, or disk 1 without the installer or the marker, matches nothing. Star Wars Screen Entertainment is never taken for either release, nor either for it, and a folder holding both releases' files matches both (ambiguous: `--package` chooses).
    * `ad2kwaj` (`startrek`): Microsoft Setup's file list `SETUP.LST` at the source's root (disk 1, the disks together, or a flat folder, ZIP or ISO of their files), a plain file of at most 64 KiB (the real one is 654 bytes), whose `[Params] WndTitle` is the package's `setupTitle` ("Star Trek®: The Screen Saver", compared in Windows-1252 as the file holds it, without ASCII case, values trimmed), with disk 1's tag file, `MISSION.AD_`, beside it. `CmdLine` is not used: it is the same for every Berkeley After Dark 2.0 setup. The file is read for nothing else. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); disk 2 alone matches no fingerprint (its md5 names it, step 1). An installed `C:\AFTERDRK` is no source: it has no `SETUP.LST`, and the installer wrote the owner's name, company and serial number into its `AD.EXE` (resource type 3000, ids 1–3), so that file never matches the manifest.
 3. `--package <id>` restricts step 2 to one package. It is an error if the
    source is not that package.
@@ -284,6 +336,12 @@ This is the contract between the importer (A) and the lanes (B, C).
 <win>\packages\screams\ENGINE\…               AD_SND 3.1.4, ADTASK 3.0.12, ADW30.EXE 3.0.23, ADW30.INI, ECOLOGIC.DLL
 <win>\packages\disney\DISNEY\…                16 modules, ADXPL100, DIS_SND, AD_RSRC, FOLDER.AFI, MUSIC\ (6 MIDI) (26 files)
 <win>\packages\disney\ENGINE\…                AD_SND 3.2, ADTASK 3.0.12, ADW30.EXE, ADW30.INI, ECOLOGIC.DLL (3.2's, byte for byte)
+<win>\packages\farside\SAVER\…                12 ASA animations, 2 IMQ modules (PTERY, NERDCLOK), INTRMLIB, ANTSW, DIBDLL,
+                                                MEMMIDI (18 files; the guest's C:\SAVER, §7.5)
+<win>\packages\farside\ENGINE\…               IMASAPLY.IMQ (the ASA reader), INTERMIS.EXE (replaced by the host, kept for reference)
+<win>\packages\dilbert\SAVER\…                13 ASA animations, 3 IMQ modules (DB-BEST, DB-CLOCK, DIL-WHAK), INTRMLIB, ANTSW,
+                                                DIBDLL, IM4_EXP, MEMMIDI (21 files)
+<win>\packages\dilbert\ENGINE\…               IMASAPLY.IMQ, INTERMIS.EXE (as The Far Side's)
 <win>\packages\<id>\import.json               record (v2, §5.3)
 <win>\catalog-win.json                        merged catalog (§6)
 ```
@@ -302,7 +360,11 @@ has no `WINDOWS` folder: those settings are the lane's profile seeds, which
 a file there would override (§7.3). Neither has `marvel` (its installer put
 `AD_SND.DLL`, which the package keeps in `ENGINE`, and an `AD_PREFS.INI`
 naming the PC speaker's driver in `C:\WINDOWS`), nor any AD 3.x package:
-what `ADW30.EXE` wrote into `AD_PREFS.INI` is seeded too (§7.3).
+what `ADW30.EXE` wrote into `AD_PREFS.INI` is seeded too (§7.3). Nor have
+`farside` and `dilbert`: Delrina's installer put only its VxD and control
+panel in `C:\WINDOWS\SYSTEM`, which are never installed, and no settings
+file; their modules write `ANTSW.INI`, whose engine keys the lane seeds
+(§7.5).
 
 **No `ENGINE`.** `snoopy`'s package root holds only its module folder: the
 release is eight modules its installer copied into the user's own After
@@ -365,6 +427,20 @@ self-contained module that imports nothing, such as `ad10`'s
   where the installer put it (no `MUSIC\`).
 * **I5**: only `INSTALL.DAT` (to identify), the five archives and the loose
   files are ever opened; the never-read list is in §4.3.
+
+With **Delrina's installer** (`farside`, `dilbert`; fifth round) they read
+as for `swse`, except:
+
+* **I1**: the module folder may hold the release's own IMQ modules (the
+  `*.IMQ` files the registry places in `SAVER`), never a file named as
+  Intermission's readers are (`IM???PLY.IMQ`: `IMIMXPLY`, `IMASAPLY`,
+  `IMAD_PLY`, …). `INTERMIS.EXE` and the ASA reader stay in `ENGINE`.
+* **I3**: `ENGINE\IMIMXPLY.IMQ` is not required (neither release has an IMX
+  module); `ENGINE\IMASAPLY.IMQ` is, when the module folder holds ASA
+  animations. No `WINDOWS` file is required: there is no `WINDOWS` folder.
+* **I5**: nothing is read to identify, and the disks' tag files are only
+  looked for; only the registry's loose files are ever opened (the
+  never-read list is in §4.3).
 
 **For an `ad2kwaj` package** (`startrek`) they read:
 
@@ -562,6 +638,56 @@ WinG (`WING.DL_`, `WING32.DL_`, `WINGDE.DL_`, `WINGDIB.DR_`,
 `WINGPAL.WN_`) and the 12 MIDI files of the other three sets (`SB6*`,
 `SBP*`, `FM_*`). Opened: `INSTALL.DAT`, the five archives and the six loose
 files.
+
+**`intermission` with Delrina's installer** (`farside`, `dilbert`; fifth
+round): both releases came on 1.44 MB floppies, five and four, installed by
+Delrina's own Intermission Installer. `SETUP.EXE`, a loader, runs
+`IMINST2.EXE`, which copies by wildcard (`*.ASA`, `*.IMQ`, `*.DLL` and the
+engine's files) into one folder, `C:\SAVER`, expanding what COMPRESS
+packed (SZDD under the installed names, so nothing is renamed), puts its
+VxD `ANTHOOK.386` and control panel `IMCPL.CPL` in `C:\WINDOWS\SYSTEM` and
+makes a Program Manager group; `IMINST3.EXE` cleans up. Each disk carries a
+two-byte tag file, `DISK<n>`. There is no script and no archive. The recipe
+is baked from the registry's table of loose files, flattened as `swse`'s
+is (`M` = `SAVER`, `E` = `ENGINE`, no `WINDOWS`):
+
+1. **Every install disk.** Each tag file must be at the source's root, else
+   2 ("the source is missing DISK2, …; importing … needs every install
+   disk").
+2. **The loose files**, each under its own name, plain or SZDD (expanded on
+   the way):
+
+   | Files | Go to |
+   |---|---|
+   | the modules: `farside`'s 12 `*.ASA`, `PTERY.IMQ` and `NERDCLOK.IMQ`; `dilbert`'s 13 `*.ASA`, `DB-BEST.IMQ`, `DB-CLOCK.IMQ` and `DIL-WHAK.IMQ` | `M\` |
+   | what they load: `INTRMLIB.DLL`, `ANTSW.DLL`, `DIBDLL.DLL`, `MEMMIDI.DLL`, and `dilbert`'s `IM4_EXP.DLL` | `M\` |
+   | `IMASAPLY.IMQ` (the ASA reader), `INTERMIS.EXE` (Intermission, which the host replaces, kept for reference as `swse`'s is) | `E\` |
+
+   Stored plain: The Far Side's `HELL.ASA`, `DIBDLL.DLL` and `IMASAPLY.IMQ`;
+   Dilbert's `SHRED.ASA`, `DB-BEST.IMQ`, `DB-CLOCK.IMQ` and `IMASAPLY.IMQ`.
+   The rest are SZDD; Delrina's compressed libraries end with one or two
+   8-byte version stamps, which the expander takes and drops (§8.7).
+
+Result: `farside` `SAVER\` 18 files and `ENGINE\` 2, 20 in all; `dilbert`
+21 and 2, 23; each the manifest's. There are no fix-ups, and `from` is the
+file's name on the disks (`AERIAL.ASA`). Every planned size (an SZDD
+header's, a plain file's) counts towards the staging budget and is checked
+against the manifest before a byte is written.
+
+**Never opened** (I5): everything else on the disks. The installer's
+programs (`SETUP.EXE`, `IMINST2.EXE`, `IMINST3.EXE`, `USERINST.EXE`,
+`UNINSTAL.EXE`); `AD_SND.DLL` (on any search path it would break the After
+Dark bridge, as `swse`'s would); the other readers (`IMIMXPLY.IMQ`,
+`IMAD_PLY.IMQ` and those of the FLC, FLI, SCR, SAP, SPX, NSS and SEQ
+formats); `IWLIB.DLL`, `NETPASS.EXE`, `SSINTERM.SCR`, `ANTHOOK.386`,
+`IMCPL.CPL`, the sound drivers and their `OEMSETUP.INF`, the DOS programs,
+the help file and the texts (`INTERMIS.TXT`, Dilbert's module list
+`PACKING.LST`); the tag files (only looked for) and `LASTDISK.ASA`;
+Dilbert's `ICONDLL.DLL` (Intermission's own module icons; it probes
+WinG), `ANTSW2.DLL` (nothing imports it), `MAPI.DLL` and `INTERMIS.LIB`;
+and whatever a copy of the disks holds besides, such as the bulletin
+boards' notes in the per-disk ZIPs. The tests lock made-up stand-ins for
+such files in folder sources to prove it (§9).
 
 **`ad2kwaj`** (`startrek`): the release came on two 1.44 MB floppies
 installed by Microsoft Setup 2.0. `SETUP.EXE` expanded what `SETUP.LST`
@@ -866,7 +992,14 @@ adimport --remove <id> [--dest <root>]          (should)
   published size and md5, the progress runs over the whole copy, and a copy
   is used only when every image verifies; they are then imported as a known
   disk set, as `--image <disk 1> --image <disk 2>` would be. Any image
-  failing moves on to the next copy.
+  failing moves on to the next copy. Since the fifth round a `zip` copy may
+  be several files the same way, a ZIP of each install disk's files
+  (`farside`'s only copy, `dilbert`'s second: "download 5.5 MB (5 ZIPs of
+  the install disks' files)"; the importer window's row reads "Install
+  files (5 ZIPs)"). The Internet Archive serves each of those from inside
+  a larger ZIP, by its path, with no length and no `Range` support, so an
+  interrupted one is fetched whole again; each is checked against our own
+  md5 (none is published for a file inside a ZIP).
 * Exit codes are unchanged (0 ok · 1 error · 2 source invalid · 3 verify
   failed · 4 network · 5 cancelled). The settings dialog launches
   `adimport --gui` and reads only 0 and 5.
@@ -914,7 +1047,8 @@ adimport --remove <id> [--dest <root>]          (should)
   that spans volumes); or `alias:<package path>` for a fix-up copy. A
   KWAJ-expanded file's is its compressed name (`PLANETS.AD_`). An
   InstallShield library member's is its volumes and name
-  (`MODULES.LIB!MARVEL.AD`, `IMAGES.1+IMAGES.2!XMEN2099.FIF`).
+  (`MODULES.LIB!MARVEL.AD`, `IMAGES.1+IMAGES.2!XMEN2099.FIF`). A file of
+  Delrina's installer is its name on the disks, SZDD or not (`AERIAL.ASA`).
 * `verified` means what it means today: `image`, `files`, `partial` or
   `none`. The manifest covers the installed files. Every ZIP member's CRC-32
   is always checked, and so is every ARJ segment's. SZDD has no checksum: a
@@ -938,7 +1072,9 @@ COVERS.md §2.7; `adimport 1.3` since the sixth release, for `abi` and the
 `ad2kwaj` recipe under the same `adimport 1.3`, so every entry of the six
 releases before it is byte for byte what it was; the fourth round added
 five packages and the `islib` recipe under it too, and the 232 entries of
-the first seven are field for field what 1.1.0 wrote.
+the first seven are field for field what 1.1.0 wrote. The fifth round
+added two packages and their ASA and IMQ entries under it as well; every
+entry of the twelve releases before them is as 1.2.1 wrote it.
 
 * **Order.** Installed packages in registry order. Within a package, its
   module dirs in registry order. Within a dir, `*.AD` sorted as today.
@@ -946,10 +1082,15 @@ the first seven are field for field what 1.1.0 wrote.
   `CLASSIC`. For every other package, `ENGINE\*.AD` is scanned too, which
   gives `ad10.starryni`. Since the sixth release every package but Deluxe
   lists a dir's `*.AD` and `*.IMX` sorted together (Deluxe's three places
-  stay `*.AD` only), and `WINDOWS` is never scanned.
+  stay `*.AD` only), and `WINDOWS` is never scanned. Since the fifth round
+  the module folders of a release Delrina's installer installed
+  (`Package::delrina_installer`) also list `*.ASA` and `*.IMQ`, sorted with
+  the rest; no other package's folders, and never `ENGINE`, list them.
 * **Lane** comes from the header (PE32 → `pe32`, NE → `ne16`), never the
   folder. `AD10TH` mixes 16 pe32 and 29 ne16 modules. An Intermission module
-  is NE too, so `ne16`; its `abi` field (below) tells it apart.
+  is NE too, so `ne16`; its `abi` field (below) tells it apart. An ASA
+  animation is data, whose `AniN` or `AniM` header makes it `ne16` too, as
+  the host's probe does (§7.5).
 * **id**: Deluxe keeps `ad40.<base>` (pe32) / `classic.<base>` (ne16). For
   every other package it is `<package>.<base>`, where `<base>` is the
   lower-case file stem. A second file with an id already taken is skipped
@@ -963,8 +1104,9 @@ the first seven are field for field what 1.1.0 wrote.
   `ad10` `TOAST2K.AD` → `Toasters 2k (early build)`. It is an earlier build
   that `SETUP.INF` never installs, and without the override it would share
   the name of the installed `TOASTER2.AD`. (Since the sixth release, `swse`
-  has fourteen more, below, since the seventh `startrek` one, and since the
-  fourth round `disney` five.)
+  has fourteen more, below, since the seventh `startrek` one, since the
+  fourth round `disney` five, and since the fifth `farside` fourteen and
+  `dilbert` sixteen.)
 * **displayName**: unique within a lane, case-insensitively. Walk the
   catalog in order. The first module with a given `(lane, moduleName)`
   keeps `moduleName`. Every later one gets `moduleName + " (" + shortTitle +
@@ -1013,6 +1155,40 @@ the first seven are field for field what 1.1.0 wrote.
   `packages/swse/SAVER/VADER.IMX`. With all six releases installed the
   catalog lists 216 modules, 73 of them `sameAs` an earlier entry (`swse`
   adds none: its bytes are its own).
+* **The fifth round's modules** (`farside`, `dilbert`) are Intermission
+  entries of the two other forms (ABI.md §3.8.9), lane `ne16`, `abi`
+  `"intermission"`:
+  * *An ASA animation*: a `*.ASA` whose file starts `AniN` or `AniM`
+    (The Far Side's 12, Dilbert's 13). It imports nothing, so no `needs`;
+    its reader, `ENGINE\IMASAPLY.IMQ`, is the lane's business.
+  * *An IMQ module*: an NE `*.IMQ` that exports `SAVERMAIN` but neither
+    `MODULE` nor `SAVERINIT` and `SAVERDRAW` (The Far Side's `PTERY`,
+    `NERDCLOK`; Dilbert's `DB-BEST`, `DB-CLOCK`, `DIL-WHAK`), unless it is
+    named as Intermission's own readers are, `IM???PLY.IMQ`
+    (`catalog.h` `is_intermission_reader`): such a file is a reader, left
+    out and logged, as an NE exporting `SAVERMAIN` under another extension
+    is. `needs` lists its imports (`INTRMLIB`, `ANTSW`, …).
+
+  Both have `entry` `"SAVERMAIN"` (the reader's: an IMQ module's own) and
+  `about` `""`, and one button, **Configure...** (index 0): always for an
+  animation, whose reader's dialog it opens, and for an IMQ module when it
+  exports `SAVERDLGPROC` (all five do). No file holds a name (every QUERY
+  answers ""), so the names are the registry's overrides, keyed
+  `SAVER/<FILE>`: The Far Side's are each ASA header's title and the IMQ
+  modules' own strings, without the "FS-" prefix Intermission's list of
+  every installed product's modules needed (Aerial Grounds, Amoeba, Age of
+  Mammals, Ballooning, Eggfight, Age of Fish, Fishbowl, The Future, Hell,
+  Deserted Island, Ocean, Age of Reptiles, Nerd Clock, Pterodactyl);
+  Dilbert's are those of its installer's module list, `PACKING.LST`
+  (Dilbert at Work, Conference Room of Horrors, Cyberspace, Artist
+  Doodles, Whack a Lawyer, Out to Lunch, Happy Ratbert, Dilbert Presents,
+  Mad Shredder, Saint Dogbert, Secretary with a Crossbow, Thor Dog of
+  Thunder, Bob Gives Wedgies, Best of Dilbert, Necktie Clock, Budget
+  Woes). There is no `screen`: the front-ends give an Intermission module
+  640×480 by its ABI. Ids are `farside.<stem>` and `dilbert.<stem>`
+  (`farside.hell`, `dilbert.db-best`), paths
+  `packages/farside/SAVER/HELL.ASA`; none is byte-identical to another
+  release's module, so none has `sameAs`.
 * **After Dark 2.0 modules** (`startrek`, since the seventh release) are
   Classic entries like any other: NE files exporting `MODULE`, lane `ne16`,
   entry `MODULE`, their controls read from the same type-1000 records (40 in
@@ -1096,7 +1272,11 @@ the first seven are field for field what 1.1.0 wrote.
   still 73 of them `sameAs` an earlier entry, no display name repeated
   within a lane, and the `packages` list reads `startrek`, `marvel`,
   `simpsons`, `swse`, `snoopy`, `looney`, `screams`, `ad32`, `tt`,
-  `disney`, `deluxe`, `ad10`.
+  `disney`, `deluxe`, `ad10`. With the fifth round's two, all fourteen
+  releases installed, it lists 314 modules, still 73 of them `sameAs`, no
+  display name repeated within a lane, and the `packages` list reads
+  `startrek`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`,
+  `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
 * **New per-module fields**, on every entry, Deluxe's too, appended after
   the existing ones:
   * `package`, `packageTitle`, `moduleName`
@@ -1481,8 +1661,11 @@ Dark path of §7.3 and §7.4 (OLDMOD16 or the native AD3 bridge), and `imx`.
   extension or the package id: `MODULE` → `ad3`, even when the file also
   exports Intermission's entries; else `SAVERINIT` and `SAVERDRAW`,
   without `SETCURRSAVER`, in a file not named `IMXX_*` → `imx`
-  (Intermission's own rule). A reader (`SAVERMAIN` alone) and an NE file
-  with none of these exports are refused with exit 1. The importer gives
+  (Intermission's own rule). An NE file with none of these exports is
+  refused with exit 1. Before the fifth round so was a reader (`SAVERMAIN`
+  alone); now such a file is `imx` of the form `imq`, and a file that
+  starts `AniN` or `AniM` is `imx` of the form `asa`, whatever
+  `ADNE16KIND` says (Forms, below). The importer gives
   a catalog entry its `abi` by the same rule, `MODULE` first (§6), so the
   catalog and the lane agree on every file. Exports are matched by name,
   without case; the IMX exports are in the NE non-resident names table,
@@ -1549,18 +1732,46 @@ Dark path of §7.3 and §7.4 (OLDMOD16 or the native AD3 bridge), and `imx`.
   the IMQ is missing: in the host survey's research prototype the two drew
   byte-identical streams for all 14 modules. `ADNE16READER=auto|imq|native`
   chooses (default `auto`: the IMQ when it is there).
+* **Forms** (fifth round: The Far Side's and Dilbert's modules;
+  `host/ne16/package.hh` "Form", ABI.md §3.8.9). An Intermission module's
+  form picks its reader, as INTRMLIB's module list did:
+  * `imx`, an IMX module (`SAVERINIT` + `SAVERDRAW`): `IMIMXPLY.IMQ`, or
+    the native reader, as above.
+  * `asa`, an ASA animation, data that starts `AniN` or `AniM`: the real
+    `IMASAPLY.IMQ`, from the engine dir, else the module dir, sent LOAD and
+    QUERY with the file's path. There is no native ASA reader, so
+    `ADNE16READER=native` is ignored, and without the IMQ the lane stops
+    (exit 1, naming `IMASAPLY.IMQ`). The host's probe (`host/core`
+    `probe_module`, `asa_header`) sends such a file to the ne16 lane
+    ("Intermission ASA animation"), where 1.2.1 refused it with exit 2,
+    "not an MZ executable".
+  * `imq`, an `.IMQ` that exports `SAVERMAIN`: its own reader, loaded as
+    INTRMLIB's `LOADSAVER` loaded a reader's record, `+0x59` = −1 and
+    `+0x63` = 0, so LOAD and QUERY have no path. It is a module when that
+    QUERY leaves the saver flag `0x1000` set; a reader's QUERY clears it,
+    and the lane then refuses the file at load (exit 1, "an Intermission
+    reader (its query does not make it a saver: flags 00000E0C), not a
+    module": `IMIMXPLY.IMQ` or `IMASAPLY.IMQ` given as a module).
+
+  Everything else is the same for the three forms: the record, the message
+  sequence, the pacing, the seeds (`ANTSW.INI [Intermission] Volume` and
+  `Saver Path`; SWSE's only where `SWSE.DLL` is), the guest's disk and the
+  sound. What the forms needed from the Win16 runtime was one call,
+  `IntersectClipRect`, which the ASA reader uses throughout
+  (`host/win16/README.md`).
 * **The guest's disk:**
 
   | Guest | Lower (read-only) | Upper |
   |---|---|---|
-  | `C:\SAVER` (the current directory) | the module dir | `<state>\swse\SAVER`, or memory |
-  | `C:\WINDOWS` | `<package root>\WINDOWS` when it exists (§4.1), and the virtual seed files | `<state>\swse\WINDOWS`, or memory |
+  | `C:\SAVER` (the current directory) | the module dir | `<state>\<package>\SAVER`, or memory |
+  | `C:\WINDOWS` | `<package root>\WINDOWS` when it exists (§4.1), and the virtual seed files | `<state>\<package>\WINDOWS`, or memory |
   | `C:\WINDOWS\SYSTEM` | the engine dir | none |
   | `C:\WINDOWS\TEMP` | — | memory (STRESS's temporary file, ABI.md §3.8.7) |
   | `H:\` | the host's drives, 8.3, read-only | — |
 
   `C:\SAVER` is where the installer put the modules (`INSTALL.DAT`'s
-  `DestDir`), and what the modules and their settings name:
+  `DestDir`; Delrina's installer's default folder too), and what the
+  modules and their settings name:
   `SWSE.INI [Scrolling Text] TextFile=C:\SAVER\SWTEXT.TXT`, INTRMLIB's
   default saver directory, the music and DLLs opened by bare name.
 * **Seeds** (profile seeds, read as seed ⊕ file and never written out):
@@ -1589,11 +1800,21 @@ Dark path of §7.3 and §7.4 (OLDMOD16 or the native AD3 bridge), and `imx`.
   `USERABORT` through `GetInputState` and stop a module's start for good.
   What SWSE's `FORCETOWAKE` posts to its task is removed and counted by the
   pump, and is not a wake: the saver's own wake rules decide
-  (INTERACTION.md §5.2).
+  (INTERACTION.md §5.2). Three IMQ modules do set the input flag,
+  `0x2000` (The Far Side's PTERY, Dilbert's DB-BEST and DIL-WHAK), for
+  which INTERMIS captured the mouse and passed input to the saver (ABI.md
+  §3.8.9). The lane traces the flag (`ADTRACE=lane`) and runs them as
+  every Intermission module, under the saver's wake rules: input ends
+  them, and what they show is what they draw without it. Honouring it
+  would mean reporting them interactive, which leaves only Alt or the
+  Windows key to end them; that is a decision not taken.
 * **Buttons.** `--configure <module> --button 0` runs Intermission's
   Configure: `SAVERMAIN` 10, 7, 8 and 11 (INTERMIS's control panel sent no
   7), and 8 opens the module's own dialog, whose settings land in the state
-  overlay's `SWSE.INI` (INTERACTION.md §6.1, §7).
+  overlay's `SWSE.INI` (INTERACTION.md §6.1, §7). The Far Side's and
+  Dilbert's go through their own readers (an animation's dialog is
+  IMASAPLY's "Animation Player Options"), and their settings land in the
+  overlay's `ANTSW.INI`, in a section named for the module.
 * **Sound.** Effects go through the Win16 runtime's `sndPlaySound`, as After
   Dark's do; music through MEMMIDI's MIDI output on multimedia timers
   (AUDIO.md). The engine volume reaches both: the effects through the
@@ -1798,6 +2019,15 @@ exactly the header's size, no match past it, no whole byte left after the
 last token (all verified 0 over the disc's 24 files). SZDD has no checksum: a
 damaged file that still expands to its size is caught by the manifest (3),
 and not at all under `--no-verify`.
+
+Since the fifth round most of The Far Side's and Dilbert's files are SZDD
+too, compressed under their own names (the dropped character is 0). Delrina's
+installer ends its shared libraries' compressed files with one or two
+8-byte version stamps, `DLL ` and four digits (`DLL 0401`; Dilbert's
+`ANTSW.DLL` has two), which it compared so that an older library never
+replaced a newer one. They are not data. The expander takes exactly such
+records after the last token and drops them; any other byte left over is
+still refused, and so is a record that is no stamp (a damaged file).
 
 ### 8.8 KWAJ (new with the seventh release: `kwaj.h/.cc`)
 
@@ -2217,6 +2447,61 @@ releases). It serves only to identify the release (§3).
     identical, 0 unimplemented calls, no fault, and contact sheets looked
     at; Marvel's full cycle of 36 posters over 23,400 frames; sound captured
     twice where there is any.
+* **The fifth round** (`farside`, `dilbert`), the same way:
+  * Importer, synthetic: `import.packages` gains made-up installs of both
+    releases (`tests/pkg_fixture.h`): the registry's shape (Delrina's
+    installer, every disk's tag, each installed file a loose file once and
+    exactly the manifest's, the readers in `ENGINE` and the ASA reader
+    required, never `AD_SND`, a name for every module, the copies and the
+    known images they are); every source form (a folder of the disks'
+    files with decoys among them, a flat ZIP, `DISK<n>` folders loose and
+    zipped, the floppies in any order, and a ZIP of each disk's files with
+    the same bulletin-board note in each, those known by their md5s and
+    verified `image`); the decoys, locked in a folder source, never
+    opened; disk 1 alone ("missing DISK2…"), any other disk alone, and disk
+    1 without the installer, the marker or its tag (no release); Star Wars
+    Screen Entertainment never taken for either, nor either for it; a
+    damaged version stamp (refused); the I1 and I3 failures; both releases
+    in one folder (ambiguous); and the merged catalog of 14 packages in
+    date order. `import.szdd` takes one or two stamps and refuses a stamp
+    with a letter, cut short, followed by a byte, or of another tag;
+    `import.catalog` the ASA and IMQ entries (by header whatever the name;
+    `SAVERMAIN`, the button, `needs`; no button without `SAVERDLGPROC`; a
+    reader's name left out); `import.pkg_download` the five-part `zip` copy
+    from its loopback server (each part checked, the known set verified
+    `image`, the note never named) and Dilbert's ZIP; `import.cli` the
+    `--list-packages` lines (the title column now 44 characters wide, for
+    Dilbert's title); `import.gui_model` the download rows ("Install files
+    (5 ZIPs)") and fourteen releases.
+  * Importer, real sources: `import.pkg_real` finds The Far Side's five
+    ZIPs and Dilbert's four by md5 and imports each release (verified
+    `image`), Dilbert's other copy giving the same files, and merges all
+    fourteen: 314 modules, 73 `sameAs`; re-imports touch nothing else.
+    `import.download_real` fetches the Far Side's five ZIPs, Dilbert's flat
+    ZIP and its four-ZIP copy (each verified `image`), each file from
+    inside a ZIP fetched whole with its md5's bytes; `import.covers_real`
+    decodes the Far Side's WebP (408×508 after the crop), Dilbert's photo
+    (965×1315) and its disk art (63×123).
+  * Lanes: `core.unit` and `core.e2e` the probe (an `AniN` or `AniM` file
+    goes to ne16; an ASA without its reader exits 1, naming
+    `IMASAPLY.IMQ`); `ne16.unit` (396 checks, from 376) the forms and
+    reader files and a new `test_imx_forms` (an ASA through a stand-in
+    IMASAPLY in `ENGINE` and in `SAVER`, a missing reader, an IMQ module's
+    record, a pure reader refused, an IMQ module's button); `win16.unit`
+    (679, from 671) `IntersectClipRect`. `ne16.swse` and `ne16.startrek`
+    pass unchanged.
+  * Each of the 30 modules ran 900 frames twice from the scouts' installed
+    bytes (the importer's import gave the same streams): exit 0, identical,
+    no unimplemented call, no fault, and contact sheets looked at (title
+    cards, then the scenes; the five IMQ modules paint their black
+    backgrounds themselves: a run over a desktop seed gives the same
+    hashes). Sound was captured twice, byte-identical: 24 modules play wave
+    effects within 180 s; four animations hold no wave data, PTERY and
+    DB-BEST were silent for 180 s, and no MIDI played. Every Configure
+    button showed its dialog on a hidden desktop, and PTERY's banner text
+    and Out to Lunch's skipped sound effects, saved there, changed the next
+    run. The frozen baselines stayed at 0 differences: the 202 After Dark
+    modules × A/C/S, Star Wars 28/28 and Star Trek 32/32.
 
 Headless runs stay deterministic throughout. Nothing may write to the
 user's real data folder (`%LOCALAPPDATA%\LongAfterDark`) except the
@@ -2501,7 +2786,7 @@ Acceptance:
    the settings dialog shows, and the saver needs no change for it.
 5. Documentation to update afterwards (outside these packages):
    * the project's status notes;
-   * `tools/package.sh`'s dist README ("Deluxe only" wording; since rewritten for the releases it knows, twelve today);
+   * `tools/package.sh`'s dist README ("Deluxe only" wording; since rewritten for the releases it knows, fourteen today);
    * the scr status strings that count "After Dark 4 / Classic" (the scr
      workflow owns them). These are part of the user-requested wording
      pass.
@@ -2650,7 +2935,33 @@ Acceptance:
   Dark modules under Intermission; FLC/FLI, SCR, SAP, SPX, NSS, ASA) are
   out of scope: the importer never installs those readers, and each such
   release would need its own survey, as the future After Dark packages
-  above do.
+  above do. (Since the fifth round the ASA reader runs, for The Far Side's
+  and Dilbert's animations, from their own disks. Dilbert's readme names
+  two more Delrina Intermission products, The Flintstones and Opus 'n Bill
+  collections; neither was looked for.)
+* **The fifth round, open.**
+  * *The Far Side's source.* Its only intact copy online is a 1994
+    bulletin-board repack of the five floppies, one ZIP per disk, inside
+    the Internet Archive item `prog47_55`'s ZIP, with the board's notes
+    beside the files (never opened). The md5s are ours, and those links
+    cannot resume (§5.2). The floppy images of the item named for the
+    release are not recognised as damaged copies: they are refused with
+    the general errors (disk 3's image is shorter than its 2880 sectors; a
+    decode of the item's flux captures, which lose 28 sectors, fails on
+    `AERIAL.ASA`). Exact images of disks 1–4 could be rebuilt from the flux
+    captures and the ZIPs, but nobody could download them, so none is
+    listed.
+  * *The input flag.* PTERY, DB-BEST and DIL-WHAK set `0x2000` and run as
+    ordinary screen savers (§7.5): a decision left open. What they showed
+    under Intermission with the mouse captured was not compared with a
+    real Windows 3.1, nor DIL-WHAK's small figure walking on black after
+    its desk scene, nor the silence of PTERY and DB-BEST over 180 s. The
+    meaning of QUERY's bit `0x00080000` is unknown.
+  * *The animations' size.* Every ASA header records 800×600, the same in
+    both releases, apparently a constant of the format: the animations
+    fill the 640×480 screen they get, as in the scouts' runs.
+  * *The Far Side's cover* is a WebP, shown only where Windows has the
+    WebP codec (COVERS.md §2.3).
 * **WinG, natively.** Star Wars Screen Entertainment runs with the GDI
   technology its own setup program offered (ABI.md §3.8.6). A native WinG
   (WinG was the default on a 1994 PC that had it) would reuse the DIB

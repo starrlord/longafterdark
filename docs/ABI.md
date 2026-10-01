@@ -25,7 +25,11 @@ from their own disks, is in §3.10–§3.14: Snoopy's modules (a non-resident
 far-heap free), Marvel's `DECO.DLL` (selector calls, a freed DS), the keys
 After Dark 3.x's host wrote and the Disney Collection's library reads, the
 entries of AD_SND 3.0.3 that the host's own AD_SND carries, and what
-Windows did with a selector freed under its caller. Input, module buttons and the
+Windows did with a selector freed under its caller. The last two, Delrina's
+own The Far Side Screen Saver Collection and Scott Adams' Dilbert Screen
+Saver Collection, are Intermission releases whose modules take
+Intermission's two other forms, ASA animations and IMQ modules, recovered
+from their own floppies (§3.8.9). Input, module buttons and the
 modules' saved state are in `INTERACTION.md`; how every module makes sound,
 and how the host plays it, is in `AUDIO.md`.
 
@@ -94,7 +98,12 @@ reader loads the module and calls its `SAVERINIT`/`SAVERDRAW`/
 the modules poll for it themselves (§3.8.4). Every module starts only when
 STRESS.DLL can open ten handles on a temporary file (§3.8.7), and with the
 GDI technology its support DLL draws through Windows 3.1's DIB driver,
-`CreateDC("DIB", …)` (§3.8.6).
+`CreateDC("DIB", …)` (§3.8.6). The Far Side's and Dilbert's modules take
+the same calls through another reader: an ASA animation (a data file
+starting `AniN` or `AniM`) through Intermission's ASA reader `IMASAPLY.IMQ`,
+with its path at `+0x63`; an IMQ module, which exports `SAVERMAIN` itself,
+as its own reader with no path, refused when its QUERY clears the saver
+flag `0x1000` as a pure reader's does (§3.8.9).
 
 **Both lanes** — every clock read must advance virtual time: engines and
 modules busy-wait and calibrate CPU speed on the clock inside a single call
@@ -942,6 +951,9 @@ the survey reports beside them (`research/win/pkg/swse/survey/`:
 `intermission_protocol.md`, `imx_modules.md`, `host_integration.md`,
 `api_census.md`). Addresses are `seg:off` in the file named; `[0xNNNN]` is a
 DGROUP variable. How the ne16 lane runs these modules is `PACKAGES.md` §7.5.
+Delrina's own The Far Side Screen Saver Collection and Scott Adams' Dilbert
+Screen Saver Collection have no IMX module: their modules are Intermission's
+two other forms, ASA animations and IMQ modules (§3.8.9).
 
 #### 3.8.1 The binaries
 
@@ -950,7 +962,7 @@ DGROUP variable. How the ne16 lane runs these modules is `PACKAGES.md` §7.5.
 | `INTERMIS.EXE` | NE **application** (flags `0x030A`), module `INTERMIS`, 7 code segments | The engine: settings, idle timer, blanking window, frame loop, control panel. **Replaced by our host** (the Win16 runtime runs libraries only) | exports `SAVERWNDPROC` `6:0eee`, `TIMERFUNC` `1:140c`, `CPANEL` `2:078e` |
 | `INTRMLIB.DLL` | NE DLL "Intermission Screen Saver Library", 83 exports | Module list (`FINDALLMODULES` `1:1e06`, `LOADSAVER` `1:1fc0`, `FREESAVER` `1:21b2`), idle detection and input hook, palettes, sound. **Runs as real code**, loaded as the modules' import: its LibMain registers the dialog control classes (`ANT3DBOX`, `ANT3DCHECK`, `ANT3DSCROLL`, …) and the modules call `INTRAND`, `CENTERDLG`, `DOCTLCOLOR`. The host stands in for INTERMIS and calls none of its engine exports; for a module whose QUERY asks for an engine palette (§3.8.4; none of the 14 does) it makes that palette itself, as `CANISTART(1)` did (`PACKAGES.md` §7.5) | LibMain `1:0010..1:02d5` |
 | `ANTSW.DLL` | NE DLL, Ant Software's common library | The control window procedures and helpers; imported by INTRMLIB. Real code | |
-| `IMIMXPLY.IMQ` | NE DLL, the "IMX Player" reader, 3,936 bytes | Exports `SAVERMAIN` (ordinal 2, `2:002a`); loads an `.IMX` and drives it (§3.8.2). **Runs as real code**, the analogue of OLDMOD16. Eight more readers (`IMAD_PLY` for After Dark modules, FLC/FLI, SCR, …) are for other formats and never needed | |
+| `IMIMXPLY.IMQ` | NE DLL, the "IMX Player" reader, 3,936 bytes | Exports `SAVERMAIN` (ordinal 2, `2:002a`); loads an `.IMX` and drives it (§3.8.2). **Runs as real code**, the analogue of OLDMOD16. Eight more readers (`IMAD_PLY` for After Dark modules, FLC/FLI, SCR, …) are for other formats; of them only the ASA reader, `IMASAPLY.IMQ`, is needed, by The Far Side's and Dilbert's animations (§3.8.9) | |
 | `*.IMX` (14) | NE DLLs, Borland C++ 1991 | The modules (§3.8.5) | |
 | `SWSE.DLL` | NE DLL "SWSE Common Function DLL (C) 1994 Presage Software Development, Inc.", 248 exports | The modules' framework: canvases, palettes, sound, MIDI, titles, the credits box. Loads `swsfx.dll`, `MEMMIDI.DLL` and (probe only) `WING.DLL` by name | |
 | `READJPG.DLL`, `STRESS.DLL`, `SWSFX.DLL`, `MEMMIDI.DLL` | NE DLLs | The JPEG reader; the Windows 3.1 SDK's STRESS (§3.8.7); the sound-effect bank (module name `sw_sfx`, 118 `WAVE` resources); Sonic Foundry's in-memory MIDI player | |
@@ -1042,13 +1054,14 @@ INTERMIS use:
 | `+0x53` | BYTE | palette type the module wants: 0 none, 1 CLUT, 2 HSV, 3 PRIM | `IMIMXPLY 2:029f`; `INTERMIS 6:0692..6:06bc` |
 | `+0x54` | BYTE | `palette(0)`'s answer | `IMIMXPLY 2:0244` |
 | `+0x55` | far ptr | the reader's per-module block (IMIMXPLY: 0x16 bytes, above) | `IMIMXPLY 2:0422` |
-| `+0x59` | WORD | reader index; −1 for a reader | `INTRMLIB 1:1c47` |
-| `+0x63` | far ptr | the module file's full path (a 260-byte block of INTRMLIB's) | `INTRMLIB 1:213d..1:2193`; `IMIMXPLY 2:0378`, `2:0433` |
+| `+0x59` | WORD | reader index; −1 for a reader, and so for an IMQ module, its own reader (§3.8.9) | `INTRMLIB 1:1c47` |
+| `+0x63` | far ptr | the module file's full path (a 260-byte block of INTRMLIB's); 0 for a reader's record, so for an IMQ module | `INTRMLIB 1:213d..1:2193`; `IMIMXPLY 2:0378`, `2:0433` |
 
 Flags: `0x0004` the module has a panel (`saverdlgproc2`); `0x0070` the DC
 mode, 0 for every IMX module (the engine brackets each call, §3.8.4);
 `0x0200` enabled; `0x1000` a runnable saver; `0x2000` the saver takes input
-(capture and input redirection) — **never set for an IMX module**;
+(capture and input redirection) — **never set for an IMX module** (three
+IMQ modules set it, §3.8.9);
 `0x4000` the panel preview, in which IMIMXPLY adds `saverdraw` codes 3 and
 4 around START and STOP. Every SWSE module ends at `0x0000120C` when
 enabled. INTRMLIB keeps two records per blank (the reader's and the
@@ -1270,6 +1283,68 @@ sequences it from a 4 ms periodic `timeSetEvent` callback issuing
 `midiOutShortMsg` to the MIDI Mapper (`MEMMIDI 1:0176`, `1:1222`). No module
 uses AD_SND or INTRMLIB's sound functions. How the host plays them is
 `AUDIO.md`.
+
+#### 3.8.9 The other two forms: ASA animations and IMQ modules — VERIFIED
+
+Delrina's own Intermission releases, The Far Side Screen Saver Collection
+(Intermission 4.0, June 1994) and Scott Adams' Dilbert Screen Saver
+Collection (Intermission 5.0, October 1994), ship no IMX module. Their 30
+modules are Intermission's two other forms. Verified on their files
+(`research/win/pkg/{farside,dilbert}/`, gitignored) and on INTRMLIB in
+`research/win/pkg/swse/dis/`: The Far Side's `INTRMLIB.DLL`, `ANTSW.DLL`,
+`MEMMIDI.DLL` and `IMIMXPLY.IMQ` are Star Wars Screen Entertainment's byte
+for byte; Dilbert's INTRMLIB, ANTSW and MEMMIDI are newer builds. Both
+releases' `IMASAPLY.IMQ` is the same file.
+
+* **ASA animations** (`*.ASA`: The Far Side's 12, Dilbert's 13). Data, not
+  code: a file that starts `AniN` (`AniM`, an older header, in The Far
+  Side's EGGFIGHT) and holds the animation's pictures and wave sounds.
+  Intermission's ASA reader, `IMASAPLY.IMQ` ("ASA Player", an NE DLL of
+  26,752 bytes exporting `SAVERMAIN`, `SAVERDLGPROC`, `SAVERDLGPROC2` and
+  `MTDLGPROC`, importing ANTSW and INTRMLIB, loading `MEMMIDI.DLL` by
+  name), plays it. Its QUERY without a path names its type, `ASA` (`+0x5B`).
+  LOAD takes the file's path at `+0x63`, as IMIMXPLY's does. QUERY with a
+  path sets flags `0x0001`, `0x0004` and `0x1000` (`0x0000120D` with
+  INTRMLIB's defaults), `+0x54` = `0xFE` and `+0x53` = 0 (no engine
+  palette), and copies a name from the file only when flag `0x8000` is set
+  (`IMASAPLY 2:3eee..2:3f46`), so a host reads back an empty name. The
+  reader draws with ANTSW's sprites and palettes and calls
+  `IntersectClipRect` throughout.
+* **IMQ modules** (The Far Side's PTERY and NERDCLOK, Dilbert's DB-BEST,
+  DB-CLOCK and DIL-WHAK). NE DLLs that export `SAVERMAIN`, `SAVERDLGPROC`
+  and `SAVERDLGPROC2` themselves: each is its own reader. INTRMLIB's
+  `FINDALLMODULES` (`1:1e06`) makes every `*.IMQ` of the saver directory a
+  reader's record (`+0x59` = −1) and every file whose extension is a
+  reader's type (`+0x5B`, from that reader's pathless QUERY) a module's
+  record with that reader's index. `LOADSAVER` (`1:1fc0`; `1:1fd5..1:2064`)
+  loads the reader for a module's record and sends LOAD with the file's
+  path, and loads a reader's record as itself with `+0x63` = 0. So an IMQ
+  module gets LOAD and QUERY with no path, and it is a saver when that
+  QUERY leaves `0x1000` set, which is how INTERMIS listed savers. The
+  readers clear it in their pathless QUERY (`IMIMXPLY 2:02a6`, `IMASAPLY
+  2:3f4a`): that tells an IMQ module from a reader. Beside INTRMLIB and
+  ANTSW, some import Delrina's DIB library `DIBDLL.DLL` (huge pointers
+  through `__AHSHIFT`), DB-BEST also Pegasus Imaging's `IM4_EXP.DLL` and
+  DB-CLOCK `WIN87EM`. Their QUERY returns an empty name too, so no file
+  holds a display name: the registry gives them (`PACKAGES.md` §6).
+* **The input flag.** PTERY, DB-BEST and DIL-WHAK answer QUERY with
+  `0x0008320C`: `0x2000`, the saver takes input, and `0x00080000`, whose
+  meaning is unknown (DB-CLOCK answers `0x0000120C`). For such a saver
+  INTERMIS called `SetCapture` and `SetCursor` of its own cursor in each
+  idle pass (`INTERMIS 1:074d..1:076a`), `SETEATMSGS(1)` after `LOADSAVER`
+  (`6:0587`), so that INTRMLIB's hook re-posted input to the saver window
+  instead of noting it as activity, and `SAVERMAIN(12)` on a focus loss
+  (`6:10df` → `6:1302`) instead of ending the blank. Long After Dark does
+  not honour it (`PACKAGES.md` §7.5, `INTERACTION.md` §5.2).
+* **Settings.** No product INI ships. The dialogs write `ANTSW.INI` in the
+  Windows directory, in a section named for the module (PTERY's
+  `[FS-Pterodactyl]` holds its banner text; an animation's, the "Animation
+  Player Options", among them whether to skip its sound effects or its MIDI
+  music, which is skipped by default), and the module reads it at its next
+  load.
+* **Sound.** Wave effects, through INTRMLIB's and ANTSW's sound calls; 24
+  of the 30 modules play some (four animations hold no wave data; PTERY and
+  DB-BEST were silent for 180 s). No MIDI was heard from either release.
 
 ### 3.9 The After Dark 2.0 host (`AD.EXE` 2.0b) — VERIFIED
 

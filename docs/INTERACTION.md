@@ -34,7 +34,7 @@ into `research/win/dis`.
 | Exit gestures | Not playing: any key except Shift/Ctrl/Caps Lock/Num Lock, any click or wheel, a move past 10 px, switching away. Playing: Caps Lock toggles the game off (then any input exits), **Alt or F10 exits at once**, switching away exits. |
 | Multi-monitor | One **input owner**: the primary monitor's window. Only its host gets `KEY`/`CAPS`/`NUMLOCK`/`MOUSE`; only its status is read. The cursor is confined to it while playing. |
 | Module buttons | `adhostwin --configure <module> --button <slot> --owner <hwnd>` runs the module's own button handler; its `DialogBox*`/`MessageBox`/`GetOpenFileName` become **real** dialogs owned by the settings window, forwarding to the guest dialog procedure (§6). |
-| Module state | A per-user, per-package **writable overlay** over the guest's `C:\WINDOWS` and `C:\AFTERDRK` (`C:\SAVER` for Star Wars Screen Entertainment's Intermission modules) in `ADSTATE`, which the `.scr` always passes (`state\` next to `settings.ini`); without it a host keeps the overlay in memory, so headless runs stay deterministic and write nothing (§7). |
+| Module state | A per-user, per-package **writable overlay** over the guest's `C:\WINDOWS` and `C:\AFTERDRK` (`C:\SAVER` for the Intermission modules: Star Wars Screen Entertainment's, The Far Side's and Dilbert's) in `ADSTATE`, which the `.scr` always passes (`state\` next to `settings.ini`); without it a host keeps the overlay in memory, so headless runs stay deterministic and write nothing (§7). |
 | Desktop seed | The `.scr` captures each monitor before its windows appear, writes a delete-on-close P6 at the emulated size and passes `ADSEEDIMG` to that window's first host only (§8). |
 | DOS Shell | Not reproducible on the current build (§9.1); ships with exit-reason logging and a 5-minute regression. |
 
@@ -192,7 +192,10 @@ read neither the keyboard nor the mouse (none imports `GetKeyState`,
   SAVERDLGPROC)`, the module's own modal dialog (the reader answers 0 for a
   module without a `SAVERDLGPROC`) — and frees it (`SAVERMAIN(11)`); no
   QUERY, no START (`INTERMIS 2:1cb2..2:1d7d`). The dialog's OK writes the
-  module's keys to `SWSE.INI` itself.
+  module's keys to `SWSE.INI` itself. The Far Side's and Dilbert's modules
+  go the same way through their own readers (`ABI.md` §3.8.9): an ASA
+  animation's `SAVERMAIN(8)` is the ASA reader's dialog, an IMQ module's
+  its own, and their OK writes `ANTSW.INI`.
 * What the buttons call and where they persist (static imports and
   strings):
 
@@ -206,6 +209,7 @@ read neither the keyboard nor the mouse (none imports `GetKeyState`,
 | MESSAGE3, NONSENSE, SLIDE, GLOBE, WMORPH, LUNATIC (ne16) | Edit / Select, Edit Names…, Slides…, Map…, Edit…/Revert, Clear Scores/Keys… | `DialogBox`, `EndDialog`, `MessageBox` (LUNATIC's "Do you really want to clear…") | `MESG_AD3.DAT`, `NONSENSE.TXT`, `LunData.dat` (`_lcreat`/`_lwrite`/`OpenFile`), `MODULES.INI`/`AFTERDRK.INI`/`AD_PREFS.INI`/`WriteProfileString` |
 | `tt` MESSYGES, `ad32` LOGO, `ad32` BUGS, `simpsons` HOW2DRAW (ne16) | Edit Custom, Picture…, Bug Type, Help | `DialogBox` (+ engine prefs) | as above |
 | the 14 `swse` modules (ne16, Intermission) | Configure... | `SAVERMAIN(8)` → `DialogBox` of `"DIALOGBOX"` (named through the module's `NAMETABLE`), with INTRMLIB's `ANT3DBOX`/`ANT3DCHECK`/`ANT3DSCROLL`/`ANT3DTEXT`/`ANT3DONEORMORE` controls and SWSE's animated credits box; Scrolling Text adds `GetOpenFileName`, `GetSaveFileName` and `ChooseFont` | `WritePrivateProfileString` into `SWSE.INI` in the Windows directory, one section per module (Scrolling Text also writes its edit box to `SWTXEDBX.TXT` there) |
+| the 30 `farside` and `dilbert` modules (ne16, Intermission: 25 ASA animations, 5 IMQ modules; with the two Delrina releases) | Configure... | `SAVERMAIN(8)`: for an ASA animation, `IMASAPLY.IMQ`'s "Animation Player Options" (sound effects and MIDI on or off, colour options); for an IMQ module, its own dialog (Pterodactyl's: the banner text) | `WritePrivateProfileString` into `ANTSW.INI` in the Windows directory, in a section named for the module (`[FS-Pterodactyl]`); the next load reads it (Out to Lunch with its sound effects off plays none) |
 | `startrek` COMMS, SOUNDER (ne16, After Dark 2.0) | Edit Custom... (Communications, MODULE 10), Sounds.. (Sounder, MODULE 9) | `DialogBox`: "Edit Message" (a multi-line edit, id 103); "Select Directory", whose folder list is `DlgDirList(…, DDL_EXCLUSIVE \| DDL_DRIVES \| DDL_DIRECTORY)` beside the folder's `*.WAV` (§6.2) | `WritePrivateProfileString` into `AD_PREFS.INI`: `[Communications] MessageText`, `[Sounder] SoundPath` (nothing for a folder without a `.WAV`) |
 | `marvel` MARVEL (ne16, After Dark 2.0d; with the twelve releases) | Saver.. (index 0, MODULE 7), Posters... (index 1, MODULE 8) | `DialogBox`: Saver.. is the image selection, with the module's own "Images" window of nine owner-drawn thumbnails, All/None, Display In Order/Random, Show Captions and Create Poster On Wakeup; Posters... has Install, Uninstall, Info... (the poster's description) and Done | Saver.. OK rewrites the image catalog `C:\AFTERDRK\MRVLIMAG\MRVLIMAG.ADC` (the whole file is copied up into the state overlay; the display flags and each poster's selection word are written from the dialog, ABI.md §3.11). Posters... → Install decodes the poster into `C:\AFTERDRK\MRVLIMAG\MARVEL.BMP` and writes `WIN.INI [Desktop] TileWallPaper`; Create Poster On Wakeup writes `MARVEL.BMP` at every wake. Both land in the state overlay: `SystemParametersInfo` changes nothing in the runtime, so **the wallpaper features have no effect outside the emulator** |
 | `looney` LTMESSGS (ne16, the Looney Tunes' Messages; with the twelve releases) | Edit Custom... (index 3, MODULE 10) | `DialogBox`: "Enter your custom message:" (an edit, id 101, "Your Message Here"; OK, Cancel) | `WritePrivateProfileString` into `MODULES.INI`: `[Looney Messages] CustomA`, which Foghorn, Elmer or Speedy then says when the message control picks the custom one |
@@ -219,7 +223,10 @@ release's two (232 modules) it has 60 on 55 modules, from 37 binaries, and
 with the twelve releases (284 modules) 63 on 57 modules, from 39 binaries:
 Marvel's two and the Looney Tunes' Messages' one; ScreamSavers, Snoopy's and
 the Disney Collection's modules have none (`--configure --button 0` on one
-of them exits 1, "control 0 is not a button"). Marvel's thumbnails are not
+of them exits 1, "control 0 is not a button"). With the two Delrina releases
+(314 modules) it has 93 on 87 modules, from 69 binaries: each of The Far
+Side's 14 modules and Dilbert's 16 has one, and all 30 showed their dialog
+on a hidden desktop. Marvel's thumbnails are not
 scriptable, in either dialog: their nine buttons (ids 1007–1015) are
 children of the Images window (1006), and a configure script's `CLICK` goes
 to the dialog (§6.6). Saver..'s All (1000) and None (1001) are the dialog's
@@ -711,6 +718,18 @@ to a host whose `--capabilities` answer (asked for in the background) says
   removes and counts those posts (`user16_dispatch_guest`), and the saver's
   uniform rules (§4) stay in charge: a Star Wars module ends on the same
   input as any other module (a move past 10 pixels, not any move).
+  The Far Side's and Dilbert's modules (`PACKAGES.md` §7.5) are never
+  interactive either, though three of them, The Far Side's Pterodactyl
+  and Dilbert's Best of Dilbert and Budget Woes, set the input flag
+  (`0x2000`) in their QUERY: for those INTERMIS captured the mouse, showed
+  its own cursor, had INTRMLIB's hook re-post input to the saver window
+  instead of ending the blank, and sent `SAVERMAIN(12)` on a focus loss
+  (`ABI.md` §3.8.9). The lane traces the flag (`ADTRACE=lane`) and runs
+  them under the saver's rules like any Intermission module: input ends
+  them, and they show what they draw without it (Budget Woes, after its
+  desk scene, a small figure walking on black). Honouring the flag would
+  mean reporting them interactive, which leaves only Alt or the Windows
+  key as the way out; that was not done.
 
 ---
 
@@ -755,7 +774,13 @@ adhostwin.exe --configure <module> --button <slot> [--owner <hwnd>] [NAME=VALUE 
     refused ("control N is not a button", exit 1). The module
     writes its settings to `C:\WINDOWS\SWSE.INI`, which lands in
     `<state>\swse\WINDOWS\SWSE.INI` (§7); the profile seeds of §7.2 are
-    never written out.
+    never written out. The Far Side's and Dilbert's modules take the same
+    sequence through their own readers: an ASA animation's is
+    `IMASAPLY.IMQ`, whose "Animation Player Options" opens, and an IMQ
+    module is its own, loaded and queried with no path (`ABI.md` §3.8.9).
+    Their dialogs write `C:\WINDOWS\ANTSW.INI`, which lands in
+    `<state>\farside\WINDOWS\ANTSW.INI` or `<state>\dilbert\WINDOWS\ANTSW.INI`,
+    and the next run reads it.
 * stdout (not streaming in this mode) gets one JSON line:
   `{"result":"ok"|"nothing"|"error","dialogs":<n>,"message":"…","written":["<guest path>",…]}`.
 * Exit codes: **0** the button ran and showed at least one dialog or message
@@ -1030,12 +1055,12 @@ at a scratch folder gets scratch state with it.
 ```
 <state>\                                 ADSTATE
   <package>\                             deluxe (the FILES\… tree), ad10, ad32, tt, simpsons, swse, startrek,
-                                         marvel, snoopy, looney, screams, disney,
+                                         marvel, snoopy, looney, screams, disney, farside, dilbert,
                                          or legacy-<fnv32 of the module dir, 8 hex> for anything else
     WINDOWS\                             upper layer of the guest's C:\WINDOWS (both lanes of a package share it)
     <MODDIR>\                            upper layer of the guest's C:\AFTERDRK = the module dir
                                          (AD40, CLASSIC, AD10TH, AD32, TWISTED, SIMPSONS, …);
-                                         for swse, SAVER: the upper layer of C:\SAVER
+                                         for swse, farside and dilbert, SAVER: the upper layer of C:\SAVER
 ```
 
 Star Wars Screen Entertainment's modules keep their settings in
@@ -1044,6 +1069,13 @@ Star Wars Screen Entertainment's modules keep their settings in
 stopped), and Scrolling Text its edit box in `swse\WINDOWS\SWTXEDBX.TXT`.
 Deleting `<state>\swse` restores the disc's defaults, which stay in the
 package's `WINDOWS\SWSE.INI` (§7.3).
+
+The Far Side's and Dilbert's modules keep theirs in `ANTSW.INI`
+(`farside\WINDOWS\ANTSW.INI`, `dilbert\WINDOWS\ANTSW.INI`), one section per
+module, written by their **Configure...** dialogs. Those packages have no
+`WINDOWS` folder (their installer put no defaults there), so deleting
+`<state>\farside` or `<state>\dilbert` brings back the modules' own
+defaults.
 
 Star Trek: The Screen Saver's modules keep what they write in
 `startrek\WINDOWS\AD_PREFS.INI`: Communications' `[Communications]
@@ -1078,7 +1110,7 @@ install, while each package's modules never see another package's state
 | `C:\WINDOWS` | the lane's synthetic files (WIN.INI `[Berkeley Systems]`, the ne16 `MODULES.INI` seeds, PROGMAN.INI and `.GRP` files; ne16 also `LunData.dat`, the module dir's `LUNDATA.DAT`, which the installers copied to WINDOWS: without it Lunatic Fringe says "Configuration File Not Accessible"); ne16, when the package has one, its `WINDOWS` folder (`swse`: `SWSE.INI`), and for an Intermission module the profile seeds of `SYSTEM.INI`, `SWSE.INI` and `ANTSW.INI` (`PACKAGES.md` §7.5), for an After Dark 2.0 module those of `AD_PREFS.INI` (`PACKAGES.md` §7.3) | `<state>\<pkg>\WINDOWS` |
 | `C:\WINDOWS\SYSTEM` (ne16) | the engine dir | none (read-only, as today) |
 | `C:\AFTERDRK`, `C:\AFTERD~1` (ne16) | the module dir | `<state>\<pkg>\<MODDIR>` (one upper for both names) |
-| `C:\SAVER` (ne16, an Intermission module, instead of `C:\AFTERDRK`) | the module dir | `<state>\swse\SAVER` |
+| `C:\SAVER` (ne16, an Intermission module, instead of `C:\AFTERDRK`) | the module dir | `<state>\<pkg>\SAVER` (`swse`, `farside`, `dilbert`) |
 | `C:\PICTURES` (pe32) | module dir `PICTURES` | none |
 | `H:\<L>\…` | the host's `<L>:\…`, read-only | none |
 

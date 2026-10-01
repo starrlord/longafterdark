@@ -11,16 +11,16 @@ for ending it and for the modules' games, and the picture keeps its shape.
 
 The same as on Windows:
 
-* all twelve releases and their 284 modules, imported by the same importer
+* all fourteen releases and their 314 modules, imported by the same importer
   and checked file by file against the originals;
 * the modules' sound effects, their MIDI music and the Simpsons' voices,
   from one player only (the primary monitor's);
 * the Caps Lock games, and Star Trek's Final Exam with Num Lock;
 * the picture's shape: After Dark modules get a screen of the display's
   shape, 480 lines high, or 720 with `--lines 720` (the Windows setting
-  **Sharp — 720 lines**); Star Wars, Star Trek, ScreamSavers and Marvel
-  modules always get 640×480, with black bars at the sides on a widescreen
-  display;
+  **Sharp — 720 lines**); Star Wars, Far Side, Dilbert, Star Trek,
+  ScreamSavers and Marvel modules always get 640×480, with black bars at the
+  sides on a widescreen display;
 * what the modules save themselves (message texts, high scores, the Star
   Wars and Star Trek modules' settings files) is kept from run to run.
 
@@ -30,8 +30,9 @@ Different:
   XScreenSaver in its settings. There are no box covers, and no live
   preview besides XScreenSaver's.
 * **No module options.** The modules' own sliders and choices, and buttons
-  such as Fish World's **Select Fish…** or a Star Wars module's
-  **Configure...**, aren't available: every module runs with its defaults.
+  such as Fish World's **Select Fish…** or the **Configure...** of a Star
+  Wars, Far Side or Dilbert module, aren't available: every module runs
+  with its defaults.
 * **One monitor on its own.** `longafterdark` plays on the primary monitor
   and keeps the others black, as the Windows setting **Primary monitor
   only** does; XScreenSaver runs one on every monitor, all showing the same
@@ -131,7 +132,7 @@ follow it; with none, it opens the importer's window:
 cd LongAfterDark
 ./longafterdark --import                                # the importer's window
 ./longafterdark --import --download simpsons            # from the Internet Archive (2.6 MB)
-./longafterdark --import --download all                 # all twelve releases (647 MB), those imported already too
+./longafterdark --import --download all                 # all fourteen releases (657 MB), those imported already too
 ./longafterdark --import --image ~/Downloads/afterdark-20b_startrek.zip
 ./longafterdark --import --image ~/Downloads/"After Dark - Scream Savers.zip"   # its disks in DISK1, DISK2, ... folders
 ./longafterdark --import --image disk1.img --image disk2.img
@@ -194,7 +195,7 @@ imported, it shows the emulator's test pattern.
 | `-f`, `--fullscreen` | Full screen on the primary monitor, as a screen saver (the default); the other monitors go black. |
 | `-w`, `--window` | In a window of 640×480. |
 | `-s`, `--scale <n>` | The window `n` times as large (1 to 8). |
-| `--lines 480` or `720` | The screen After Dark modules get: 480 lines (the default) or 720, as wide as the display's shape. Star Wars, Star Trek, ScreamSavers and Marvel modules always get 640×480. |
+| `--lines 480` or `720` | The screen After Dark modules get: 480 lines (the default) or 720, as wide as the display's shape. Star Wars, Far Side, Dilbert, Star Trek, ScreamSavers and Marvel modules always get 640×480. |
 | `--module <module>` | The module to run, named as above: the same as naming it at the end of the line. XScreenSaver's settings write it this way. |
 | `-r`, `--random` | Every module in turn even when one is named (it plays first). |
 | `--cycle <seconds>` | How long each module plays in the rotation (default 300; 0 never changes it). |

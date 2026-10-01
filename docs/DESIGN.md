@@ -5,17 +5,17 @@ the Intermission modules of LucasArts' Star Wars Screen Entertainment, on
 Windows 11 by executing their x86 code under emulation: it loads the *real*
 engine and the module into one emulated address space, traps every call
 they make into the operating system, and supplies that OS surface from the
-host. A Windows screen saver (`LongAfterDark.scr`) presents the frames. Twelve
-releases are supported (§7): After Dark 4.0 Deluxe, After Dark 10th
+host. A Windows screen saver (`LongAfterDark.scr`) presents the frames.
+Fourteen releases are supported (§7): After Dark 4.0 Deluxe, After Dark 10th
 Anniversary, After Dark 3.2, Totally Twisted After Dark, The Simpsons
 Screen Saver, Star Trek: The Screen Saver (After Dark 2.0b), Marvel Comics
 Screen Posters, The Looney Tunes Screen Saver, The Disney Collection Screen
 Saver, two other companies' modules for After Dark (Binary Software's
-ScreamSavers and Image Smith's Snoopy's Screen Savers) and Star Wars
-Screen Entertainment, 284 modules in all. Star Wars Screen Entertainment is
-not an After Dark release: its 14 modules were written for Delrina's
-Intermission screen saver engine, and speak their own protocol (ABI.md
-§3.8).
+ScreamSavers and Image Smith's Snoopy's Screen Savers), Star Wars Screen
+Entertainment, The Far Side Screen Saver Collection and Scott Adams'
+Dilbert Screen Saver Collection, 314 modules in all. The last three are not
+After Dark releases: their modules were written for Delrina's Intermission
+screen saver engine, and speak its own protocol (ABI.md §3.8).
 
 Nothing here is a reimplementation of After Dark. The engine DLLs
 (`ADXPL510.DLL`, `ADXPL300.DLL`) and Berkeley's own classic-module bridge
@@ -102,7 +102,7 @@ LongAfterDark.scr (x64)     ── spawns ──►  adhostwin.exe (x64)   one p
   docs/DESIGN.md          this file
   docs/ABI.md             module/engine ABI as we verify it (our own findings)
   docs/API_SURFACE.md     every function the Deluxe disc's binaries import, counted and classified
-  docs/PACKAGES.md        the twelve releases: registry, import, catalog merge, lane rules (§7)
+  docs/PACKAGES.md        the fourteen releases: registry, import, catalog merge, lane rules (§7)
   docs/INTERACTION.md     input, module buttons, per-user state, desktop seed (§8)
   docs/COVERS.md          the box-cover strip, the cover pipeline, the shared UI library (§9)
   docs/AUDIO.md           sound: census, engine, lane mappings, saver settings (§10)
@@ -615,9 +615,11 @@ is, and for every user the three programs are copied together to
 
 ### 7. Packages
 
-The host runs modules from twelve releases: nine of Berkeley Systems' After
-Dark, two of other companies' modules for After Dark (ScreamSavers,
-Snoopy's Screen Savers), and LucasArts' Star Wars Screen Entertainment.
+The host runs modules from fourteen releases: nine of Berkeley Systems'
+After Dark, two of other companies' modules for After Dark (ScreamSavers,
+Snoopy's Screen Savers), and three for Delrina's Intermission (LucasArts'
+Star Wars Screen Entertainment, The Far Side Screen Saver Collection and
+Scott Adams' Dilbert Screen Saver Collection).
 The full specification is `docs/PACKAGES.md`: registry,
 identification, extraction formats, per-package layouts, the catalog merge,
 the lane contract, and the three work packages that implement it. The
@@ -735,12 +737,13 @@ contract in brief:
   from Berkeley's files, handed over at the first palette request (Snoopy's
   Collage asks for one). A package that ships its own files runs exactly as
   before. (`PACKAGES.md` §3, §4.3, §7.3, §7.4.)
-* **Status: implemented.** All twelve releases import (from a disc, an
+* **Status: implemented.** All fourteen releases import (from a disc, an
   image, a ZIP, a folder or the Internet Archive) into self-contained
-  package roots (284 catalog modules, 73 of them `sameAs` an earlier one).
+  package roots (314 catalog modules, 73 of them `sameAs` an earlier one).
   The 270 modules of the eleven After Dark releases run headless and
   deterministically, each release on its own; Star Wars Screen
-  Entertainment's run through the Intermission protocol above. The
+  Entertainment's, The Far Side's and Dilbert's run through the
+  Intermission protocol above. The
   survey-time numbers (before this work, with every AD 3.x module leaning on
   Deluxe's `ENGINE` files, and before each later release) are in
   `PACKAGES.md` §1.

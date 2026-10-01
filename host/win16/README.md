@@ -1,21 +1,24 @@
 # host/win16 — the Win16 guest runtime and API shims
 
 `adw_win16` is one emulated Win16 "task" for Long After Dark's Classic lane
-(`host/ne16`). That lane runs the 16-bit modules of all twelve releases:
+(`host/ne16`). That lane runs the 16-bit modules of all fourteen releases:
 the After Dark 2.x/3.x modules in After Dark 4.0 Deluxe's `FILES\CLASSIC`,
 After Dark 3.2, Totally Twisted, The Simpsons Screen Saver, the 16-bit
 modules of After Dark 10th Anniversary, Star Trek: The Screen Saver's After
 Dark 2.0 modules (below), Star Wars Screen Entertainment's Intermission
-modules (below), and those of the five later releases, Marvel Comics Screen
+modules (below), those of the five later releases, Marvel Comics Screen
 Posters, Snoopy's Screen Savers, The Looney Tunes Screen Saver,
-ScreamSavers and The Disney Collection Screen Saver (below). The module,
+ScreamSavers and The Disney Collection Screen Saver (below), and the
+Intermission modules of The Far Side Screen Saver Collection and Scott
+Adams' Dilbert Screen Saver Collection (below). The module,
 its package's engine when it uses one (`ADXPL300.DLL`, `ADXPL40.DLL`,
 `ADXPL310.DLL`, `ADXPL41.DLL` or `ADXPL100.DLL`; After Dark 2.0's module
 library `AD_MOD.DLL` with `AD_RSRC.DLL`; Marvel's decoder `DECO.DLL`),
 `AD_SND.DLL` (and After Dark 2.0's sound driver `AD_MME.DRV`), the helper
 DLLs and, where the package ships it (Deluxe, 10th Anniversary), the real
 `OLDMOD16.DLL` — for an Intermission module, its helper DLLs and
-Intermission's own reader, `IMIMXPLY.IMQ` — run as 16-bit protected-mode code
+Intermission's own reader, `IMIMXPLY.IMQ` (the ASA reader `IMASAPLY.IMQ` for
+an ASA animation; an IMQ module is its own) — run as 16-bit protected-mode code
 on `adw::cpu`, over a host-owned LDT, with KERNEL/USER/GDI/MMSYSTEM/…
 supplied from here, and, for a package that ships no `AD_SND.DLL`
 (Snoopy's), AD_SND too (`adsnd16.cc`, below). The packages without
@@ -206,6 +209,27 @@ What the runtime has for it (the AD3 path uses none of the first two):
 * **WING**: `WinGCreateHalftoneBrush` pops 8 argument bytes (WING.DLL
   returns with `retf 8`; the interface table says 6). Nothing of WinG is
   implemented: the seeds keep SWSE off it.
+
+**The Far Side and Dilbert** (Delrina's own Intermission releases; the
+lane's forms `asa` and `imq`, `ne16/package.hh` "Form", PACKAGES.md §7.5).
+Their 25 ASA animations run through Intermission's ASA reader,
+`IMASAPLY.IMQ`, and their five IMQ modules are their own readers; INTRMLIB,
+ANTSW (its sprites and palettes), `DIBDLL.DLL`, Dilbert's `IM4_EXP.DLL` and
+`MEMMIDI.DLL` run as real code. They get the same seeds (`seed_intermission`
+without `swse_gdi`: the module folder holds no `SWSE.DLL`) and the same
+guest pump. What the runtime added for them:
+
+* **GDI**: `IntersectClipRect` (GDI.22), which IMASAPLY calls throughout
+  every animation (96 to 274 times in 900 frames of each of Dilbert's): the
+  DC's clip region cut to the rectangle (logical units). It answers the clip box's region type (`NULLREGION`,
+  `SIMPLEREGION` or `COMPLEXREGION`), and `ERROR` (0) without a DC: the
+  runtime's GDI answers `COMPLEXREGION` whatever is left, and Windows 3.1
+  gave the new region's type. IMASAPLY ignores the answer.
+* Nothing else: over 900 frames, each of the 30 modules makes no call the
+  runtime lacks, and `DIBDLL.DLL`'s huge pointers (`KERNEL.__AHSHIFT`)
+  resolve as SWSE's do (`ADTRACE=mod16`: 339 relocations, LibEntry 1). The
+  Configure dialogs (IMASAPLY's "Animation Player Options" and the IMQ
+  modules' own) use calls configure mode already had.
 
 ## After Dark 2.0 (Star Trek: The Screen Saver)
 
@@ -575,7 +599,7 @@ with the pe32 lane. The Classic lane mounts, for an After Dark module,
 |---|---|---|
 | `C:\WINDOWS` | the package's `WINDOWS` folder when it has one (Star Wars Screen Entertainment's: `SWSE.INI`, as its installer put it there); virtual seed files (`MODULES.INI`, `AD_PREFS.INI`, `AFTERDRK.INI` empty; `PROGMAN.INI` and the `.GRP` files once the synthetic desktop exists; `LunData.dat`, the module dir's `LUNDATA.DAT`, where the installers copied it); for an Intermission module, the profile seeds of `seed_intermission` (above), for an After Dark 2.0 module those of `seed_after_dark2` (above), for an After Dark 3.x one those of `seed_after_dark3` (above) | `<ADSTATE>\<package>\WINDOWS`, or memory |
 | `C:\WINDOWS\TEMP` | — | memory, always |
-| `C:\WINDOWS\SYSTEM` | the engine dir (an Intermission module's: `IMIMXPLY.IMQ`) | none (read-only) |
+| `C:\WINDOWS\SYSTEM` | the engine dir (an Intermission module's: `IMIMXPLY.IMQ`, or The Far Side's and Dilbert's `IMASAPLY.IMQ`) | none (read-only) |
 | `C:\AFTERDRK`, `C:\AFTERD~1` (After Dark) | the module dir | `<ADSTATE>\<package>\<MODDIR>` (one directory for both names; in memory mode each name has its own) |
 | `C:\SAVER` (Intermission, instead of `C:\AFTERDRK`) | the module dir: the modules, their DLLs, the MIDI files, `SWTEXT.TXT` | `<ADSTATE>\<package>\SAVER`, or memory |
 | `H:\<L>\…` | the host's drives, 8.3 names | none |

@@ -2,31 +2,36 @@
 
 The original After Dark screen savers, Flying Toasters and all, running on
 today's Windows (and on Linux, through Wine), along with LucasArts' Star
-Wars Screen Entertainment.
+Wars Screen Entertainment and Delrina's The Far Side and Dilbert screen
+saver collections.
 
 ![The Long After Dark settings window in dark mode: box covers of four After Dark releases across the top, the module list on the left, and Flying Toasters! in the live preview](docs/images/settings.png)
 
 ## What it is
 
 Long After Dark brings back Berkeley Systems' After Dark screen savers from
-the 1990s, and one of their contemporaries: LucasArts' Star Wars Screen
-Entertainment (1994), which ran on Delrina's Intermission. It doesn't remake
-them. It runs the original modules, unchanged, on an emulated PC of the
-time: the x86 processor and the parts of Windows 95 they talk to. So they
-look, move and sound the way they did.
+the 1990s, and three of their contemporaries that ran on Delrina's
+Intermission: LucasArts' Star Wars Screen Entertainment, and Delrina's own
+The Far Side Screen Saver Collection and Scott Adams' Dilbert Screen Saver
+Collection (all from 1994). It doesn't remake them. It runs the original
+modules, unchanged, on an emulated PC of the time: the x86 processor and
+the parts of Windows 95 they talk to. So they look, move and sound the way
+they did.
 
-It works with twelve releases for Windows, 284 modules in all: nine of
+It works with fourteen releases for Windows, 314 modules in all: nine of
 Berkeley Systems' After Dark, two of other companies' modules for After
-Dark, and Star Wars Screen Entertainment. Import one or all of them; each
+Dark, and the three Intermission releases. Import one or all of them; each
 works on its own.
 
 | Release | Year | Modules |
 |---|---|---|
 | Star Trek: The Screen Saver | 1992 | 16 |
 | Marvel Comics Screen Posters | 1993 | 1 |
+| The Far Side Screen Saver Collection (Delrina) | 1994 | 14 |
 | The Simpsons Screen Saver | 1994 | 15 |
 | Star Wars Screen Entertainment (LucasArts) | 1994 | 14 |
 | Snoopy's Screen Savers (Image Smith) | 1994 | 8 |
+| Scott Adams' Dilbert Screen Saver Collection (Delrina) | 1994 | 16 |
 | The Looney Tunes Screen Saver | 1995 | 12 |
 | ScreamSavers (Binary Software) | 1995 | 15 |
 | After Dark 3.2 | 1995 | 44 |
@@ -41,6 +46,16 @@ Delrina's Intermission screen saver engine, which Long After Dark stands in
 for just as it does for After Dark's. Its 14 modules include Death Star
 Trench, Space Battles, Hyperspace, Lightsaber Duel, Darth Vader and the
 Cantina, with the films' themes as music.
+
+The Far Side Screen Saver Collection and Scott Adams' Dilbert Screen Saver
+Collection are Delrina's own Intermission releases. The Far Side's 14
+modules are animated scenes of Gary Larson's cartoons (Hell, Age of
+Mammals, Deserted Island, Fishbowl, Nerd Clock, Pterodactyl and more), and
+Dilbert's 16 are scenes from Scott Adams' comic strip (Dilbert at Work, Out
+to Lunch, Whack a Lawyer, Secretary with a Crossbow, Necktie Clock, Budget
+Woes and more), with their sound effects. Most of them are animations played by
+Intermission's own animation player, which Long After Dark runs unchanged,
+as it runs the modules.
 
 Star Trek: The Screen Saver is After Dark 2.0 with 16 modules of the
 original series, from 1992: The Mission, Final Frontier, Tribbles, Spock,
@@ -68,8 +83,8 @@ Dark would have.
   Final Exam, without closing the screen saver.
 - **The modules' own options.** Each module's sliders and choices, and
   buttons such as Fish World's **Select Fish…**, Marvel's **Posters...** or
-  a Star Wars module's **Configure...** that open the module's original
-  settings windows.
+  the **Configure...** of a Star Wars, Far Side or Dilbert module that open
+  the module's original settings windows.
 - **A modern settings window.** It follows Windows' light or dark mode,
   shows each release's box cover, and has a live preview.
 
@@ -91,7 +106,8 @@ settings window or the modules' own options (see [On Linux](#on-linux)).
   - a disc or floppy image (`.iso`, `.bin`, `.img`, `.ima`, `.vfd` or
     `.flp`), or a `.zip` of the install files or of the floppy images. For
     a release on several floppies, choose every image, such as the
-    Simpsons' two or Star Trek's two, or the ZIP they came in;
+    Simpsons' two or Star Trek's two, or the ZIP they came in, and for a
+    copy made of one ZIP per disk, such as The Far Side's five, every ZIP;
   - a `.zip` whose install files sit in one folder per disk (`Disk1`,
     `Disk2`, …), as the Internet Archive's copies of ScreamSavers, Marvel
     and Snoopy do, or a folder unzipped from one;
@@ -100,8 +116,9 @@ settings window or the modules' own options (see [On Linux](#on-linux)).
     58.8 MB (3.2), 37.9 MB (Totally Twisted) or 6.9 MB (Star Wars Screen
     Entertainment), Star Trek's two floppy images (2.8 MB), or a ZIP of the
     install files: the Simpsons' (2.6 MB), Marvel's (1.9 MB), Snoopy's
-    (1.9 MB), the Looney Tunes' (2.8 MB), ScreamSavers' (3.3 MB) or the
-    Disney Collection's (3.4 MB).
+    (1.9 MB), the Looney Tunes' (2.8 MB), ScreamSavers' (3.3 MB), the
+    Disney Collection's (3.4 MB) or Dilbert's (4.3 MB), or for The Far
+    Side a ZIP of each of its five install floppies (5.5 MB in all).
 
 Every import is checked, file by file, against the original release, so you
 know you have the real thing. For Star Wars Screen Entertainment that is
@@ -111,6 +128,12 @@ and the German edition) are other builds, so they fail that check (exit
 code 3) unless you import them with `adimport --no-verify`. The same goes
 for the Looney Tunes' later CD (`LTW320CD`, or `LOONEY.zip`), which carries
 After Dark 3.2's engine files in place of the April release's.
+
+The Far Side's only intact copy online is a 1994 bulletin-board copy of its
+five floppies, one ZIP of each disk's files, and that is what the download
+fetches. The floppy images in the Internet Archive item named for the
+release are damaged, so an import from them fails. The notes such copies
+carry beside the release's files are never opened.
 
 ## Getting started
 
@@ -164,7 +187,8 @@ After Dark 3.2's engine files in place of the April release's.
   the exam: type the number of your answer. Moving the mouse ends the exam
   and the screen saver.
 - **Module buttons** such as **Select Fish…**, or **Configure...** for a
-  Star Wars module, open the module's original options window. What you
+  Star Wars, Far Side or Dilbert module, open the module's original options
+  window. What you
   choose there is saved straight away, and **Cancel** in the settings window
   doesn't undo it. Marvel's wallpaper features (**Posters...** → Install,
   and Create Poster On Wakeup) make their picture inside the emulated PC
@@ -175,8 +199,8 @@ After Dark 3.2's engine files in place of the April release's.
   changes it on all of them at once. For a different module on each, check
   **A different module on each monitor** under **Change module every** (it
   shows only when two or more monitors are connected).
-- **Star Wars, Star Trek, ScreamSavers and Marvel modules** always get
-  640×480, scaled up to fit the screen in its 4:3 shape (with bars at the
+- **Star Wars, Far Side, Dilbert, Star Trek, ScreamSavers and Marvel
+  modules** always get 640×480, scaled up to fit the screen in its 4:3 shape (with bars at the
   sides on a widescreen monitor). The Resolution setting applies to the
   rest.
 - **Your files** are all in `%LOCALAPPDATA%\LongAfterDark` (paste that into
@@ -224,7 +248,10 @@ every module's speed has been compared with the original. Known
 differences: Marvel's poster transitions (wipes, irises, blinds and the
 like) show at once where the original swept them over about half a
 second, and in Chameleon (Totally Twisted and 10th Anniversary) a stray
-icon covers the "Accessories" label after about half a minute. The Linux
+icon covers the "Accessories" label after about half a minute. Three
+modules that took the mouse and keyboard under Intermission instead of
+ending (The Far Side's Pterodactyl, Dilbert's Best of Dilbert and Budget
+Woes) run as ordinary screen savers here: input ends them. The Linux
 player is newer still: [docs/LINUX.md](docs/LINUX.md#status) says what
 hasn't been tried on it yet.
 
@@ -265,7 +292,7 @@ screen saver.
 - [docs/BUILDING.md](docs/BUILDING.md): building, testing and the source
   tree.
 - [docs/DESIGN.md](docs/DESIGN.md): how the emulation works.
-- [docs/PACKAGES.md](docs/PACKAGES.md): the twelve releases and how each one
+- [docs/PACKAGES.md](docs/PACKAGES.md): the fourteen releases and how each one
   is imported.
 
 ## License
@@ -282,7 +309,10 @@ Systems (After Dark), LucasArts (Star Wars Screen Entertainment), Paramount
 (Star Trek), Fox (the Simpsons), The Walt Disney Company (the Disney
 Collection), Warner Bros. (the Looney Tunes), Marvel (Marvel Comics Screen
 Posters), United Feature Syndicate / Peanuts Worldwide and Image Smith
-(Snoopy's Screen Savers), and Binary Software and Stephen Blickenstaff /
-IMPart (ScreamSavers).
+(Snoopy's Screen Savers), Binary Software and Stephen Blickenstaff /
+IMPart (ScreamSavers), Delrina (The Far Side and Dilbert collections, and
+Intermission), Gary Larson, FarWorks and Universal Press Syndicate (The Far
+Side), and Scott Adams and United Feature Syndicate / United Media
+(Dilbert).
 None of their files are in this repository or in the programs it builds:
 you import your own copies.

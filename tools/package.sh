@@ -179,30 +179,36 @@ Long After Dark for Linux
 =========================
 
 Long After Dark is a screen saver that runs the original modules of After
-Dark and of LucasArts' Star Wars Screen Entertainment, unchanged, under x86
-emulation. It knows twelve releases, 284 modules:
+Dark, of LucasArts' Star Wars Screen Entertainment and of Delrina's The Far
+Side and Dilbert collections, unchanged, under x86 emulation. It knows
+fourteen releases, 314 modules:
 
-id        Release                                    Internet Archive download
-deluxe    After Dark 4.0 Deluxe (1996)               CD image, 381.7 MB
-ad10      After Dark 10th Anniversary (1999)         CD image, 143.3 MB
-ad32      After Dark 3.2 (1995)                      CD image, 58.8 MB
-tt        Totally Twisted After Dark (1995)          CD image, 37.9 MB
-simpsons  The Simpsons Screen Saver (1994)           install files (ZIP), 2.6 MB
-swse      Star Wars Screen Entertainment (1994)      CD image, 6.9 MB
-startrek  Star Trek: The Screen Saver (1992)         two floppy images, 2.8 MB
-marvel    Marvel Comics Screen Posters (1993)        install files (ZIP), 1.9 MB
-snoopy    Snoopy's Screen Savers (1994)              install files (ZIP), 1.9 MB
-looney    The Looney Tunes Screen Saver (1995)       install files (ZIP), 2.8 MB
-screams   ScreamSavers (1995)                        install files (ZIP), 3.3 MB
-disney    The Disney Collection Screen Saver (1995)  install files (ZIP), 3.4 MB
+id        Release                                      Internet Archive download
+deluxe    After Dark 4.0 Deluxe (1996)                 CD image, 381.7 MB
+ad10      After Dark 10th Anniversary (1999)           CD image, 143.3 MB
+ad32      After Dark 3.2 (1995)                        CD image, 58.8 MB
+tt        Totally Twisted After Dark (1995)            CD image, 37.9 MB
+simpsons  The Simpsons Screen Saver (1994)             install files (ZIP), 2.6 MB
+swse      Star Wars Screen Entertainment (1994)        CD image, 6.9 MB
+startrek  Star Trek: The Screen Saver (1992)           two floppy images, 2.8 MB
+marvel    Marvel Comics Screen Posters (1993)          install files (ZIP), 1.9 MB
+snoopy    Snoopy's Screen Savers (1994)                install files (ZIP), 1.9 MB
+looney    The Looney Tunes Screen Saver (1995)         install files (ZIP), 2.8 MB
+screams   ScreamSavers (1995)                          install files (ZIP), 3.3 MB
+disney    The Disney Collection Screen Saver (1995)    install files (ZIP), 3.4 MB
+farside   The Far Side Screen Saver Collection (1994)  install files (5 ZIPs), 5.5 MB
+dilbert   Scott Adams' Dilbert Screen Saver            install files (ZIP), 4.3 MB
+            Collection (1994)
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
 Trek modules. Star Wars Screen Entertainment is not an After Dark release
 (it is sometimes listed as "After Dark Star Wars"): its modules were made
-for Delrina's Intermission screen saver engine. ScreamSavers (Binary
-Software) and Snoopy's Screen Savers (Image Smith) are other companies'
-modules for After Dark; Snoopy's were made to run in an After Dark already
-installed, so Long After Dark supplies the sound library they found there.
+for Delrina's Intermission screen saver engine, as were those of Delrina's
+own The Far Side Screen Saver Collection and Scott Adams' Dilbert Screen
+Saver Collection. ScreamSavers (Binary Software) and Snoopy's Screen Savers
+(Image Smith) are other companies' modules for After Dark; Snoopy's were
+made to run in an After Dark already installed, so Long After Dark supplies
+the sound library they found there.
 
 No file of any of these releases is included: you import them from your
 own copies (and are responsible for sourcing them legally).
@@ -264,7 +270,7 @@ What you need
        floppies, one folder of every disk's files, or one holding nothing
        but DISK1, DISK2, ... folders).
      - --download: a release's Internet Archive copy, by its id; "all"
-       imports all twelve, one after another (647 MB, those imported
+       imports all fourteen, one after another (657 MB, those imported
        already too). Downloads resume if interrupted, and each one is
        checked against its published MD5 before it is used.
    The importer works out which release it was given, checks every file
@@ -337,8 +343,9 @@ What is different from Windows
 
    There is no settings window: you choose with longafterdark's options, or
    in XScreenSaver's settings. The modules' own options and buttons (such
-   as Fish World's Select Fish... or a Star Wars module's Configure...) are
-   not available, so each module runs with its defaults. On its own,
+   as Fish World's Select Fish... or the Configure... of a Star Wars, Far
+   Side or Dilbert module) are not available, so each module runs with its
+   defaults. On its own,
    longafterdark plays on the primary monitor and keeps the others black;
    XScreenSaver runs it on every monitor, and only the primary monitor's
    plays sound.
@@ -360,7 +367,7 @@ Updating
 
 Status
 
-   The 284 modules of the twelve releases, with their sound, their Caps
+   The 314 modules of the fourteen releases, with their sound, their Caps
    Lock games and Final Exam's Num Lock exam. Still being finished, as on
    Windows:
      - Speed: each module's pace follows a model of a mid-1990s PC; not
@@ -391,30 +398,36 @@ Long After Dark
 ===============
 
 Long After Dark is a screen saver for Windows that runs the original modules
-of After Dark and of LucasArts' Star Wars Screen Entertainment, unchanged,
-under x86 emulation. It knows twelve releases, 284 modules:
+of After Dark, of LucasArts' Star Wars Screen Entertainment and of Delrina's
+The Far Side and Dilbert collections, unchanged, under x86 emulation. It
+knows fourteen releases, 314 modules:
 
-id        Release                                    Internet Archive download
-deluxe    After Dark 4.0 Deluxe (1996)               CD image, 381.7 MB
-ad10      After Dark 10th Anniversary (1999)         CD image, 143.3 MB
-ad32      After Dark 3.2 (1995)                      CD image, 58.8 MB
-tt        Totally Twisted After Dark (1995)          CD image, 37.9 MB
-simpsons  The Simpsons Screen Saver (1994)           install files (ZIP), 2.6 MB
-swse      Star Wars Screen Entertainment (1994)      CD image, 6.9 MB
-startrek  Star Trek: The Screen Saver (1992)         two floppy images, 2.8 MB
-marvel    Marvel Comics Screen Posters (1993)        install files (ZIP), 1.9 MB
-snoopy    Snoopy's Screen Savers (1994)              install files (ZIP), 1.9 MB
-looney    The Looney Tunes Screen Saver (1995)       install files (ZIP), 2.8 MB
-screams   ScreamSavers (1995)                        install files (ZIP), 3.3 MB
-disney    The Disney Collection Screen Saver (1995)  install files (ZIP), 3.4 MB
+id        Release                                      Internet Archive download
+deluxe    After Dark 4.0 Deluxe (1996)                 CD image, 381.7 MB
+ad10      After Dark 10th Anniversary (1999)           CD image, 143.3 MB
+ad32      After Dark 3.2 (1995)                        CD image, 58.8 MB
+tt        Totally Twisted After Dark (1995)            CD image, 37.9 MB
+simpsons  The Simpsons Screen Saver (1994)             install files (ZIP), 2.6 MB
+swse      Star Wars Screen Entertainment (1994)        CD image, 6.9 MB
+startrek  Star Trek: The Screen Saver (1992)           two floppy images, 2.8 MB
+marvel    Marvel Comics Screen Posters (1993)          install files (ZIP), 1.9 MB
+snoopy    Snoopy's Screen Savers (1994)                install files (ZIP), 1.9 MB
+looney    The Looney Tunes Screen Saver (1995)         install files (ZIP), 2.8 MB
+screams   ScreamSavers (1995)                          install files (ZIP), 3.3 MB
+disney    The Disney Collection Screen Saver (1995)    install files (ZIP), 3.4 MB
+farside   The Far Side Screen Saver Collection (1994)  install files (5 ZIPs), 5.5 MB
+dilbert   Scott Adams' Dilbert Screen Saver            install files (ZIP), 4.3 MB
+            Collection (1994)
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
 Trek modules. Star Wars Screen Entertainment is not an After Dark release
 (it is sometimes listed as "After Dark Star Wars"): its modules were made
-for Delrina's Intermission screen saver engine. ScreamSavers (Binary
-Software) and Snoopy's Screen Savers (Image Smith) are other companies'
-modules for After Dark; Snoopy's were made to run in an After Dark already
-installed, so Long After Dark supplies the sound library they found there.
+for Delrina's Intermission screen saver engine, as were those of Delrina's
+own The Far Side Screen Saver Collection and Scott Adams' Dilbert Screen
+Saver Collection. ScreamSavers (Binary Software) and Snoopy's Screen Savers
+(Image Smith) are other companies' modules for After Dark; Snoopy's were
+made to run in an After Dark already installed, so Long After Dark supplies
+the sound library they found there.
 
 No file of any of these releases is included: you import them from your
 own copies (and are responsible for sourcing them legally). Requires 64-bit
@@ -441,7 +454,7 @@ for the other two next to itself.
      - A drive or folder: the CD itself, or a folder copied from it (for
        floppies, one folder of every disk's files, or one holding nothing
        but DISK1, DISK2, ... folders).
-     - A download from the Internet Archive: the twelve releases with their
+     - A download from the Internet Archive: the fourteen releases with their
        sizes, plus one entry that fetches every release not imported yet.
        Downloads resume if interrupted, and each one is checked against its
        published MD5 before it is used.
@@ -467,6 +480,15 @@ for the other two next to itself.
    engine files and fails verification unless imported with
    "adimport --no-verify".
 
+   The Far Side Screen Saver Collection's only intact copy online is a 1994
+   bulletin-board copy of its five floppies, a ZIP of each disk's files
+   (PNX-FSC1.ZIP to PNX-FSC5.ZIP; select all five), which the download
+   fetches; the floppy images in the Internet Archive item named for it are
+   damaged, and an import from them fails. Dilbert verifies as the Internet
+   Archive's ZIP of its four floppies' files (DilbertS.zip), or as the same
+   disks in four ZIPs, one per disk. A folder or ZIP of the same files
+   verifies file by file. Every install disk is needed.
+
    From a command prompt, with the ids above:
      adimport --image "C:\Images\After Dark 3.2.iso"
      adimport --image disk1.img --image disk2.img
@@ -479,7 +501,7 @@ for the other two next to itself.
      adimport --download all
      adimport --list-packages
      adimport --remove tt
-   "adimport --download all" imports all twelve, one after another (those
+   "adimport --download all" imports all fourteen, one after another (those
    imported already too). adimport --help lists every option.
 
 2. Covers
@@ -512,16 +534,18 @@ for the other two next to itself.
    Configure) picks one module or Random, the modules it rotates through,
    how often it changes, the resolution, the monitors to use and the sound,
    with a live preview of the selected module. Some modules have buttons of
-   their own, such as Fish World's "Select Fish..." or each Star Wars
-   module's "Configure...", which open the module's own settings window;
+   their own, such as Fish World's "Select Fish..." or each Star Wars, Far
+   Side and Dilbert module's "Configure...", which open the module's own
+   settings window;
    what you set there is saved at once (Star Trek's Sounder finds your own
    drives under [-h-] in its "Sounds.." window, as After Dark's Globe does
    in its "Map..." window; pick a folder near a drive's root: as in DOS, its
    short path must fit in 63 characters). Marvel's module has "Saver.." to
    choose its posters and "Posters..." to make one a wallpaper, which stays
    inside the emulated PC: your own desktop never changes. The resolution
-   applies to the other modules: the Star Wars, Star Trek, ScreamSavers and
-   Marvel modules always get 640x480, scaled up to fit the screen.
+   applies to the other modules: the Star Wars, Far Side, Dilbert, Star
+   Trek, ScreamSavers and Marvel modules always get 640x480, scaled up to
+   fit the screen.
 
    Sound is on by default. Only the primary monitor's screen saver plays
    it, at the default volume (50): the modules' wave effects, their MIDI
@@ -556,7 +580,7 @@ Updating
 
 Status
 
-   284 modules from the twelve releases, with their sound, their Caps Lock
+   314 modules from the fourteen releases, with their sound, their Caps Lock
    games, Final Exam's Num Lock exam and their own option buttons. Still
    being finished:
      - Speed: each module's pace follows a model of a mid-1990s PC; not

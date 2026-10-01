@@ -43,7 +43,9 @@ Terms. A **release** is a package in the importer's registry (PACKAGES.md
 (Star Trek: The Screen Saver), and, added together as the eighth to the
 twelfth, `marvel`, `snoopy`, `looney`, `screams` and `disney` (Marvel
 Comics Screen Posters, Snoopy's Screen Savers, The Looney Tunes Screen
-Saver, ScreamSavers, The Disney Collection Screen Saver). The UI calls a release by
+Saver, ScreamSavers, The Disney Collection Screen Saver), and as the
+thirteenth and fourteenth, Delrina's `farside` and `dilbert` (The Far Side
+Screen Saver Collection, Scott Adams' Dilbert Screen Saver Collection). The UI calls a release by
 its `title`, or by its `shortTitle` where space is tight. A **cover** is the
 art that stands for a release. A **tile** is the cover rendered as a 4:5
 portrait PNG for display. The **filter** is the set of releases whose tiles
@@ -111,8 +113,10 @@ control and the details card) moves down by the band's height.
   (1999); Star Wars (1994) comes second, after the Simpsons, since the sixth
   release, and Star Trek (1992) first, before them, since the seventh. With
   all twelve: Star Trek, Marvel, Simpsons, Star Wars, Snoopy, Looney Tunes,
-  ScreamSavers, 3.2, Totally Twisted, Disney, Deluxe, 10th Anniversary. A
-  release without a date comes last. (As built for twelve: a row that
+  ScreamSavers, 3.2, Totally Twisted, Disney, Deluxe, 10th Anniversary.
+  With all fourteen, Far Side (1994-06) comes third, after Marvel, and
+  Dilbert (1994-10) seventh, after Snoopy. A release without a date comes
+  last. (As built for twelve: a row that
   scrolls starts after the left chevron's place, §1.3.)
 * **Status box.** A status box 200 DIP wide sits at the column's right
   edge, vertically centred on the tile art (§1.6). The tiles area is the
@@ -581,6 +585,8 @@ photos are those two releases' covers of choice, through `--set-cover`).
 | `looney` (the same) | download `https://web.archive.org/web/19970720113529id_/http://www.berksys.com:80/products/afterdark/box.looneytunesL.jpg` (the box front from Berkeley Systems' 1997 product page, 127×162, like Totally Twisted's from the same page), md5 `e9fa28ed00032bb04a436132a724e98c`, 29771 B, art `box` ("Box front", Wayback Machine) | disc `SETUP.BMP` (the installer splash, 387×221, the same in both builds), md5 `32af5fcb5add7fc88de7b03b5c531563`, **crop 0,0,387,161** (the art ends at row 160; the warning and copyright text start at 164), art `splash` ("Installer art", your disks) | download `https://archive.org/download/berkeley_systems_looney_tunes/16_looney_tunes_CD.jpg` (a scan of the label of the August CD of the same release, 750×734), md5 `8b168e0679d2661889092fc6280d509a`, 369574 B, art `disc` ("Disc label", Internet Archive) | — |
 | `screams` (the same) | disc `SETUP.EXE` RT_BITMAP **7500** (the installer's title art, "Stephen Blickenstaff's ScreamSavers", 350×179 at 4 bpp), file md5 `e348fb48b89102903a3b26a3c8aedab3`, **crop 0,0,350,119** (the logo ends at row 114, black to 122, the copyright block from 123), art `splash` ("Installer art", your disks) | — | — | — |
 | `disney` (the same) | download `https://web.archive.org/web/19970720111656id_/http://www.berksys.com:80/lite/products/afterdark/box.disneyL.jpg` (the box front from Berkeley Systems' 1997 product page, the only capture, 128×162), md5 `ffcd41dd737b125af0a4e4a1bfee6610`, 20983 B, art `box` ("Box front", Wayback Machine) | disc `SETUP.BMP` (the installer splash, 387×220), md5 `39e1bfb21fdf7fe2396525d13798cf50`, **crop 0,0,387,172** (the warning text band starts at row 172), art `splash` ("Installer art", your disks) | — | — |
+| `farside` (added with the two Delrina releases) | download `https://archive.org/download/the-far-side-screen-saver-collection-1-of-5/far-side-software-v0-z46qj0d0a2fc1.webp` (a photo of two boxes on a couch, 1080×813 WebP, in the item of the release's damaged floppy images), md5 `4e7ebc4e9dbced47a3fc37e55054486f`, 270222 B, **crop 546,122,408,508** (the release's box, on the right), art `box` ("Box front", Internet Archive) | — | — | — |
+| `dilbert` (the same) | download `https://archive.org/download/dilbert_screensaver_collection/box.jpg` (a photo of the box front, 1200×1600, in the item of the flat ZIP), md5 `aa8fe2600200685504ea9f15feaf4352`, 167593 B, **crop 100,215,965,1315** (the box), art `box` ("Box front", Internet Archive) | disc `INSTALL.BMP` (the picture beside the installer's pages on disk 1: Dogbert, 63×123), md5 `47199572d43fb457b952dcba197a19c5`, art `panel` ("Setup art", your disks) | — | — |
 
 Notes:
 * **ad32** starts with its disc art because the user chose it: no box scan
@@ -644,6 +650,22 @@ Notes:
   captures of Berkeley's and Binary Software's sites, IMPart's later site,
   MobyGames), so its only source is the title art on the user's own disks,
   contained on black bands (aspect 2.94).
+* **The two Delrina releases.** The Far Side's art belongs to Gary Larson
+  (FarWorks) and Delrina, Dilbert's to Scott Adams (United Feature
+  Syndicate) and Delrina; both are handled like the Simpsons': fetched onto
+  the user's machine at import time, or read from the user's own disks, and
+  never bundled, committed or redistributed. No new cover-source kind was
+  needed. **farside**: the only picture of the box online is a photo of it
+  beside another box, in the Internet Archive item of the floppy images,
+  cropped to it; it is a WebP, which WIC decodes only where Windows' WebP
+  codec is installed (§2.6), so without it the generated cover is shown.
+  The disks' one picture, the installer's `INSTALL.BMP`, is
+  SZDD-compressed, out of a disc source's reach, so there is no disc
+  source. **dilbert**: the photo in the flat ZIP's item shows the box
+  front; a previous owner's handwritten name on the box stays in the crop.
+  Its installer's picture, `INSTALL.BMP`, is a plain file on disk 1, drawn
+  as a picture when the photo cannot be fetched. A search of the Wayback
+  Machine's captures of Delrina's site found nothing for either.
 
 ### 2.4 Capture during an import
 
@@ -1050,7 +1072,9 @@ server from `tests/http_server.h`.
   the sizes after cropping (`ad32` 387×183, `simpsons` 387×172, `tt`
   387×204, `ad10` 118×226; as built also `deluxe` 118×226, and with the
   twelve releases `looney` 387×161, `screams` 350×119, `disney` 387×172 and
-  `snoopy` 79×175, from the known ZIPs of their install files).
+  `snoopy` 79×175, from the known ZIPs of their install files, and with the
+  two Delrina releases `dilbert` 63×123). The Far Side's photo decodes,
+  cropped, to 408×508 and Dilbert's to 965×1315.
 * It writes `covers-sheet.png` (every tile side by side) into the build
   directory for a person to look at.
 * It never writes under `%LOCALAPPDATA%`. The scratch tree is deleted

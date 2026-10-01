@@ -1,8 +1,9 @@
 # Installing Long After Dark
 
 **Long After Dark** is a screen saver for Windows that runs the original
-modules of After Dark and of LucasArts' Star Wars Screen Entertainment,
-unchanged, under x86 emulation. It knows twelve releases, 284 modules:
+modules of After Dark, of LucasArts' Star Wars Screen Entertainment and of
+Delrina's The Far Side and Dilbert collections, unchanged, under x86
+emulation. It knows fourteen releases, 314 modules:
 
 | id | Release | Internet Archive download |
 |---|---|---|
@@ -18,6 +19,8 @@ unchanged, under x86 emulation. It knows twelve releases, 284 modules:
 | `looney` | The Looney Tunes Screen Saver (1995) | install files (ZIP), 2.8 MB |
 | `screams` | ScreamSavers (1995) | install files (ZIP), 3.3 MB |
 | `disney` | The Disney Collection Screen Saver (1995) | install files (ZIP), 3.4 MB |
+| `farside` | The Far Side Screen Saver Collection (1994) | install files (5 ZIPs, one per disk), 5.5 MB |
+| `dilbert` | Scott Adams' Dilbert Screen Saver Collection (1994) | install files (ZIP), 4.3 MB |
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
 Trek modules, on two floppies. Marvel Comics Screen Posters (After Dark
@@ -32,7 +35,11 @@ supplies the sound library they would have found there.
 Star Wars Screen Entertainment is not an After Dark release, though it is
 sometimes listed as "After Dark Star Wars": its 14 modules were made for
 Delrina's Intermission screen saver engine, which Long After Dark stands in
-for as it does for After Dark's.
+for as it does for After Dark's. The Far Side Screen Saver Collection (14
+modules, five floppies) and Scott Adams' Dilbert Screen Saver Collection
+(16 modules, four floppies) are Delrina's own Intermission releases: most
+of their modules are animations, played by Intermission's own animation
+player, which runs unchanged as the modules do.
 
 Requirements: 64-bit Windows on an x64 PC. It was developed on Windows 11.
 On Linux, see [LINUX.md](LINUX.md): it runs there under Wine, with a
@@ -75,7 +82,7 @@ Double-click `adimport.exe`, or open the screen saver's settings and click
 - **A drive or folder:** the CD itself, or a folder copied from it (for
   floppies, one folder holding the files of every disk, or one holding
   nothing but a `DISK1`, `DISK2`, … folder per disk).
-- **A download from the Internet Archive:** a list of the twelve releases
+- **A download from the Internet Archive:** a list of the fourteen releases
   with their sizes, plus one entry that fetches every release not imported
   yet. An interrupted download resumes, and each file is checked against its
   published MD5 before it is used.
@@ -114,6 +121,21 @@ verification (exit code 3) unless imported with `adimport --no-verify`.
 The notes a previous owner left in some of these copies (serial numbers)
 are never opened.
 
+The Far Side Screen Saver Collection and Dilbert have no image of their
+floppies online either. The Far Side's only intact copy is a 1994
+bulletin-board copy of its five floppies, a ZIP of each disk's files
+(`PNX-FSC1.ZIP` to `PNX-FSC5.ZIP`), which `adimport --download farside`
+fetches: select all five together and they verify as its known copy. The
+floppy images in the Internet Archive item named for the release are
+damaged, so an import from them fails. Dilbert's known copies are the
+Internet Archive's ZIP of its four floppies' files (`DilbertS.zip`, which
+the download fetches) and the same disks as four ZIPs, one per disk
+(`DILBERT1.ZIP` to `DILBERT4.ZIP`). A folder or ZIP of the same files, flat
+or in `DISK<n>` folders, verifies file by file. Every install disk is
+needed: disk 1 alone is refused ("needs every install disk"), and another
+disk alone is not a known release. The notes those bulletin-board copies
+carry beside the release's files are never opened.
+
 From a command prompt, with the ids from the table above:
 
 ```
@@ -121,6 +143,7 @@ adimport --image "C:\Images\After Dark 3.2.iso"
 adimport --image disk1.img --image disk2.img
 adimport --image afterdark-20b_startrek.zip
 adimport --image "C:\Downloads\After Dark - Scream Savers.zip"
+adimport --image PNX-FSC1.ZIP --image PNX-FSC2.ZIP --image PNX-FSC3.ZIP --image PNX-FSC4.ZIP --image PNX-FSC5.ZIP
 adimport --from E:\
 adimport --from C:\Copies\Snoopy
 adimport --download ad10
@@ -200,6 +223,15 @@ their scenes for a 640×480 screen, so they always get one, scaled to fit
 your monitor in its 4:3 shape (with bars at the sides on a widescreen
 monitor, above and below on a 5:4 or portrait one).
 
+The Far Side's and Dilbert's modules have one such button too,
+**Configure...**. For an animation it opens Intermission's own "Animation
+Player Options" (sound effects and music on or off, colour options); for
+their other modules, the module's own window, such as the banner text of
+The Far Side's Pterodactyl. Those settings are kept in `ANTSW.INI`, under
+`state\farside\WINDOWS\` or `state\dilbert\WINDOWS\` in your data folder,
+and apply from the next run. Like the Star Wars modules, these always get
+640×480, scaled to fit.
+
 Several Star Trek modules compose their scenes for a 640×480 screen too,
 so the **Resolution** setting does not apply to any of them either: they
 always get 640×480, scaled to fit as the Star Wars modules are. Two of
@@ -237,7 +269,8 @@ is silent, as it always was. In the settings window,
 Star Wars Screen Entertainment, Volume reaches the effects through
 Intermission's own volume setting, and the music as the Windows mixer's
 synthesizer slider did, since Intermission itself set only the effects'
-volume. **Preview** plays sound with the values you have not saved yet; the
+volume. The Far Side's and Dilbert's modules play wave effects (a few have
+none) and no music. **Preview** plays sound with the values you have not saved yet; the
 small live preview never does.
 
 ## Ending it, and playing
@@ -273,7 +306,7 @@ address bar):
 | `assets\win\` | the imported modules, one folder per release, the module list `catalog-win.json`, and the releases' box covers (`covers\`) |
 | `downloads\` | Internet Archive downloads, reused if you import the same release again |
 | `settings.ini` | the screen saver's settings |
-| `state\` | what the modules save themselves (message texts, chosen pictures, high scores, the Star Wars modules' settings, Sounder's folder, Marvel's poster choices), per release |
+| `state\` | what the modules save themselves (message texts, chosen pictures, high scores, the Star Wars, Far Side and Dilbert modules' settings, Sounder's folder, Marvel's poster choices), per release |
 | `thumbs\` | the settings window's module pictures |
 | `logs\saver-last.log` | how the last screen saver run went and why it ended |
 

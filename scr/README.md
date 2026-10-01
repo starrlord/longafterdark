@@ -21,13 +21,15 @@ files together in either of these places:
 Screen Saver Settings lists it as "Long After Dark": the `.scr`'s string
 resource 1 (`IDS_DESCRIPTION`), which Windows shows instead of the file name.
 
-The modules come from your own discs: any of the twelve releases (eleven of
+The modules come from your own discs: any of the fourteen releases (eleven of
 After Dark modules: After Dark 4.0 Deluxe, After Dark 3.2, Totally Twisted
 After Dark, After Dark 10th Anniversary, The Simpsons Screen Saver, Star Trek:
 The Screen Saver, which is After Dark 2.0b on two floppies, Marvel Comics
 Screen Posters, Snoopy's Screen Savers, The Looney Tunes Screen Saver,
-ScreamSavers and The Disney Collection Screen Saver; and LucasArts' Star Wars
-Screen Entertainment, whose modules run on Delrina's Intermission engine), from
+ScreamSavers and The Disney Collection Screen Saver; and three whose modules
+run on Delrina's Intermission engine: LucasArts' Star Wars Screen
+Entertainment, and Delrina's The Far Side Screen Saver Collection and Scott
+Adams' Dilbert Screen Saver Collection), from
 the disc (or the floppies), an image of it, a copy of its files, or the
 Internet Archive download. Click **Import…** in the settings dialog (or run `adimport.exe`) to
 copy them to `%LOCALAPPDATA%\LongAfterDark\assets\win`. Until then the saver
@@ -317,8 +319,8 @@ column at most 1240 DIP wide, centred.
   screen saver." (`docs/AUDIO.md` §9; see **Sound** below). The
   slider is adw_ui's `init_slider`: Right and Up raise it by 1, Left and
   Down lower it, Page Up / Page Down by 10, Home / End to 0 / 100.
-* The footer: **Import…** with a line saying what is imported ("284
-  modules from 12 releases", or "84 modules from After Dark 4.0 Deluxe"),
+* The footer: **Import…** with a line saying what is imported ("314
+  modules from 14 releases", or "84 modules from After Dark 4.0 Deluxe"),
   then the credit, then **Preview** (full screen, of the module the details show; greyed for
   a module this host can't run yet, or whose file is missing, and while the
   details show none), **OK** and **Cancel**. The credit, "Made With Love by
@@ -331,7 +333,8 @@ column at most 1240 DIP wide, centred.
   hover cue high contrast keeps, whose hover fill is the window colour). It
   sits in the free space between the assets line's text and Preview, centred
   there and on the buttons, and shows only when its whole box fits with
-  24 DIP clear of both: beside "284 modules from 12 releases" it fits the
+  24 DIP clear of both: beside "314 modules from 14 releases" (as long as
+  the twelve releases' "284 modules from 12 releases") it fits the
   first-open window at every scale, and the narrowest one at 100% only (at
   the other scales it gives way there: the line is a digit longer than the
   seven releases' "232 modules from 7 releases", beside which it fitted at
@@ -353,16 +356,16 @@ column at most 1240 DIP wide, centred.
 Until the modules are imported the details card is one welcome: a picture
 across its top (the night sky, the moon and two flying toasters), "Welcome to
 Long After Dark", what importing does (the original modules of After Dark and
-Star Wars Screen Entertainment, from any of the twelve releases' discs, an image,
+Star Wars Screen Entertainment, from any of the fourteen releases' discs, an image,
 or the Internet Archive; `welcome_text` in `ui_model.h`) and an **Import a
 release…** button (the importer's window is "Import a release"). The
 footer's Import is hidden meanwhile (it is the same command), its line reads
 "Nothing imported yet" (the credit beside it as ever), Single/Random are greyed, and the list shows a few
 faint placeholder rows and "Your modules appear here after import". "Long
-After Dark" stays the product's name; the words for the releases fit all twelve
+After Dark" stays the product's name; the words for the releases fit all fourteen
 (not every one is After Dark's, and Star Trek, the Simpsons, Marvel, Snoopy's
-Screen Savers, the Looney Tunes (also on a CD), ScreamSavers and the Disney
-Collection came on floppies, which "discs" covers).
+Screen Savers, the Looney Tunes (also on a CD), ScreamSavers, the Disney
+Collection, The Far Side and Dilbert came on floppies, which "discs" covers).
 
 **Thumbnails.** A module with no icon of its own is shown by a square of one
 of its own frames: a third of the screen's height around the busiest part of
@@ -934,7 +937,7 @@ only reads it.
   and on the buttons, the phrase on one line inside its box; hidden only
   without room, which one release's long title or the assets line at its
   longest leaves none of in the narrowest window; shown at the first-open
-  size with twelve releases, "284 modules from 12 releases"), the settings panel's rows (whole-row extents, read-only and
+  size with fourteen releases, "314 modules from 14 releases"), the settings panel's rows (whole-row extents, read-only and
   unlabelled rows), string-slider stops with repeated labels (and
   `boldStop`), the thumbnail crop and quality gate, the names shown whole
   (every package's copy, `moduleName`-keyed, suffix kept), `--capabilities`
