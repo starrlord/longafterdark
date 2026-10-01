@@ -17,7 +17,7 @@ namespace adw::scr {
 namespace {
 
 constexpr UINT_PTR kTileSubclass = 21, kChevronSubclass = 22;
-enum MenuCommand : UINT { kMenuShowOnly = 1, kMenuShowAll = 2, kMenuChangeCover = 3 };
+enum MenuCommand : UINT { kMenuShowOnly = 1, kMenuShowAll = 2, kMenuChangeCover = 3, kMenuRemove = 4 };
 
 RECT rc_of(const Rc& r) { return RECT{r.x, r.y, r.right(), r.bottom()}; }
 RECT offset(RECT r, int dx, int dy) {
@@ -391,6 +391,10 @@ void CoverStrip::on_context_menu(HWND from, LPARAM lp) {
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   const bool can = cb_.can_change_cover && cb_.can_change_cover();
   AppendMenuW(menu, MF_STRING | (can ? 0 : MF_GRAYED), kMenuChangeCover, L"Change cover…");
+  // Last, as the one that takes something away: adimport asks first.
+  const std::wstring remove = L"Remove " + tiles_[i].short_title + L"…";
+  const bool can_remove = cb_.can_remove && cb_.can_remove();
+  AppendMenuW(menu, MF_STRING | (can_remove ? 0 : MF_GRAYED), kMenuRemove, remove.c_str());
   const UINT cmd = (UINT)TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN, pt.x, pt.y, 0,
                                         container_, nullptr);
   DestroyMenu(menu);
@@ -407,6 +411,9 @@ void CoverStrip::on_context_menu(HWND from, LPARAM lp) {
     case kMenuChangeCover:
       if (cb_.change_cover) cb_.change_cover(i);
       break;
+    case kMenuRemove:
+      if (cb_.remove) cb_.remove(i);
+      break;
   }
 }
 
@@ -419,12 +426,16 @@ LRESULT CALLBACK CoverStrip::tile_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp, U
     case WM_KEYDOWN: {
       const int n = (int)self->buttons_.size(), i = self->index_of(h);
       if (n == 0 || i < 0) break;
+      // On several rows, Up and Down go to the tile above or below (the last
+      // one when the row below is shorter), and stop at the first and last
+      // rows; on one row they step back and on, as Left and Right do.
+      const int cols = self->S_.rows > 1 ? std::max(1, self->S_.cols) : 0;
       int to = -1;
       switch (wp) {
-        case VK_LEFT:
-        case VK_UP: to = (i + n - 1) % n; break;
-        case VK_RIGHT:
-        case VK_DOWN: to = (i + 1) % n; break;
+        case VK_LEFT: to = (i + n - 1) % n; break;
+        case VK_RIGHT: to = (i + 1) % n; break;
+        case VK_UP: to = cols ? (i >= cols ? i - cols : i) : (i + n - 1) % n; break;
+        case VK_DOWN: to = cols ? (i / cols < (n - 1) / cols ? std::min(n - 1, i + cols) : i) : (i + 1) % n; break;
         case VK_HOME: to = 0; break;
         case VK_END: to = n - 1; break;
       }

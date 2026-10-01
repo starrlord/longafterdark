@@ -195,35 +195,48 @@ void SourcesPage::build() {
   // Every release by name until some are imported; then how many, the list
   // below naming what is here (ten and more names would crowd it out).
   intro_ = add_text(sources_intro(!rows_.empty()), Face::body, Ink::text2, body);
+  // What the last window did, once ("Removed …").
+  if (!s_.notice.empty()) {
+    notice_ = add_text(s_.notice, Face::body, Ink::text, body);
+    s_.notice.clear();
+  }
   if (!rows_.empty()) {
     installed_label_ = add_text(L"Installed", Face::body_strong, Ink::text, body, true);
     list_ = std::make_unique<ScrollPanel>(*this, &t_, ui::Surface::card, body);
     SetWindowTextW(list_->hwnd(), L"Installed");
+    // One cover per release, each a button (its text is what screen readers
+    // call it; the page draws it) that opens the release's menu. Only one is
+    // a tab stop (the first, then the one last focused); arrows move.
+    if (!s_.offscreen) {
+      tip_ = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+                             CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, hwnd_, nullptr,
+                             GetModuleHandleW(nullptr), nullptr);
+      SendMessageW(tip_, TTM_SETMAXTIPWIDTH, 0, px(360));
+      ui::theme_native_control(tip_, t_.pal.dark && !t_.pal.high_contrast);
+    }
     tiles_.resize(rows_.size());
     for (size_t i = 0; i < rows_.size(); ++i) {
       if (!rows_[i].cover.tile.empty()) ui::load_image(rows_[i].cover.tile.wstring(), tiles_[i]);
-      row_title_.push_back(add_text(rows_[i].title, Face::body_strong, Ink::text, list_->hwnd(), true, Bg::card));
-      row_detail_.push_back(add_text(rows_[i].detail, Face::caption, Ink::text2, list_->hwnd(), true, Bg::card));
-      row_link_.push_back(add_button(kIdChangeCoverBase + registry_index(rows_[i].id), L"Change cover…",
-                                     ui::ButtonRole::subtle, 0, list_->hwnd(), ui::Surface::card));
-      // Every row's link reads the same: screen readers hear which release it is for.
-      ui::set_accessible_name(row_link_.back(), L"Change the cover of " + rows_[i].title + L"…");
-    }
-    list_->painter = [this](HDC dc, int dy) {
-      RECT cr{};
-      GetClientRect(list_->hwnd(), &cr);
-      for (size_t i = 0; i < rows_.size(); ++i) {
-        const int y = (int)i * row_h_ + dy;
-        if (y + row_h_ < 0 || y > cr.bottom) continue;
-        if (i > 0) {
-          RECT line{px(16), y, cr.right - px(16), y + t_.hairline()};
-          ui::fill_rect(dc, line, t_.pal.divider);
-        }
-        RECT art{px(16), y + px(8), px(16) + px(48), y + px(8) + px(60)};
-        ui::draw_cover(dc, art, tiles_[i].empty() ? nullptr : &tiles_[i], rows_[i].title, t_);
+      HWND b = add_button(kIdTileBase + registry_index(rows_[i].id), installed_tile_name(rows_[i]), ui::ButtonRole::standard,
+                          0, list_->hwnd(), ui::Surface::card);
+      LONG_PTR style = GetWindowLongPtrW(b, GWL_STYLE) & ~(LONG_PTR)(BS_MULTILINE | WS_TABSTOP);
+      if (i == 0) style |= WS_TABSTOP;
+      SetWindowLongPtrW(b, GWL_STYLE, style);
+      SetWindowSubclass(b, tile_proc, 1, reinterpret_cast<DWORD_PTR>(this));
+      tile_btn_.push_back(b);
+      if (tip_) {
+        TOOLINFOW ti{sizeof(ti)};
+        ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+        ti.hwnd = hwnd_;
+        ti.uId = (UINT_PTR)b;
+        const std::wstring tip = installed_tile_tip(rows_[i]);
+        ti.lpszText = const_cast<wchar_t*>(tip.c_str());
+        SendMessageW(tip_, TTM_ADDTOOLW, 0, (LPARAM)&ti);
       }
-    };
-    installed_note_ = add_text(L"Importing a release again replaces it; the others are kept.", Face::caption, Ink::text3, body);
+    }
+    installed_note_ = add_text(L"Click a cover to change it or to remove the release. Importing a release again replaces "
+                               L"it; the others are kept.",
+                               Face::caption, Ink::text3, body);
     if (!missing_.empty()) {
       covers_note_ = add_text(missing_covers_note(missing_.size()), Face::body, Ink::text2, body);
       covers_link_ = add_button(kIdGetCovers, L"Get the covers", ui::ButtonRole::subtle, L'', body);
@@ -256,8 +269,26 @@ void SourcesPage::build() {
 int SourcesPage::layout(int w, int max_h) {
   const int x0 = px(kMargin), cw = w - 2 * x0, fm = ui::focus_margin(t_.dpi);
   const int hl = t_.hairline(), pad = px(4);
-  row_h_ = px(76);
-  const int natural = row_h_ * (int)rows_.size();
+  // The installed covers: a grid in the card, 8 DIP in from its edges and
+  // apart, with as many columns as cells of at least 100 DIP fit, sharing
+  // the width (fewer releases than that keep the cells' width, from the
+  // left). A cell is its cover (64x80, 8 DIP from its top) with the short
+  // title and the module count under it, a caption line each.
+  const int pw = cw - 2 * hl, edge = px(8), gap = px(8);
+  const int n = (int)rows_.size();
+  const int cap = std::max(1, (pw - 2 * edge + gap) / (px(100) + gap));
+  const int cell_w = std::max(px(72), (pw - 2 * edge - (cap - 1) * gap) / cap);
+  int line = px(16);
+  if (HDC dc = GetDC(hwnd_)) {
+    line = std::max(line, (int)ui::measure_text(dc, L"Ag", t_.fonts.caption, DT_SINGLELINE).cy);
+    ReleaseDC(hwnd_, dc);
+  }
+  const int cell_h = px(8) + px(80) + px(6) + 2 * line + px(8);
+  cols_ = cap;
+  row_h_ = cell_h + gap;
+  const int rows = (n + cap - 1) / cap;
+  // Whole rows of the grid show in a list `k * row_h_ + 2 * edge - gap` tall.
+  const int frame = 2 * edge - gap, natural = rows ? rows * row_h_ + frame : 0;
   // The body's content, in its own coordinates, with the installed list
   // `list_h` tall; placed only when `apply`. Returns the content height.
   auto content = [&](int list_h, bool apply) {
@@ -265,6 +296,11 @@ int SourcesPage::layout(int w, int max_h) {
     const int ih = text_height(intro_, cw);
     if (apply) body_->put(intro_, x0, y, cw, ih);
     y += ih + px(kGap);
+    if (notice_) {
+      const int nh = text_height(notice_, cw);
+      if (apply) body_->put(notice_, x0, y - px(8), cw, nh);
+      y += nh + px(kGap) - px(8);
+    }
     if (list_) {
       const int lh = text_height(installed_label_, cw);
       if (apply) body_->put(installed_label_, x0, y, cw, lh);
@@ -309,37 +345,28 @@ int SourcesPage::layout(int w, int max_h) {
     }
     return y + px(16);
   };
-  // Too tall for the work area: the installed list scrolls in its card,
-  // showing as many whole rows as fit (two at the least) when that makes the
-  // page fit, else as many as fit down to one (the part of a row that shows
-  // says there are more: ten releases and more at 150% on a 1080p screen);
-  // when even one row does not fit, the whole body scrolls instead, with the
-  // list at its full height, so only one thing ever scrolls.
+  // Too tall for the work area (on a short screen; three rows of covers hold
+  // fourteen releases): the grid scrolls in its card, showing as many whole
+  // rows as fit (two at the least) when that makes the page fit, else as
+  // many as fit down to one (the part of a row that shows says there are
+  // more); when even one row does not fit, the whole body scrolls instead,
+  // with the grid at its full height, so only one thing ever scrolls.
   const int top = header_h(), footer = px(kFooter);
   int list_h = natural;
   if (top + content(natural, false) + footer > max_h) {
-    const int shrunk = std::min(natural, 2 * row_h_);
+    const int shrunk = std::min(natural, 2 * row_h_ + frame);
     // The content grows with the list's height one for one.
     const int room = max_h - top - footer - content(0, false);
-    if (room >= shrunk) list_h = std::max(shrunk, room / row_h_ * row_h_);
-    else if (room >= std::min(natural, row_h_)) list_h = room;
+    if (room >= shrunk) list_h = std::max(shrunk, (room - frame) / row_h_ * row_h_ + frame);
+    else if (room >= std::min(natural, row_h_ + frame)) list_h = room;
   }
-  list_heights_ = list_ ? ListHeights{list_h, natural, row_h_} : ListHeights{};
+  list_heights_ = list_ ? ListHeights{list_h, natural, row_h_, rows, cap} : ListHeights{};
   const int content_h = content(list_h, true);
   const int view_h = std::max(px(96), std::min(content_h, max_h - top - footer));
   if (list_) {
-    const int pw = cw - 2 * hl;
-    const int lw_max = pw / 3;
-    for (size_t i = 0; i < rows_.size(); ++i) {
-      const int ry = (int)i * row_h_;
-      const int lw = std::min(lw_max, button_width(row_link_[i], 0) - px(8));
-      const int lx = pw - px(12) - lw;
-      list_->put(row_link_[i], lx - fm, ry + (row_h_ - px(kControlH)) / 2 - fm, lw + 2 * fm, px(kControlH) + 2 * fm);
-      const int tx = px(16) + px(48) + px(16), tw = std::max(px(40), lx - px(12) - tx);
-      const int th = text_height(row_title_[i], tw), dh = text_height(row_detail_[i], tw);
-      const int block = th + px(2) + dh, ty = ry + (row_h_ - block) / 2;
-      list_->put(row_title_[i], tx, ty, tw, th);
-      list_->put(row_detail_[i], tx, ty + th + px(2), tw, dh);
+    for (int i = 0; i < n; ++i) {
+      const int x = edge + (i % cap) * (cell_w + gap), y = edge + (i / cap) * row_h_;
+      list_->put(tile_btn_[i], x - fm, y - fm, cell_w + 2 * fm, cell_h + 2 * fm);
     }
     list_->set_view(pw, list_h, natural);   // where the body put it
   }
@@ -354,6 +381,151 @@ int SourcesPage::layout(int w, int max_h) {
 }
 
 void SourcesPage::paint(HDC) {}
+
+int SourcesPage::tile_index(HWND h) const {
+  for (size_t i = 0; i < tile_btn_.size(); ++i)
+    if (tile_btn_[i] == h) return (int)i;
+  return -1;
+}
+
+// A cover the arrow keys reach takes the focus and becomes the tab stop.
+void SourcesPage::focus_tile(int i) {
+  if (i < 0 || i >= (int)tile_btn_.size()) return;
+  SetFocus(tile_btn_[i]);
+}
+
+LRESULT CALLBACK SourcesPage::tile_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR ref) {
+  auto* self = reinterpret_cast<SourcesPage*>(ref);
+  switch (msg) {
+    case WM_GETDLGCODE:
+      // The arrows move between the covers here, not in the dialog manager.
+      return DefSubclassProc(h, msg, wp, lp) | DLGC_WANTARROWS;
+    case WM_KEYDOWN: {
+      const int n = (int)self->tile_btn_.size(), i = self->tile_index(h), cols = std::max(1, self->cols_);
+      if (n == 0 || i < 0) break;
+      int to = -1;
+      switch (wp) {
+        case VK_LEFT: to = (i + n - 1) % n; break;
+        case VK_RIGHT: to = (i + 1) % n; break;
+        // Up and Down: the cover above or below (the last one when the row
+        // below is shorter), stopping at the first and last rows.
+        case VK_UP: to = i >= cols ? i - cols : i; break;
+        case VK_DOWN: to = i / cols < (n - 1) / cols ? std::min(n - 1, i + cols) : i; break;
+        case VK_HOME: to = 0; break;
+        case VK_END: to = n - 1; break;
+      }
+      if (to < 0) break;
+      self->focus_tile(to);
+      return 0;
+    }
+    case WM_SETFOCUS:
+      // The one tab stop among the covers is the one last focused.
+      for (HWND b : self->tile_btn_) {
+        const LONG_PTR style = GetWindowLongPtrW(b, GWL_STYLE);
+        const LONG_PTR want = b == h ? (style | WS_TABSTOP) : (style & ~(LONG_PTR)WS_TABSTOP);
+        if (want != style) SetWindowLongPtrW(b, GWL_STYLE, want);
+      }
+      break;
+    case WM_NCDESTROY:
+      RemoveWindowSubclass(h, tile_proc, 1);
+      break;
+  }
+  return DefSubclassProc(h, msg, wp, lp);
+}
+
+// A cover: its picture with the short title and the module count under it,
+// on the card, with a fill under the pointer and the focus ring around it.
+bool SourcesPage::draw_button(NMCUSTOMDRAW* cd, LRESULT* result) {
+  const int i = tile_index(cd->hdr.hwndFrom);
+  if (i < 0) return false;
+  *result = CDRF_SKIPDEFAULT;
+  if (cd->dwDrawStage != CDDS_PREPAINT) {
+    *result = CDRF_DODEFAULT;
+    return true;
+  }
+  const ui::Palette& p = t_.pal;
+  const float s = t_.dpi / 96.0f;
+  HWND h = cd->hdr.hwndFrom;
+  const RECT cr = cd->rc;
+  const int w = std::max(1L, cr.right - cr.left), hgt = std::max(1L, cr.bottom - cr.top);
+  HDC dc = CreateCompatibleDC(cd->hdc);
+  HBITMAP bmp = CreateCompatibleBitmap(cd->hdc, w, hgt);
+  HGDIOBJ old = SelectObject(dc, bmp);
+  SetViewportOrgEx(dc, -cr.left, -cr.top, nullptr);
+  ui::fill_rect(dc, cr, p.card);
+  const int fm = ui::focus_margin(t_.dpi);
+  RECT body = cr;
+  InflateRect(&body, -fm, -fm);
+  const bool hot = (cd->uItemState & CDIS_HOT) != 0, pressed = (cd->uItemState & CDIS_SELECTED) != 0;
+  if (p.high_contrast) {
+    if (hot || pressed) ui::stroke_round(dc, body, 4 * s, p.accent, 2.0f * t_.hairline());
+  } else if (hot || pressed) {
+    ui::fill_round(dc, body, 4 * s, pressed ? p.control_pressed : p.control_hover);
+  }
+  const int aw = px(64), ah = px(80);
+  const RECT art{body.left + (body.right - body.left - aw) / 2, body.top + px(8),
+                 body.left + (body.right - body.left - aw) / 2 + aw, body.top + px(8) + ah};
+  ui::draw_cover(dc, art, tiles_[i].empty() ? nullptr : &tiles_[i], rows_[i].title, t_);
+  const int line = (body.bottom - px(8) - (art.bottom + px(6))) / 2;
+  const UINT flags = DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX;
+  RECT title{body.left + px(4), art.bottom + px(6), body.right - px(4), art.bottom + px(6) + line};
+  ui::draw_text(dc, rows_[i].short_title, title, t_.fonts.caption, p.text, flags);
+  RECT count{title.left, title.bottom, title.right, title.bottom + line};
+  ui::draw_text(dc, rows_[i].modules, count, t_.fonts.caption, p.text2, flags);
+  const bool focus = ((cd->uItemState & CDIS_FOCUS) || ui::focused_window() == h) && ui::keyboard_cues(h);
+  if (focus) ui::draw_focus_ring(dc, cr, 4 * s + fm, p, s);
+  SetViewportOrgEx(dc, 0, 0, nullptr);
+  BitBlt(cd->hdc, cr.left, cr.top, w, hgt, dc, 0, 0, SRCCOPY);
+  SelectObject(dc, old);
+  DeleteObject(bmp);
+  DeleteDC(dc);
+  return true;
+}
+
+// A cover's menu, at `pt` (screen), or under the cover ({-1, -1}: a click,
+// Enter or Space, Shift+F10, the Apps key).
+void SourcesPage::show_menu(int i, POINT pt) {
+  if (i < 0 || i >= (int)rows_.size()) return;
+  if (pt.x == -1 && pt.y == -1) {
+    RECT r{};
+    GetWindowRect(tile_btn_[i], &r);
+    const int fm = ui::focus_margin(t_.dpi);
+    pt = POINT{r.left + fm, r.bottom - fm};
+  }
+  const int reg = registry_index(rows_[i].id);
+  HMENU menu = CreatePopupMenu();
+  AppendMenuW(menu, MF_STRING, kIdChangeCoverBase + reg, L"Change cover…");
+  // Last, as the one that takes something away: the next window asks first.
+  AppendMenuW(menu, MF_STRING, kIdRemoveBase + reg, (L"Remove " + rows_[i].short_title + L"…").c_str());
+  const int cmd = (int)TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN, pt.x, pt.y, 0,
+                                      hwnd_, nullptr);
+  DestroyMenu(menu);
+  if (cmd) command(cmd, BN_CLICKED, nullptr);
+}
+
+bool SourcesPage::context_menu(HWND ctl, POINT pt) {
+  const int i = tile_index(ctl);
+  if (i < 0) return false;
+  SetFocus(ctl);
+  show_menu(i, pt);
+  return true;
+}
+
+// "Change cover…" and "Remove…" of an installed release (its cover's menu,
+// or TDM_CLICK_BUTTON).
+bool SourcesPage::menu_command(int id) const {
+  auto reg = builtin_packages();
+  for (int base : {kIdChangeCoverBase, kIdRemoveBase}) {
+    if (id < base || id >= base + (int)reg.size()) continue;
+    const std::string rid = reg[id - base].id;
+    return std::any_of(rows_.begin(), rows_.end(), [&](const InstalledRow& r) { return r.id == rid; });
+  }
+  return false;
+}
+
+void SourcesPage::theme_changed() {
+  if (tip_) ui::theme_native_control(tip_, t_.pal.dark && !t_.pal.high_contrast);
+}
 
 void SourcesPage::show_caution(const std::wstring& text) {
   set_text(caution_, text);
@@ -405,9 +577,20 @@ void SourcesPage::command(int id, int, HWND) {
       return;
   }
   auto reg = builtin_packages();
+  if (id >= kIdTileBase && id < kIdTileBase + (int)reg.size()) {
+    // A cover: its menu, under it.
+    for (size_t i = 0; i < rows_.size(); ++i)
+      if (rows_[i].id == reg[id - kIdTileBase].id) show_menu((int)i, POINT{-1, -1});
+    return;
+  }
+  if (!menu_command(id)) return;
   if (id >= kIdChangeCoverBase && id < kIdChangeCoverBase + (int)reg.size()) {
     cover_id = reg[id - kIdChangeCoverBase].id;
     choice = Choice::change_cover;
+    finish(id);
+  } else if (id >= kIdRemoveBase && id < kIdRemoveBase + (int)reg.size()) {
+    cover_id = reg[id - kIdRemoveBase].id;
+    choice = Choice::remove;
     finish(id);
   }
 }
@@ -1016,6 +1199,158 @@ void CoverPage::command(int id, int, HWND) {
     case kIdDownloadCover: start(Action::refresh); return;
     case IDOK: finish(IDOK); return;
   }
+}
+
+// ==== Remove ============================================================================
+
+RemovePage::RemovePage(Session& s, std::string id) : Page(s), id_(std::move(id)) {
+  const Package* p = find_package(id_);
+  title_ = p ? to_wide(p->title) : to_wide(id_);
+}
+
+RemovePage::~RemovePage() {
+  if (hwnd_) KillTimer(hwnd_, 3);
+  wait_for_worker(worker_, worker_done_, hwnd_);
+  destroy_window();
+}
+
+void RemovePage::build() {
+  for (InstalledRow& r : installed_rows(s_.assets)) {
+    if (r.id != id_) continue;
+    row_ = std::move(r);
+    installed_ = true;
+  }
+  if (!installed_) {
+    row_.id = id_;
+    row_.title = title_;
+    row_.cover = cover_info(id_, s_.assets);
+  }
+  if (!row_.cover.tile.empty()) ui::load_image(row_.cover.tile.wstring(), tile_);
+  question_ = add_text(installed_ ? remove_question(title_) : title_, Face::subtitle, Ink::text);
+  detail_ = add_text(installed_ ? row_.detail : L"", Face::caption, Ink::text2);
+  text_ = add_text(installed_ ? remove_text(row_) : not_installed_text(title_), Face::body, Ink::text);
+  bar_ = make_progress(hwnd_, &t_);
+  ShowWindow(bar_, SW_HIDE);
+  status_ = add_text(L"", Face::body, Ink::text2);
+  ShowWindow(status_, SW_HIDE);
+  // Remove is the accent button: the user chose "Remove…" to come here.
+  remove_ = add_button(kIdRemove, L"Remove", ui::ButtonRole::accent);
+  cancel_btn_ = add_button(IDCANCEL, installed_ ? L"Cancel" : L"Close", ui::ButtonRole::standard);
+  if (!installed_) ShowWindow(remove_, SW_HIDE);
+}
+
+int RemovePage::layout(int w, int) {
+  const int x0 = px(kMargin);
+  int y = header_h() + px(16);
+  // The cover at the left (96x120), everything else in a column beside it.
+  art_ = RECT{x0, y, x0 + px(96), y + px(120)};
+  const int tx = x0 + px(96) + px(24), tw = w - x0 - tx;
+  auto shown = [](HWND h) { return (GetWindowLongW(h, GWL_STYLE) & WS_VISIBLE) != 0; };
+  int ty = y;
+  for (HWND h : {question_, detail_, text_}) {
+    if (h == detail_ && row_.detail.empty()) continue;
+    const int hh = text_height(h, tw);
+    place(h, tx, ty, tw, hh);
+    ty += hh + (h == question_ ? px(4) : px(12));
+  }
+  if (shown(bar_)) {
+    place(bar_, tx, ty + px(4), tw, px(12));
+    ty += px(12) + px(12);
+  }
+  if (shown(status_)) {
+    const int sh = text_height(status_, tw);
+    place(status_, tx, ty, tw, sh);
+    ty += sh + px(12);
+  }
+  y = std::max<int>(art_.bottom + px(12), ty) + px(12);
+  footer_top_ = y;
+  const int bw = button_width(cancel_btn_), rw = button_width(remove_);
+  const int by = y + (px(kFooter) - px(kControlH)) / 2;
+  place_body(cancel_btn_, w - x0 - bw, by, bw, px(kControlH));
+  place_body(remove_, w - x0 - bw - px(8) - rw, by, rw, px(kControlH));
+  return y + px(kFooter);
+}
+
+void RemovePage::paint(HDC dc) { ui::draw_cover(dc, art_, tile_.empty() ? nullptr : &tile_, title_, t_); }
+
+void RemovePage::set_status(const std::wstring& text, Ink ink) {
+  set_text(status_, text);
+  set_ink(status_, ink);
+  ShowWindow(status_, text.empty() ? SW_HIDE : SW_SHOW);
+  relayout();
+}
+
+void RemovePage::show_running() {
+  running_ = true;
+  EnableWindow(remove_, FALSE);
+  EnableWindow(cancel_btn_, FALSE);
+  ShowWindow(bar_, SW_SHOW);
+  set_marquee_style(bar_, true);
+  set_status(L"Removing " + title_ + L"…", Ink::text2);
+}
+
+void RemovePage::show_failure(const std::string& message) {
+  running_ = false;
+  ShowWindow(bar_, SW_HIDE);
+  set_marquee_style(bar_, false);
+  EnableWindow(remove_, TRUE);
+  EnableWindow(cancel_btn_, TRUE);
+  SetWindowTextW(remove_, L"Try again");
+  set_status(remove_failed_text(message), Ink::critical);
+}
+
+void RemovePage::start() {
+  if (running_ || !installed_) return;
+  worker_done_ = false;
+  show_running();
+  SetFocus(hwnd_);
+  SetTimer(hwnd_, 3, 100, nullptr);
+  const fs::path dest = s_.req.dest;
+  const std::string id = id_;
+  worker_ = std::thread([this, dest, id] {
+    RemoveResult r = remove_package(id, dest);
+    {
+      std::lock_guard<std::mutex> lock(m_);
+      result_ = std::move(r);
+    }
+    worker_done_ = true;
+  });
+}
+
+void RemovePage::finish_remove() {
+  KillTimer(hwnd_, 3);
+  if (worker_.joinable()) worker_.join();
+  RemoveResult r;
+  {
+    std::lock_guard<std::mutex> lock(m_);
+    r = result_;
+  }
+  if (r.status == Status::ok) {
+    removed_ = true;
+    s_.tally.release_removed();
+    finish(IDOK);
+    return;
+  }
+  s_.tally.import_result(r.status);
+  show_failure(r.message);
+  SetFocus(remove_);
+}
+
+void RemovePage::timer(UINT_PTR id) {
+  if (id == 3 && worker_done_) finish_remove();
+}
+
+void RemovePage::cancel() {
+  // Not while the folder is being moved aside: that takes a moment, and
+  // stopping it half-way is what the importer's recovery is for, not Esc.
+  if (running_) return;
+  finish(IDCANCEL);
+}
+
+void RemovePage::command(int id, int, HWND) {
+  if (running_) return;
+  if (id == kIdRemove) start();
+  else if (id == IDCANCEL) finish(IDCANCEL);
 }
 
 }  // namespace adw::import::gui

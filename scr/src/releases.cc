@@ -281,7 +281,7 @@ std::wstring tile_name(const Release& r, size_t modules) {
 std::wstring tile_tip(const Release& r, size_t modules) {
   return widen(r.title) + L" — " + savers(modules) +
          L"\r\nClick to show only this release’s screen savers, or several releases at once. Right-click to change "
-         L"its cover.";
+         L"its cover or remove it.";
 }
 
 std::wstring also_on_tip(const std::vector<std::string>& titles) {

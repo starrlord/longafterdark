@@ -199,6 +199,41 @@ chevron's box with its caption cut ("After D"). Now:
 * The fades are gone: nothing is cut, so nothing fades (`adw_ui`'s
   `fade_in_left` and `fade_in_right` are no longer used by the scr).
 
+**As built for fourteen releases: the covers wrap.** Having to click a
+chevron to find the releases past the seventh was the strip's weak point,
+so every cover now shows, on as many rows as they need
+(`StripInput::wrap`, `strip_grid`, `strip_band` in `ui_model.h`):
+
+* **Rows.** As few as hold every cover, and as even as can be: fourteen
+  where a row holds seven are 7 and 7, where it holds ten (compact) still 7
+  and 7, eight are 4 and 4, never 7 and 1. The rows are left-aligned on the
+  column and `kStripRowGap` (8 DIP) apart, the gap between two covers of a
+  row; only the last row may be shorter. The band is the rows of cells and
+  the 12-DIP gap under them: 236 DIP for two regular rows, 156 for two
+  compact ones (one row: 120 and 80, as before).
+* **Which form.** The regular covers when the client has the height for
+  their rows (the columns keeping what they have over a one-row regular band
+  at 760 DIP: client height − band ≥ 640), else the compact covers while
+  the columns keep at least their 600-DIP minimum, so the two columns never
+  get less height than they have without the strip. Fourteen (or twelve)
+  releases at 1040 DIP wide: two regular rows from 876 DIP tall, two compact
+  rows from 756. Only a client too short even for the compact rows (the
+  minimum 680 DIP, for eight releases and more) falls back to the one
+  compact row that scrolls between its chevrons, exactly as above, 8 to 11
+  covers at a time; the minimum window size is unchanged.
+* **First-open size.** The design height plus the band of the regular rows
+  at the first-open width (`design_client_h`): 1040 × 836 DIP for two to
+  seven releases, as before, and 1040 × 952 for eight to fourteen (two rows
+  of regular covers, the columns at their design heights), clamped to the
+  work area as before (a clamped height then gets the compact rows, or the
+  scrolling row).
+* **The status box** stays at the column's right edge, as tall as a cover,
+  centred on the rows of covers (on the 4-DIP grid).
+* **Keyboard.** Left and Right still step through every cover (wrapping),
+  Home and End go to the first and last; on two rows and more, Up and Down
+  go to the cover above or below (the last one when the row below is
+  shorter), stopping at the first and last rows.
+
 ### 1.4 Tile visuals
 
 A tile is drawn in this order: the hover backdrop, the art with 4-DIP
@@ -272,6 +307,9 @@ MSAA and UIA work with no custom accessibility code.
   * a separator
   * "Change cover…", which runs §1.11. It is greyed when `adimport.exe` is
     missing or an import or cover change is already running.
+  * (As built since fourteen releases) "Remove <shortTitle>…", last, which
+    runs §1.11's removal. It is greyed when "Change cover…" is, and while a
+    module's own settings window runs.
 
   In dark mode the menu is dark: call `ui::allow_dark_menus(pal.dark)`
   (§3.2) at startup and on every theme change.
@@ -439,6 +477,29 @@ Collections=simpsons,tt     ; the strip's filter: release (package) ids; empty o
   * 5 or any other code changes nothing.
 * **The scr never writes under the assets root.**
 
+**As built since fourteen releases: "Remove <shortTitle>…".** A release
+can be taken off the computer from its cover, the way its cover is changed:
+
+* **Launch.** The menu's last item starts `adimport.exe --gui --remove
+  <id>` the same way. adimport's own window asks first (§4.2, Remove), and
+  removes the release with `remove_package` (`--remove <id>`: its folder is
+  moved aside under the import lock, the catalog rewritten without it, the
+  folder deleted; its cover is kept, `covers\<id>`).
+* **Nothing of the release may be open meanwhile**, or its folder can't be
+  moved aside (the importer retries the rename for 2 s, then says the
+  folder is in use and nothing was removed). So while adimport runs, no
+  thumbnail is taken (the queue is emptied, and none is scheduled until it
+  exits), the live preview stops if it shows one of the release's modules
+  (it shows the night sky), and the item is greyed while a module's own
+  settings window runs. Import…, "Change cover…" and "Remove …" are greyed
+  as for a cover change.
+* **Exit code.** 0: the release is gone, and the dialog reloads the
+  catalog as after an import (its modules leave the list, the rotation and
+  the details; a chosen module of it gives way to the first row; the filter
+  forgets it; one release left hides the strip; the assets line counts what
+  is left). Anything else removed nothing (adimport showed why): the
+  preview starts again where it stopped.
+
 ### 1.12 Screenshot hook and tests (S)
 
 * **`AD_SCR_TEST_SCREENSHOT_STATE`** gains:
@@ -494,6 +555,23 @@ Collections=simpsons,tt     ; the strip's filter: release (package) ids; empty o
   empty after clicking back to the first stop, a saved filter, an import
   going from seven releases to twelve, and ScreamSavers' and Marvel's
   catalog screen.
+* **As built for fourteen releases (wrapping):** the report gains
+  `strip_rows=` and `strip_cols=`. `scr_unit_releases` pins the wrapped
+  layout at every scale for 1 to 14 releases (every cover whole on its row
+  and column, the fewest and evenest rows, nothing scrolling, no two
+  covers' focus rings touching, a row that fits laid out as before), which
+  form each window size gets (regular rows, compact rows or the scrolling
+  row), the first-open heights (836, 952) and the status box centred on the
+  rows. `config-twelve` renders two rows of regular covers (1040×952) and
+  of compact ones (1040×800, 900×800) and the scrolling row (900×680);
+  driven, it expects every cover in the first-open window and Down going to
+  the cover under the first, then shrinks the window to its smallest and
+  drives the scrolling row as before. `config-remove`: "Remove Simpsons…"
+  against `fakeimport.exe`, with the live preview on one of the Simpsons'
+  modules: it stops while adimport runs; exit 5 changes nothing and the
+  preview starts again, exit 0 reloads without the release
+  (`tests/fixtures/catalog-releases-no-simpsons.json`). `config-cover`
+  reaches "Change cover…" one item further up.
 
 ## 2. Covers: the importer pipeline
 
@@ -1247,7 +1325,8 @@ the importer), but may **not** change anything listed above.
    * **Installed** section (only when something is installed): one row per
      installed release with its cover at 48×60 (`draw_cover`), its title,
      "N modules · verified: image", and a "Change cover…" link that opens
-     §2.11 for that id.
+     §2.11 for that id. (As built for fourteen releases: a grid of covers,
+     §9.3.)
    * **Import from**: three `ButtonRole::card` buttons:
      * **101** "A disc image…" (glyph E958)
      * **102** "A drive or folder…" (glyph E8B7)
@@ -1541,7 +1620,12 @@ sections above stay the contract; this records the differences.
 * Command ids beyond §4.2: **400 +** registry index, "Change cover…" on
   Sources; **501** "Copy details" (Result, error); in the cover window
   **601** Choose a picture…, **602** Use the original cover, **603** Download
-  the original cover, and IDOK Done.
+  the original cover, and IDOK Done. Since fourteen releases: **300 +**
+  registry index, an installed release's cover on Sources, which opens its
+  menu, whose items are **400 +** "Change cover…" and **450 +** "Remove
+  <shortTitle>…" (not controls: `TDM_CLICK_BUTTON` presses them for an
+  installed release); in the Remove window **701** Remove and IDCANCEL
+  Cancel.
 * Screenshot keys beyond §4.3: `phase`, `result`, `package`, `status`,
   `caution`, `workarea`, `dpichange`, `themechange` and `report` (where the
   client area is in the picture, and `pal.base`; since the twelve releases,
@@ -1579,6 +1663,41 @@ sections above stay the contract; this records the differences.
   never the last log line.
 * The windows use the moon mark, drawn at run time, as their icon;
   `adimport.exe` itself still has no icon resource.
+* **As built for fourteen releases: covers on Sources, and removing a
+  release.** Fourteen rows of the installed list made Sources almost as
+  tall as a 4K screen at 150%. The installed releases are now a grid of
+  their covers in the card, 64×80 like the strip's regular ones, each with
+  its `shortTitle` and "N modules" in captions under it: as many columns as
+  cells of at least 100 DIP fit in the card (five in the 640-DIP window,
+  sharing its width), so fourteen releases take three rows (about 430 DIP
+  instead of 1064), and the window fits a 1080-line screen at 100%. A cover
+  is a push button that opens the release's menu ("Change cover…",
+  "Remove <shortTitle>…") under it on a click, Enter or Space, and at the
+  pointer on a right-click (Shift+F10 and the Apps key too); screen readers
+  call it "After Dark 4.0 Deluxe, 84 modules · verified against the
+  original disc", and its tooltip says the same and what a click offers.
+  One cover is a tab stop (the first, then the one last focused); Left and
+  Right step through them, Up and Down go a row, Home and End to the ends.
+  The note under the grid says "Click a cover to change it or to remove the
+  release." first. The fallback for a short work area is the list's,
+  counted in grid rows: as many whole rows as fit, two at the least, else
+  as many as fit, else the whole body scrolls; the report's `list=` is
+  `<shown>,<whole>,<row>,<rows>,<cols>`.
+  **Remove** (`--gui --remove <id>`, or "Remove…" on a cover): the
+  release's cover at 96×120 beside "Remove The Simpsons Screen Saver?",
+  what it holds ("15 modules · verified against the original disks") and
+  what removing does ("Its 15 modules are deleted from this computer, and
+  the screen saver stops showing them. Its cover is kept, and you can
+  import the release again at any time."); **Remove** (accent, the
+  default) and **Cancel**. Remove runs `remove_package` on a worker under a
+  marquee bar, Cancel greyed; done, the window closes: from Sources, back
+  to Sources, which no longer shows it and says "Removed The Simpsons
+  Screen Saver." once, its Cancel now Close; alone, adimport exits 0. A
+  failure (a file of it in use) shows in critical text ("Nothing was
+  removed. …"), with **Try again**. A release that isn't installed says so,
+  with only Close. Exit codes: 0 when it was removed, else the failure,
+  else 5. Screenshot keys: `page=remove` with `package=` and
+  `status=error|running`, and `notice=1` on Sources.
 * The Downloads page reads "already downloaded" from the default downloads
   folder (`gui::Request` has no download folder).
 * PACKAGES.md §5.2's "GUI restyle out of scope" is superseded by §4.

@@ -84,6 +84,15 @@ int run_flow(Session& s) {
     // COVERS.md §2.11: 0 when a cover changed, else 5 (errors were shown in the window).
     return s.tally.changed ? 0 : int(Status::cancelled);
   }
+  if (!r.remove.empty()) {
+    // adimport --gui --remove <id> (the settings dialog's "Remove …"): the
+    // window that asks, and removes it. 0 when it was removed, else the
+    // failure it showed, else 5.
+    RemovePage* rp = flow.go(std::make_unique<RemovePage>(s, r.remove));
+    if (!rp) return int(Status::error);
+    rp->run();
+    return s.tally.exit_code();
+  }
 
   Job job;
   bool have_job = false;
@@ -117,6 +126,13 @@ int run_flow(Session& s) {
         if (!cp) return int(Status::error);
         cp->run();
         break;   // back to the sources
+      }
+      case SourcesPage::Choice::remove: {
+        RemovePage* rp = flow.go(std::make_unique<RemovePage>(s, src->cover_id));
+        if (!rp) return int(Status::error);
+        rp->run();
+        if (rp->removed()) s.notice = removed_note(rp->title());
+        break;   // back to the sources (without it)
       }
       case SourcesPage::Choice::get_covers: {
         Job covers;
@@ -171,16 +187,19 @@ int run_flow(Session& s) {
 // monitor and cloaked), from synthetic state: no import, no network.
 //   AD_IMPORT_TEST_SCREENSHOT=<png>
 //   AD_IMPORT_TEST_SCREENSHOT_STATE=key=value;…
-//     page=sources|downloads|progress|result|error|cover   theme=light|dark|hc   dpi=<n>
+//     page=sources|downloads|progress|result|error|cover|remove   theme=light|dark|hc   dpi=<n>
 //     focus=<command id>   progress=<0..1>|marquee   phase=download|check_image|copy|verify|cover|finalize
 //     result=single|several|partial|covers (page=result)   job=covers (page=progress: "Get the covers")
-//     package=<id> (page=cover; default: the first installed)
+//     package=<id> (page=cover or remove; default: the first installed)
 //     caution=1 (page=sources: the "not a known disc" message)   status=ok|error|network|running (page=cover)
+//     status=error|running (page=remove: a removal that failed, or one under way)
+//     notice=1 (page=sources: the line a removal leaves, "Removed …")
 //     workarea=<w>x<h> (DIPs: the work area the window is fitted to; default unlimited)
 //     dpichange=<n> (without dpi=: WM_DPICHANGED as if dragged to a monitor at that DPI)
 //     themechange=light|dark|hc (after opening: a live theme change to that mode)
 //     report=<path> (where the client area is in the picture, and pal.base; on
-//       Sources also list=<shown>,<whole>,<row>: the installed list's heights in px)
+//       Sources also list=<shown>,<whole>,<row>,<rows>,<cols>: the installed covers' heights
+//       in px, and the grid's rows and columns)
 
 std::map<std::wstring, std::wstring> parse_state(const std::wstring& s) {
   std::map<std::wstring, std::wstring> kv;
@@ -237,6 +256,7 @@ int run_screenshot(Session& s, const std::wstring& png) {
   SourcesPage* src = nullptr;   // page=sources (the report's list heights)
   std::vector<InstalledRow> installed = installed_rows(s.assets);
   if (page == L"sources") {
+    if (kv[L"notice"] == L"1") s.notice = removed_note(L"The Simpsons Screen Saver");
     auto sp = std::make_unique<SourcesPage>(s);
     src = sp.get();
     pg = std::move(sp);
@@ -338,6 +358,18 @@ int run_screenshot(Session& s, const std::wstring& png) {
       p.done = 404643;
       cover->show_running(p);
     }
+  } else if (page == L"remove") {
+    std::string id = kv[L"package"].empty() ? (installed.empty() ? "deluxe" : installed.front().id) : to_utf8(kv[L"package"]);
+    auto rp = std::make_unique<RemovePage>(s, id);
+    RemovePage* remove = rp.get();
+    pg = std::move(rp);
+    if (!pg->open(nullptr)) return 1;
+    const std::wstring st = kv[L"status"];
+    if (st == L"running") remove->show_running();
+    else if (st == L"error")
+      remove->show_failure("cannot remove C:\\Users\\Pat\\AppData\\Local\\LongAfterDark\\assets\\win\\packages\\" + id +
+                           " (a file in it is in use \xE2\x80\x94 close Long After Dark and try again): The process cannot "
+                           "access the file because it is being used by another process.");
   } else {
     fprintf(stderr, "adimport: unknown screenshot page\n");
     return 1;
@@ -378,7 +410,7 @@ int run_screenshot(Session& s, const std::wstring& png) {
     std::string report = buf;
     if (src) {
       const SourcesPage::ListHeights l = src->list_heights();
-      snprintf(buf, sizeof(buf), "list=%d,%d,%d\n", l.shown, l.whole, l.row);
+      snprintf(buf, sizeof(buf), "list=%d,%d,%d,%d,%d\n", l.shown, l.whole, l.row, l.rows, l.cols);
       report += buf;
     }
     if (FILE* f = _wfopen(kv[L"report"].c_str(), L"wb")) {

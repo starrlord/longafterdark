@@ -151,7 +151,7 @@ foreach(_t run preview preview-parent-gone not-imported host-missing respawn sta
            config-thumbs list-top import preview-settings display-change
            input-play input-alt input-wake input-rotate input-monitors input-display-change seed seed-screens
            config-buttons
-           config-collections config-cover rotate-collections config-details data-root
+           config-collections config-cover config-remove rotate-collections config-details data-root
            sound sound-wake config-sound present config-abi rotate-abi rotate-abi-wait screen-abi screen-field numlock
            config-credit config-twelve rotate-monitors config-monitors config-stretch)
   add_test(NAME scr_smoke_${_t} COMMAND scr_smoke ${_t} ${_smoke_args})

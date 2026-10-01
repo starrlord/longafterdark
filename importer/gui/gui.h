@@ -21,6 +21,8 @@ struct Request {
   bool refresh_covers = false;          // --gui --refresh-covers: only a progress window over refresh_covers
   std::string refresh_id;               // ...of this package ("" = every installed one)
   bool force = false;                   // --refresh-covers --force
+  // Added with "Remove …" (additive; adimport.cc fills it):
+  std::string remove;                   // --gui --remove <id>: only the window that asks, then removes it
 };
 
 // Shows the importer's windows (COVERS.md §4) and returns the exit code (adw::import::Status).

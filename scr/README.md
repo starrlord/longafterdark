@@ -193,10 +193,21 @@ column at most 1240 DIP wide, centred.
   nothing fetches covers on its own). Each cover is a real toggle button
   ("The Simpsons Screen Saver, 15 screen savers, check box"; its tooltip
   ends "Right-click to change its cover."): the arrow keys, Home and End
-  move between them (one tab stop), Space toggles, Shift+F10 opens its menu:
-  **Show only …**, **Show all releases** and **Change cover…** (runs
+  move between them (one tab stop; on two rows, Up and Down go a row),
+  Space toggles, Shift+F10 opens its menu:
+  **Show only …**, **Show all releases**, **Change cover…** (runs
   `adimport.exe --gui --change-cover <id>` the way Import… runs; exit 0
-  reloads the catalog, keeping every check, the filter and unsaved values). With more releases than fit, the row scrolls by whole
+  reloads the catalog, keeping every check, the filter and unsaved values)
+  and **Remove <short title>…** (runs `adimport.exe --gui --remove <id>`,
+  whose window asks first; meanwhile no thumbnail is taken and the live
+  preview stops while it shows one of the release's modules, so nothing of
+  it is open; exit 0 reloads the catalog without it, anything else changes
+  nothing and the preview carries on). Every cover shows: covers that don't
+  fit on one row wrap onto more, as few rows as hold them and as even as can
+  be (fourteen: 7 and 7), regular while the window has the height for their
+  rows, else compact (`ui_model.h`: `strip_grid`, `strip_band`). Only a
+  window too short even for the compact rows (the smallest, with eight
+  releases and more) gets one compact row that scrolls by whole
   covers (chevrons at the ends, the wheel, or the keyboard focus): every stop
   shows as many whole covers, as many as fit between the two chevrons, and
   nothing of the others, so no cover or caption is ever cut and nothing lies
@@ -212,7 +223,9 @@ column at most 1240 DIP wide, centred.
   Space toggles while the chevrons have scrolled it away, comes into view,
   and with a filter saved (or kept through a reload) the row opens scrolled
   to the first selected cover. The
-  window opens at 1040×836 DIP with the strip (at least 680 tall; 716 without it).
+  window opens at 1040×836 DIP with the strip (1040×952 with eight releases
+  and more: two rows of regular covers; `design_client_h`), clamped to the
+  work area (at least 680 tall; 716 without it).
 * **Single module / Random** at the top left chooses what the saver plays.
   Below it, the **module list**, grouped by release (the release's title and
   its number of modules, oldest release first), with a hairline and 12 DIP of
@@ -973,8 +986,15 @@ only reads it.
   beside the tiles and each at one place across the stops, its place empty
   where it hides (the left one's unscrolled, the right one's at the last
   stop), every step one pitch, the 4-DIP grid
-  and 200% = 100% doubled; `layout_window` with the strip:
-  compact under 760 DIP, the status box clear of the tiles, and the columns
+  and 200% = 100% doubled; the wrapped strip at every scale with 1 to 14
+  releases, both forms, eight widths: every tile whole on its row and
+  column, the fewest and evenest rows (`strip_grid`), nothing scrolling,
+  no two tiles' focus rings touching, a row that fits laid out as before;
+  the bands (`strip_band`) and first-open heights (`design_client_h`: 836,
+  952); `layout_window` with the strip: regular rows while the client has
+  their height, else compact rows, else (only) the one compact row that
+  scrolls, at every size the columns at least their minimum, the status box
+  clear of the tiles and centred on their rows, and the columns
   keeping today's heights; the captions' shrink rule, and every registry
   short title ("Star Wars", "Star Trek", "Looney Tunes" and "ScreamSavers" included) measured in the real caption face at
   100–250%, each fitting whole; six releases (`tests/fixtures/catalog-six.json`:
@@ -991,10 +1011,10 @@ only reads it.
   Trek: The Screen Saver first, its group, "36 modules from 7 releases",
   its modules in Random without waiting for the host (After Dark's ABI),
   their 640x480, `first_module_screens` with them (theirs and Star Wars'
-  one screen, one seed picture), and seven covers: whole in the first-open
-  window and in the smallest one (compact covers) at 100–250%, scrolling in
-  a window as narrow but 760 DIP or more tall: five tiles at each stop, the
-  last stop the third); twelve releases (`tests/fixtures/catalog-twelve.json`:
+  one screen, one seed picture), and seven covers, every one shown at
+  100–250%: on a regular row in the first-open window, a compact one in the
+  smallest and in one as narrow but 836 DIP tall, two regular rows (four and
+  three) at 900×876); twelve releases (`tests/fixtures/catalog-twelve.json`:
   the seven and Marvel Comics Screen Posters, Snoopy's Screen Savers, The
   Looney Tunes Screen Saver, ScreamSavers and The Disney Collection Screen
   Saver among them by date, their groups, "46 modules from 12 releases",
@@ -1002,13 +1022,14 @@ only reads it.
   host, ScreamSavers' and Marvel's modules at their catalog 640x480 on every
   display at every Resolution setting and the other new releases' following
   the display, `first_module_screens` and a monitor's seed pictures with
-  them; twelve covers at 100–250%: regular ones never all side by side, the
-  first-open window seven at a time over six stops, one as narrow but 760
-  DIP or more tall five over eight, a large one nine over four; compact ones
-  eight over five in the smallest window, nine from 960 DIP wide, ten from
-  1032 (the first-open width, its height clamped under 760 DIP), eleven
-  from 1104, and all twelve side by side from 1120, left-aligned, with no
-  chevron; each stop clear of the status box; and
+  them; twelve covers at 100–250%: regular ones never all side by side but
+  on two rows of six from 876 DIP tall (the first-open window, 952; a large
+  one), compact ones on two rows from 756 (the first-open window clamped to
+  836 or 759); only shorter windows scroll one compact row, eight over five
+  stops in the smallest window, nine from 960 DIP wide, ten from 1032 (the
+  first-open width at 680 DIP), eleven from 1104, and all twelve side by
+  side from 1120, left-aligned, with no chevron; each stop clear of the
+  status box; and
   every release's title in the group header of the narrowest and the
   first-open list, measured in the real faces: the count and the pill always
   whole, and without a pill only the long titles ellipsized, never the
@@ -1135,7 +1156,14 @@ only reads it.
   arguments, no console window, Import… and the item greyed while it runs,
   exit 0 reloads the catalog keeping the filter, exit 5 doesn't; across the
   reload the host isn't asked again and a pe32 module's live preview runs
-  on in the same host),
+  on in the same host), `config-remove` ("Remove Simpsons…", the menu's
+  last item, against `fakeimport.exe` while the live preview shows one of
+  the Simpsons' modules: its arguments, no console window, Import… and the
+  importer's items greyed and the preview stopped while it runs; exit 5
+  changes nothing and the preview starts again; exit 0 reloads without the
+  release, `tests/fixtures/catalog-releases-no-simpsons.json`: four covers,
+  four groups, "15 modules from 4 releases", another release's module
+  previewed),
   `rotate-collections` (`/s` with `Collections`: only those releases play,
   and a byte-identical copy once), `rotate-monitors` (four `/s` runs on two
   monitors staged off every real one, the order fixed by
@@ -1195,22 +1223,27 @@ only reads it.
   first host started without a seed; where the desktop can be read back,
   the three pictures' sizes and parts and that host's `none taken` line),
   `config-twelve` (twelve releases, `tests/fixtures/catalog-twelve.json`:
-  seven off-screen renders at the first-open size, the smallest and one as
-  narrow but 760 DIP tall, at 100% and 150%, light, dark and high contrast,
-  unscrolled, at a stop in the middle and at the last: as many covers shown
-  as the layout says, each wholly in the strip and clear of the chevrons
-  (unscrolled, of the left one's place too) and the status line, the others
-  outside the strip, and nothing else drawn in the strip, checked on the
-  picture's pixels; the dialog driven by control ID at its first-open size
-  (clamped to the monitor's work area), as many covers at a time as
-  `layout_window` gives its client: the last cover, not shown, takes the
-  focus and scrolls into view, the left chevron takes it away a stop a
-  click, Space on it filters the list to its release and brings it back,
-  **Show all** shows all twelve, the left chevron back to the first stop
-  leaves its place empty, reopened with that filter saved the row opens at
-  its last stop, and from seven releases an import (`fakeimport.exe`
+  eight off-screen renders at the first-open size (two rows of regular
+  covers), one as wide but 800 DIP tall and one as narrow (two rows of
+  compact ones) and the smallest (one compact row that scrolls), at 100%
+  and 150%, light, dark and high contrast, unscrolled, at a stop in the
+  middle and at the last: as many covers shown, on as many rows, as the
+  layout says, each wholly in the strip and clear of the chevrons
+  (scrolling unscrolled, of the left one's place too) and the status line,
+  the others outside the strip, and nothing else drawn in the strip,
+  checked on the picture's pixels; the dialog driven by control ID at its
+  first-open size (clamped to the monitor's work area): every cover
+  `layout_window` gives its client, and on two rows Down on the first goes
+  to the one under it; then at its smallest, where the row scrolls, as many
+  covers at a time as `layout_window` gives that client: the last cover,
+  not shown, takes the focus and scrolls into view, the left chevron takes
+  it away a stop a click, Space on it filters the list to its release and
+  brings it back, **Show all** shows all twelve, the left chevron back to
+  the first stop leaves its place empty; reopened with that filter saved,
+  its cover shows; and from seven releases an import (`fakeimport.exe`
   leaving the twelve-release catalog) turns seven covers side by side into
-  twelve, unscrolled beside a right chevron, "46 modules from 12 releases";
+  twelve, as the same client lays them out (two compact rows in the seven's
+  836 DIP), "46 modules from 12 releases";
   a ScreamSavers and a Marvel module, After Dark modules with `"screen":
   "640x480"`, previewed at 640x480 where the others get the box's 16:9 480
   lines, and `/s` at the 720-line setting on a 16:9 monitor rotating

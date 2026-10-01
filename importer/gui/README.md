@@ -22,11 +22,12 @@ box.
 
 | Page | What it shows | Command ids |
 |---|---|---|
-| **Sources** (`--gui` with no source) | The header "Import a release"; an intro (`sources_intro`) that names every release of the registry while nothing is imported, and once something is gives their number in words instead ("Long After Dark runs the original Windows modules of twelve releases. Choose where to copy them from."), so the page keeps room for the list; the **Installed** releases, each with its cover (48×60), "N modules · verified against the original disc" (the original disks for a floppy release; "verified against the known ZIP" for a release known by the ZIP of its install files, `verified_words`, by the md5 the import came from) and a **Change cover…** link (its accessible name names the release: "Change the cover of After Dark 3.2…"); while any of them still shows a generated cover (an install from before covers, or an offline import), "N releases have no cover picture yet." with **Get the covers** (a progress window over `refresh_covers` for those releases, then what it got, then Sources again); three cards: **A disc image…** ("An ISO image of a CD or floppy images (.img), or a ZIP of them or of the install files; select every disk of a set." — its file dialog lists "Disc and floppy images, and ZIPs of them or of install files"; a ZIP of a set's floppy images, such as Star Trek's from the Internet Archive, is one file, and so is a ZIP that keeps a release's disks in `DISK<n>` folders, such as ScreamSavers'; Star Wars Screen Entertainment's set is five, though only floppies of its CD's build verify: the earlier builds' floppy sets found online fail verification (3) unless adimport runs with `--no-verify`), **A drive or folder…**, **Download from the Internet Archive…** (sizes; hidden when nothing can be downloaded); a folder that is no known release gets the caution "That is not a disc Long After Dark knows.", with `identify_folder`'s reason (for a folder whose `DISK<n>` folders sit beside anything else, first that it read them as they are, as the CLI's log says); "Files are copied to …"; **Cancel** (**Close** once something changed) | 101, 102, 103, 104 (Get the covers); 400 + registry index for Change cover…; IDCANCEL |
+| **Sources** (`--gui` with no source) | The header "Import a release"; an intro (`sources_intro`) that names every release of the registry while nothing is imported, and once something is gives their number in words instead ("Long After Dark runs the original Windows modules of twelve releases. Choose where to copy them from."), so the page keeps room for the list; the **Installed** releases as a grid of their covers (64×80, five to a row: fourteen on three rows), each with its short title and "N modules" under it, a button that opens the release's menu, **Change cover…** and **Remove <short title>…**, under it on a click, Enter or Space, at the pointer on a right-click (Shift+F10 and the Apps key too); screen readers call a cover "After Dark 4.0 Deluxe, 84 modules · verified against the original disc" (the original disks for a floppy release; "verified against the known ZIP" for a release known by the ZIP of its install files, `verified_words`, by the md5 the import came from), and its tooltip says that and what a click offers; one cover is a tab stop, the arrow keys move between them (Up and Down by a row), Home and End go to the ends; under the grid "Click a cover to change it or to remove the release. Importing a release again replaces it; the others are kept."; after a removal, "Removed <title>." under the intro, once; while any of them still shows a generated cover (an install from before covers, or an offline import), "N releases have no cover picture yet." with **Get the covers** (a progress window over `refresh_covers` for those releases, then what it got, then Sources again); three cards: **A disc image…** ("An ISO image of a CD or floppy images (.img), or a ZIP of them or of the install files; select every disk of a set." — its file dialog lists "Disc and floppy images, and ZIPs of them or of install files"; a ZIP of a set's floppy images, such as Star Trek's from the Internet Archive, is one file, and so is a ZIP that keeps a release's disks in `DISK<n>` folders, such as ScreamSavers'; Star Wars Screen Entertainment's set is five, though only floppies of its CD's build verify: the earlier builds' floppy sets found online fail verification (3) unless adimport runs with `--no-verify`), **A drive or folder…**, **Download from the Internet Archive…** (sizes; hidden when nothing can be downloaded); a folder that is no known release gets the caution "That is not a disc Long After Dark knows.", with `identify_folder`'s reason (for a folder whose `DISK<n>` folders sit beside anything else, first that it read them as they are, as the CLI's log says); "Files are copied to …"; **Cancel** (**Close** once something changed) | 101, 102, 103, 104 (Get the covers); 300 + registry index for a cover (its menu), and from the menu 400 + registry index for Change cover…, 450 + registry index for Remove…; IDCANCEL |
 | **Downloads** (from 103) | One card per release in registry order, fourteen today (limited by `--package`): cover, title, "CD image · 381.7 MB" / "Install files (ZIP) · 2.6 MB" / "2 floppy disk images · 2.8 MB" (the first copy's kind and size, every image of a floppy set counted: Star Wars Screen Entertainment's is "CD image · 6.9 MB", Star Trek's the two floppies, and the five later releases' "Install files (ZIP)"), "Imported · verified against the original disc" (a floppy release's: "disks"; a release known by its ZIP: "the known ZIP") / "Not imported yet", "already downloaded" (in `--download-dir`, else the default folder; a floppy set only when every image is there); **Every release not imported yet** when two or more are not; the md5 and downloads-folder note; **Back** | 200 + i, 299, IDCANCEL (Back, to Sources) |
 | **Progress** | The phase ("Downloading … from the Internet Archive (2 of 4)", "Copying …", "Getting the cover art" for `Progress::Phase::cover`, and for all of `--gui --refresh-covers` / Get the covers), a Fluent progress bar (determinate, or a sweep when the total is unknown), "123.4 MB of 400.0 MB (5.0 MB/s)" and the current item (the file being copied, verified or downloaded, or the cover's source; nothing when the step names none, never a log line). A step with nothing to count (a cover from the disc, the finishing step) shows no amount; a download with no bytes yet shows "Starting…", as each release of **Every release not imported yet** does under its own title until its first bytes come. **Cancel** greys and says "Cancelling…" until the worker has stopped; the window cannot be closed otherwise | IDCANCEL |
 | **Result** | A glyph (done E930 in the accent colour, partly done E7BA in caution, failed EA39 in critical), the heading and the text today's message boxes had ("The image matched the known image of …", and for a release known by the ZIP of its install files "The ZIP matched the known ZIP of …"); for a failure "Nothing was changed." and **Copy details** (the message and every mismatched file, to the clipboard) | IDOK (Done, default), 501 |
 | **Cover** (`--gui --change-cover <id>`, or Change cover… on Sources) | The release's cover at 192×240 with where it came from ("Box front · Wikisimpsons", "Installer art from your disc", "Your own picture", "No picture yet"); **Choose a picture…** (`set_cover`), **Use the original cover** (`clear_cover`, when your own picture is in use; the line under it says what the original is: "Original: Box front · Wayback Machine"), **Download the original cover** (`refresh_covers`; shown only when a better download exists and downloads are allowed, with what it gets under it: "Gets the Box front · Wayback Machine", and "your picture stays the cover" while one is set); the result in the window (caution or critical for problems); "Pictures stay on this computer, in …" | 601, 602, 603, IDOK (Done, default, Esc) |
+| **Remove** (`--gui --remove <id>`, or Remove… on a Sources cover) | The header "Remove a release"; the release's cover at 96×120 beside "Remove The Simpsons Screen Saver?" (`remove_question`), what it holds ("15 modules · verified against the original disks") and what removing does ("Its 15 modules are deleted from this computer, and the screen saver stops showing them. Its cover is kept, and you can import the release again at any time.", `remove_text`); **Remove** (accent, the default) and **Cancel**. Remove runs `remove_package` on a worker under a marquee bar ("Removing …", Cancel greyed, Esc ignored); done, the window closes (from Sources: back to Sources, which says "Removed …"). A failure, such as a file of the release in use, shows in the window in critical text ("Nothing was removed. Cannot remove …", `remove_failed_text`) with **Try again**; nothing changed. A release that isn't installed: "… is not installed, so there is nothing to remove." and only **Close** | 701 (Remove), IDCANCEL |
 
 Keyboard: Tab and Shift+Tab move between controls (the lists are part of
 the order), Enter presses the focused card or button (else the default),
@@ -37,13 +38,16 @@ Layout (COVERS.md §3.3): a client area 640 DIP wide (at least 560, less
 only when the work area is narrower), 24-DIP margins, 16-DIP gaps, 32-DIP
 controls, and a height fitted to the page and clamped to the work area. A
 list longer than the window scrolls inside its card (the thin Windows 11
-scroll bar). When the Sources page is too tall for the work area, its
-installed list shows as many whole rows as fit, two at the least (eleven of
-twelve at 150% on a 2560x1440 monitor, six at 100% on a 1080-line screen),
-else as many as fit down to one (the part of a row that shows says there
-are more: ten releases and more at 150% on a 1080-line screen), and scrolls
-in its card; only when even one row does not fit does the whole body
-scroll, with the list at its full height, so only one thing ever scrolls.
+scroll bar). The installed covers' grid has as many columns as cells of at
+least 100 DIP fit in its card (five in the 640-DIP window, the cells sharing
+its width), each cell 8 DIP from the next and from the card's edges: every
+release of the registry installed, Sources is about 966 DIP tall, so it
+fits a 1080-line screen at 100% whole. When the Sources page is too tall
+for the work area, its grid shows as many whole rows as fit, two at the
+least, else as many as fit down to one (the part of a row that shows says
+there are more), and scrolls in its card; only when even one row does not
+fit does the whole body scroll, with the grid at its full height, so only
+one thing ever scrolls.
 Everything is laid out again on `WM_DPICHANGED` (per-monitor DPI v2), and
 on a theme change (`ui::is_theme_change`) the window reloads its palette,
 title bar and scroll bars.
@@ -52,7 +56,8 @@ title bar and scroll bars.
 
 `gui::run` returns an `adw::import::Status` (the process's exit code):
 
-* **0** when anything was imported or any cover changed during the session;
+* **0** when anything was imported or removed or any cover changed during
+  the session;
 * else the **first failure** of an import (2 source invalid, 3 verify
   failed, 4 network, 1 error);
 * else **5**: nothing changed (Cancel, or the cover window closed without a
@@ -65,6 +70,12 @@ else the first failure (4 when a download failed), else 5. The settings
 dialog's **Get the covers** runs it with `all` and reads the catalog again on
 0. `gui::Request` also carries `--download-dir` (downloads, cover pictures,
 "already downloaded") and `--force`.
+
+`--gui --remove <id>` (`Request::remove`) shows only the Remove page: 0 when
+the release was removed (the window closes as it is done), else the
+failure it showed (1 for a folder in use), else 5 (Cancel, or nothing
+installed to remove). The settings dialog's **Remove …** runs it and reads
+the catalog again on 0.
 
 `AD_GUI_AUTOCLOSE=1` skips the Result page (the tests). A cancelled single
 import shows no Result page either.
@@ -82,17 +93,21 @@ and the cover window as `CoverOptions::allow_download`.
   `workarea=` says otherwise (a real window that the system clamps is laid
   out again for the client it got). The
   installed releases and covers are read from `--dest`. Keys:
-  `page=sources|downloads|progress|result|error|cover`, `theme=light|dark|hc`,
+  `page=sources|downloads|progress|result|error|cover|remove`, `theme=light|dark|hc`,
   `dpi=<n>`, `focus=<command id>`, `progress=<0..1>|marquee`,
   `phase=download|check_image|copy|verify|cover|finalize`,
   `result=single|several|partial|covers`, `job=covers` (the progress page of
-  "Get the covers"), `package=<id>` (the cover page),
-  `status=ok|error|network|running` (the cover page), `caution=1` (Sources'
-  "not a disc Long After Dark knows"), `workarea=<w>x<h>` (DIPs; default unlimited),
+  "Get the covers"), `package=<id>` (the cover and remove pages),
+  `status=ok|error|network|running` (the cover page), `status=error|running`
+  (the remove page: a removal that failed, one under way), `caution=1`
+  (Sources' "not a disc Long After Dark knows"), `notice=1` (Sources' line
+  after a removal), `workarea=<w>x<h>` (DIPs; default unlimited),
   `dpichange=<n>` (a monitor change, without `dpi=`), `themechange=light|dark|hc`
   (a live theme change after opening), `report=<path>` (the client area in
   the picture, a pixel of the body's margin and `pal.base`; on Sources also
-  `list=<shown>,<whole>,<row>`, the installed list's heights in pixels).
+  `list=<shown>,<whole>,<row>,<rows>,<cols>`, the installed covers' grid:
+  its height as shown, its whole height and a row's in pixels, and its rows
+  and columns).
 * **File dialogs.** `AD_IMPORT_TEST_PICK=<path>[|<path>…]` answers the
   file and folder dialogs (Sources' 101/102, the cover window's 601)
   without opening them.
@@ -118,19 +133,23 @@ and the cover window as `CoverOptions::allow_download`.
   release known by its ZIP, and its result "The ZIP matched the known ZIP
   of …"), the Sources intro (every title while nothing is imported, then
   the count in words: "ten releases" with ten in the registry, "twelve
-  releases" with twelve), the
-  exit-code tally), over a scratch assets tree; never creates the assets
-  folder.
+  releases" with twelve), the covers' captions, names and tooltips, the
+  Remove window's words (one module or several, no count, not installed, a
+  failure), "Removed …", the
+  exit-code tally (a removal is a change)), over a scratch assets tree;
+  never creates the assets folder.
 * `import.gui_shots`: every page × light/dark/high contrast × 100/150/200%
   through the screenshot hook, over a scratch install with synthetic
   covers (set with `adimport --set-cover`), every release of the registry
   installed; each picture exists, its DPI is the one asked for, and its
   body margin is `pal.base`. Plus focus rings,
   a marquee cover phase, partial results, cover errors and a running
-  cover action, a short work area, and live theme and DPI changes. The
-  Sources list, read from the hook's report with cover downloads off: at
-  least eleven whole rows of twelve at a 2560x1392 DIP work area and 150%,
-  five at 1920x1032 and 100%, and the fallback at 640x520.
+  cover action, a short work area, and live theme and DPI changes; the
+  Remove window, failed and running, a cover's focus ring and Sources'
+  "Removed …". The Sources covers, read from the hook's report with cover
+  downloads off: five to a row on three rows, the whole grid at a 2560x1392
+  DIP work area and 150% and at 1920x1032 and 100%, two whole rows at
+  640x900 and 100%, and the fallback at 640x520.
   Nothing is shown on the desktop, so it is not labelled `gui`.
 * `import.gui_flow` (label `gui`: real windows, briefly, in every default
   `ctest` run; `ctest -LE gui` or `AD_IMPORT_SKIP_GUI_TESTS=1` skips it,
@@ -138,13 +157,21 @@ and the cover window as `CoverOptions::allow_download`.
   Back → Cancel is exit 5 with each page a new window and nothing written;
   a live theme change keeps the window working; the same walk with no
   `--dest` creates nothing in the data folder; on a scratch install whose
-  cover is still generated, Sources' Change cover… link has the release's
-  accessible name (read back through MSAA) and Get the covers (104) goes
-  through Progress and Result back to Sources, and `--gui --refresh-covers`
-  alone ends on its Result page (both with `AD_COVER_DOWNLOAD=0`: nothing is
-  fetched, exit 5); "Change cover" with a synthetic picture is exit 0 and
-  writes a new `tile.png`;
-  Done with no change is exit 5.
+  cover is still generated, Sources' cover of the release is called by its
+  title and what it holds (read back through MSAA), its menu's Change
+  cover… (400) opens the cover window and Done comes back to Sources, and
+  Get the covers (104) goes through Progress and Result back to Sources,
+  and `--gui --refresh-covers` alone ends on its Result page (both with
+  `AD_COVER_DOWNLOAD=0`: nothing is fetched, exit 5); "Change cover" with a
+  synthetic picture is exit 0 and writes a new `tile.png`;
+  Done with no change is exit 5. Then removing it: `--gui --remove` and
+  Cancel is exit 5 and changes nothing; a release that isn't installed has
+  no Remove (exit 5); with a file of it held open, Remove greys Cancel,
+  then shows Try again, and Cancel is exit 1 with everything as it was;
+  from Sources, its menu's Remove… (450) and Remove go back to Sources
+  without it, whose Cancel is now Close (exit 0: FILES, import.json and its
+  catalog entry gone, its cover kept); imported again, `--gui --remove`
+  and Remove is exit 0.
 * Closing a window while its worker runs (Cancel, Esc, the close box, or
   the window going away) cancels the worker's `CancelToken`, which closes
   whatever WinHTTP is waiting on, so a download stops at once; a page

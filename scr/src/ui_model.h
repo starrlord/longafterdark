@@ -160,13 +160,17 @@ struct Rc {
 inline constexpr int kDesignClientW = 1040, kDesignClientH = 716;   // first-open client size
 inline constexpr int kMinClientW = 900, kMinClientH = 600;          // the window can't shrink past this
 // With the box-cover strip (two or more releases, COVERS.md §1.2): the
-// regular band on top of those, and a compact band below kStripCompactBelow.
+// regular band on top of those (one row of covers: 836), and a compact band
+// below kStripCompactBelow (one row; the regular rows need as much more as
+// their band is taller than one row's). The minimum holds one compact row.
 inline constexpr int kDesignClientHStrip = 836, kMinClientHStrip = 680, kStripCompactBelow = 760;
 
 // ---- the box-cover strip (COVERS.md §1.2, §1.3) ------------------------------------
-// One 4:5 tile per release across the top of the content column, left-aligned
-// (a row that overflows starts after the left chevron's zone), with a status
-// box at the column's right edge. DIPs.
+// One 4:5 tile per release across the top of the content column, left-aligned,
+// with a status box at the column's right edge. Every cover shows: tiles a
+// row can't hold wrap onto further rows (StripInput::wrap). Only a window too
+// short for even the compact rows gets the one row that scrolls between two
+// chevrons (it starts after the left chevron's zone). DIPs.
 enum class StripMode { hidden, regular, compact };
 struct StripMetrics {
   int art_w, art_h;       // the cover (4:5)
@@ -188,19 +192,40 @@ struct StripInput {
   double x = 0, y = 0, w = 0;   // the tiles area (the column less the status box), DIPs
   int first = 0;                // scroll position: the first tile shown (clamped to the stops)
   int dpi = 96;
+  // Every tile shows, on as many rows as they need (strip_grid), and nothing
+  // scrolls (`first` is ignored). Else one row, scrolling when it overflows.
+  bool wrap = false;
 };
 struct StripLayout {
   StripMode mode = StripMode::hidden;
   int first = 0, max_first = 0;     // scroll position (whole tiles) and its last stop
   bool overflow = false;            // more tiles than the area holds side by side: the row scrolls
   int slots = 0;                    // how many tiles show at a time (all of them without overflow)
-  Rc area;                          // the tiles area
+  int rows = 0, cols = 0;           // rows of tiles, and the most a row holds (one row: rows 1, cols = slots)
+  Rc area;                          // the tiles area (every row of it)
   Rc view;                          // where tiles show: the area, or overflowing, the slots between the chevrons' zones
   std::vector<Rc> cells, arts, captions;   // per tile (captions empty when compact)
   std::vector<bool> whole;          // the cell lies wholly inside `view`: the tile shows (the others don't, at all)
   Rc chevron_left, chevron_right;   // 24-DIP buttons at an end with more beyond it (empty otherwise)
 };
-// Pure: whole-cell scrolling. Overflowing, the row shows `slots` tiles at
+// Wrapped, the rows `tiles` take in a tiles area `w` DIPs wide: as few as
+// hold them all, and as even as can be (14 tiles where a row holds 10 are 7
+// and 7, not 10 and 4); `cols` is the most on a row, and only the last row
+// may have fewer. {0, 0} for no tiles.
+struct StripGrid {
+  int rows = 0, cols = 0;
+  bool operator==(const StripGrid&) const = default;
+};
+StripGrid strip_grid(int tiles, bool compact, double w);
+// Between two wrapped rows (DIPs): the cells' gap, as between two tiles of a row.
+inline constexpr int kStripRowGap = 8;
+// The band the strip takes over the columns (DIPs): `rows` rows of cells
+// kStripRowGap apart and the 12-DIP gap under them (120 for one regular row,
+// 80 for one compact row).
+int strip_band(bool compact, int rows);
+// Pure. Wrapped (StripInput::wrap), tile i sits on row i / cols at column
+// i % cols, the rows left-aligned on the area and kStripRowGap apart: every
+// tile is whole, and there are no chevrons. Otherwise whole-cell scrolling: overflowing, the row shows `slots` tiles at
 // every scroll stop, as many whole cells as fit between the two chevrons'
 // zones. Tile i sits at x + lead + (i - first) * pitch, where lead is the
 // left chevron's zone whenever the row overflows (unscrolled too, where that
@@ -252,7 +277,7 @@ struct LayoutInput {
   // smaller face) wrapped onto two, with its chips under them.
   int title_lines = 1;
   // The box-cover strip: one tile per release when there are two or more
-  // (fewer: no strip), scrolled to `strip_first`.
+  // (fewer: no strip); `strip_first` is the scroll position when it scrolls.
   int strip_tiles = 0;
   int strip_first = 0;
 };
@@ -297,8 +322,8 @@ struct WindowLayout {
   // The box-cover strip, between the header and the two columns (hidden:
   // all empty, and the columns start right under the header).
   StripMode strip_mode = StripMode::hidden;
-  Rc strip;                         // the tiles area, as tall as the cells
-  Rc strip_status;                  // the status box: the column's right edge, centred on the art
+  Rc strip;                         // the tiles area, as tall as its rows of cells
+  Rc strip_status;                  // the status box: the column's right edge, centred on the covers
   StripInput strip_in;              // to lay the tiles out again at another scroll position
   StripLayout tiles;
 };
@@ -306,6 +331,11 @@ struct WindowLayout {
 // px for a DIP length at `dpi` (rounded to nearest).
 int dip(int dips, int dpi);
 WindowLayout layout_window(const LayoutInput& in);
+// The client height the window first opens at (DIPs): kDesignClientH, and
+// with the strip (two or more releases) the band of its regular covers'
+// rows at the first-open width over it, so the columns have their design
+// heights: 836 (kDesignClientHStrip) for one row of covers, 952 for two.
+int design_client_h(int strip_tiles);
 
 // ---- the footer's credit ---------------------------------------------------------------
 // "Made With Love by StarrLord" in the footer, in the free space between the

@@ -2562,7 +2562,7 @@ void test_releases_list() {
   CHECK(tile_name(amp, 1) == L"Tom && Jerry, 1 screen saver");
   CHECK(tile_tip(c.releases[4], 3) == L"The Simpsons Screen Saver — 3 screen savers\r\nClick to show only this "
                                       L"release’s screen savers, or several releases at once. Right-click to change "
-                                      L"its cover.");
+                                      L"its cover or remove it.");
   CHECK(effective_collections({}, c).empty());
   CHECK((effective_collections({"simpsons", "nope", "tt"}, c) == Strs{"tt", "simpsons"}));
   CHECK(effective_collections({"nope"}, c).empty());
@@ -2870,6 +2870,188 @@ void test_releases_layout() {
   }
 }
 
+// The strip wrapped onto rows (StripInput::wrap): every tile whole, on its
+// row and column, the rows as even as can be, nothing scrolling.
+void check_strip_wrapped(const StripInput& in, const char* what) {
+  const StripLayout S = layout_strip(in);
+  const StripMetrics m = strip_metrics(in.compact);
+  const StripGrid g = strip_grid(in.tiles, in.compact, in.w);
+  const int n = in.tiles, d = in.dpi, fm = focus_margin_px(d);
+  auto fail = [&](const char* why) {
+    fprintf(stderr, "wrapped strip %s n=%d %s @%d w=%g: %s\n", what, n, in.compact ? "compact" : "regular", d, in.w, why);
+    ++g_failures;
+  };
+  if ((int)S.cells.size() != n || (int)S.arts.size() != n || (int)S.whole.size() != n) return fail("tile count");
+  if (S.mode != (in.compact ? StripMode::compact : StripMode::regular)) fail("mode");
+  if (S.overflow || S.first != 0 || S.max_first != 0 || S.slots != n) fail("scrolls");
+  if (!S.chevron_left.empty() || !S.chevron_right.empty()) fail("a chevron");
+  if (S.rows != g.rows || S.cols != g.cols || g.rows < 1 || g.cols < 1) fail("rows");
+  // As few rows as hold every tile; as even as can be: no row past the
+  // first is fuller than it, and the last is the only short one.
+  const int per_row = std::max(1, (int)std::floor((in.w + (m.pitch - m.cell_w) + 0.001) / m.pitch));
+  if (g.rows != (n + per_row - 1) / per_row || g.cols > per_row || (g.rows - 1) * g.cols >= n || g.rows * g.cols < n)
+    fail("not the fewest, evenest rows");
+  if (S.view != S.area) fail("view");
+  const int row_h = dip(m.cell_h + kStripRowGap, d);
+  for (int i = 0; i < n; ++i) {
+    if (!S.whole[i]) fail("a tile not shown");
+    const Rc& c = S.cells[i];
+    // Its row and column: the pitch across, a cell and the row gap down.
+    if (std::abs(c.x - S.area.x - dip((i % g.cols) * m.pitch, d)) > 1) fail("column");
+    if (std::abs(c.y - S.area.y - (i / g.cols) * row_h) > 1) fail("row");
+    if (!S.area.contains(c)) fail("a tile outside the area");
+    if (!c.contains(S.arts[i])) fail("art outside its cell");
+    if (std::abs(S.arts[i].w * 5 - S.arts[i].h * 4) > 5) fail("art not 4:5");
+    if (in.compact != S.captions[i].empty()) fail("caption");
+    if (!S.captions[i].empty() && (!c.contains(S.captions[i]) || S.captions[i].y < S.arts[i].bottom())) fail("caption place");
+    // No two tiles' windows (their cells and focus rings) touch.
+    const Rc wi{c.x - fm, c.y - fm, c.w + 2 * fm, c.h + 2 * fm};
+    for (int j = 0; j < i; ++j) {
+      const Rc& o = S.cells[j];
+      if (wi.overlaps(Rc{o.x - fm, o.y - fm, o.w + 2 * fm, o.h + 2 * fm})) fail("two tiles' windows overlap");
+    }
+  }
+  // The area is exactly the rows' height, no more.
+  if (std::abs(S.area.h - dip(g.rows * m.cell_h + (g.rows - 1) * kStripRowGap, d)) > 1) fail("area height");
+  // Wrapping changes nothing for a row that fits.
+  if (g.rows == 1) {
+    StripInput one = in;
+    one.wrap = false;
+    const StripLayout O = layout_strip(one);
+    if (O.overflow || O.cells != S.cells || O.arts != S.arts || O.captions != S.captions) fail("one row not as before");
+  }
+}
+
+void test_strip_wrap() {
+  // Rows: the fewest that hold them, as even as can be.
+  CHECK((strip_grid(0, false, 776) == StripGrid{0, 0}));
+  CHECK((strip_grid(1, false, 776) == StripGrid{1, 1}));
+  CHECK((strip_grid(7, false, 776) == StripGrid{1, 7}));
+  CHECK((strip_grid(8, false, 776) == StripGrid{2, 4}));    // 4 and 4, not 7 and 1
+  CHECK((strip_grid(12, false, 776) == StripGrid{2, 6}));
+  CHECK((strip_grid(14, false, 776) == StripGrid{2, 7}));
+  CHECK((strip_grid(14, true, 776) == StripGrid{2, 7}));    // 10 to a row: 7 and 7, not 10 and 4
+  CHECK((strip_grid(10, true, 776) == StripGrid{1, 10}));
+  const double min_area = kMinClientW - 48 - kStripStatusW - kStripStatusGap;   // 636
+  CHECK((strip_grid(14, false, min_area) == StripGrid{3, 5}));
+  CHECK((strip_grid(14, true, min_area) == StripGrid{2, 7}));
+  CHECK((strip_grid(6, false, min_area) == StripGrid{1, 6}) && (strip_grid(8, true, min_area) == StripGrid{1, 8}));
+  CHECK((strip_grid(3, false, 10) == StripGrid{3, 1}));      // narrower than a tile: one a row
+  CHECK(strip_band(false, 1) == 120 && strip_band(true, 1) == 80);
+  CHECK(strip_band(false, 2) == 236 && strip_band(true, 2) == 156 && strip_band(false, 3) == 352);
+  // The first-open height: one row of regular covers (836) up to seven
+  // releases, two (952) for eight to fourteen.
+  CHECK(design_client_h(0) == kDesignClientH && design_client_h(1) == kDesignClientH);
+  for (int n = 2; n <= 7; ++n) CHECK(design_client_h(n) == kDesignClientHStrip);
+  for (int n = 8; n <= 14; ++n) CHECK(design_client_h(n) == 952);
+  // Every scale, 1 to 14 releases, both forms, several widths.
+  for (int dpi = 96; dpi <= 240; dpi += 24) {
+    for (int n = 1; n <= 14; ++n) {
+      for (bool compact : {false, true}) {
+        for (double w : {min_area, 776.0, 1024.0, 300.0, 850.0, 855.5, 856.0, 1336.0}) {
+          StripInput in{n, compact, 24, 48, w, 0, dpi};
+          in.wrap = true;
+          check_strip_wrapped(in, "sweep");
+          in.first = 5;   // ignored
+          check_strip_wrapped(in, "sweep, a scroll position");
+        }
+      }
+    }
+  }
+  // On the 4-DIP grid at 100%, and 200% is 100% doubled.
+  for (bool compact : {false, true}) {
+    StripInput a{14, compact, 24, 48, 776, 0, 96}, b{14, compact, 24, 48, 776, 0, 192};
+    a.wrap = b.wrap = true;
+    const StripLayout A = layout_strip(a), B = layout_strip(b);
+    std::vector<std::pair<Rc, Rc>> pairs = {{A.area, B.area}};
+    for (size_t i = 0; i < A.cells.size(); ++i) {
+      pairs.push_back({A.cells[i], B.cells[i]});
+      pairs.push_back({A.arts[i], B.arts[i]});
+      pairs.push_back({A.captions[i], B.captions[i]});
+    }
+    for (const auto& [x, y] : pairs) {
+      CHECK(x.x % 4 == 0 && x.y % 4 == 0 && x.w % 4 == 0 && x.h % 4 == 0);
+      CHECK(y.x == 2 * x.x && y.y == 2 * x.y && y.w == 2 * x.w && y.h == 2 * x.h);
+    }
+  }
+
+  // The window: fourteen releases (and eight, twelve) show every cover,
+  // regular while the client has the height for their rows, else compact,
+  // and only a client too short for the compact rows scrolls one row.
+  struct Case {
+    int tiles, w, h;
+    StripMode mode;
+    bool wrap;
+    int rows;
+  };
+  const Case cases[] = {
+      {14, kDesignClientW, 952, StripMode::regular, true, 2},   // the first-open size
+      {14, kDesignClientW, 876, StripMode::regular, true, 2},   // the least that holds two regular rows
+      {14, kDesignClientW, 875, StripMode::compact, true, 2},
+      {14, kDesignClientW, kDesignClientHStrip, StripMode::compact, true, 2},
+      {14, kDesignClientW, 756, StripMode::compact, true, 2},   // the least that holds two compact rows
+      {14, kDesignClientW, 755, StripMode::compact, false, 1},  // one compact row, scrolling
+      {14, kMinClientW, kMinClientHStrip, StripMode::compact, false, 1},
+      {14, kMinClientW, 992, StripMode::regular, true, 3},      // narrow: three regular rows
+      {14, kMinClientW, 991, StripMode::compact, true, 2},
+      {14, 1600, 1000, StripMode::regular, true, 2},
+      {12, kDesignClientW, 952, StripMode::regular, true, 2},
+      {8, kDesignClientW, kDesignClientHStrip, StripMode::compact, true, 1},   // 8 compact covers fit one row
+      {7, kDesignClientW, kDesignClientHStrip, StripMode::regular, true, 1},
+      {7, kMinClientW, kMinClientHStrip, StripMode::compact, true, 1},
+  };
+  for (const Case& c : cases) {
+    for (int dpi : {96, 120, 144, 192, 240}) {
+      for (bool random : {false, true}) {
+        const int cw = dip(c.w, dpi), ch = dip(c.h, dpi);
+        LayoutInput in{cw, ch, dpi, random};
+        in.strip_tiles = c.tiles;
+        const WindowLayout L = layout_window(in);
+        auto fail = [&](const char* why) {
+          fprintf(stderr, "window n=%d %dx%d @%d: %s (mode %d, rows %d, overflow %d)\n", c.tiles, c.w, c.h, dpi, why,
+                  (int)L.strip_mode, L.tiles.rows, (int)L.tiles.overflow);
+          ++g_failures;
+        };
+        check_layout(L, cw, ch, random);
+        if (L.strip_mode != c.mode || L.tiles.mode != c.mode) fail("mode");
+        if (L.strip_in.wrap != c.wrap || L.tiles.rows != c.rows) fail("rows");
+        if (c.wrap && (L.tiles.overflow || std::count(L.tiles.whole.begin(), L.tiles.whole.end(), true) != c.tiles))
+          fail("not every cover shows");
+        if (!c.wrap && !L.tiles.overflow) fail("one row that doesn't scroll");
+        // The band: its rows, then the columns, which keep at least their
+        // minimum height (and a regular strip, 40 DIP more).
+        const int band = strip_band(c.mode == StripMode::compact, c.rows);
+        if (std::abs(L.mode.y - (L.header.bottom() + dip(band, dpi))) > 1) fail("the columns don't start under the band");
+        if (L.strip.bottom() > L.mode.y || L.strip.bottom() > L.details_card.y) fail("the strip over the columns");
+        if (c.h - band < kMinClientH) fail("the columns under their minimum");
+        if (std::abs(L.strip.h - L.tiles.area.h) > 1 || !(L.strip == L.tiles.area)) fail("strip and tiles area");
+        for (size_t i = 0; i < L.tiles.cells.size(); ++i) {
+          if (L.tiles.whole[i] && (!L.strip.contains(L.tiles.cells[i]) || L.tiles.cells[i].overlaps(L.strip_status)))
+            fail("a cover outside the strip, or under the status");
+        }
+        // The status box: the column's right edge, on the covers' middle (within the 4-DIP grid).
+        if (std::abs(L.strip_status.right() - L.content.right()) > 1) fail("status edge");
+        const Rc& a0 = L.tiles.arts.front();
+        const Rc& a1 = L.tiles.arts.back();
+        const int mid = (a0.y + a1.bottom()) / 2, smid = L.strip_status.y + L.strip_status.h / 2;
+        if (std::abs(mid - smid) > dip(2, dpi) + 1) fail("status not centred on the covers");
+        if (L.strip_status.y < L.strip.y || L.strip_status.bottom() > L.strip.bottom()) fail("status outside the band");
+      }
+    }
+  }
+  // The first-open size lays fourteen out regular on two rows, and the
+  // columns keep exactly their design heights.
+  for (int dpi : {96, 144, 192}) {
+    LayoutInput a{dip(kDesignClientW, dpi), dip(design_client_h(14), dpi), dpi, true};
+    a.strip_tiles = 14;
+    LayoutInput b{dip(kDesignClientW, dpi), dip(kDesignClientH, dpi), dpi, true};
+    const WindowLayout A = layout_window(a), B = layout_window(b);
+    CHECK(A.strip_mode == StripMode::regular && A.tiles.rows == 2 && !A.tiles.overflow);
+    CHECK(std::abs(A.details_card.h - B.details_card.h) <= 1 && std::abs(A.list_card.h - B.list_card.h) <= 1);
+    CHECK(std::abs(A.preview.h - B.preview.h) <= 1);
+  }
+}
+
 // Six releases (catalog-six.json): the five After Dark ones and Star Wars
 // Screen Entertainment, whose 14 Intermission modules (abi intermission) a
 // host too old for them can't run. The list, what Random plays with and
@@ -3173,37 +3355,33 @@ void test_releases_seven() {
       CHECK((plan[1].screen.emu == SizeI{640, 480}) && plan[1].screen.fixed && (plan[1].src == RectI{240, 0, 1440, 1080}));
     }
   }
-  // Seven covers (COVERS.md §1.2): they fit the first-open window, and the
-  // smallest one with its compact covers, at every scale without scrolling;
-  // a window as narrow but 760 DIP or more tall has regular covers and shows
-  // five at a time (only whole tiles show, clear of the chevrons): its row
-  // scrolls, by two tiles at most, to the third cover.
+  // Seven covers (COVERS.md §1.2): every one shows, in every window. They
+  // fit the first-open window on one row of regular covers, and the smallest
+  // one on a row of compact ones, at every scale; a window as narrow (where
+  // a regular row holds six) but 836 DIP tall has room for one compact row
+  // only, and one 876 DIP tall puts the regular ones on two rows, four and
+  // three.
   auto shown = [](const StripLayout& t) {
     return (int)std::count_if(t.arts.begin(), t.arts.end(), [&](const Rc& a) { return t.view.contains(a); });
   };
   auto whole = [](const StripLayout& t) { return (int)std::count(t.whole.begin(), t.whole.end(), true); };
   for (int dpi = 96; dpi <= 240; dpi += 24) {
-    auto strip_at = [&](int w, int h, int scrolled = 0) {
+    auto strip_at = [&](int w, int h) {
       LayoutInput in{dip(w, dpi), dip(h, dpi), dpi, true};
       in.strip_tiles = 7;
-      in.strip_first = scrolled;
       return layout_window(in);
     };
     const WindowLayout first = strip_at(kDesignClientW, kDesignClientHStrip);
     const WindowLayout small = strip_at(kMinClientW, kMinClientHStrip);
     const WindowLayout tall = strip_at(kMinClientW, kDesignClientHStrip);
-    CHECK(first.strip_mode == StripMode::regular && first.tiles.cells.size() == 7 && !first.tiles.overflow);
-    CHECK(small.strip_mode == StripMode::compact && small.tiles.cells.size() == 7 && !small.tiles.overflow);
-    CHECK(tall.strip_mode == StripMode::regular && tall.tiles.overflow);
-    CHECK(tall.tiles.max_first == 2 && shown(tall.tiles) == 5 && whole(tall.tiles) == 5 && tall.tiles.slots == 5);
-    for (int stop : {1, 2}) {
-      const StripLayout t = strip_at(kMinClientW, kDesignClientHStrip, stop).tiles;
-      CHECK(t.first == stop && shown(t) == 5 && whole(t) == 5);
+    const WindowLayout taller = strip_at(kMinClientW, 876);
+    for (const WindowLayout* L : {&first, &small, &tall, &taller}) {
+      CHECK(L->tiles.cells.size() == 7 && !L->tiles.overflow && shown(L->tiles) == 7 && whole(L->tiles) == 7);
     }
-    if (dpi == 96) {
-      printf("releases: seven regular covers in a 900 DIP window: %d shown, scrolling by %d tiles at most (to cover %d)\n",
-             shown(tall.tiles), tall.tiles.max_first, tall.tiles.max_first + 1);
-    }
+    CHECK(first.strip_mode == StripMode::regular && first.tiles.rows == 1);
+    CHECK(small.strip_mode == StripMode::compact && small.tiles.rows == 1);
+    CHECK(tall.strip_mode == StripMode::compact && tall.tiles.rows == 1);
+    CHECK(taller.strip_mode == StripMode::regular && taller.tiles.rows == 2 && taller.tiles.cols == 4);
   }
 }
 
@@ -3302,40 +3480,49 @@ void test_releases_twelve() {
     }
   }
 
-  // Twelve covers (COVERS.md §1.2, §1.3), at every scale, only whole tiles
+  // Twelve covers (COVERS.md §1.2, §1.3), at every scale: every one shows,
+  // on as many rows as they need, in every window tall enough for those
+  // rows; only a shorter one scrolls one compact row, with only whole tiles
   // shown, as many at every stop, none of them under a chevron and none
-  // reaching the status box. Regular ones (a client 760 DIP or more tall)
+  // reaching the status box. Regular ones (two rows of six in the
+  // first-open window, 952 DIP tall, or in a large one; they need 876 DIP)
   // never all fit side by side (twelve need 1240 DIP; the tiles area stops
-  // growing at 1024, the content column at 1240), so their row always
-  // scrolls: the first-open window 7 at a time (6 stops), one as narrow 5 (8
-  // stops), a large one 9 (4 stops). Compact ones (under 760 DIP tall)
-  // scroll up to 1119 DIP wide: 8 at a time in the smallest window (5 stops),
-  // 9 from 960 DIP wide, 10 from 1032 (so in a first-open window whose height
-  // the monitor's work area clamps under 760 DIP: 1920x1080 at 125% or 150%,
-  // 1366x768 at 100%), 11 from 1104; from 1120 DIP wide all twelve show side
-  // by side, left-aligned, with no chevron.
+  // growing at 1024, the content column at 1240). Compact ones on two rows of
+  // six need 756 DIP (the first-open window clamped to 836 or 759 by a
+  // monitor's work area), else under 1120 DIP wide their one row scrolls: 8
+  // at a time in the smallest window (5 stops), 9 from 960 DIP wide, 10 from
+  // 1032 (a first-open window clamped to 680), 11 from 1104; from 1120 DIP
+  // wide all twelve show side by side on one compact row, left-aligned, with
+  // no chevron.
   struct Want {
     int w, h;
     StripMode mode;
-    int slots;
+    int rows;    // wrapped onto these rows (0: one row that scrolls)
+    int slots;   // tiles at a time (all twelve when wrapped)
   };
   auto whole = [](const StripLayout& t) { return (int)std::count(t.whole.begin(), t.whole.end(), true); };
   for (int dpi = 96; dpi <= 240; dpi += 24) {
-    for (const Want& want : {Want{kDesignClientW, kDesignClientHStrip, StripMode::regular, 7},
-                             Want{kMinClientW, kMinClientHStrip, StripMode::compact, 8},
-                             Want{kMinClientW, kDesignClientHStrip, StripMode::regular, 5},
-                             Want{1600, 1000, StripMode::regular, 9},
-                             Want{959, 700, StripMode::compact, 8},
-                             Want{960, 700, StripMode::compact, 9},
-                             Want{kDesignClientW, kMinClientHStrip, StripMode::compact, 10},
-                             Want{kDesignClientW, 759, StripMode::compact, 10},
-                             Want{1103, 700, StripMode::compact, 10},
-                             Want{1104, 700, StripMode::compact, 11},
-                             Want{1119, 740, StripMode::compact, 11},
-                             Want{1120, 700, StripMode::compact, 12},
-                             Want{1600, 759, StripMode::compact, 12}}) {
+    for (const Want& want : {Want{kDesignClientW, 952, StripMode::regular, 2, 12},
+                             Want{kDesignClientW, 876, StripMode::regular, 2, 12},
+                             Want{kDesignClientW, 875, StripMode::compact, 2, 12},
+                             Want{kDesignClientW, kDesignClientHStrip, StripMode::compact, 2, 12},
+                             Want{kDesignClientW, 759, StripMode::compact, 2, 12},
+                             Want{kDesignClientW, 756, StripMode::compact, 2, 12},
+                             Want{kDesignClientW, 755, StripMode::compact, 0, 10},
+                             Want{kMinClientW, kMinClientHStrip, StripMode::compact, 0, 8},
+                             Want{kMinClientW, kDesignClientHStrip, StripMode::compact, 2, 12},
+                             Want{kMinClientW, 876, StripMode::regular, 2, 12},
+                             Want{1600, 1000, StripMode::regular, 2, 12},
+                             Want{959, 700, StripMode::compact, 0, 8},
+                             Want{960, 700, StripMode::compact, 0, 9},
+                             Want{kDesignClientW, kMinClientHStrip, StripMode::compact, 0, 10},
+                             Want{1103, 700, StripMode::compact, 0, 10},
+                             Want{1104, 700, StripMode::compact, 0, 11},
+                             Want{1119, 740, StripMode::compact, 0, 11},
+                             Want{1120, 700, StripMode::compact, 1, 12},
+                             Want{1600, 759, StripMode::compact, 1, 12}}) {
       StripInput stops{};
-      const bool scrolls = want.slots < 12;
+      const bool scrolls = want.rows == 0;
       for (int stop = 0; stop <= 12; ++stop) {
         LayoutInput in{dip(want.w, dpi), dip(want.h, dpi), dpi, true};
         in.strip_tiles = 12;
@@ -3343,25 +3530,32 @@ void test_releases_twelve() {
         const WindowLayout L = layout_window(in);
         const StripLayout& t = L.tiles;
         check_layout(L, in.client_w, in.client_h, true);
-        check_strip(L.strip_in, "twelve");
+        if (L.strip_in.wrap) check_strip_wrapped(L.strip_in, "twelve");
+        else check_strip(L.strip_in, "twelve");
         stops = L.strip_in;
         CHECK(L.strip_mode == want.mode && t.overflow == scrolls && t.slots == want.slots && t.max_first == 12 - want.slots);
+        CHECK(L.strip_in.wrap == !scrolls && t.rows == std::max(1, want.rows));
         CHECK(t.first == std::min(stop, t.max_first) && whole(t) == want.slots);
         CHECK(t.chevron_left.empty() == (t.first == 0) && t.chevron_right.empty() == (t.first == t.max_first));
-        if (!scrolls) CHECK(t.cells[0].x == L.strip.x);   // side by side: left-aligned on the column
+        if (!scrolls) CHECK(t.cells[0].x == L.strip.x);   // wrapped: left-aligned on the column
         for (size_t i = 0; i < t.cells.size(); ++i) {
           if (t.whole[i]) CHECK(L.strip.contains(t.cells[i]) && !t.cells[i].overlaps(L.strip_status));
         }
         for (const Rc* ch : {&t.chevron_left, &t.chevron_right}) CHECK(ch->empty() || !ch->overlaps(L.strip_status));
       }
-      check_strip_stops(stops, "twelve");
+      if (scrolls) check_strip_stops(stops, "twelve");
     }
   }
   {
-    LayoutInput in{kDesignClientW, kDesignClientHStrip, 96, true};
+    LayoutInput in{kDesignClientW, design_client_h(12), 96, true};
     in.strip_tiles = 12;
     const WindowLayout L = layout_window(in);
-    printf("releases: twelve covers in the first-open window: %d at a time, %d stops\n", L.tiles.slots, L.tiles.max_first + 1);
+    printf("releases: twelve covers in the first-open window (%d DIP tall): %s, %d rows of %d\n", in.client_h,
+           L.strip_mode == StripMode::regular ? "regular" : "compact", L.tiles.rows, L.tiles.cols);
+    in.client_h = kDesignClientHStrip;
+    const WindowLayout M = layout_window(in);
+    printf("releases: twelve covers in a first-open window clamped to %d DIP tall: %s, %d rows of %d\n", in.client_h,
+           M.strip_mode == StripMode::regular ? "regular" : "compact", M.tiles.rows, M.tiles.cols);
     in.client_h = kMinClientHStrip;
     const WindowLayout C = layout_window(in);
     printf("releases: twelve covers in a first-open window clamped to %d DIP tall: %d compact at a time, %d stops\n",
@@ -3501,6 +3695,7 @@ void test_releases() {
   test_releases_rotation();
   test_releases_list();
   test_releases_layout();
+  test_strip_wrap();
   test_releases_six();
   test_releases_seven();
   test_releases_twelve();

@@ -185,6 +185,43 @@ void test_model(const fs::path& dir) {
     CHECK(gui::missing_covers_note(2) == L"2 releases have no cover picture yet.");
     CHECK(gui::missing_covers_note(1) == L"One release has no cover picture yet.");
     CHECK(gui::missing_covers_note(0).empty());
+    // Their covers on Sources: the caption (the short title and the module
+    // count), what screen readers call each, and its tooltip.
+    CHECK(rows[0].short_title == L"Deluxe" && rows[1].short_title == L"Totally Twisted");
+    CHECK(rows[0].modules == L"84 modules" && rows[1].modules == L"13 modules");
+    CHECK(gui::installed_tile_name(rows[0]) == L"After Dark 4.0 Deluxe, 84 modules · verified against the original disc");
+    CHECK(gui::installed_tile_tip(rows[1]) == L"Totally Twisted After Dark\r\n13 modules · verified against the original "
+                                               L"disc\r\nClick to change its cover or remove it.");
+    // The Remove window's words.
+    CHECK(gui::remove_question(rows[0].title) == L"Remove After Dark 4.0 Deluxe?");
+    CHECK(gui::remove_text(rows[0]) == L"Its 84 modules are deleted from this computer, and the screen saver stops showing "
+                                       L"them. Its cover is kept, and you can import the release again at any time.");
+  }
+  {
+    gui::InstalledRow one;
+    one.title = L"Tom & Jerry";
+    one.modules = one.detail = L"1 module";
+    CHECK(gui::installed_tile_name(one) == L"Tom && Jerry, 1 module");   // a button's text is read for mnemonics
+    CHECK(gui::installed_tile_tip(one) == L"Tom & Jerry\r\n1 module\r\nClick to change its cover or remove it.");
+    CHECK(gui::remove_text(one) == L"Its 1 module is deleted from this computer, and the screen saver stops showing it. "
+                                   L"Its cover is kept, and you can import the release again at any time.");
+    one.modules = one.detail = L"";
+    CHECK(gui::installed_tile_name(one) == L"Tom && Jerry");
+    CHECK(gui::remove_text(one).rfind(L"Its modules are deleted from this computer, and the screen saver stops showing "
+                                      L"them.",
+                                      0) == 0);
+    CHECK(gui::not_installed_text(L"After Dark 3.2") == L"After Dark 3.2 is not installed, so there is nothing to remove.");
+    CHECK(gui::remove_failed_text("cannot remove X (a file in it is in use)") ==
+          L"Nothing was removed. Cannot remove X (a file in it is in use).");
+    CHECK(gui::remove_failed_text("") == L"Nothing was removed.");
+    CHECK(gui::removed_note(L"The Simpsons Screen Saver") == L"Removed The Simpsons Screen Saver.");
+    // A removal counts as a change: the session's exit code is 0.
+    gui::Tally t;
+    CHECK_EQ(t.exit_code(), 5);
+    t.import_result(Status::error);
+    CHECK_EQ(t.exit_code(), 1);
+    t.release_removed();
+    CHECK_EQ(t.exit_code(), 0);
   }
   CHECK(gui::verified_words("image", "simpsons") == L"verified against the original disks");
   CHECK(gui::verified_words("image", "startrek") == L"verified against the original disks");
@@ -455,7 +492,8 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
     std::wstring page, extra;
   };
   const std::vector<Shot> pages = {{L"sources", L""},  {L"downloads", L""}, {L"progress", L"progress=0.4"},
-                                   {L"result", L""},   {L"error", L""},     {L"cover", L"package=simpsons"}};
+                                   {L"result", L""},   {L"error", L""},     {L"cover", L"package=simpsons"},
+                                   {L"remove", L"package=simpsons"}};
   size_t n = 0;
   for (const Shot& shot : pages) {
     for (const wchar_t* theme : {L"light", L"dark", L"hc"}) {
@@ -496,7 +534,9 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
                                     {L"progress", L"progress=marquee;phase=cover"}, {L"result", L"result=partial"},
                                     {L"result", L"result=several"},    {L"cover", L"status=error;package=deluxe"},
                                     {L"cover", L"status=running;package=simpsons"}, {L"downloads", L"focus=200"},
-                                    {L"sources", L"workarea=640x520"}};
+                                    {L"sources", L"workarea=640x520"},  {L"sources", L"focus=300"},
+                                    {L"sources", L"notice=1"},          {L"remove", L"status=error;package=deluxe"},
+                                    {L"remove", L"status=running;package=startrek"}, {L"remove", L"focus=701"}};
   for (const Shot& shot : extras) {
     for (const wchar_t* theme : {L"light", L"dark"}) {
       std::wstring tag = shot.extra;
@@ -513,21 +553,23 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
       n++;
     }
   }
-  // The Sources page on common screens, twelve releases installed: at 150% on
-  // a 2560x1440 monitor (a 2560x1392 DIP work area) the page is too tall, and
-  // its installed list shows every whole row that fits (eleven), not two, and
-  // scrolls in its card; on a 1080-line screen at 100% too, as many whole rows
-  // as fit. On a very short work area (640x520) the list keeps its fallback:
-  // fewer than two rows, or its full height with the whole body scrolling.
-  // With cover downloads off there is no "Get the covers" line (most of these
-  // releases have no picture), so the page is the one of a root whose covers
-  // are all there.
+  // The Sources page on common screens, every release installed: their
+  // covers are a grid, five to a row (fourteen on three rows), which shows
+  // whole at 150% on a 2560x1440 monitor (a 2560x1392 DIP work area) and on a
+  // 1080-line screen at 100%. A work area too short for it (640x900 at 100%)
+  // shows as many whole rows as fit (two), and the grid scrolls in its card.
+  // On a very short one (640x520) the grid keeps its fallback: fewer than
+  // two rows, or its full height with the whole body scrolling. With cover
+  // downloads off there is no "Get the covers" line (most of these releases
+  // have no picture), so the page is the one of a root whose covers are all
+  // there.
   struct Rows {
     std::wstring state;
-    int at_least;   // whole rows that must show
+    int at_least;   // whole rows that must show (-1: every one; 0: the fallback)
   };
-  const std::vector<Rows> rows = {{L"workarea=2560x1392;dpi=144", 11},
-                                  {L"workarea=1920x1032;dpi=96", 5},
+  const std::vector<Rows> rows = {{L"workarea=2560x1392;dpi=144", -1},
+                                  {L"workarea=1920x1032;dpi=96", -1},
+                                  {L"workarea=640x900;dpi=96", 2},
                                   {L"workarea=640x520;dpi=144", 0}};
   for (const Rows& t : rows) {
     std::wstring tag = t.state;
@@ -540,16 +582,22 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
     test::ProcessResult r =
         test::run_process(exe, {L"--gui", L"--dest", assets.wstring(), L"--no-cover-download"}, 60000);
     CHECK_EQ(r.exit_code, 0);
-    int shown = -1, whole = -1, row = -1;
-    sscanf(read_report(report)["list"].c_str(), "%d,%d,%d", &shown, &whole, &row);
-    fprintf(stderr, "sources rows at %s: list %d of %d px, row %d px\n", to_utf8(t.state).c_str(), shown, whole, row);
-    CHECK(row > 0 && whole == row * int(all_ids.size()));
+    int shown = -1, whole = -1, row = -1, grid_rows = -1, cols = -1;
+    sscanf(read_report(report)["list"].c_str(), "%d,%d,%d,%d,%d", &shown, &whole, &row, &grid_rows, &cols);
+    fprintf(stderr, "sources covers at %s: grid %d of %d px, %d rows of %d px, %d to a row\n", to_utf8(t.state).c_str(),
+            shown, whole, grid_rows, row, cols);
+    CHECK(cols == 5 && grid_rows == (int(all_ids.size()) + 4) / 5);
+    // The grid's margins: 8 DIP above and below it, less the gap a row's height counts.
+    const int frame = whole - grid_rows * row;
+    CHECK(row > 0 && frame > 0 && frame < row);
     if (row <= 0) continue;
-    if (t.at_least) {
-      CHECK(shown >= t.at_least * row);
-      CHECK(shown < whole && shown % row == 0);
+    if (t.at_least < 0) {
+      CHECK(shown == whole);
+    } else if (t.at_least) {
+      CHECK(shown >= t.at_least * row + frame);
+      CHECK(shown < whole && (shown - frame) % row == 0);
     } else {
-      CHECK(shown < 2 * row || shown == whole);
+      CHECK(shown < 2 * row + frame || shown == whole);
     }
     n++;
   }
@@ -843,11 +891,13 @@ int test_flow(const std::wstring& exe, const fs::path& dir) {
         exe, {L"--iso", iso.wstring(), L"--dest", assets.wstring(), L"--no-verify", L"--no-cover-download", L"--quiet"}, 120000);
     CHECK_EQ(r.exit_code, 0);
   }
-  // Sources over that install, whose cover is still generated: its "Change
-  // cover…" link names the release for screen readers, and "Get the covers"
-  // (104) runs refresh_covers in a progress window, shows what it got and
-  // comes back to Sources. Downloads are off in the environment, so nothing is
-  // fetched and nothing changes (exit 5). Then `--gui --refresh-covers` alone.
+  // Sources over that install, whose cover is still generated: its cover
+  // (a button that opens its menu) names the release and what it holds for
+  // screen readers; its menu's "Change cover…" (400) opens the cover window,
+  // and Done there comes back to Sources. "Get the covers" (104) runs
+  // refresh_covers in a progress window, shows what it got and comes back to
+  // Sources. Downloads are off in the environment, so nothing is fetched and
+  // nothing changes (exit 5). Then `--gui --refresh-covers` alone.
   SetEnvironmentVariableW(L"AD_COVER_DOWNLOAD", L"0");
   {
     GuiProcess p;
@@ -855,9 +905,26 @@ int test_flow(const std::wstring& exe, const fs::path& dir) {
     HWND src = p.window();
     CHECK(src != nullptr);
     if (src) {
-      HWND link = GuiProcess::control(src, 400);   // deluxe: registry index 0
-      CHECK(link != nullptr);
-      if (link) CHECK(accessible_name(link) == L"Change the cover of After Dark 4.0 Deluxe…");
+      HWND tile = GuiProcess::control(src, 300);   // deluxe: registry index 0
+      CHECK(tile != nullptr);
+      if (tile) {
+        const std::wstring name = accessible_name(tile);
+        if (name.rfind(L"After Dark 4.0 Deluxe, ", 0) != 0) fprintf(stderr, "cover's name: %s\n", to_utf8(name).c_str());
+        CHECK(name.rfind(L"After Dark 4.0 Deluxe, ", 0) == 0 && name.find(L"module") != std::wstring::npos);
+      }
+      CHECK(GuiProcess::control(src, 400) == nullptr);   // a menu item, not a control
+      GuiProcess::click(src, 400);
+      CHECK(GuiProcess::gone(src));
+      HWND cover = p.window_with(src, 601);
+      CHECK(cover != nullptr);
+      if (cover) {
+        GuiProcess::click(cover, IDOK);
+        CHECK(GuiProcess::gone(cover));
+        src = p.window_with(cover, 101);
+      }
+      CHECK(src != nullptr);
+    }
+    if (src) {
       CHECK(GuiProcess::control(src, 104) != nullptr);
       GuiProcess::click(src, 104);
       CHECK(GuiProcess::gone(src, 10000));
@@ -923,6 +990,122 @@ int test_flow(const std::wstring& exe, const fs::path& dir) {
     CHECK(p.start(exe, {L"--gui", L"--change-cover", L"deluxe", L"--dest", assets.wstring()}));
     if (HWND w = p.window()) GuiProcess::click(w, IDOK);
     CHECK_EQ(p.wait(), 5);
+  }
+
+  // Removing a release, on that install (Deluxe: FILES and import.json; its
+  // cover, the picture set above, is kept).
+  const fs::path files = assets / L"win" / L"FILES", record = assets / L"win" / L"import.json";
+  // Whether the catalog lists it (the synthetic disc's modules are no real ones: it has none).
+  auto listed = [&] { return gui::catalog_module_counts(assets / L"win").count("deluxe") == 1; };
+  CHECK(fs::is_directory(files) && fs::exists(record) && listed());
+  // `--gui --remove`, then Cancel: nothing changes (exit 5).
+  {
+    GuiProcess p;
+    CHECK(p.start(exe, {L"--gui", L"--remove", L"deluxe", L"--dest", assets.wstring()}));
+    HWND w = p.window();
+    CHECK(w != nullptr && GuiProcess::control(w, gui::kIdRemove) && IsWindowVisible(GuiProcess::control(w, gui::kIdRemove)));
+    if (w) GuiProcess::click(w, IDCANCEL);
+    CHECK_EQ(p.wait(), 5);
+    CHECK(fs::is_directory(files) && listed());
+  }
+  // A release that isn't installed: nothing to remove (no Remove button), exit 5.
+  {
+    GuiProcess p;
+    CHECK(p.start(exe, {L"--gui", L"--remove", L"tt", L"--dest", assets.wstring()}));
+    HWND w = p.window();
+    CHECK(w != nullptr);
+    if (w) {
+      HWND b = GuiProcess::control(w, gui::kIdRemove);
+      CHECK(!b || !IsWindowVisible(b));
+      GuiProcess::click(w, gui::kIdRemove);   // not there to press
+      GuiProcess::click(w, IDCANCEL);
+    }
+    CHECK_EQ(p.wait(), 5);
+  }
+  // A file of it in use (as a running module would hold it): its folder
+  // can't be moved aside, so the window says nothing was removed and offers
+  // to try again; Cancel then ends with that failure (exit 1), and
+  // everything is as it was.
+  {
+    fs::path held;
+    for (const auto& e : fs::recursive_directory_iterator(files))
+      if (e.is_regular_file()) {
+        held = e.path();
+        break;
+      }
+    CHECK(!held.empty());
+    HANDLE h = held.empty() ? INVALID_HANDLE_VALUE
+                            : CreateFileW(held.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(h != INVALID_HANDLE_VALUE);
+    GuiProcess p;
+    CHECK(p.start(exe, {L"--gui", L"--remove", L"deluxe", L"--dest", assets.wstring()}));
+    HWND w = p.window();
+    CHECK(w != nullptr);
+    if (w) {
+      HWND remove = GuiProcess::control(w, gui::kIdRemove), cancel = GuiProcess::control(w, IDCANCEL);
+      GuiProcess::click(w, gui::kIdRemove);
+      // Cancel greys while it tries (a rename is retried for 2 s), and comes back with "Try again".
+      const ULONGLONG until = GetTickCount64() + 30000;
+      bool ran = false;
+      wchar_t text[32] = {};
+      while (GetTickCount64() < until) {
+        const bool enabled = cancel && IsWindowEnabled(cancel);
+        ran = ran || !enabled;
+        GetWindowTextW(remove, text, 32);
+        if (enabled && ran && wcscmp(text, L"Try again") == 0) break;
+        Sleep(50);
+      }
+      CHECK(ran && wcscmp(text, L"Try again") == 0);
+      GuiProcess::click(w, IDCANCEL);
+    }
+    CHECK_EQ(p.wait(), 1);
+    if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+    CHECK(fs::is_directory(files) && fs::exists(record) && listed());
+  }
+  // From Sources: Deluxe's menu's "Remove…" (450) opens the window that asks;
+  // Remove goes back to Sources, which says what was removed and no longer
+  // shows it; Close is exit 0. Only its cover stays.
+  {
+    GuiProcess p;
+    CHECK(p.start(exe, {L"--gui", L"--dest", assets.wstring()}));
+    HWND src = p.window();
+    CHECK(src != nullptr && GuiProcess::control(src, 300) != nullptr);
+    if (src) {
+      GuiProcess::click(src, 450);
+      CHECK(GuiProcess::gone(src));
+      HWND ask = p.window_with(src, gui::kIdRemove);
+      CHECK(ask != nullptr);
+      if (ask) {
+        GuiProcess::click(ask, gui::kIdRemove);
+        CHECK(GuiProcess::gone(ask, 30000));
+        HWND back = p.window_with(ask, 101);
+        CHECK(back != nullptr);
+        if (back) {
+          CHECK(GuiProcess::control(back, 300) == nullptr);   // nothing installed now: no covers
+          wchar_t close[16] = {};
+          GetWindowTextW(GuiProcess::control(back, IDCANCEL), close, 16);
+          CHECK(wcscmp(close, L"Close") == 0);
+          GuiProcess::click(back, IDCANCEL);
+        }
+      }
+    }
+    CHECK_EQ(p.wait(), 0);
+    CHECK(!fs::exists(files) && !fs::exists(record) && !listed());
+    CHECK(fs::exists(tile));
+  }
+  // Imported again, and removed by `--gui --remove` alone: Remove ends it (exit 0).
+  {
+    test::ProcessResult r = test::run_process(exe,
+                                              {L"--iso", (dir / L"synthetic.iso").wstring(), L"--dest", assets.wstring(),
+                                               L"--no-verify", L"--no-cover-download", L"--quiet"},
+                                              120000);
+    CHECK_EQ(r.exit_code, 0);
+    CHECK(fs::is_directory(files) && listed());
+    GuiProcess p;
+    CHECK(p.start(exe, {L"--gui", L"--remove", L"deluxe", L"--dest", assets.wstring()}));
+    if (HWND w = p.window()) GuiProcess::click(w, gui::kIdRemove);
+    CHECK_EQ(p.wait(30000), 0);
+    CHECK(!fs::exists(files) && !fs::exists(record) && !listed());
   }
   return test::g_failures ? 1 : 0;
 }

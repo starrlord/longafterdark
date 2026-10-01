@@ -1,6 +1,7 @@
 // The settings dialog's box-cover strip (COVERS.md §1.2–§1.5): one tile per
-// installed release across the top of the window; clicking tiles filters the
-// module list.
+// installed release across the top of the window, on as many rows as they
+// need; clicking tiles filters the module list, and a tile's context menu
+// changes its cover or removes the release.
 //
 // It is built from real controls, so the dialog manager, MSAA and UIA work
 // with no accessibility code of its own: a container (IDC_COVER_STRIP, class
@@ -9,7 +10,8 @@
 // IDC_COVER_TILE_BASE + index; its check state is the selection, its window
 // text the accessible name), custom-drawn through NM_CUSTOMDRAW, with a
 // roving tab stop, and two chevron buttons that scroll the row by whole tiles
-// when it overflows (only whole tiles show: ui_model.h, layout_strip). The
+// when a window too short for the rows makes it one row that overflows (only
+// whole tiles show: ui_model.h, layout_strip). The
 // status line and the "Show all" link beside the strip are the dialog's own
 // controls.
 #pragma once
@@ -48,6 +50,8 @@ class CoverStrip {
     std::function<void()> changed;              // the selection changed (by the user)
     std::function<void(int)> change_cover;      // "Change cover…" chosen for tile i
     std::function<bool()> can_change_cover;     // false: the menu item is greyed
+    std::function<void(int)> remove;            // "Remove <release>…" chosen for tile i
+    std::function<bool()> can_remove;           // false: the menu item is greyed
   };
 
   // The container's window class; once per process, before the dialog is created.
@@ -74,7 +78,8 @@ class CoverStrip {
   // Selects exactly `ids` (no `changed` callback).
   void select(const std::vector<std::string>& ids);
   // Places the tiles for `in` (the dialog's layout: DIPs), keeping the scroll
-  // position. `origin` is the container's top-left in dialog client pixels.
+  // position (when the row scrolls). `origin` is the container's top-left in
+  // dialog client pixels.
   void layout(const StripInput& in, POINT origin);
   const StripLayout& geometry() const { return S_; }
   // Scrolls by whole tiles (the chevrons and the wheel), or to show `tile`.

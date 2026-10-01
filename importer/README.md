@@ -42,6 +42,7 @@ adimport --clear-cover <id> [--dest <assets root>] [--quiet]
 adimport --refresh-covers [<id> | all] [--force] [--dest <assets root>] [--download-dir <dir>] [--quiet]
 adimport --gui --change-cover <id> [--dest <assets root>] [--download-dir <dir>] [--no-cover-download]
 adimport --gui --refresh-covers [<id> | all] [--force] [--dest <assets root>] [--download-dir <dir>]
+adimport --gui --remove <id> [--dest <assets root>]
 ```
 
 Every import ends by rewriting `catalog-win.json` over every installed
@@ -55,7 +56,9 @@ the install disks' files)"), and its cover; its title column is as wide as
 the longest title, "Scott Adams' Dilbert Screen Saver Collection" (44
 characters). `--remove <id>`
 deletes one package (Deluxe: `FILES` and its `import.json`) and rewrites the
-catalog. The cover commands are described under **Covers**.
+catalog; with `--gui` a window asks first (the settings dialog's "Remove …"
+and the importer's own covers run it: `gui/README.md`), exit 0 when it was
+removed and 5 when not. The cover commands are described under **Covers**.
 
 ## Sources
 

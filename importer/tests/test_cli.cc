@@ -192,6 +192,17 @@ int main(int argc, char** argv) {
   CHECK_EQ(run(exe, {L"--no-cover-download", L"--catalog-only"}, "--no-cover-download --catalog-only"), 1);
   CHECK_EQ(run(exe, {L"--no-cover-download", L"--list-packages"}, "--no-cover-download --list-packages"), 1);
   CHECK_EQ(run(exe, {L"--no-cover-download", L"--remove", L"tt"}, "--no-cover-download --remove"), 1);
+  // In a window (the settings dialog's "Remove …"): no --quiet, no source, a known id.
+  {
+    std::string help;
+    CHECK_EQ(run(exe, {L"--help"}, "help", &help), 0);
+    CHECK(help.find("adimport --gui --remove <id>") != std::string::npos);
+  }
+  CHECK_EQ(run(exe, {L"--gui", L"--remove", L"tt", L"--quiet"}, "--gui --remove --quiet"), 1);
+  CHECK_EQ(run(exe, {L"--gui", L"--remove", L"nosuch"}, "--gui --remove of an unknown package"), 1);
+  CHECK_EQ(run(exe, {L"--gui", L"--remove", L"tt", L"--iso", iso.wstring()}, "--gui --remove + a source"), 1);
+  CHECK_EQ(run(exe, {L"--remove", L"tt", L"--package", L"tt"}, "--remove --package"), 1);
+  CHECK_EQ(run(exe, {L"--remove", L"tt", L"--download-dir", dir.wstring()}, "--remove --download-dir"), 1);
   CHECK_EQ(run(exe, {L"--change-cover"}, "--change-cover without an id"), 1);
   CHECK_EQ(run(exe, {L"--change-cover", L"nosuch"}, "--change-cover of an unknown package"), 1);
   CHECK_EQ(run(exe, {L"--change-cover", L"deluxe", L"--iso", iso.wstring()}, "--change-cover + a source"), 1);

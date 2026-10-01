@@ -48,6 +48,8 @@ struct Session {
   // The app mark as the windows' icon (taskbar, Alt+Tab).
   HICON icon_big = nullptr, icon_small = nullptr;
   int icon_dpi = 0;
+  // What Sources says next time it opens, once ("Removed …").
+  std::wstring notice;
 };
 
 enum class Ink { text, text2, text3, accent, caution, critical };
@@ -93,6 +95,16 @@ class Page {
   virtual int initial_focus() const { return 0; }
   virtual bool minimizable() const { return false; }
   virtual void theme_changed() {}
+  // A button the page draws itself (NM_CUSTOMDRAW): true with `*result` set,
+  // else adw_ui draws it by its role.
+  virtual bool draw_button(NMCUSTOMDRAW* cd, LRESULT* result) { (void)cd, (void)result; return false; }
+  // WM_CONTEXTMENU from `ctl` (anywhere in the window, panels included) at
+  // `pt` (screen; {-1, -1} from the keyboard): true when the page showed a menu.
+  virtual bool context_menu(HWND ctl, POINT pt) { (void)ctl, (void)pt; return false; }
+  // A command that comes from one of the page's menus, not a control: it is
+  // carried out with no control (and TDM_CLICK_BUTTON presses it) when this
+  // says it is one the page offers now.
+  virtual bool menu_command(int id) const { (void)id; return false; }
 
   // ---- helpers ------------------------------------------------------------------------
   void finish(int outcome);

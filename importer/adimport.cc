@@ -15,6 +15,7 @@
 //   adimport --refresh-covers [<id> | all] [--force] [--dest <assets root>] [--download-dir <dir>] [--quiet]
 //   adimport --gui --change-cover <id> [--dest <assets root>] [--download-dir <dir>] [--no-cover-download]
 //   adimport --gui --refresh-covers [<id> | all] [--force] [--dest <assets root>] [--download-dir <dir>]
+//   adimport --gui --remove <id> [--dest <assets root>]
 //
 // The source is identified as one of the known releases (packages.h) and
 // only that release's directory is replaced. Every import ends by writing
@@ -39,8 +40,10 @@
 // first offers the three sources (image file(s), disc/folder, Internet Archive
 // — a list of the releases, their download sizes and whether each is already
 // imported), then shows progress with a Cancel button; --change-cover <id>
-// opens only the cover window, and --refresh-covers only a progress window
-// that tries the cover downloads (the settings dialog's "Get the covers").
+// opens only the cover window, --refresh-covers only a progress window
+// that tries the cover downloads (the settings dialog's "Get the covers"),
+// and --remove <id> only a window that asks before it removes the release
+// (the settings dialog's "Remove …").
 // The windows live in gui/ (gui.h, COVERS.md
 // §4). It is a console program so scripted runs get output and an exit code;
 // launched with no arguments from Explorer (no parent console) it behaves as
@@ -114,6 +117,7 @@ void usage(FILE* f) {
           "                [--no-cover-download]\n"
           "       adimport --gui --refresh-covers [<id> | all] [--force] [--dest <assets root>]\n"
           "                [--download-dir <dir>]\n"
+          "       adimport --gui --remove <id> [--dest <assets root>]\n"
           "\n"
           "Identifies which of these releases the source is,\n"
           "%s"
@@ -149,7 +153,8 @@ void usage(FILE* f) {
           "  --list-packages     the known releases, which are imported, their covers and\n"
           "                      their downloads\n"
           "  --remove <id>       delete an imported release and rewrite the catalog (its box\n"
-          "                      cover is kept for a later import)\n"
+          "                      cover is kept for a later import); with --gui a window asks\n"
+          "                      first (exit 0 when it was removed, 5 when not)\n"
           "  --version           print the version and exit\n"
           "Ctrl+C cancels an import, a download or a cover fetch (exit 5); a second one\n"
           "ends adimport at once.\n"
@@ -329,7 +334,10 @@ Args parse_args(int argc, wchar_t** argv) {
     return a;
   }
   if (!a.remove.empty()) {
-    if (import_args || dl_dir || a.no_cover_download) a.error = "--remove takes only --dest and --quiet";
+    // In a window too (--gui): the settings dialog's "Remove …", which asks first.
+    const bool other = sources || a.no_verify || !url.empty() || !md5.empty() || !s.package.empty();
+    if (other || dl_dir || a.no_cover_download || (a.gui && have_quiet))
+      a.error = "--remove takes only --dest, and --quiet or --gui";
     else if (!find_package(a.remove)) a.error = "unknown package \"" + a.remove + "\" (see --list-packages)";
     return a;
   }
@@ -713,6 +721,7 @@ int run_windows(const Args& a) {
   req.refresh_covers = a.refresh_covers;
   req.refresh_id = a.refresh_id;
   req.force = a.force;
+  req.remove = a.remove;
   return gui::run(req);
 }
 
@@ -762,7 +771,7 @@ int main() {
   if (!a.clear_cover.empty()) return run_clear_cover(a);
   if (a.refresh_covers && !a.gui) return run_refresh_covers(a);
   if (a.list_packages) return run_list_packages(a);
-  if (!a.remove.empty()) return run_remove(a);
+  if (!a.remove.empty() && !a.gui) return run_remove(a);
   // Started from a GUI rather than a shell: either no console at all (the
   // manifest's detached console policy, Windows 11 24H2+), or — on earlier
   // systems — alone on a visible console of its own that we are writing to.

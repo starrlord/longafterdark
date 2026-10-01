@@ -430,6 +430,21 @@ int strip_slots(const StripInput& in, const StripMetrics& m) {
 
 } // namespace
 
+StripGrid strip_grid(int tiles, bool compact, double w) {
+  if (tiles <= 0) return {};
+  const StripMetrics m = strip_metrics(compact);
+  // A row holds n tiles when n * pitch - gap <= w (layout_strip's overflow test).
+  const int per_row = std::max(1, (int)std::floor((w + (m.pitch - m.cell_w) + 0.001) / m.pitch));
+  const int rows = (tiles + per_row - 1) / per_row;
+  return StripGrid{rows, (tiles + rows - 1) / rows};
+}
+
+int strip_band(bool compact, int rows) {
+  const StripMetrics m = strip_metrics(compact);
+  rows = std::max(1, rows);
+  return rows * m.cell_h + (rows - 1) * kStripRowGap + (m.band - m.cell_h);
+}
+
 StripLayout layout_strip(const StripInput& in) {
   StripLayout S;
   const int n = std::max(0, in.tiles);
@@ -437,12 +452,31 @@ StripLayout layout_strip(const StripInput& in) {
   if (n == 0) return S;
   const StripMetrics m = strip_metrics(in.compact);
   Scaler s{std::max(48, in.dpi)};
+  if (in.wrap) {
+    // Every tile on its row and column, left-aligned: nothing to scroll.
+    const StripGrid g = strip_grid(n, in.compact, in.w);
+    S.rows = g.rows;
+    S.cols = g.cols;
+    S.slots = n;
+    S.area = s.rc(in.x, in.y, in.w, g.rows * m.cell_h + (g.rows - 1) * kStripRowGap);
+    S.view = S.area;
+    for (int i = 0; i < n; ++i) {
+      const double cx = in.x + (i % g.cols) * m.pitch, cy = in.y + (i / g.cols) * (m.cell_h + kStripRowGap);
+      S.cells.push_back(s.rc(cx, cy, m.cell_w, m.cell_h));
+      S.arts.push_back(s.rc(cx + m.art_x, cy + m.art_y, m.art_w, m.art_h));
+      S.captions.push_back(m.caption_h ? s.rc(cx, cy + m.art_y + m.art_h + 4, m.cell_w, m.caption_h) : Rc{});
+      S.whole.push_back(true);
+    }
+    return S;
+  }
   const int gap = m.pitch - m.cell_w;
   const double zone = kStripChevronW + kStripChevronGap;
   S.overflow = n > 1 && n * m.pitch - gap > in.w + 0.001;
   S.slots = S.overflow ? std::min(n - 1, strip_slots(in, m)) : n;
   S.max_first = n - S.slots;
   S.first = std::clamp(in.first, 0, S.max_first);
+  S.rows = 1;
+  S.cols = S.slots;
   // Overflowing, the view is the slots between the two chevrons' zones at
   // every scroll position: the tiles start after the left chevron's zone
   // (unscrolled too, where that zone stays empty) and the view ends with the
@@ -495,6 +529,13 @@ int strip_caption_size(int room, const std::function<int(int)>& width_at) {
   return kStripCaptionSizes[std::size(kStripCaptionSizes) - 1];
 }
 
+int design_client_h(int strip_tiles) {
+  if (strip_tiles < 2) return kDesignClientH;
+  const double C = std::min<double>(kDesignClientW - 2 * kMargin, kContentMaxW);
+  const int rows = strip_grid(strip_tiles, false, C - kStripStatusW - kStripStatusGap).rows;
+  return kDesignClientH + strip_band(false, rows);
+}
+
 WindowLayout layout_window(const LayoutInput& in) {
   WindowLayout L;
   const int dpi = std::max(48, in.dpi);
@@ -518,19 +559,34 @@ WindowLayout layout_window(const LayoutInput& in) {
   L.logo = s.rc(x0, 4, 32, 32);
   L.title = s.rc(x0 + 32 + 12, 4, C - 44, 32);
 
-  // The strip: a band across the column, right under the header. It takes
-  // its compact form when the client is short, so the two columns below
-  // always keep at least the height they have without it.
+  // The strip: a band across the column, right under the header, showing
+  // every cover on as many rows as they need. The regular covers when the
+  // client has the height for their rows (the columns keeping what they
+  // have over a regular one-row band at kStripCompactBelow), else the
+  // compact ones while the columns keep at least their minimum, so the two
+  // columns below always keep at least the height they have without it.
+  // Only a client too short for even the compact rows gets one compact row
+  // that scrolls.
   double band = 0;
   if (strip) {
-    const bool compact = H < kStripCompactBelow;
-    const StripMetrics m = strip_metrics(compact);
-    band = m.band;
-    L.strip_mode = compact ? StripMode::compact : StripMode::regular;
     const double tiles_w = C - kStripStatusW - kStripStatusGap;
-    L.strip = s.rc(x0, kHeaderH, tiles_w, m.cell_h);
-    L.strip_status = s.rc(x0 + C - kStripStatusW, kHeaderH + m.art_y, kStripStatusW, m.art_h);
-    L.strip_in = StripInput{in.strip_tiles, compact, x0, (double)kHeaderH, tiles_w, in.strip_first, dpi};
+    const int n = in.strip_tiles;
+    const int regular_rows = strip_grid(n, false, tiles_w).rows, compact_rows = strip_grid(n, true, tiles_w).rows;
+    bool compact = true, wrap = true;
+    if (H - strip_band(false, regular_rows) >= kStripCompactBelow - strip_band(false, 1)) compact = false;
+    else if (H - strip_band(true, compact_rows) < kMinClientH) wrap = false;
+    const StripMetrics m = strip_metrics(compact);
+    const int rows = wrap ? (compact ? compact_rows : regular_rows) : 1;
+    band = strip_band(compact, rows);
+    L.strip_mode = compact ? StripMode::compact : StripMode::regular;
+    const double cells_h = rows * m.cell_h + (rows - 1) * kStripRowGap;
+    L.strip = s.rc(x0, kHeaderH, tiles_w, cells_h);
+    // The status box, as tall as a cover, centred on the covers (on the
+    // middle of their rows, kept on the 4-DIP grid).
+    const double art_top = kHeaderH + m.art_y, art_bottom = kHeaderH + cells_h - m.cell_h + m.art_y + m.art_h;
+    const double status_y = std::floor((art_top + art_bottom - m.art_h) / 2 / 4) * 4;
+    L.strip_status = s.rc(x0 + C - kStripStatusW, status_y, kStripStatusW, m.art_h);
+    L.strip_in = StripInput{n, compact, x0, (double)kHeaderH, tiles_w, in.strip_first, dpi, wrap};
     L.tiles = layout_strip(L.strip_in);
   }
 

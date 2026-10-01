@@ -145,7 +145,7 @@ std::wstring modules_count_label(size_t shown, size_t total);
 // with any '&' doubled (a button's text is read for mnemonics).
 std::wstring tile_name(const Release& r, size_t modules);
 // ...and its tooltip: "<title> — 15 screen savers", then how to use it (a
-// click filters; a right-click offers "Change cover…").
+// click filters; a right-click offers "Change cover…" and "Remove …").
 std::wstring tile_tip(const Release& r, size_t modules);
 // "Also on: After Dark 10th Anniversary, Totally Twisted After Dark" ("" with none).
 std::wstring also_on_tip(const std::vector<std::string>& titles);

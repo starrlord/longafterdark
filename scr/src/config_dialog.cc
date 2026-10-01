@@ -58,6 +58,7 @@ constexpr UINT WM_APP_SCHEDULE_THUMBS = WM_APP + 15;
 constexpr UINT WM_APP_CONFIGURE_DONE = WM_APP + 16;    // wParam: exit code, lParam: std::string* (its JSON line)
 constexpr UINT WM_APP_COVER_DONE = WM_APP + 17;        // "Change cover…"'s adimport exited (wParam: exit code)
 constexpr UINT WM_APP_FOOTER_CREDIT_FOCUS = WM_APP + 18;  // after an activation's focus restore (dialog_proc)
+constexpr UINT WM_APP_REMOVE_DONE = WM_APP + 19;       // "Remove …"'s adimport exited (wParam: exit code)
 
 // ListView group ids: 1 + the release's index in the catalog (COVERS.md §1.7).
 int group_id(int release) { return 1 + release; }
@@ -148,6 +149,8 @@ struct State {
   bool live_region = false;                             // the status line is a polite live region
   bool cover_running = false;                           // "Change cover…"'s adimport is running
   std::string cover_id;
+  bool remove_running = false;                          // "Remove …"'s adimport is running
+  std::string remove_id;                                // ...for this release
   bool covers_missing = false;                          // a release still shows a generated cover: "Get the covers"
   HWND chip_tip = nullptr;                              // the release chip's "Also on:" tooltip (tool 1)
   // Group headers drawn ellipsized: group id -> the header's rect in the list
@@ -392,6 +395,12 @@ std::string module_cvset(const State& st, const Module& m) {
 
 // ---- live preview -------------------------------------------------------------------
 
+// While adimport removes a release ("Remove …"), none of its modules runs:
+// its folder must be free to be moved aside.
+bool being_removed(const State& st, const Module& m) {
+  return st.remove_running && m.release >= 0 && m.release == st.catalog.release_index(st.remove_id);
+}
+
 void refresh_preview(State& st) {
   if (!st.preview) return;
   const int i = st.shown;
@@ -403,6 +412,10 @@ void refresh_preview(State& st) {
   const Module& m = st.catalog.modules[i];
   if (!is_present(st, i)) {
     live_preview_message(st.preview, L"Module file missing", L"Import its disc again to restore it.");
+    return;
+  }
+  if (being_removed(st, m)) {
+    live_preview_message(st.preview, L"", L"");
     return;
   }
   switch (run_state(st, m)) {
@@ -2171,7 +2184,7 @@ LRESULT CALLBACK list_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWO
 // and not for a module this host can't run yet (or whose file is gone).
 void update_preview_button(State& st) {
   const Module* shown = shown_module(st);
-  const bool unrunnable = shown && (coming_soon(st, *shown) || !is_present(st, st.shown));
+  const bool unrunnable = shown && (coming_soon(st, *shown) || !is_present(st, st.shown) || being_removed(st, *shown));
   HWND b = GetDlgItem(st.dlg, IDC_PREVIEW);
   const bool on = !st.preview_running && shown && !unrunnable;
   if ((IsWindowEnabled(b) != FALSE) == on) return;
@@ -2188,8 +2201,9 @@ void update_assets_status(State& st) {
   if (st.import_running) text = L"Importing…";
   SetDlgItemTextW(st.dlg, IDC_ASSETS_STATUS, text.c_str());
   place_assets_status(st);
-  // One adimport at a time: Import… is greyed while a cover changes too.
-  const bool busy = st.import_running || st.cover_running;
+  // One adimport at a time: Import… is greyed while a cover changes or a
+  // release is being removed too.
+  const bool busy = st.import_running || st.cover_running || st.remove_running;
   EnableWindow(GetDlgItem(st.dlg, IDC_IMPORT), !busy);
   EnableWindow(GetDlgItem(st.dlg, IDC_STRIP_GET_COVERS), can_change_cover(st));
   InvalidateRect(GetDlgItem(st.dlg, IDC_STRIP_GET_COVERS), nullptr, TRUE);
@@ -2412,7 +2426,7 @@ void mark_cant_run(State& st, const std::vector<std::string>& ids) {
 // list shows them. They wait for the host's answer (--capabilities), and a
 // module this host can't run (run_state) is left out.
 void schedule_thumbnails(State& st) {
-  if (!st.thumbgen_allowed || st.import_running) return;
+  if (!st.thumbgen_allowed || st.import_running || st.remove_running) return;
   std::vector<ThumbJob> jobs;
   const std::wstring host = host_exe_path();
   if (file_exists(host)) {
@@ -2528,6 +2542,7 @@ void on_preview(State& st) {
   // The module the details show (the chosen one while the list shows its row).
   const int mi = st.shown;
   if (mi < 0 || mi >= (int)st.catalog.modules.size() || st.preview_running) return;
+  if (being_removed(st, st.catalog.modules[mi])) return;
   // Run exactly what the dialog shows (even unsaved): a throwaway settings
   // file handed to "/s" through AD_SETTINGS (dialog_support.h). Its host gets
   // the module's own screen, as the saver's always do (module_screen: an
@@ -2593,7 +2608,7 @@ void update_button_notes(State& st) {
 // paused; the run is waited for on a worker thread (the UI keeps pumping:
 // an owned window shares our input queue).
 void start_configure(State& st, int module_index, int slot) {
-  if (st.configuring || st.preview_running || st.import_running) return;   // one run at a time
+  if (st.configuring || st.preview_running || st.import_running || st.remove_running) return;   // one run at a time
   if (module_index < 0 || module_index >= (int)st.catalog.modules.size() || !button_live(st, module_index)) return;
   const Module& m = st.catalog.modules[module_index];
   if (slot < 0 || slot >= (int)m.controls.size() || m.controls[slot].type != ControlType::button) return;
@@ -2700,7 +2715,7 @@ void reload_catalog(State& st) {
 }
 
 void on_import(State& st) {
-  if (st.import_running || st.cover_running) return;   // one adimport at a time
+  if (st.import_running || st.cover_running || st.remove_running) return;   // one adimport at a time
   std::wstring exe = import_exe_path();
   if (!file_exists(exe)) {
     std::wstring msg = L"The importer (adimport.exe) was not found at\n" + exe + L"\n\nIt is installed next to LongAfterDark.scr.";
@@ -2737,7 +2752,7 @@ void on_import_done(State& st, DWORD code) {
 // "Change cover…" (COVERS.md §1.11): adimport's own cover window, started
 // the way Import… starts it. The dialog never writes under the assets root.
 bool can_change_cover(const State& st) {
-  return !st.import_running && !st.cover_running && file_exists(import_exe_path());
+  return !st.import_running && !st.cover_running && !st.remove_running && file_exists(import_exe_path());
 }
 
 void on_change_cover(State& st, int tile) {
@@ -2783,6 +2798,46 @@ void on_change_cover_done(State& st, DWORD code) {
   // else changed nothing.
   if (code == 0) reload_catalog(st);
   else update_assets_status(st);
+}
+
+// "Remove …" (COVERS.md §1.11): adimport's own window asks first and removes
+// the release (`--gui --remove <id>`), started the way "Change cover…" is,
+// so the dialog never writes under the assets root. Nothing of the release
+// may be open meanwhile, or its folder can't be moved aside: no thumbnail
+// is taken and no module's own settings window opens until adimport has
+// exited, and none of its modules runs in the live preview or Preview
+// (being_removed); a module's own settings window running greys the item.
+bool can_remove(const State& st) { return can_change_cover(st) && !st.configuring; }
+
+void on_remove_release(State& st, int tile) {
+  if (!st.strip || tile < 0 || tile >= (int)st.strip->count() || !can_remove(st)) return;
+  const std::string id = st.strip->tile(tile).id;
+  ChildLaunch c;
+  c.exe = import_exe_path();
+  c.args = L"--gui --remove " + quote_arg(widen(id));
+  c.console_program = true;   // its own windows only, never a console window
+  if (!launch(c, st.dlg, WM_APP_REMOVE_DONE)) return;
+  st.remove_running = true;
+  st.remove_id = id;
+  if (st.thumbgen) st.thumbgen->set_jobs({});
+  refresh_preview(st);   // the night sky, while it shows one of the release's modules
+  log_line("dialog: remove %s", id.c_str());
+  update_assets_status(st);
+}
+
+void on_remove_done(State& st, DWORD code) {
+  st.remove_running = false;
+  log_line("dialog: remove %s exited with %lu", st.remove_id.c_str(), (unsigned long)code);
+  // 0: the release is gone (the catalog no longer lists it); anything else
+  // removed nothing (adimport said why), and the preview carries on.
+  if (code == 0) {
+    st.import_note.clear();   // the module count says what is left
+    reload_catalog(st);
+  } else {
+    refresh_preview(st);
+    update_assets_status(st);
+    PostMessageW(st.dlg, WM_APP_SCHEDULE_THUMBS, 0, 0);
+  }
 }
 
 // ---- painting ------------------------------------------------------------------------
@@ -3108,7 +3163,9 @@ void size_and_center(State& st) {
     AdjustWindowRectExForDpi(&r, style, FALSE, ex, (UINT)dpi);
     return r;
   };
-  int cw = dip(kDesignClientW, ldpi), ch = dip(st.strip_on ? kDesignClientHStrip : kDesignClientH, ldpi);
+  // With the strip, room for its regular covers' rows (ui_model.h: design_client_h).
+  const int releases = st.strip_on ? (int)st.catalog.releases.size() : 0;
+  int cw = dip(kDesignClientW, ldpi), ch = dip(design_client_h(releases), ldpi);
   RECT wr = window_for(cw, ch);
   // Never larger than the work area (a small laptop screen at 150%).
   const int maxw = (wa.right - wa.left) * 96 / 100, maxh = (wa.bottom - wa.top) * 96 / 100;
@@ -3285,6 +3342,8 @@ void init_dialog(State& st) {
     cb.changed = [&st] { on_filter_changed(st); };
     cb.change_cover = [&st](int tile) { on_change_cover(st, tile); };
     cb.can_change_cover = [&st] { return can_change_cover(st); };
+    cb.remove = [&st](int tile) { on_remove_release(st, tile); };
+    cb.can_remove = [&st] { return can_remove(st); };
     st.strip = std::make_unique<CoverStrip>(item(IDC_COVER_STRIP), &st.theme, std::move(cb), !st.offscreen);
     load_strip(st, effective_collections(st.settings.collections, st.catalog));
   }
@@ -3589,6 +3648,10 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
       if (!st) break;
       on_change_cover_done(*st, (DWORD)wp);
       return TRUE;
+    case WM_APP_REMOVE_DONE:
+      if (!st) break;
+      on_remove_done(*st, (DWORD)wp);
+      return TRUE;
     case WM_APP_LANE_PROBE: {
       std::unique_ptr<HostCapabilities> caps(reinterpret_cast<HostCapabilities*>(lp));
       if (!st || !caps) break;
@@ -3718,7 +3781,8 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 //     the base colour and how many rows the list shows; each group's accessible name and
 //     its title as drawn; the host's capabilities line, the modules "Coming soon", and the
 //     shown module's id, chip, whether its buttons are live and Preview is enabled; the
-//     strip's scroll position, each tile's window or "hidden", its chevrons and status line)
+//     strip's scroll position, its rows and the most tiles a row holds, each tile's window
+//     or "hidden", its chevrons and status line)
 //     collections=<id>,… (the strip's filter)  focus=strip (the first selected tile, else
 //     the first)  hover=strip:<id> (that tile hovered)
 //     sound=off (the Sound dropdown at Off)  volume=<0..100>  focus=sound|volume
@@ -3947,7 +4011,8 @@ int run_screenshot(State& st, const std::wstring& png) {
       };
       const StripLayout& g = st.strip->geometry();
       report += "strip_first=" + std::to_string(g.first) + "\nstrip_max_first=" + std::to_string(g.max_first) +
-                "\nstrip_slots=" + std::to_string(g.slots) + "\n";
+                "\nstrip_slots=" + std::to_string(g.slots) + "\nstrip_rows=" + std::to_string(g.rows) +
+                "\nstrip_cols=" + std::to_string(g.cols) + "\n";
       for (size_t i = 0; i < st.strip->count(); ++i) {
         report += "tile" + std::to_string(i) + "=" + shot(st.strip->tile_hwnd((int)i), true) + "\n";
       }

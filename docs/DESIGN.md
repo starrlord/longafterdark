@@ -839,7 +839,11 @@ importer GUI restyle, and the work split. The contract in brief:
   * Each tile is a real toggle button: its accessible name is "<title>, N
     screen savers", it reports a checked state, it can be reached with the
     arrow keys, and it has a context menu with "Show only …", "Show all
-    releases" and "Change cover…".
+    releases", "Change cover…" and "Remove …" (adimport's window asks
+    first, then removes the release: `--gui --remove <id>`).
+  * Every cover shows: covers that don't fit on one row wrap onto more
+    (regular, else compact covers); only a window too short for those rows
+    scrolls one compact row between chevrons.
   * With one release installed, the strip is hidden.
 * **The list, by release.** The list is grouped by release (title, oldest
   release first), not by lane.

@@ -155,7 +155,8 @@ adimport --remove tt
 ```
 
 `--list-packages` shows which releases are imported, and `--remove <id>`
-deletes one. `adimport --help` lists every option. The exit code is 0 on
+deletes one (in the settings window, right-click its cover → **Remove …**:
+see [Covers](#2-covers)). `adimport --help` lists every option. The exit code is 0 on
 success, 1 on an error such as a file that cannot be written, 2 when the
 source is not a known release, 3 when verification fails, 4 on a network
 error and 5 when you cancel.
@@ -163,9 +164,11 @@ error and 5 when you cancel.
 ## 2. Covers
 
 With two or more releases imported, the settings window shows their box
-covers above the module list. Click covers to list only the modules of
-those releases (with none selected, it lists them all); right-click a cover
-for **Show only …** and **Show all releases**. An import fetches the
+covers above the module list, every one of them: on two rows when they
+don't fit on one (in a short window, smaller covers without their names;
+only in the smallest one do they scroll). Click covers to list only the
+modules of those releases (with none selected, it lists them all);
+right-click a cover for **Show only …** and **Show all releases**. An import fetches the
 release's cover picture from the Internet (checked against its published
 MD5) or uses the art on the disc; a cover it cannot get is drawn as a plain
 box with the release's title, and the import still succeeds. While a
@@ -174,10 +177,16 @@ window or the importer) fetches the pictures; from a command prompt,
 `adimport --refresh-covers` does the same.
 
 To use a picture of your own, right-click a cover → **Change cover…** (or
-**Change cover…** next to the release in the importer), or run
+click the release's cover in the importer → **Change cover…**), or run
 `adimport --set-cover <id> <picture>`. Any picture Windows can read will do
 (PNG, JPEG, GIF, BMP, TIFF); it stays on this computer.
 `adimport --clear-cover <id>` goes back to the original cover.
+
+To remove a release from this computer, right-click its cover →
+**Remove …** (or click its cover in the importer → **Remove …**): a window
+asks first, then deletes its modules. Its cover is kept, and you can import
+the release again at any time. Close any screen saver that is showing one
+of its modules first (the window says so if a file of it is in use).
 
 ## 3. Install the screen saver
 

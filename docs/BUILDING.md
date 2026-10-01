@@ -337,10 +337,12 @@ imports all fourteen releases from made-up sources.
   their own: three desktop-seed pictures at most, the screens left out
   counted in the log; it holds on a desktop that can't be read back too).
   With the twelve releases came `scr_smoke_config-twelve` (twelve covers,
-  `scr/tests/fixtures/catalog-twelve.json`: renders at several sizes, the
-  strip driven by keyboard and chevrons, a saved filter, an import going
-  from seven releases to twelve, and ScreamSavers' and Marvel's catalog
-  screen). While the monitors
+  `scr/tests/fixtures/catalog-twelve.json`: renders at several sizes, two
+  rows of covers and the scrolling row of the smallest window, the strip
+  driven by keyboard and chevrons, a saved filter, an import going from
+  seven releases to twelve, and ScreamSavers' and Marvel's catalog screen),
+  and with removing a release `scr_smoke_config-remove` ("Remove …" from a
+  cover's menu against `fakeimport.exe`). While the monitors
   are asleep the saver pauses its hosts, and every smoke test that runs a
   `/s` times out: set `AD_SCR_TEST_DISPLAY_ON=1` for the run, a lever only
   the test build, `LongAfterDark-test.scr`, reads (`scr_resources` checks

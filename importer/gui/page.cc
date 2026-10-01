@@ -502,7 +502,7 @@ void Page::route_command(int id, int code, HWND ctl) {
   }
   if (ctl) {
     if (!IsWindowEnabled(ctl)) return;
-  } else if (id != IDCANCEL && id != IDOK) {
+  } else if (id != IDCANCEL && id != IDOK && !menu_command(id)) {
     return;
   }
   command(id, code, ctl);
@@ -576,10 +576,18 @@ LRESULT Page::handle(UINT msg, WPARAM wp, LPARAM lp) {
       if (nm->code == NM_CUSTOMDRAW) {
         wchar_t cls[32] = {};
         GetClassNameW(nm->hwndFrom, cls, 32);
-        if (wcscmp(cls, WC_BUTTONW) == 0) return ui::custom_draw_button(t_, reinterpret_cast<NMCUSTOMDRAW*>(lp));
+        if (wcscmp(cls, WC_BUTTONW) == 0) {
+          LRESULT r = 0;
+          if (draw_button(reinterpret_cast<NMCUSTOMDRAW*>(lp), &r)) return r;
+          return ui::custom_draw_button(t_, reinterpret_cast<NMCUSTOMDRAW*>(lp));
+        }
       }
       break;
     }
+    case WM_CONTEXTMENU:
+      // From a control anywhere in the window (a child's DefWindowProc passes it up).
+      if (context_menu((HWND)wp, POINT{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)})) return 0;
+      break;
     case WM_COMMAND: {
       const int id = LOWORD(wp), code = HIWORD(wp);
       HWND ctl = (HWND)lp;
@@ -593,7 +601,7 @@ LRESULT Page::handle(UINT msg, WPARAM wp, LPARAM lp) {
       HWND c = item(id);
       if (c && IsWindowVisible(c) && IsWindowEnabled(c)) {
         PostMessageW(hwnd_, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), (LPARAM)c);
-      } else if (!c && (id == IDCANCEL || id == IDOK)) {
+      } else if (!c && (id == IDCANCEL || id == IDOK || menu_command(id))) {
         PostMessageW(hwnd_, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), 0);
       }
       return 0;

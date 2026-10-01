@@ -51,7 +51,9 @@ std::wstring verified_words(const std::string& verified, const std::string& pack
 struct InstalledRow {
   std::string id;
   std::wstring title;
-  std::wstring detail;   // "84 modules · verified against the original disc"
+  std::wstring short_title;   // the cover's caption: "Deluxe", "10th Anniversary"
+  std::wstring modules;       // "84 modules" ("" when the catalog doesn't say)
+  std::wstring detail;        // "84 modules · verified against the original disc"
   CoverInfo cover;
 };
 // The installed releases in registry order, with their covers. Reads only (never creates
@@ -62,6 +64,27 @@ std::vector<InstalledRow> installed_rows(const std::filesystem::path& assets, st
 std::vector<std::string> missing_cover_ids(const std::vector<InstalledRow>& rows);
 // "One release has no cover picture yet." / "3 releases have no cover picture yet." ("" for 0).
 std::wstring missing_covers_note(size_t n);
+// An installed release's cover on Sources (a button that opens its menu, "Change cover…" and
+// "Remove…"): what screen readers call it, "After Dark 4.0 Deluxe, 84 modules · verified
+// against the original disc" (& doubled: a button's text is read for mnemonics), and its
+// tooltip, the title and the detail on lines of their own, then what a click offers.
+std::wstring installed_tile_name(const InstalledRow& r);
+std::wstring installed_tile_tip(const InstalledRow& r);
+
+// ---- removing a release ------------------------------------------------------------------
+
+// The Remove window (--gui --remove <id>, or "Remove…" on a Sources cover): its question,
+// "Remove The Simpsons Screen Saver?", and what removing it does: its modules are deleted
+// from this computer, its cover is kept, and it can be imported again.
+std::wstring remove_question(const std::wstring& title);
+std::wstring remove_text(const InstalledRow& r);
+// What the window says when the release is not installed (nothing to remove):
+// "The Simpsons Screen Saver is not installed, so there is nothing to remove."
+std::wstring not_installed_text(const std::wstring& title);
+// A removal that failed: what remove_package said, after "Nothing was removed."
+std::wstring remove_failed_text(const std::string& message);
+// Sources' line after a removal: "Removed The Simpsons Screen Saver."
+std::wstring removed_note(const std::wstring& title);
 
 // ---- the Internet Archive list ----------------------------------------------------------
 
@@ -119,13 +142,14 @@ ResultText covers_result(const std::vector<CoverResult>& rs);
 
 // ---- the session ----------------------------------------------------------------------
 
-// COVERS.md §4.1: 0 when anything was imported or any cover changed during the session,
-// else the first failure, and 5 (cancelled) when nothing changed.
+// COVERS.md §4.1: 0 when anything was imported or removed or any cover changed during the
+// session, else the first failure, and 5 (cancelled) when nothing changed.
 struct Tally {
   bool changed = false;
   int first_failure = 0;
   void import_result(Status s);
   void cover_changed() { changed = true; }
+  void release_removed() { changed = true; }
   int exit_code() const;
 };
 

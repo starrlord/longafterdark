@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cwctype>
 #include <fstream>
 #include <iterator>
 #include <sstream>
@@ -172,8 +173,9 @@ std::vector<InstalledRow> installed_rows(const fs::path& assets, std::span<const
     InstalledRow r;
     r.id = st.package->id;
     r.title = to_wide(st.package->title);
+    r.short_title = to_wide(st.package->short_title ? st.package->short_title : st.package->title);
     auto m = modules.find(r.id);
-    if (m != modules.end()) r.detail = count(size_t(std::max(0, m->second)), L"module", L"modules");
+    if (m != modules.end()) r.modules = r.detail = count(size_t(std::max(0, m->second)), L"module", L"modules");
     if (!st.verified.empty())
       r.detail += (r.detail.empty() ? L"" : L" · ") + verified_words(st.verified, r.id, st.image_md5);
     r.cover = cover_info(r.id, root, registry);
@@ -193,6 +195,45 @@ std::wstring missing_covers_note(size_t n) {
   if (n == 0) return L"";
   return n == 1 ? L"One release has no cover picture yet." : count(n, L"release", L"releases") + L" have no cover picture yet.";
 }
+
+std::wstring installed_tile_name(const InstalledRow& r) {
+  std::wstring name;
+  for (wchar_t c : r.title) {
+    name += c;
+    if (c == L'&') name += L'&';
+  }
+  return r.detail.empty() ? name : name + L", " + r.detail;
+}
+
+std::wstring installed_tile_tip(const InstalledRow& r) {
+  return r.title + (r.detail.empty() ? L"" : L"\r\n" + r.detail) + L"\r\nClick to change its cover or remove it.";
+}
+
+// ---- removing a release ------------------------------------------------------------------
+
+std::wstring remove_question(const std::wstring& title) { return L"Remove " + title + L"?"; }
+
+std::wstring remove_text(const InstalledRow& r) {
+  const std::wstring what = r.modules.empty() ? L"Its modules are" : L"Its " + r.modules + (r.modules == L"1 module" ? L" is" : L" are");
+  return what + L" deleted from this computer, and the screen saver stops showing " +
+         (r.modules == L"1 module" ? L"it" : L"them") +
+         L". Its cover is kept, and you can import the release again at any time.";
+}
+
+std::wstring not_installed_text(const std::wstring& title) {
+  return title + L" is not installed, so there is nothing to remove.";
+}
+
+std::wstring remove_failed_text(const std::string& message) {
+  std::wstring m = to_wide(message);
+  if (!m.empty()) {
+    m[0] = towupper(m[0]);
+    if (m.back() != L'.') m += L'.';
+  }
+  return m.empty() ? L"Nothing was removed." : L"Nothing was removed. " + m;
+}
+
+std::wstring removed_note(const std::wstring& title) { return L"Removed " + title + L"."; }
 
 // ---- the Internet Archive list ----------------------------------------------------------
 
