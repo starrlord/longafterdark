@@ -8,7 +8,9 @@
 //                  as real emulated code: loaded by its guest path with
 //                  LoadLibrary, its SAVERMAIN found with GetProcAddress
 //                  ("saverMain": the name INTRMLIB asks for, 1:2044), as
-//                  INTRMLIB's LOADSAVER did (1:1fe1..1:208a).
+//                  INTRMLIB's LOADSAVER did (1:1fe1..1:208a). The same for
+//                  the ASA reader, IMASAPLY.IMQ ("ASA Player"), and for an
+//                  IMQ module, its own reader (package.hh "Form").
 //   NativeReader — IMIMXPLY's SAVERMAIN (2:002a..2:0550) in C++, message by
 //                  message: the same Win16 calls (LoadLibrary, the six
 //                  GetProcAddress, GlobalAlloc/Lock/Handle/Unlock/Free,
@@ -85,7 +87,10 @@ constexpr uint16_t kSize = 0x67;
 // 0x02 enabled, 0x10 runnable saver, 0x08 a reader, 0x20 takes input, 0x40
 // preview with the inline panel (saverdraw codes 3/4).
 constexpr uint32_t kModuleFlags = 0x0000120C;  // INTRMLIB's defaults for an enabled module (1:2274..1:22b5)
+constexpr uint32_t kSaver = 0x00001000;        // a runnable saver: what a QUERY without a path says of an IMQ module
+constexpr uint32_t kTakesInput = 0x00002000;   // the saver takes input (lane.hh "Intermission (IMX)")
 constexpr uint32_t kPreview = 0x00004000;
+constexpr uint16_t kOwnReader = 0xFFFF;        // +0x59 of a reader's record, and of an IMQ module's: it is its own
 }  // namespace iminfo
 
 // IMIMXPLY's block (msg 10): far pointers to the module's exports.

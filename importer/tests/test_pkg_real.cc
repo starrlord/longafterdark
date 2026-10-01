@@ -10,14 +10,18 @@
 // The Screen Saver's two install disks are two loose images, or the ZIP they
 // came in (test_util.h find_disk_set); Marvel Comics Screen Posters, Snoopy's
 // Screen Savers, the Looney Tunes, ScreamSavers and the Disney Collection are
-// the user's ZIPs of their install files, their known images.
+// the user's ZIPs of their install files, their known images; The Far Side
+// the five ZIPs of its disks' files (PNX-FSC1..5.ZIP), Dilbert the ZIPs of
+// its four disks' files or the flat ZIP of them all (DilbertS.zip).
 //   1. Each package's image(s) into a fresh root through adimport.exe: exit
 //      0, verified "image", nothing missing, every file matches the package
 //      manifest, the installed files are exactly the manifest (the §4 layout
 //      and counts), the invariants hold (the intermission, ad2kwaj and islib
 //      recipes' own), and the catalog has 46 / 44 / 13 / 15 / 14 / 16 / 1 /
-//      8 / 12 / 15 / 16 modules in the right lanes (swse: Intermission IMX
-//      entries with their registry names and one button; startrek: Classic
+//      8 / 12 / 15 / 16 / 14 / 16 modules in the right lanes (swse:
+//      Intermission IMX entries with their registry names and one button;
+//      farside, dilbert: Intermission ASA and IMQ entries, SAVERMAIN, the
+//      same; startrek: Classic
 //      entries with their fixed screen, trimmed names, the Planetary Atlas
 //      override and After Dark 2.0's About rules; marvel: its fixed screen
 //      and two buttons; snoopy: eight Classic entries, 27 controls; screams:
@@ -55,7 +59,7 @@
 //   2. Every package plus Deluxe (imported --from the installed assets, which
 //      are only read: AD_ASSETS_DIR picks them, e.g.
 //      <repo>/build/win-pkg-setup/assets, else the data folder's) in one root:
-//      284 modules (232 over the first seven), display names unique per lane,
+//      314 modules (232 over the first seven), display names unique per lane,
 //      sameAs consistent (73), and every Deluxe entry's existing fields equal
 //      to the installed catalog's.
 //   3. Re-importing each package into that root changes nothing else.
@@ -66,6 +70,7 @@
 #include <set>
 #include <tuple>
 
+#include "catalog.h"
 #include "importer.h"
 #include "isz.h"
 #include "kwaj.h"
@@ -113,11 +118,13 @@ const std::map<std::string, Expect> kExpect = {
     {"looney", {34, {{"LNYTUNES", 29}, {"ENGINE", 5}}, 12, 0}},
     {"screams", {23, {{"SCREAMS", 18}, {"ENGINE", 5}}, 15, 0}},
     {"disney", {31, {{"DISNEY", 26}, {"ENGINE", 5}}, 16, 0}},
+    {"farside", {20, {{"SAVER", 18}, {"ENGINE", 2}}, 14, 0}},
+    {"dilbert", {23, {{"SAVER", 21}, {"ENGINE", 2}}, 16, 0}},
 };
 // The catalog over every release with the Deluxe tree: 232 entries over the
 // first seven, 284 with Marvel Comics Screen Posters, Snoopy's Screen Savers,
-// the Looney Tunes, ScreamSavers and the Disney Collection; still 73 of them
-// the same bytes as an earlier entry.
+// the Looney Tunes, ScreamSavers and the Disney Collection, 314 with The Far
+// Side and Dilbert; still 73 of them the same bytes as an earlier entry.
 size_t combined_modules() {
   size_t n = 84;
   for (const auto& [id, e] : kExpect) n += e.modules;
@@ -178,16 +185,21 @@ void check_package_root(const fs::path& win, const Package& p) {
   // re-check), the intermission, ad2kwaj and islib recipes' own for their
   // packages.
   const bool imx = p.recipe == Recipe::intermission, ad2 = p.recipe == Recipe::ad2kwaj,
-             isl = p.recipe == Recipe::islib;
+             isl = p.recipe == Recipe::islib, delrina = p.delrina_installer();
   for (const char* dir : p.module_dirs) {
     if (std::string_view(dir) == "ENGINE") continue;
     for (const char* never : {"AD_SND.DLL", "OLDMOD16.DLL", "OLDMOD32.DLL", "ADTASK.DLL", "ADW30.EXE"})
       CHECK(!fs::exists(root / to_wide(dir) / to_wide(never)));
     if (imx) {
+      // Intermission and its readers in ENGINE; a Delrina release's IMQ
+      // modules (each its own reader) beside its ASA animations.
       CHECK(!fs::exists(root / to_wide(dir) / L"INTERMIS.EXE"));
       std::error_code ec;
-      for (auto& f : fs::directory_iterator(root / to_wide(dir), ec))
-        CHECK(!ends_with_i(to_utf8(f.path().filename().wstring()), ".IMQ"));
+      for (auto& f : fs::directory_iterator(root / to_wide(dir), ec)) {
+        const std::string n = to_utf8(f.path().filename().wstring());
+        CHECK(!ends_with_i(n, ".IMQ") || (delrina && !is_intermission_reader(n)));
+        CHECK(!ends_with_i(n, ".ASA") || delrina);
+      }
     }
     if (ad2) {
       CHECK(!fs::exists(root / to_wide(dir) / L"AD.EXE"));
@@ -196,7 +208,13 @@ void check_package_root(const fs::path& win, const Package& p) {
     }
     if (isl) CHECK(!fs::exists(root / to_wide(dir) / L"AD.EXE"));
   }
-  if (imx) {
+  if (delrina) {
+    // The ASA reader and Intermission in ENGINE, nothing else; no WINDOWS
+    // folder (the modules read ANTSW.INI, which the lane seeds).
+    CHECK(fs::exists(root / L"ENGINE" / L"IMASAPLY.IMQ") && fs::exists(root / L"ENGINE" / L"INTERMIS.EXE"));
+    CHECK(!fs::exists(root / L"ENGINE" / L"IMIMXPLY.IMQ") && !fs::exists(root / L"WINDOWS"));
+    for (const char* n : {"OLDMOD16.DLL", "ADTASK.DLL", "AD_SND.DLL"}) CHECK(!fs::exists(root / L"ENGINE" / to_wide(n)));
+  } else if (imx) {
     CHECK(fs::exists(root / L"ENGINE" / L"IMIMXPLY.IMQ"));
     CHECK(fs::exists(root / L"WINDOWS" / L"SWSE.INI"));
     for (const char* n : {"OLDMOD16.DLL", "ADTASK.DLL", "AD_SND.DLL"}) CHECK(!fs::exists(root / L"ENGINE" / to_wide(n)));
@@ -236,6 +254,12 @@ void check_package_root(const fs::path& win, const Package& p) {
   if (ad2)  // what After Dark 2.0's installer copied that the recipe never reads
     for (const char* never : {"AD_PREFS", "AD_MPT", "SPALETTE", "AD_LIB", "AD_SB", "ST_NSTLL", "AD_MESG", "SETUP.EXE"})
       CHECK(text.find(never) == std::string::npos);
+  // A BBS's notes beside the disks' files, and what Delrina's installer
+  // copied that the recipe never reads.
+  if (delrina)
+    for (const char* never : {".NFO", "FILE_ID", "UNZIP_ME", "README", "PACKING.LST", "IMINST", "SETUP.EXE", "AD_SND",
+                              "IWLIB", "ICONDLL", "ANTSW2", "LASTDISK", "IMIMXPLY", "INTERMIS.TXT"})
+      CHECK(upper.find(never) == std::string::npos);
 }
 
 void check_catalog_of(const phosg::JSON& cat, const Package& p) {
@@ -337,10 +361,12 @@ void check_catalog_of(const phosg::JSON& cat, const Package& p) {
       continue;
     }
     if (!imx) continue;
-    // An Intermission module: its entry, its one button, its registry name.
+    // An Intermission module: its entry (an IMX module's SAVERDRAW, a
+    // Delrina release's ASA animation's and IMQ module's SAVERMAIN, its
+    // reader's), its one button, its registry name.
     CHECK_EQ(m->get_string("lane"), std::string("ne16"));
     CHECK_EQ(m->get_string("abi"), std::string("intermission"));
-    CHECK_EQ(m->get_string("entry"), std::string("SAVERDRAW"));
+    CHECK_EQ(m->get_string("entry"), std::string(p.delrina_installer() ? "SAVERMAIN" : "SAVERDRAW"));
     CHECK_EQ(m->get_string("about"), std::string());
     const auto& controls = m->at("controls").as_list();
     CHECK_EQ(controls.size(), size_t(1));
@@ -353,10 +379,13 @@ void check_catalog_of(const phosg::JSON& cat, const Package& p) {
       if (iequals(o.module, rel)) name = o.name;
     CHECK(!name.empty());
     CHECK_EQ(m->get_string("moduleName"), name);
-    CHECK_EQ(m->get_string("displayName"), name);  // no name of the 202 others collides
+    CHECK_EQ(m->get_string("displayName"), name);  // no name of the others collides
+    const bool asa = ends_with_i(rel, ".ASA");
+    if (asa) CHECK(m->at("needs").as_list().empty() && m->at("system").as_list().empty());
     for (auto& need : m->at("needs").as_list()) {
       const std::string d = need->as_string();
-      CHECK(d == "INTRMLIB" || d == "READJPG" || d == "STRESS" || d == "SWSE");
+      if (p.delrina_installer()) CHECK(d == "INTRMLIB" || d == "ANTSW" || d == "DIBDLL" || d == "IM4_EXP");
+      else CHECK(d == "INTRMLIB" || d == "READJPG" || d == "STRESS" || d == "SWSE");
     }
   }
   fprintf(stderr, "  catalog: %s %zu modules (%zu pe32, %zu ne16)\n", p.id, n, pe, n - pe);
@@ -1039,6 +1068,38 @@ int main(int argc, char** argv) {
     }
   }
 
+  // ---- 1i. Dilbert's other copy --------------------------------------------------------------
+  // Whichever copy step 1 imported (the four ZIPs of its disks' files are
+  // looked for first), the other one, when an image folder holds it, is a
+  // known copy too: verified "image", the same files.
+  {
+    const Package& d = *find_package("dilbert");
+    std::vector<fs::path> other;
+    if (images_of["dilbert"].size() == 1) {
+      other = test::find_disk_set(dirs, d);
+    } else {
+      for (const KnownImage& k : d.images)
+        if (!k.disk) {
+          if (fs::path f = test::find_image(dirs, k.size, k.md5); !f.empty()) other = {f};
+          break;
+        }
+    }
+    if (other.empty()) {
+      fprintf(stderr, "---- Dilbert's other copy: not in the image folders; step skipped\n");
+    } else {
+      const fs::path root = scratch / L"dilbert-other";
+      std::vector<std::wstring> a = {L"--no-cover-download"};
+      for (const fs::path& f : other) a.insert(a.end(), {L"--image", f.wstring()});
+      a.insert(a.end(), {L"--dest", root.wstring()});
+      CHECK_EQ(adimport(exe, a, "Dilbert's other copy"), 0);
+      const fs::path pkg = root / L"win" / L"packages" / L"dilbert";
+      if (fs::exists(pkg / L"import.json")) {
+        CHECK_EQ(load(pkg / L"import.json").get_string("verified"), std::string("image"));
+        CHECK(snapshot(pkg, true) == snapshot(scratch / L"alone-dilbert" / L"win" / L"packages" / L"dilbert", true));
+      }
+    }
+  }
+
   // ---- 2. every package in one root ------------------------------------------------------------
   fs::path installed = installed_root.empty() ? fs::path() : win_assets_dir(installed_root);
   if (installed.empty() || !fs::is_directory(installed / L"FILES" / L"AD40") ||
@@ -1072,16 +1133,16 @@ int main(int argc, char** argv) {
       check_catalog_of(cat, p);
     }
   // The packages list: oldest release first (Star Trek: The Screen Saver,
-  // 1992-11, then Marvel Comics Screen Posters, 1993-12); swse ties with the
-  // Simpsons (1994-08) and follows it, as in the registry, and Snoopy's
-  // Screen Savers (1994-10) follow them; ScreamSavers ties with the Looney
-  // Tunes (1995-04) the same way; the Disney Collection (1995-09) comes after
-  // Totally Twisted.
+  // 1992-11, then Marvel Comics Screen Posters, 1993-12, then The Far Side,
+  // 1994-06); swse ties with the Simpsons (1994-08) and follows it, as in the
+  // registry, and Snoopy's Screen Savers and Dilbert (1994-10) follow them,
+  // in registry order too; ScreamSavers ties with the Looney Tunes (1995-04)
+  // the same way; the Disney Collection (1995-09) comes after Totally Twisted.
   {
     std::vector<std::string> order;
     for (auto& pk : cat.at("packages").as_list()) order.push_back(pk->get_string("id"));
-    CHECK((order == std::vector<std::string>{"startrek", "marvel", "simpsons", "swse", "snoopy", "looney", "screams",
-                                             "ad32", "tt", "disney", "deluxe", "ad10"}));
+    CHECK((order == std::vector<std::string>{"startrek", "marvel", "farside", "simpsons", "swse", "snoopy", "dilbert",
+                                             "looney", "screams", "ad32", "tt", "disney", "deluxe", "ad10"}));
   }
   // The Looney Tunes' Messages comes after 3.2's: it is told apart by its
   // short title.

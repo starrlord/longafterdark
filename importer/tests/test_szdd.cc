@@ -145,6 +145,19 @@ int main(int argc, char** argv) {
     auto e = test::szdd_encode(std::vector<uint8_t>{});
     e.push_back(0xFF);
     CHECK(fails("an empty file with a flag byte", [&] { expand(e); }, "left after"));
+    // Delrina's version stamps after the data ("DLL " + four digits, one or
+    // two records) are not data; anything else of eight bytes still is.
+    auto stamped = [&](const std::string& tail) {
+      auto s = f;
+      s.insert(s.end(), tail.begin(), tail.end());
+      return s;
+    };
+    CHECK(expand(stamped("DLL 0401")) == data);
+    CHECK(expand(stamped("DLL 1001DLL 0501")) == data);
+    CHECK(fails("a stamp with a letter", [&] { expand(stamped("DLL 04X1")); }, "8 byte(s) left after"));
+    CHECK(fails("a stamp cut short", [&] { expand(stamped("DLL 040")); }, "7 byte(s) left after"));
+    CHECK(fails("a stamp and a byte", [&] { expand(stamped("DLL 0401 ")); }, "9 byte(s) left after"));
+    CHECK(fails("another tag", [&] { expand(stamped("EXE 0401")); }, "8 byte(s) left after"));
     // A literal byte changed: still exactly the size (SZDD has no checksum;
     // only the manifest can tell).
     auto lit = test::szdd_encode(bytes("ABCDEFGHIJ"), 0, true);

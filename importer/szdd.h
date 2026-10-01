@@ -11,7 +11,11 @@
 // and a length of 3..18) into a 4096-byte window that starts filled with
 // spaces, written from 0xFF0. The expander is strict: it must produce exactly
 // the header's size, no match may pass it, and no whole byte may be left
-// after the last token (all verified 0 over the disc's 24 SZDD files).
+// after the last token (all verified 0 over the disc's 24 SZDD files) but
+// Delrina's version stamps: its Intermission Installer's files (The Far
+// Side's, Dilbert's) end their shared libraries with one or two 8-byte
+// records "DLL " + four digits ("DLL 0401"; the installer compares them so
+// an older library never replaces a newer one), which are not data.
 //
 // SZDD has no checksum. A damaged file from a source without a known image
 // md5 is caught only by the manifest, as a verify failure (3), and not at all
@@ -43,7 +47,8 @@ SzddHeader szdd_header(std::span<const uint8_t> file, std::string_view name);
 
 // Streams the expanded bytes to `sink` in chunks of at most 64 KiB. Throws
 // SzddError when the data ends before the header's size, a match would pass
-// it, or whole bytes are left after the last token.
+// it, or whole bytes are left after the last token that are not Delrina's
+// version stamps (above).
 void szdd_expand(std::span<const uint8_t> file, std::string_view name,
                  const std::function<void(const uint8_t*, size_t)>& sink);
 

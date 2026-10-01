@@ -126,7 +126,8 @@ class Lane {
   virtual bool can_configure() const { return false; }
   // The module ABIs this lane runs, for --capabilities (abis=): "afterdark"
   // (After Dark's module protocols) and "intermission" (Delrina Intermission's
-  // .IMX modules; a catalog entry says "abi":"intermission", and no "abi"
+  // modules: .IMX modules, .ASA animations and .IMQ modules that are their
+  // own readers; a catalog entry says "abi":"intermission", and no "abi"
   // means "afterdark"). The pe32 lane runs {afterdark}, the ne16 lane
   // {afterdark, intermission}.
   virtual std::vector<std::string> abis() const { return {}; }
@@ -144,13 +145,17 @@ class Lane {
   }
 };
 
-// Module image kind, from the header alone.
+// Module image kind, from the header alone. A Delrina Intermission ASA
+// animation (a data file that starts "AniN" or "AniM", played by
+// Intermission's ASA reader) is an ne16 module.
 enum class LaneKind { pe32, ne16, unsupported, unreadable };
 struct ModuleProbe {
   LaneKind kind = LaneKind::unreadable;
-  std::string detail;  // e.g. "PE32 i386 DLL", "NE", "not an MZ executable"
+  std::string detail;  // e.g. "PE32 i386 DLL", "NE", "not an MZ executable", "Intermission ASA animation"
 };
 ModuleProbe probe_module(const std::string& path_utf8);
+// Whether a file's first four bytes are an Intermission ASA animation's header ("AniN" or "AniM").
+bool asa_header(const void* first4);
 const char* lane_kind_name(LaneKind k);
 
 // Built-in synthetic lane (adhostwin --test-pattern).

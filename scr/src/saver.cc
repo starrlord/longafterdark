@@ -1368,7 +1368,7 @@ bool App::load() {
     }
   }
   if (available.empty()) {
-    // Any release will do (the eleven of After Dark modules, Star Wars Screen Entertainment).
+    // Any release will do (the eleven of After Dark modules, the three of Intermission's).
     message = preview ? L"No modules imported" : L"No modules imported — open Screen Saver Settings…";
     message_code = kExitNotImported;
   } else if (!file_exists(host_exe)) {

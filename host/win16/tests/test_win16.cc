@@ -2134,6 +2134,54 @@ void test_map_mode() {
   api(m, "GDI", "DeleteDC", {w16(mdc)});
 }
 
+// IntersectClipRect (GDI.22; Intermission's ASA reader through ANTSW): the
+// clip region cut to the rectangle, in logical units, right and bottom
+// excluded; the result the region's type (SIMPLEREGION, NULLREGION once
+// nothing is left), 0 for no DC; SaveDC/RestoreDC bring the old region back.
+void test_intersect_clip_rect() {
+  Machine m;
+  Screen screen(64, 48);
+  m.rt.attach_display(screen);
+  uint16_t sdc = gdi16_screen_dc(m.rt, user16_saver_window(m.rt));
+  uint16_t mdc = uint16_t(api(m, "GDI", "CreateCompatibleDC", {w16(sdc)}));
+  uint16_t bmp = uint16_t(api(m, "GDI", "CreateCompatibleBitmap", {w16(sdc), w16(32), w16(32)}));
+  api(m, "GDI", "SelectObject", {w16(mdc), w16(bmp)});
+  api(m, "GDI", "PatBlt", {w16(mdc), w16(0), w16(0), w16(32), w16(32), l16(BLACKNESS)});
+  const uint32_t rc = uint32_t(m.data(16)) << 16;
+  auto box = [&](uint16_t dc) {
+    int t = int(api(m, "GDI", "GetClipBox", {w16(dc), l16(rc)}) & 0xFFFF);
+    char b[64];
+    snprintf(b, sizeof(b), "%d:%d,%d,%d,%d", t, int16_t(m.rt.rd16(rc)), int16_t(m.rt.rd16(rc + 2)),
+             int16_t(m.rt.rd16(rc + 4)), int16_t(m.rt.rd16(rc + 6)));
+    return std::string(b);
+  };
+  auto pixel = [&](int x, int y) {
+    return uint32_t(api(m, "GDI", "GetPixel", {w16(mdc), w16(uint16_t(x)), w16(uint16_t(y))}));
+  };
+  api(m, "GDI", "SaveDC", {w16(mdc)});
+  uint16_t t = uint16_t(api(m, "GDI", "IntersectClipRect", {w16(mdc), w16(4), w16(4), w16(12), w16(10)}));
+  CHECK(t == SIMPLEREGION && box(mdc) == "2:4,4,12,10", "IntersectClipRect: a simple region, the box (%u, %s)", t,
+        box(mdc).c_str());
+  api(m, "GDI", "PatBlt", {w16(mdc), w16(0), w16(0), w16(32), w16(32), l16(WHITENESS)});
+  CHECK(pixel(3, 4) == CLR_INVALID && pixel(4, 4) == RGB(255, 255, 255),
+        "GetPixel outside the clip region: CLR_INVALID (%08X %08X)", pixel(3, 4), pixel(4, 4));
+  t = uint16_t(api(m, "GDI", "IntersectClipRect", {w16(mdc), w16(8), w16(6), w16(30), w16(30)}));
+  CHECK(t == SIMPLEREGION && box(mdc) == "2:8,6,12,10", "a second rectangle cuts the region again (%u, %s)", t,
+        box(mdc).c_str());
+  t = uint16_t(api(m, "GDI", "IntersectClipRect", {w16(mdc), w16(20), w16(20), w16(30), w16(30)}));
+  CHECK(t == NULLREGION, "a rectangle outside the region: nothing left, NULLREGION (%u)", t);
+  api(m, "GDI", "RestoreDC", {w16(mdc), w16(0xFFFF)});
+  CHECK(box(mdc) == "2:0,0,32,32", "RestoreDC: the whole bitmap again (%s)", box(mdc).c_str());
+  CHECK(pixel(4, 4) == RGB(255, 255, 255) && pixel(11, 9) == RGB(255, 255, 255) && pixel(3, 4) == 0 &&
+            pixel(12, 9) == 0 && pixel(11, 10) == 0 && pixel(20, 20) == 0,
+        "the fill reached the rectangle alone, right and bottom excluded (%06X %06X %06X %06X %06X %06X)", pixel(4, 4),
+        pixel(11, 9), pixel(3, 4), pixel(12, 9), pixel(11, 10), pixel(20, 20));
+  CHECK(api(m, "GDI", "IntersectClipRect", {w16(0x1234), w16(0), w16(0), w16(1), w16(1)}) == 0, "no DC: 0 (ERROR)");
+  api(m, "GDI", "DeleteDC", {w16(mdc)});
+  api(m, "GDI", "DeleteObject", {w16(bmp)});
+  CHECK(m.rt.shims().find_name("GDI", "IntersectClipRect")->calls == 4, "GDI.22 is implemented (no stub)");
+}
+
 // FloodFill and ExtFloodFill (Snoopy's sprite masks): the colour keyed as
 // SetPixel's, so pixel indices are compared (PALETTEINDEX and PALETTERGB
 // through the DC's palette, a plain RGB to the statics); real GDI's fill,
@@ -3852,6 +3900,7 @@ int run_unit() {
   test_mono_dib_targets();
   test_gdi_additions();
   test_map_mode();
+  test_intersect_clip_rect();
   test_flood_fill();
   test_dib_pal_colors();
   test_getdibits_4bpp();

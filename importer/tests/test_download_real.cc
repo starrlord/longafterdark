@@ -35,6 +35,10 @@
 //      small Range request with the published size, and with the same bytes
 //      as the verified file: the last 64 KiB (the ZIP directory; the end of a
 //      disc) and, for an image, the ISO primary volume descriptor's sector.
+//      A member of a ZIP the Internet Archive extracts on request (The Far
+//      Side's disks' ZIPs, Dilbert's second copy: no ranges, no length up
+//      front; download() restarts it whole) answers with the whole member,
+//      the published md5's bytes.
 // <scratch> is deleted at the end unless AD_E2E_KEEP=1. AD_E2E_PACKAGES=<id>[,<id>...]
 // limits every step to those packages (all when unset).
 #include <windows.h>
@@ -68,6 +72,8 @@ const std::map<std::string, Expect> kExpect = {
     // The ZIPs of these releases' install files are their known images.
     {"marvel", {1, "image"}},    {"snoopy", {8, "image"}},   {"looney", {12, "image"}},
     {"screams", {15, "image"}},  {"disney", {16, "image"}},
+    // The ZIPs of each install disk's files (The Far Side), the ZIP of them all (Dilbert).
+    {"farside", {14, "image"}},  {"dilbert", {16, "image"}},
 };
 
 // Every file of a copy: its own, then the images of further install disks.
@@ -425,6 +431,17 @@ int main(int argc, char** argv) {
       if (!fs::exists(local) || fs::file_size(local) != d.size) {
         fprintf(stderr, "  %s: no verified local file to compare with\n", d.url);
         test::g_failures++;
+        continue;
+      }
+      if (std::string_view(d.url).find(".zip/") != std::string_view::npos) {
+        Probe r = probe(d.url, 0, size_t(d.size));
+        const bool same = r.body.size() == d.size && md5_hex(r.body.data(), r.body.size()) == std::string(d.md5);
+        fprintf(stderr, "  %-8s %s, a member of a ZIP, whole: HTTP %lu, %zu bytes%s%s\n", p.id, d.url,
+                (unsigned long)r.status, r.body.size(), same ? ", the published md5" : ", DIFFERENT BYTES",
+                r.error.empty() ? "" : (" (" + r.error + ")").c_str());
+        CHECK(r.status == 200 || r.status == 206);
+        CHECK(same);
+        probed++;
         continue;
       }
       std::vector<std::pair<uint64_t, size_t>> ranges = {{d.size - 65536, 65536}};

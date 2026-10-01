@@ -6,9 +6,9 @@
     python importer/gen_known_files.py <scratch>/win/packages/<id>/import.json      (any other package: version 2)
 
 (for a release on several install disks, every disk's image: --image <disk 1> --image <disk 2> ...,
-or the ZIP they came in; for a release known by the ZIP of its install files -- Marvel Comics
-Screen Posters, Snoopy's Screen Savers, the Looney Tunes, ScreamSavers, the Disney Collection --
-that ZIP: --image <the ZIP>)
+or the ZIP they came in, or -- The Far Side -- the ZIP of each disk's files the same way; for a
+release known by the ZIP of its install files -- Marvel Comics Screen Posters, Snoopy's Screen
+Savers, the Looney Tunes, ScreamSavers, the Disney Collection, Dilbert -- that ZIP: --image <the ZIP>)
 
 writes known_files.inc (Deluxe) or known_files_<id>.inc next to this script.
 
@@ -55,6 +55,10 @@ PACKAGES = {
     "screams": (("37a47b25dd35b214f94f57b6a0c2bd02",), "packages/screams", ("SCREAMS", "ENGINE")),
     # No image of the floppies exists: the ZIP of their files.
     "disney": (("2f38df15494728b5bc20d26c36ba84c7",), "packages/disney", ("DISNEY", "ENGINE")),
+    # Five install floppies, known by a ZIP of each disk's files (DISKS below).
+    "farside": ((), "packages/farside", ("SAVER", "ENGINE")),
+    # The flat ZIP of the four floppies' files, and (DISKS below) a ZIP of each disk's.
+    "dilbert": (("ea6e18463d156fbb5c70401e39b45962",), "packages/dilbert", ("SAVER", "ENGINE")),
 }
 
 # packages.cc: the known images of releases on several install disks
@@ -66,6 +70,18 @@ DISKS = {
     "c630da5f6839303b599947f56fdd7c25": ("startrek", 2),
     "6ee71b45e32b07001d46ab8c80af589d": ("startrek", 1),
     "af9d29a7ddea2c03618899c1c5733c67": ("startrek", 2),
+    # The Far Side Screen Saver Collection's five floppies as a 1994 BBS copy,
+    # a ZIP of each disk's files (PNX-FSC1..5.ZIP).
+    "bfbe487438204b3573e913a774ee964d": ("farside", 1),
+    "364307265d011ba3e31d383bc178d56d": ("farside", 2),
+    "5ac67d84f9a5262f40c92e9f143fdb03": ("farside", 3),
+    "7902b2a2a89eb7ed391e179a27958061": ("farside", 4),
+    "58351b2eedd8f6ef5ec51fa00c4d8d17": ("farside", 5),
+    # Dilbert's four floppies the same way (DILBERT1..4.ZIP).
+    "1158cc6333d3b22dcd401a0593006e6f": ("dilbert", 1),
+    "4347386255e85cddb39a5d69ab65bc81": ("dilbert", 2),
+    "0f5408c77ed018db8b99b6b70f2a6a29": ("dilbert", 3),
+    "9064065cfb1edd12cc659823b5ca88ad": ("dilbert", 4),
 }
 
 DELUXE_HEADER = """\
@@ -93,7 +109,7 @@ ZIP_HEADER = """\
 """
 
 DISK_SET_HEADER = """\
-// Manifest of package "%s" (%s) as adimport installs it from the images
+// Manifest of package "%s" (%s) as adimport installs it from the %s
 // of its install disks, with md5s
 //   %s:
 // {path relative to <assets>\\win, size, md5}. Sizes and hashes only -- no
@@ -129,6 +145,10 @@ def main():
         sys.exit("refusing: import.json version %r" % j.get("version"))
     known_md5s, root, dirs = PACKAGES[pid]
     disks = {m: d for m, (p, d) in DISKS.items() if p == pid}
+    # One known image of the whole release (a package known both ways, as
+    # dilbert is, by either), else the set of its install disks.
+    if image_md5 in known_md5s:
+        disks = {}
     if disks:
         # Every install disk exactly once, and nothing else (either copy of a
         # disk alike): the parts of one import of the whole set.
@@ -165,7 +185,7 @@ def main():
         if pid == "deluxe":
             w.write(DELUXE_HEADER % image_md5)
         elif disks:
-            w.write(DISK_SET_HEADER % (pid, title, image_md5))
+            w.write(DISK_SET_HEADER % (pid, title, "ZIPs" if src.get("format") == "zip" else "images", image_md5))
         elif src.get("format") == "zip":
             w.write(ZIP_HEADER % (pid, title, image_md5))
         else:

@@ -15,6 +15,18 @@ constexpr size_t kHeader = 14;
 
 uint32_t le32(const uint8_t* p) { return uint32_t(p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24); }
 
+// Whole 8-byte records "DLL " + four ASCII digits, and nothing else: the
+// version stamps Delrina's Intermission Installer reads after the data.
+bool version_stamps(std::span<const uint8_t> rest) {
+  if (rest.empty() || rest.size() % 8) return false;
+  for (size_t i = 0; i < rest.size(); i += 8) {
+    if (rest[i] != 'D' || rest[i + 1] != 'L' || rest[i + 2] != 'L' || rest[i + 3] != ' ') return false;
+    for (size_t k = 4; k < 8; k++)
+      if (rest[i + k] < '0' || rest[i + k] > '9') return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 SzddHeader szdd_header(std::span<const uint8_t> f, std::string_view name) {
@@ -79,7 +91,7 @@ void szdd_expand(std::span<const uint8_t> f, std::string_view name,
       produced += len;
     }
   }
-  if (i != f.size())
+  if (i != f.size() && !version_stamps(f.subspan(i)))
     throw SzddError(n + ": " + std::to_string(f.size() - i) + " byte(s) left after the compressed data");
   if (!out.empty()) sink(out.data(), out.size());
 }

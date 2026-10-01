@@ -238,7 +238,8 @@ int main(int argc, char** argv) {
   const test::PkgFixture deluxe = test::deluxe_fixture(), ad10 = test::ad10_fixture(), ad32 = test::ad32_fixture(),
                          tt = test::tt_fixture(), simpsons = test::simpsons_fixture(), swse = test::swse_fixture(),
                          startrek = test::startrek_fixture(), looney = test::looney_fixture(),
-                         screams = test::screams_fixture(), disney = test::disney_fixture();
+                         screams = test::screams_fixture(), disney = test::disney_fixture(),
+                         farside = test::farside_fixture(), dilbert = test::dilbert_fixture();
   const test::IslibFixture marvel = test::marvel_fixture(), snoopy = test::snoopy_fixture();
   test::TestRegistry reg = registry_for({{"deluxe", &deluxe},
                                          {"ad10", &ad10},
@@ -251,7 +252,9 @@ int main(int argc, char** argv) {
                                          {"snoopy", &snoopy},
                                          {"looney", &looney},
                                          {"screams", &screams},
-                                         {"disney", &disney}});
+                                         {"disney", &disney},
+                                         {"farside", &farside},
+                                         {"dilbert", &dilbert}});
 
   // ---- the registry's box covers (COVERS.md §2.2, §2.3) ----------------------------------------------
   {
@@ -358,13 +361,14 @@ int main(int argc, char** argv) {
   // ---- the registry: the releases known by the ZIP of their install files ----------------------
   {
     // Registry order: the first seven keep their places (the GUI's command
-    // ids go by it), the five after them in the order the plan gives.
+    // ids go by it), the five after them in the order the plan gives, then
+    // the two Delrina Intermission releases.
     std::vector<std::string> order;
     for (const Package& p : builtin_packages()) order.push_back(p.id);
     CHECK((std::vector<std::string>(order.begin(), order.begin() + std::min<size_t>(order.size(), 7)) ==
            std::vector<std::string>{"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek"}));
     CHECK((order == std::vector<std::string>{"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek", "marvel",
-                                             "snoopy", "looney", "screams", "disney"}));
+                                             "snoopy", "looney", "screams", "disney", "farside", "dilbert"}));
     for (const char* id : {"looney", "screams", "disney"}) CHECK(std::find(order.begin(), order.end(), id) != order.end());
     CHECK(std::find(order.begin(), order.end(), "looney") < std::find(order.begin(), order.end(), "screams"));
     CHECK(std::find(order.begin(), order.end(), "screams") < std::find(order.begin(), order.end(), "disney"));
@@ -2706,6 +2710,288 @@ int main(int argc, char** argv) {
     (void)full;
   }
 
+  // ---- the Delrina Intermission releases: The Far Side, Dilbert ---------------------------------------
+  {
+    // The registry: Delrina's installer (no INSTALL.DAT shortname), every
+    // disk's tag file, the fingerprint's file on disk 1 among the table's;
+    // every installed file a loose file under its own name, in SAVER or
+    // ENGINE, once, and exactly the manifest's; the readers in ENGINE, the
+    // ASA reader required, never AD_SND; a name for every module; the copies
+    // online and the known images they are.
+    struct Want {
+      const char* id;
+      size_t disks, modules, copies;
+      const char* released;
+    };
+    for (const Want& w : {Want{"farside", 5, 14, 1, "1994-06"}, Want{"dilbert", 4, 16, 2, "1994-10"}}) {
+      const Package* p = find_package(w.id);
+      CHECK(p != nullptr);
+      if (!p) continue;
+      CHECK(p->recipe == Recipe::intermission && p->delrina_installer() && !p->install_name);
+      CHECK(!find_package("swse")->delrina_installer());
+      CHECK(p->marker && p->module_dir && std::string(p->module_dir) == "SAVER");
+      CHECK(p->module_dirs.size() == 1 && std::string(p->module_dirs[0]) == "SAVER");
+      CHECK_EQ(std::string(p->released), std::string(w.released));
+      CHECK(!p->screen && p->fixups.empty() && p->never_opened.empty() && p->copy_dirs.empty() && !p->setup_title);
+      CHECK_EQ(p->required_archives.size(), w.disks);
+      for (size_t k = 0; k < p->required_archives.size(); k++)
+        CHECK_EQ(std::string(p->required_archives[k]), "DISK" + std::to_string(k + 1));
+      std::set<std::string> tos, manifest;
+      bool marker_listed = false;
+      size_t modules = 0;
+      for (const LooseFile& lf : p->loose_files) {
+        const std::string to = lf.to;
+        CHECK(to.rfind("SAVER/", 0) == 0 || to.rfind("ENGINE/", 0) == 0);
+        CHECK(to == ascii_upper(to) && to.substr(to.find('/') + 1) == lf.from);
+        CHECK(tos.insert(std::string(p->root) + "/" + to).second);
+        CHECK(!is_intermission_reader(lf.from) || to.rfind("ENGINE/", 0) == 0);
+        CHECK(!iequals(lf.from, "AD_SND.DLL") && !iequals(lf.from, "IMIMXPLY.IMQ"));
+        marker_listed = marker_listed || iequals(lf.from, p->marker);
+        if (to.rfind("SAVER/", 0) != 0 || !(ends_with_i(to, ".ASA") || ends_with_i(to, ".IMQ"))) continue;
+        modules++;
+        bool named = false;
+        for (const NameOverride& o : p->name_overrides) named = named || to == o.module;
+        CHECK(named);
+      }
+      CHECK(marker_listed && iequals(p->marker, std::string(w.id) == "farside" ? "PTERY.IMQ" : "DB-CLOCK.IMQ"));
+      CHECK_EQ(modules, w.modules);
+      CHECK_EQ(p->name_overrides.size(), w.modules);
+      for (const KnownFile& k : p->manifest) manifest.insert(k.path);
+      CHECK(tos == manifest);
+      for (const char* r : p->required) CHECK(tos.count(std::string(p->root) + "/" + r) == 1);
+      CHECK(tos.count(std::string(p->root) + "/ENGINE/IMASAPLY.IMQ") == 1);
+      // Every copy's file (and every part's) a known image: a ZIP of the
+      // install files (each disk's, the parts in disk order); "zip" copies.
+      CHECK_EQ(p->downloads.size(), w.copies);
+      std::set<std::wstring> names;
+      for (const Download& d : p->downloads) {
+        CHECK_EQ(std::string(d.kind), std::string("zip"));
+        std::vector<std::pair<std::string, uint64_t>> files = {{d.md5, d.size}};
+        for (const DownloadPart& q : d.more_images) files.push_back({q.md5, q.size});
+        CHECK(names.insert(d.file_name).second);
+        for (const DownloadPart& q : d.more_images) CHECK(names.insert(q.file_name).second);
+        CHECK(std::string_view(d.url).rfind("https://archive.org/download/", 0) == 0);
+        for (size_t i = 0; i < files.size(); i++) {
+          const KnownImage* k = nullptr;
+          for (const KnownImage& x : p->images)
+            if (files[i].first == x.md5 && files[i].second == x.size) k = &x;
+          CHECK(k && std::string_view(k->medium).rfind("ZIP", 0) == 0);
+          if (k) CHECK_EQ(k->disk, files.size() == 1 ? 0 : int(i + 1));
+        }
+      }
+      CHECK(!p->covers.empty() && p->covers[0].kind == CoverSource::Kind::download &&
+            std::string(p->covers[0].art) == "box" && p->covers[0].crop.w > 0);
+    }
+    CHECK_EQ(find_package("farside")->downloads[0].more_images.size(), size_t(4));
+    CHECK(find_package("dilbert")->downloads[0].more_images.empty() &&
+          find_package("dilbert")->downloads[1].more_images.size() == 3);
+    CHECK(find_package("dilbert")->covers.size() == 2 &&
+          find_package("dilbert")->covers[1].kind == CoverSource::Kind::disc &&
+          std::string(find_package("dilbert")->covers[1].path) == "INSTALL.BMP");
+    CHECK(is_intermission_reader("IMASAPLY.IMQ") && is_intermission_reader("imimxply.imq") &&
+          is_intermission_reader("IMAD_PLY.IMQ") && !is_intermission_reader("PTERY.IMQ") &&
+          !is_intermission_reader("DB-CLOCK.IMQ") && !is_intermission_reader("IMASAPLY.DLL") &&
+          !is_intermission_reader("IMASAPLYX.IMQ"));
+
+    // Every source form: a folder (the disks' files together, decoys among
+    // them), a flat ZIP, DISK1..DISKn folders loose and zipped, the 1.44 MB
+    // floppies in any order, and a ZIP of each disk's files (a BBS's copy:
+    // the same note in each) — those known by their md5s, verified "image".
+    struct Rel {
+      const char* id;
+      const test::PkgFixture* f;
+      int (*disk_of)(const std::string&);
+      int disks;
+      const std::vector<std::string>* decoys;
+    };
+    for (const Rel& rel : {Rel{"farside", &farside, test::farside_disk, 5, &test::farside_decoys()},
+                           Rel{"dilbert", &dilbert, test::dilbert_disk, 4, &test::dilbert_decoys()}}) {
+      const std::wstring id = to_wide(rel.id);
+      const Package& pkg = *find_package(rel.id);
+      const std::string title = pkg.title, pkg_root = std::string("packages/") + rel.id;
+      test::write_tree(src / id, rel.f->source);
+      test::write_bytes(src / (id + L".zip"), test::zip_folder(rel.f->source));
+      test::write_disk_folders(src / (id + L"-disks"), rel.f->source, rel.disk_of, rel.disks);
+      test::write_bytes(src / (id + L"-disks.zip"), test::zip_disk_folders(rel.f->source, rel.disk_of, rel.disks));
+      std::vector<fs::path> floppies, zips;
+      std::vector<test::TestRegistry::Disk> known;
+      for (int k = 1; k <= rel.disks; k++) {
+        test::Tree t = test::disk_files(rel.f->source, k, rel.disk_of);
+        test::write_tree(src / (id + L"-disk" + std::to_wstring(k)), t);
+        floppies.push_back(src / (id + L"-disk" + std::to_wstring(k) + L".img"));
+        test::write_bytes(floppies.back(), test::floppy_of(t));
+        t["FILE_ID.DIZ"] = test::vec("A made-up BBS's note, the same on every disk.\r\n");
+        const auto z = test::zip_folder(t);
+        zips.push_back(src / (id + L"-disk" + std::to_wstring(k) + L".zip"));
+        test::write_bytes(zips.back(), z);
+        known.push_back({md5_hex(z.data(), z.size()), z.size(), k});
+      }
+      test::TestRegistry by_md5 = registry_for({{rel.id, rel.f}});
+      by_md5.disk_images(rel.id, known);
+      auto rest = [](const std::vector<fs::path>& v, size_t first) { return std::vector<fs::path>(v.begin() + first, v.end()); };
+      std::vector<fs::path> floppies_rev(floppies.rbegin(), floppies.rend());
+      struct Form {
+        std::string name;
+        Source source;
+        const test::TestRegistry* r;
+        const char* format;
+        const char* verified;
+      };
+      const std::vector<Form> forms = {
+          {"folder", folder(src / id), &reg, "folder", "files"},
+          {"flat zip", image(src / (id + L".zip")), &reg, "zip", "files"},
+          {"disk folders", folder(src / (id + L"-disks")), &reg, "folder", "files"},
+          {"disk folders zipped", image(src / (id + L"-disks.zip")), &reg, "zip", "files"},
+          {"floppies", image(floppies[0], rest(floppies, 1)), &reg, "fat12", "files"},
+          {"floppies, last first", image(floppies_rev[0], rest(floppies_rev, 1)), &reg, "fat12", "files"},
+          {"a zip per disk", image(zips[0], rest(zips, 1)), &by_md5, "zip", "image"},
+      };
+      for (const Form& form : forms) {
+        const std::string what = std::string(rel.id) + " " + form.name;
+        fs::path root = dir / (L"delrina-" + id + L"-" + to_wide(std::to_string(&form - forms.data())));
+        g_log.clear();
+        ImportResult r = run(what.c_str(), form.source, opts_for(root, *form.r), Status::ok);
+        CHECK_EQ(r.package_id, std::string(rel.id));
+        CHECK_EQ(r.format, std::string(form.format));
+        CHECK_EQ(r.verified, std::string(form.verified));
+        CHECK_EQ(r.package_modules, rel.f->ids.size());
+        check_installed(root / L"win", *rel.f, pkg_root);
+        CHECK(catalog_ids(root / L"win") == rel.f->ids);
+        CHECK(no_leftovers(root / L"win"));
+        if (r.status != Status::ok) continue;
+        CHECK_EQ(json_at(r.import_json).at("package").get_string("recipe"), std::string("intermission"));
+        if (std::string(form.verified) == "image")
+          CHECK(logged("ZIPs of the install disks' files, the known copies of " + title + " (by their md5s)"));
+      }
+
+      // The catalog: Intermission entries in the ne16 lane, named by the
+      // registry; an ASA's and an IMQ module's entry is SAVERMAIN, with the
+      // Configure... button behind its reader's dialog (none for an IMQ module
+      // without one: the fixture's DIL-WHAK).
+      {
+        phosg::JSON cat = json_at(dir / (L"delrina-" + id + L"-0") / L"win" / L"catalog-win.json");
+        for (const std::string& mid : rel.f->ids) {
+          const phosg::JSON* m = module_by_id(cat, mid);
+          CHECK(m != nullptr);
+          if (!m) continue;
+          CHECK_EQ(m->get_string("abi"), std::string("intermission"));
+          CHECK_EQ(m->get_string("lane"), std::string("ne16"));
+          CHECK_EQ(m->get_string("entry"), std::string("SAVERMAIN"));
+          CHECK(!m->contains("screen"));
+          const std::string path = m->get_string("path");
+          const std::string in_pkg = path.substr(pkg_root.size() + 1);
+          std::string name;
+          for (const NameOverride& o : pkg.name_overrides)
+            if (in_pkg == o.module) name = o.name;
+          CHECK(!name.empty() && m->get_string("moduleName") == name && m->get_string("displayName") == name);
+          const bool dialog = mid != "dilbert.dil-whak";
+          CHECK_EQ(m->at("controls").as_list().size(), size_t(dialog ? 1 : 0));
+          if (dialog) CHECK_EQ(m->at("controls").as_list().at(0)->get_string("name"), std::string("Configure..."));
+          if (ends_with_i(path, ".ASA")) CHECK(m->at("needs").as_list().empty() && m->at("system").as_list().empty());
+          else CHECK(!m->at("needs").as_list().empty());
+        }
+        CHECK(!module_by_id(cat, std::string(rel.id) + ".imasaply") && !module_by_id(cat, std::string(rel.id) + ".lastdisk"));
+      }
+
+      // I5: the decoys, locked in a folder source, are never opened.
+      {
+        std::vector<HANDLE> held;
+        for (const std::string& decoy : *rel.decoys)
+          held.push_back(CreateFileW((src / id / to_wide(decoy)).c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr));
+        for (HANDLE h : held) CHECK(h != INVALID_HANDLE_VALUE);
+        run((std::string(rel.id) + " folder, decoys locked").c_str(), folder(src / id),
+            opts_for(dir / (L"delrina-" + id + L"-locked"), reg), Status::ok);
+        check_installed(dir / (L"delrina-" + id + L"-locked") / L"win", *rel.f, pkg_root);
+        for (HANDLE h : held) CloseHandle(h);
+      }
+
+      // Disk 1 alone is the release without its other disks; any other disk
+      // alone, or disk 1 without the installer or the release's own file
+      // beside its tag, is no known release; Star Wars Screen Entertainment
+      // is never taken for it, nor it for Star Wars.
+      {
+        std::string missing;
+        for (int k = 2; k <= rel.disks; k++) missing += (k == 2 ? "DISK" : ", DISK") + std::to_string(k);
+        ImportResult r = run("disk 1 alone", folder(src / (id + L"-disk1")), opts_for(dir / (L"delrina-" + id + L"-d1"), reg),
+                             Status::source_invalid);
+        CHECK(r.message.find("the source is missing " + missing + "; importing " + title + " needs every install disk") !=
+              std::string::npos);
+        r = run("disk 2 alone", folder(src / (id + L"-disk2")), opts_for(dir / (L"delrina-" + id + L"-d2"), reg),
+                Status::source_invalid);
+        CHECK(r.message.find("not a known release") != std::string::npos);
+        for (const char* gone : {"IMINST2.EXE", pkg.marker, "DISK1"}) {
+          test::Tree t = rel.f->source;
+          t.erase(gone);
+          const fs::path p = src / (id + L"-without-" + to_wide(gone));
+          test::write_tree(p, t);
+          r = run((std::string("without ") + gone).c_str(), folder(p), opts_for(dir / (L"delrina-" + id + L"-wo"), reg),
+                  Status::source_invalid);
+          CHECK(r.message.find("not a known release") != std::string::npos);
+        }
+        r = run("--package swse", folder(src / id, "swse"), opts_for(dir / (L"delrina-" + id + L"-swse"), reg),
+                Status::source_invalid);
+        CHECK(r.message.find("the source is not Star Wars Screen Entertainment (it looks like " + title + ")") !=
+              std::string::npos);
+        r = run("swse as it", folder(src / L"swse", rel.id), opts_for(dir / (L"delrina-" + id + L"-sw"), reg),
+                Status::source_invalid);
+        CHECK(r.message.find("the source is not " + title + " (it looks like Star Wars Screen Entertainment)") !=
+              std::string::npos);
+        CHECK(!fs::exists(dir / (L"delrina-" + id + L"-d1") / L"win" / L"packages" / id));
+      }
+
+      // A version stamp that is no stamp is data left over: a damaged file.
+      {
+        test::Tree t = rel.f->source;
+        auto& lib = t["INTRMLIB.DLL"];
+        lib[lib.size() - 2] = 'X';
+        const fs::path p = src / (id + L"-badstamp");
+        test::write_tree(p, t);
+        ImportResult r = run("a damaged stamp", folder(p), opts_for(dir / (L"delrina-" + id + L"-stamp"), reg),
+                             Status::source_invalid);
+        CHECK(r.message.find("INTRMLIB.DLL: 8 byte(s) left after the compressed data") != std::string::npos);
+      }
+
+      // The intermission invariants for a Delrina release (registries
+      // without the required files, so the layout check is what refuses):
+      // its readers stay in ENGINE (I1), and ASA modules need the ASA reader
+      // there (I3).
+      {
+        std::vector<LooseFile> moved, dropped;
+        for (const LooseFile& lf : pkg.loose_files) {
+          if (std::string(lf.from) == "IMASAPLY.IMQ") {
+            moved.push_back({lf.from, "SAVER/IMASAPLY.IMQ", lf.codec});
+            continue;
+          }
+          moved.push_back(lf);
+          dropped.push_back(lf);
+        }
+        test::TestRegistry i1, i3;
+        i1.get(rel.id).required = {};
+        i1.get(rel.id).loose_files = moved;
+        i3.get(rel.id).required = {};
+        i3.get(rel.id).loose_files = dropped;
+        ImportResult r = run("I1: the ASA reader beside the modules", folder(src / id),
+                             opts_for(dir / (L"delrina-" + id + L"-i1"), i1, false), Status::source_invalid);
+        CHECK(r.message.find("breaks I1: SAVER\\IMASAPLY.IMQ belongs in ENGINE") != std::string::npos);
+        r = run("I3: no ASA reader", folder(src / id), opts_for(dir / (L"delrina-" + id + L"-i3"), i3, false),
+                Status::source_invalid);
+        CHECK(r.message.find("breaks I3: no ENGINE\\IMASAPLY.IMQ") != std::string::npos);
+        CHECK(!fs::exists(dir / (L"delrina-" + id + L"-i1") / L"win" / L"packages" / id));
+      }
+    }
+
+    // Both releases' files in one folder: both fingerprints, an ambiguous
+    // source (--package chooses).
+    {
+      test::write_tree(src / L"farside-dilbert", farside.source);
+      test::write_tree(src / L"farside-dilbert", dilbert.source);
+      ImportResult r = run("farside + dilbert", folder(src / L"farside-dilbert"), opts_for(dir / L"delrina-both", reg),
+                           Status::source_invalid);
+      CHECK(r.message.find("ambiguous source: it looks like The Far Side Screen Saver Collection and Scott Adams' "
+                           "Dilbert Screen Saver Collection") != std::string::npos);
+    }
+  }
+
   // ---- --catalog-only without FILES, win_assets_dir, --remove, list --------------------------------------
   {
     fs::path root = dir / L"nofiles";
@@ -2725,7 +3011,7 @@ int main(int argc, char** argv) {
     CHECK_EQ(win_assets_dir(dir / L"fresh"), dir / L"fresh" / L"win");
 
     auto states = list_packages(root, reg.span());
-    CHECK_EQ(states.size(), size_t(12));
+    CHECK_EQ(states.size(), size_t(14));
     for (auto& s : states) {
       bool want = std::string(s.package->id) == "ad32" || std::string(s.package->id) == "simpsons";
       CHECK_EQ(s.installed, want);
@@ -2769,28 +3055,32 @@ int main(int argc, char** argv) {
     run("snoopy", image(src / L"snoopy-disks.zip"), opts_for(all, reg), Status::ok);
     run("looney", folder(src / L"looney"), opts_for(all, reg), Status::ok);
     run("marvel", image(src / L"marvel-disk2.img", {src / L"marvel-disk1.img"}), opts_for(all, reg), Status::ok);
+    run("dilbert", image(src / L"dilbert.zip"), opts_for(all, reg), Status::ok);
     run("ad10", image(src / L"ad10.iso"), opts_for(all, reg), Status::ok);
+    run("farside", folder(src / L"farside-disks"), opts_for(all, reg), Status::ok);
     phosg::JSON cat = json_at(all / L"win" / L"catalog-win.json");
     CHECK_EQ(cat.get_string("generator"), std::string(kCatalogGenerator));
     std::vector<std::string> ids;
     for (auto& m : cat.at("modules").as_list()) ids.push_back(m->get_string("id"));
     CHECK(ids == concat({deluxe.ids, ad10.ids, ad32.ids, tt.ids, simpsons.ids, swse.ids, startrek.ids, marvel.ids,
-                         snoopy.ids, looney.ids, screams.ids, disney.ids}));
+                         snoopy.ids, looney.ids, screams.ids, disney.ids, farside.ids, dilbert.ids}));
     // The top-level packages list: oldest release first (the cover strip's and the list
     // groups' order), while modules above stay in registry order. Star Trek:
     // The Screen Saver (1992-11) comes first, Marvel Comics Screen Posters
-    // (1993-12) next; Star Wars Screen Entertainment ties with the Simpsons
-    // (1994-08) and follows it, as in the registry, and Snoopy's Screen Savers
-    // (1994-10) follow them; ScreamSavers ties with the Looney Tunes (1995-04)
-    // the same way, and the Disney Collection (1995-09) comes between Totally
-    // Twisted and Deluxe.
+    // (1993-12) next, then The Far Side (1994-06); Star Wars Screen
+    // Entertainment ties with the Simpsons (1994-08) and follows it, as in
+    // the registry, and Snoopy's Screen Savers and Dilbert (1994-10) follow
+    // them, in registry order too; ScreamSavers ties with the Looney Tunes
+    // (1995-04) the same way, and the Disney Collection (1995-09) comes
+    // between Totally Twisted and Deluxe.
     const auto& pk = cat.at("packages").as_list();
-    CHECK_EQ(pk.size(), size_t(12));
+    CHECK_EQ(pk.size(), size_t(14));
     std::vector<std::pair<std::string, size_t>> want_pk = {
-        {"startrek", startrek.ids.size()}, {"marvel", marvel.ids.size()},   {"simpsons", simpsons.ids.size()},
-        {"swse", swse.ids.size()},         {"snoopy", snoopy.ids.size()},   {"looney", looney.ids.size()},
-        {"screams", screams.ids.size()},   {"ad32", ad32.ids.size()},       {"tt", tt.ids.size()},
-        {"disney", disney.ids.size()},     {"deluxe", deluxe.ids.size()},   {"ad10", ad10.ids.size()}};
+        {"startrek", startrek.ids.size()}, {"marvel", marvel.ids.size()},   {"farside", farside.ids.size()},
+        {"simpsons", simpsons.ids.size()}, {"swse", swse.ids.size()},       {"snoopy", snoopy.ids.size()},
+        {"dilbert", dilbert.ids.size()},   {"looney", looney.ids.size()},   {"screams", screams.ids.size()},
+        {"ad32", ad32.ids.size()},         {"tt", tt.ids.size()},           {"disney", disney.ids.size()},
+        {"deluxe", deluxe.ids.size()},     {"ad10", ad10.ids.size()}};
     for (size_t i = 0; i < pk.size(); i++) {
       const Package* p = find_package(pk[i]->get_string("id"));
       CHECK(p && pk[i]->get_string("released") == std::string(p->released));
@@ -2850,9 +3140,13 @@ int main(int argc, char** argv) {
     CHECK_EQ(module_by_id(cat, "ad10.toast2k")->get_string("moduleName"), std::string("Toasters 2k (early build)"));
     // Only the Intermission modules carry "abi", as their last field.
     for (auto& m : cat.at("modules").as_list()) {
-      const bool imx = m->get_string("package") == "swse";
+      const std::string package = m->get_string("package");
+      const bool imx = package == "swse" || package == "farside" || package == "dilbert";
       CHECK_EQ(m->contains("abi"), imx);
-      if (imx) CHECK(m->get_string("abi") == "intermission" && m->at("controls").as_list().size() == 1);
+      // (The fixture's DIL-WHAK has no dialog, so no button.)
+      if (imx)
+        CHECK(m->get_string("abi") == "intermission" &&
+              m->at("controls").as_list().size() == (m->get_string("id") == "dilbert.dil-whak" ? 0u : 1u));
     }
     {
       const std::string text = test::read_text(all / L"win" / L"catalog-win.json");
@@ -3011,16 +3305,20 @@ int main(int argc, char** argv) {
         if (col != std::string::npos) cols.push_back(line.rfind("not ", col) == col - 4 ? col - 4 : col);
         pos += 3;
       }
-      CHECK_EQ(cols.size(), size_t(12));
+      CHECK_EQ(cols.size(), size_t(14));
       for (size_t c : cols) CHECK_EQ(c, cols.front());
-      CHECK(out.find("  swse      Star Wars Screen Entertainment     installed, ") != std::string::npos);
-      CHECK(out.find("  startrek  Star Trek: The Screen Saver        installed, ") != std::string::npos);
+      CHECK(out.find("  swse      Star Wars Screen Entertainment               installed, ") != std::string::npos);
+      CHECK(out.find("  startrek  Star Trek: The Screen Saver                  installed, ") != std::string::npos);
       CHECK(out.find("; download 2.8 MB (2 floppy images)") != std::string::npos);
-      CHECK(out.find("  marvel    Marvel Comics Screen Posters       installed, ") != std::string::npos);
-      CHECK(out.find("  snoopy    Snoopy's Screen Savers             installed, ") != std::string::npos);
+      CHECK(out.find("  marvel    Marvel Comics Screen Posters                 installed, ") != std::string::npos);
+      CHECK(out.find("  snoopy    Snoopy's Screen Savers                       installed, ") != std::string::npos);
       CHECK(out.find("; download 1.9 MB (ZIP of the install files)") != std::string::npos);
-      CHECK(out.find("  disney    The Disney Collection Screen Saver not installed; download 3.4 MB (ZIP of the "
-                     "install files)") != std::string::npos);
+      CHECK(out.find("  disney    The Disney Collection Screen Saver           "
+                     "not installed; download 3.4 MB (ZIP of the install files)") != std::string::npos);
+      CHECK(out.find("  farside   The Far Side Screen Saver Collection         "
+                     "not installed; download 5.5 MB (5 ZIPs of the install disks' files)") != std::string::npos);
+      CHECK(out.find("  dilbert   Scott Adams' Dilbert Screen Saver Collection not installed; download 4.3 MB (ZIP of "
+                     "the install files)") != std::string::npos);
     }
     CHECK_EQ(cli({L"--list-packages", L"--image", L"x"}, "--list-packages + a source"), 1);
     CHECK_EQ(cli({L"--remove", L"tt", L"--catalog-only"}, "--remove + --catalog-only"), 1);

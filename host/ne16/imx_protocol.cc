@@ -4,12 +4,15 @@
 // LOAD and QUERY, one pass of INTERMIS's idle loop per call (the DC bracket
 // around START once, then DRAW), its message loop between passes, the stop
 // pass and FREE, and CONFIGURE for the button — over a reader (imreader.hh):
-// Intermission's IMIMXPLY.IMQ as real code, or the native reader. Addresses
-// are INTERMIS.EXE's and INTRMLIB.DLL's (intermission_protocol.md §3–§8).
+// Intermission's IMIMXPLY.IMQ as real code, or the native reader; for an ASA
+// animation IMASAPLY.IMQ, and for an IMQ module the module itself (package.hh
+// "Form"). Addresses are INTERMIS.EXE's and INTRMLIB.DLL's
+// (intermission_protocol.md §3–§8).
 #include <windows.h>
 
 #include <algorithm>
 #include <cinttypes>
+#include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
 
@@ -55,6 +58,12 @@ uint64_t env_u64(const Env& env, const char* name, uint64_t def) {
 bool file_exists(const std::string& p) {
   DWORD a = GetFileAttributesW(widen(p).c_str());
   return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+std::string hex32(uint32_t v) {
+  char b[16];
+  snprintf(b, sizeof(b), "%08" PRIX32, v);
+  return b;
 }
 
 }  // namespace
@@ -107,7 +116,8 @@ namespace {
 
 class ImxProtocol : public Protocol16 {
  public:
-  explicit ImxProtocol(const Ne16Layout& layout) : layout_(layout), module_name_(file_of(layout.module_path)) {}
+  ImxProtocol(const Ne16Layout& layout, ImxForm form)
+      : layout_(layout), form_(form), module_name_(file_of(layout.module_path)) {}
 
   const char* name() const override { return reader_kind_ == ReaderKind::imq ? "imx/imq" : "imx/native"; }
   void configure_runtime(win16::Runtime16Options& opts, LaneContext& ctx) override;
@@ -152,6 +162,7 @@ class ImxProtocol : public Protocol16 {
   }
 
   Ne16Layout layout_;
+  ImxForm form_ = ImxForm::imx;
   std::string module_name_;
   Runtime16* rt_ = nullptr;  // load's or button's
   std::unique_ptr<ImReader> reader_;
@@ -171,8 +182,10 @@ class ImxProtocol : public Protocol16 {
   uint64_t passes_ = 0, dispatched_ = 0;
 };
 
-// The reader (package.hh): ADNE16READER, else IMIMXPLY.IMQ when the package
-// has one, else the native reader.
+// The reader (package.hh): for an IMX module ADNE16READER, else IMIMXPLY.IMQ
+// when the package has one, else the native reader; for an ASA animation
+// IMASAPLY.IMQ, and for an IMQ module the module itself (neither has a
+// native reader).
 void ImxProtocol::choose_reader(const Env& env, bool quiet) {
   ReaderKind forced = ReaderKind::imq;
   reader_auto_ = true;
@@ -182,8 +195,22 @@ void ImxProtocol::choose_reader(const Env& env, bool quiet) {
       reader_auto_ = true;
     }
   }
-  reader_file_ = find_reader(layout_, file_exists);
-  reader_kind_ = reader_auto_ ? (reader_file_.host.empty() ? ReaderKind::native : ReaderKind::imq) : forced;
+  if (form_ == ImxForm::imx) {
+    reader_file_ = find_reader(layout_, file_exists);
+    reader_kind_ = reader_auto_ ? (reader_file_.host.empty() ? ReaderKind::native : ReaderKind::imq) : forced;
+  } else {
+    if (!reader_auto_ && forced == ReaderKind::native && !quiet) {
+      log("%s: ADNE16READER=native is ignored: %s has no native reader", module_name_.c_str(),
+          form_ == ImxForm::asa ? "an ASA animation" : "an IMQ module, its own reader,");
+    }
+    reader_auto_ = reader_auto_ || forced == ReaderKind::native;
+    reader_kind_ = ReaderKind::imq;
+    if (form_ == ImxForm::asa) {
+      reader_file_ = find_reader(layout_, file_exists, kAsaReader);
+    } else {
+      reader_file_ = ReaderFile{layout_.module_path, false};
+    }
+  }
   if (!quiet && env.get("ADNE16BRIDGE")) {
     log("%s: ADNE16BRIDGE is ignored: an Intermission module has no After Dark bridge", module_name_.c_str());
   }
@@ -219,20 +246,27 @@ bool ImxProtocol::open_reader(std::string* why) {
     return reader_ != nullptr;
   }
   if (reader_file_.host.empty()) {
-    *why = std::string("ADNE16READER=imq, but neither ") + layout_.engine_dir + " nor " + layout_.module_dir +
-           " holds " + kImxReader;
+    const std::string where = "neither " + layout_.engine_dir + " nor " + layout_.module_dir + " holds ";
+    *why = form_ == ImxForm::asa ? where + kAsaReader + ", the reader of ASA animations (there is no native one)"
+                                 : "ADNE16READER=imq, but " + where + kImxReader;
     return false;
   }
+  // An IMQ module is loaded by its own path, as LOADSAVER loaded a reader's
+  // record: <saver dir>\<+0x44> (1:1fe1..1:201b).
   const win16::Runtime16Options& o = rt_->options();
-  reader_path_ = (reader_file_.in_engine_dir ? o.system_dir : o.guest_dir) + "\\" + kImxReader;
+  reader_path_ =
+      (reader_file_.in_engine_dir ? o.system_dir : o.guest_dir) + "\\" + win16::upper16(file_of(reader_file_.host));
   reader_ = open_imq_reader(*rt_, reader_path_, why);
   return reader_ != nullptr;
 }
 
 // INTRMLIB's LOADSAVER (1:1fc0..1:21a7) and INTERMIS's StartSaver (6:0396)
 // up to QUERY. One record serves where INTRMLIB kept two (the reader's entry
-// took LOAD, then its block moved to the module's): the reader reads neither
-// entry's index or file name.
+// took LOAD, then its block moved to the module's): IMIMXPLY and IMASAPLY
+// read neither entry's index or file name. An IMQ module's record is a
+// reader's (index −1, no path block, +0x63 = 0): LOADSAVER loaded the IMQ as
+// itself and sent it LOAD with no path (1:1fd5..1:2064), and the QUERY that
+// follows has no path either.
 bool ImxProtocol::start(uint16_t hwnd, std::string* failure) {
   Runtime16& rt = *rt_;
   // The record as FINDALLMODULES made it (1:19fc: zeroed, GMEM_MOVEABLE,
@@ -244,24 +278,28 @@ bool ImxProtocol::start(uint16_t hwnd, std::string* failure) {
     *failure = "no guest memory for the saver's record";
     return false;
   }
+  const bool own = form_ == ImxForm::imq;
   const std::string file = win16::upper16(module_name_);
   rt.wr32(info_ + iminfo::kFlags, iminfo::kModuleFlags);
   rt.write_str(info_ + iminfo::kFile, file, iminfo::kFileSize);
-  rt.wr16(info_ + iminfo::kReaderIndex, 0);
-  // The path block (1:213d..1:2193): <Saver Path>\<file>, 260 bytes.
-  h_path_ = uint16_t(api("KERNEL", "GlobalAlloc", {w16(0x0042), l16(0x104)}));
-  path_ = h_path_ ? api("KERNEL", "GlobalLock", {w16(h_path_)}) : 0;
-  if (!path_) {
-    *failure = "no guest memory for the saver's path";
-    return false;
-  }
+  rt.wr16(info_ + iminfo::kReaderIndex, own ? iminfo::kOwnReader : 0);
   const std::string guest = rt.options().guest_dir + "\\" + file;
-  rt.write_str(path_, guest, 0x104);
-  rt.wr32(info_ + iminfo::kPath, path_);
+  if (!own) {
+    // The path block (1:213d..1:2193): <Saver Path>\<file>, 260 bytes.
+    h_path_ = uint16_t(api("KERNEL", "GlobalAlloc", {w16(0x0042), l16(0x104)}));
+    path_ = h_path_ ? api("KERNEL", "GlobalLock", {w16(h_path_)}) : 0;
+    if (!path_) {
+      *failure = "no guest memory for the saver's path";
+      return false;
+    }
+    rt.write_str(path_, guest, 0x104);
+    rt.wr32(info_ + iminfo::kPath, path_);
+  }
   rt.wr16(info_ + iminfo::kReader, reader_->instance());
   rt.wr16(info_ + iminfo::kHwnd, hwnd);  // INTERMIS 6:054b, before LOADSAVER
   uint32_t r = saver_main(immsg::kLoad);
-  trace("lane", "SAVERMAIN(10 load %s) -> %" PRIu32, guest.c_str(), r);
+  trace("lane", "SAVERMAIN(10 load %s) -> %" PRIu32, own ? "with no path: the IMQ is its own reader" : guest.c_str(),
+        r);
   loaded_ = true;  // FREE follows even a failed LOAD (1:2072)
   if (!r) {
     *failure = "the reader refused the module (SAVERMAIN(10) -> 0)";
@@ -272,6 +310,13 @@ bool ImxProtocol::start(uint16_t hwnd, std::string* failure) {
   if (!r) {
     // INTERMIS frees a saver whose QUERY failed (6:06ec) and picks another.
     *failure = "the reader's query failed (SAVERMAIN(7) -> 0)";
+    free_saver();
+    return false;
+  }
+  // INTERMIS listed only runnable savers: an IMQ whose QUERY clears 0x1000 is a reader (package.hh "Form").
+  if (own && !(rt.rd32(info_ + iminfo::kFlags) & iminfo::kSaver)) {
+    *failure = "an Intermission reader (its query does not make it a saver: flags " +
+               hex32(rt.rd32(info_ + iminfo::kFlags)) + "), not a module";
     free_saver();
     return false;
   }
@@ -337,13 +382,21 @@ bool ImxProtocol::load(Runtime16& rt, uint16_t hwnd, uint16_t hdc, LaneContext& 
   const uint8_t type = rt.rd8(info_ + iminfo::kPaletteType);
   if (type) engine_palette(type);
   rt.wr8(info_ + iminfo::kShown, 1);  // 6:06e4
+  // An input-taking saver (lane.hh "Intermission (IMX)"): INTERMIS captured
+  // the mouse for it and showed its cursor (1:074d..1:076a), INTRMLIB's hook
+  // sent it the input (SETEATMSGS(1), 6:0587); here the saver's own wake
+  // rules decide, as for every Intermission module.
+  if (rt.rd32(info_ + iminfo::kFlags) & iminfo::kTakesInput) {
+    trace("lane", "%s: its QUERY says it takes input (flag 0x2000); it runs as a screen saver here, input ending it",
+          module_name_.c_str());
+  }
   const win16::Runtime16Options& o = rt.options();
   trace("lane",
-        "%s: package %s, module dir %s, engine dir %s, windows dir %s, kind imx, reader %s%s (%s), \"%s\", palette "
-        "type %u (engine palette %04X), flags %08" PRIX32 ", %s display palette",
+        "%s: package %s, module dir %s, engine dir %s, windows dir %s, kind imx, form %s, reader %s%s (%s), \"%s\", "
+        "palette type %u (engine palette %04X), flags %08" PRIX32 ", %s display palette",
         module_name_.c_str(), layout_.packaged ? layout_.package_id.c_str() : "legacy", layout_.module_dir.c_str(),
         layout_.engine_dir.c_str(), layout_.windows_dir.empty() ? "none" : layout_.windows_dir.c_str(),
-        reader_name(reader_kind_), reader_auto_ ? "" : " (ADNE16READER)",
+        form_name(form_), reader_name(reader_kind_), reader_auto_ ? "" : " (ADNE16READER)",
         reader_path_.empty() ? "IMIMXPLY's dispatch in C++" : reader_path_.c_str(),
         rt.read_str(info_ + iminfo::kName, iminfo::kNameSize).c_str(), type, hpal_, rt.rd32(info_ + iminfo::kFlags),
         o.desktop_palette ? "desktop" : "boot");
@@ -509,6 +562,8 @@ Protocol16::Button ImxProtocol::button(Runtime16& rt, int slot, uint16_t owner16
 
 }  // namespace
 
-std::unique_ptr<Protocol16> make_imx_protocol(const Ne16Layout& layout) { return std::make_unique<ImxProtocol>(layout); }
+std::unique_ptr<Protocol16> make_imx_protocol(const Ne16Layout& layout, ImxForm form) {
+  return std::make_unique<ImxProtocol>(layout, form);
+}
 
 }  // namespace adw::ne16

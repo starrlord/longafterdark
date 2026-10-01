@@ -205,19 +205,24 @@ int main(int argc, char** argv) {
   // Deluxe with a generated cover (the synthetic disc has no setup art).
   CHECK_EQ(run(exe, {L"--list-packages", L"--dest", dest.wstring()}, "--list-packages", &out), 0);
   CHECK(out.find("; cover: generated") != std::string::npos);
-  // Every release; the title column fits the longest title (The Disney
-  // Collection Screen Saver's), so every state starts in the same column.
-  CHECK(out.find("\n  swse      Star Wars Screen Entertainment     not installed; download 6.9 MB (disc image)") !=
-        std::string::npos);
-  CHECK(out.find("\n  startrek  Star Trek: The Screen Saver        not installed; download 2.8 MB (2 floppy images)") !=
-        std::string::npos);
-  CHECK(out.find("\n  tt        Totally Twisted After Dark         not installed;") != std::string::npos);
-  CHECK(out.find("\n  marvel    Marvel Comics Screen Posters       not installed; download 1.9 MB (ZIP of the install "
-                 "files)") != std::string::npos);
-  CHECK(out.find("\n  snoopy    Snoopy's Screen Savers             not installed; download 1.9 MB (ZIP of the install "
-                 "files)") != std::string::npos);
-  CHECK(out.find("\n  disney    The Disney Collection Screen Saver not installed; download 3.4 MB (ZIP of the install "
-                 "files)") != std::string::npos);
+  // Every release; the title column fits the longest title (Scott Adams'
+  // Dilbert Screen Saver Collection's), so every state starts in the same
+  // column.
+  CHECK(out.find("\n  swse      Star Wars Screen Entertainment               "
+                 "not installed; download 6.9 MB (disc image)") != std::string::npos);
+  CHECK(out.find("\n  startrek  Star Trek: The Screen Saver                  "
+                 "not installed; download 2.8 MB (2 floppy images)") != std::string::npos);
+  CHECK(out.find("\n  tt        Totally Twisted After Dark                   not installed;") != std::string::npos);
+  CHECK(out.find("\n  marvel    Marvel Comics Screen Posters                 "
+                 "not installed; download 1.9 MB (ZIP of the install files)") != std::string::npos);
+  CHECK(out.find("\n  snoopy    Snoopy's Screen Savers                       "
+                 "not installed; download 1.9 MB (ZIP of the install files)") != std::string::npos);
+  CHECK(out.find("\n  disney    The Disney Collection Screen Saver           "
+                 "not installed; download 3.4 MB (ZIP of the install files)") != std::string::npos);
+  CHECK(out.find("\n  farside   The Far Side Screen Saver Collection         "
+                 "not installed; download 5.5 MB (5 ZIPs of the install disks' files)") != std::string::npos);
+  CHECK(out.find("\n  dilbert   Scott Adams' Dilbert Screen Saver Collection "
+                 "not installed; download 4.3 MB (ZIP of the install files)") != std::string::npos);
   CHECK_EQ(run(exe, {L"--set-cover", L"tt", pic, L"--dest", dest.wstring()}, "--set-cover, not imported", &out), 1);
   CHECK(out.find("Totally Twisted After Dark isn't imported") != std::string::npos);
   CHECK_EQ(run(exe, {L"--set-cover", L"deluxe", pic, L"--dest", dest.wstring()}, "--set-cover, no picture"), 2);

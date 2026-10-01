@@ -1395,6 +1395,19 @@ void register_gdi16(Runtime16& rt) {
     HDC h = gt(c).host_dc(hdc);
     c.ret(h ? uint16_t(::ExcludeClipRect(h, a, b, d, e)) : 0);
   });
+  // IntersectClipRect(hdc, left, top, right, bottom): the clip region, cut to
+  // the rectangle (logical units); the result is the new region's type
+  // (NULLREGION, SIMPLEREGION, COMPLEXREGION), ERROR (0) for no DC. Today's
+  // GDI answers COMPLEXREGION whatever is left, so the type is the clip
+  // box's, as Windows 3.1 gave the new region's.
+  r.impl(G, "IntersectClipRect", [](Call16& c) {
+    uint16_t hdc = c.w();
+    int16_t a = c.sw(), b = c.sw(), d = c.sw(), e = c.sw();
+    HDC h = gt(c).host_dc(hdc);
+    if (!h || ::IntersectClipRect(h, a, b, d, e) == ERROR) return c.ret(0);
+    RECT rc{};
+    c.ret(uint16_t(::GetClipBox(h, &rc)));
+  });
   r.impl(G, "GetClipBox", [](Call16& c) {
     uint16_t hdc = c.w();
     uint32_t out = c.ptr();

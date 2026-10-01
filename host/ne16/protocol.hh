@@ -12,9 +12,11 @@
 //        MODULEMESSAGE16, SETMODULECTRLVALUES16, UNLOADADMODULE16 and
 //        BUTTONPUSHED16 (ad3_protocol.cc, make_ad3_protocol).
 //   imx  Intermission modules (SAVERINIT + SAVERDRAW: Star Wars Screen
-//        Entertainment's .IMX), driven the way Delrina's INTERMIS.EXE drove
-//        them through a reader (imreader.hh, the real IMIMXPLY.IMQ or the
-//        native reader): SAVERMAIN(info, msg) with an IMINFO record —
+//        Entertainment's .IMX; The Far Side's and Dilbert's .ASA animations
+//        and .IMQ modules), driven the way Delrina's INTERMIS.EXE drove
+//        them through a reader (imreader.hh: the real IMIMXPLY.IMQ or the
+//        native reader, IMASAPLY.IMQ for an ASA animation, an IMQ module
+//        itself; package.hh "Form"): SAVERMAIN(info, msg) with an IMINFO record —
 //        LOAD/QUERY, one START then a DRAW per pass of its idle loop, each
 //        inside its DC bracket, STOP and FREE, CONFIGURE for the button
 //        (imx_protocol.cc, make_imx_protocol; lane.hh "Intermission (IMX)").
@@ -204,8 +206,11 @@ int16_t control_default16(std::string_view record);
 
 // ---- the IMX protocol (imx_protocol.cc) --------------------------------------------------------------------
 
-// The Intermission protocol for the module at layout.module_path.
-std::unique_ptr<Protocol16> make_imx_protocol(const Ne16Layout& layout);
+// The Intermission protocol for the module at layout.module_path, of the form
+// `form` (package.hh "Form"): an IMX module read by IMIMXPLY.IMQ (or the
+// native reader), an ASA animation read by IMASAPLY.IMQ, or an IMQ module
+// that is its own reader.
+std::unique_ptr<Protocol16> make_imx_protocol(const Ne16Layout& layout, ImxForm form = ImxForm::imx);
 
 // What one pixel of a blit or fill costs an Intermission module's DRAWFRAME
 // budget unless ADNE16IMXPIXCOST says otherwise (Protocol16::pixel_cost;

@@ -107,6 +107,15 @@ bool host_ad_snd(const Ne16Layout& l, const FileExists& exists) { return !exists
 
 const char* kind_name(ModuleKind k) { return k == ModuleKind::ad3 ? "ad3" : "imx"; }
 
+const char* form_name(ImxForm f) {
+  switch (f) {
+    case ImxForm::imx: return "imx";
+    case ImxForm::asa: return "asa";
+    case ImxForm::imq: return "imq";
+  }
+  return "?";
+}
+
 KindProbe detect_kind(const loader::ne::Image& img, const std::string& file_name) {
   auto exports = [&](const char* name) { return img.find_ordinal(name).has_value(); };
   KindProbe p;
@@ -130,7 +139,10 @@ KindProbe detect_kind(const loader::ne::Image& img, const std::string& file_name
     return p;
   }
   if (exports("SAVERMAIN")) {
-    p.why = "an Intermission reader (it exports SAVERMAIN), not a module";
+    // An .IMQ: its own reader; its QUERY says whether it is a saver (the protocol checks).
+    p.ok = true;
+    p.kind = ModuleKind::imx;
+    p.form = ImxForm::imq;
   } else if (init || draw) {
     p.why = std::string("not an Intermission module: it exports ") + (init ? "SAVERINIT" : "SAVERDRAW") + " without " +
             (init ? "SAVERDRAW" : "SAVERINIT");
@@ -164,13 +176,22 @@ bool parse_reader_choice(const std::string& v, bool* is_auto, ReaderKind* forced
   return false;
 }
 
-ReaderFile find_reader(const Ne16Layout& l, const FileExists& exists) {
+const char* reader_file(ImxForm f) {
+  switch (f) {
+    case ImxForm::imx: return kImxReader;
+    case ImxForm::asa: return kAsaReader;
+    case ImxForm::imq: return nullptr;
+  }
+  return nullptr;
+}
+
+ReaderFile find_reader(const Ne16Layout& l, const FileExists& exists, const char* file) {
   ReaderFile r;
-  if (exists(l.engine_dir + "\\" + kImxReader)) {
-    r.host = l.engine_dir + "\\" + kImxReader;
+  if (exists(l.engine_dir + "\\" + file)) {
+    r.host = l.engine_dir + "\\" + file;
     r.in_engine_dir = true;
-  } else if (exists(l.module_dir + "\\" + kImxReader)) {
-    r.host = l.module_dir + "\\" + kImxReader;
+  } else if (exists(l.module_dir + "\\" + file)) {
+    r.host = l.module_dir + "\\" + file;
   }
   return r;
 }

@@ -43,8 +43,26 @@
 //     controls     one button, {0, "Configure...", button}, when SAVERDLGPROC
 //                  is exported (the module's own dialog, IMIMXPLY's message 8)
 //     entry        "SAVERDRAW"
-//     abi          "intermission" (written last, only for IMX entries; absent
-//                  means the After Dark module ABI)
+//     abi          "intermission" (written last, only for Intermission
+//                  entries; absent means the After Dark module ABI)
+//   Intermission's other two module forms (lane ne16; The Far Side's and
+//   Dilbert's SAVER, the folders of a package Delrina's installer installed,
+//   Package::delrina_installer — only those folders list *.ASA and *.IMQ):
+//     an ASA animation, *.ASA starting "AniN" or "AniM" (the ne16 lane's
+//     rule: data, which Intermission's ASA reader IMASAPLY.IMQ plays from
+//     ENGINE); an IMQ module, an NE *.IMQ exporting SAVERMAIN but neither
+//     MODULE nor SAVERINIT and SAVERDRAW, its own reader, unless its name is
+//     one of Intermission's readers' (is_intermission_reader: left out,
+//     logged, as an NE exporting SAVERMAIN under any other extension is)
+//     displayName  the file stem (the registry's name overrides give moduleName)
+//     about        ""
+//     controls     one button, {0, "Configure...", button}: an ASA's reader's
+//                  dialog (IMASAPLY exports SAVERDLGPROC), an IMQ module's own
+//                  when it exports SAVERDLGPROC
+//     entry        "SAVERMAIN" (the reader's: the module's own for an IMQ)
+//     needs        an IMQ module's imports; none for an ASA (its reader's
+//                  are ENGINE's business)
+//     abi          "intermission"
 //   Any lane, from the registry: "screen" ("640x480"), the fixed screen every
 //   module of a package is shown at (Package::screen: Star Trek: The Screen
 //   Saver's, several of whose modules compose a fixed scene for it), written
@@ -109,8 +127,9 @@ struct CatalogModule {
   std::string module_name;              // the name before disambiguation (trimmed, overrides applied)
   std::string md5;                      // of the module file
   std::string same_as;                  // id of the first entry with the same md5 ("" = none)
-  // The module ABI when it is not After Dark's: "intermission" for an IMX
-  // module ("" = After Dark; the JSON then has no "abi").
+  // The module ABI when it is not After Dark's: "intermission" for an
+  // Intermission module, IMX, ASA or IMQ ("" = After Dark; the JSON then has
+  // no "abi").
   std::string abi;
   // The fixed screen the module is shown at, "WxH", from its package's
   // registry entry ("" = any screen; the JSON then has no "screen").
@@ -176,13 +195,21 @@ bool is_system_dll(std::string_view name);
 // (Intermission's own "Confi&gure...", without the mnemonic).
 inline constexpr char kIntermissionConfigure[] = "Configure...";
 
+// One of Intermission's own readers, by its file name: IM???PLY.IMQ, as
+// every one is named (IMIMXPLY "IMX Player", IMASAPLY "ASA Player", IMAD_PLY,
+// IMFLCPLY, IMFLIPLY, IMNSSPLY, IMSAPPLY, IMSCRPLY, IMSEQPLY, IMSPXPLY),
+// without case. Never a module: an IMQ module (The Far Side's PTERY.IMQ) is
+// named otherwise. `file_name` without a directory.
+bool is_intermission_reader(std::string_view file_name);
+
 // Everything the catalog says about one module file. `rel_path` is the
 // catalog "path"; the id comes from the file name and the lane — Deluxe's
 // "ad40.<base>" / "classic.<base>" when `package` is null or Deluxe, else
 // "<package>.<base>". The package fields and md5 are filled; module_name is
 // the trimmed display name (overrides are the merge's job). Throws
-// ImportError(source_invalid) for a file that is neither PE32 nor NE, or an
-// NE the ne16 lane would refuse to run (the message is the lane's reason),
+// ImportError(source_invalid) for a file that is neither PE32 nor NE nor an
+// ASA animation, or an NE the ne16 lane would refuse to run (the message is
+// the lane's reason; an IMQ named as Intermission's readers are, a reader),
 // and adw::loader::LoaderError for a damaged image.
 CatalogModule catalog_module(const std::filesystem::path& file, const std::string& rel_path,
                              const Package* package = nullptr);
@@ -207,7 +234,8 @@ struct CatalogDoc {
 // The merged catalog (PACKAGES.md §6) over `trees`, which are in registry
 // order. Per package, its module dirs in registry order (Deluxe: AD40\*.AD
 // sorted, ENGINE\STARRYNI.AD, CLASSIC\*.AD sorted; every other package: each
-// module dir's *.AD and *.IMX sorted together, then ENGINE's; never WINDOWS),
+// module dir's *.AD and *.IMX — a Delrina release's also *.ASA and *.IMQ —
+// sorted together, then ENGINE's *.AD and *.IMX; never WINDOWS),
 // paths "<package root>/<dir>/<file>" whatever the directory is called now. Ids are unique (a second file with a taken id is skipped
 // and logged); name overrides apply; display names are made unique per lane;
 // sameAs links byte-identical modules. A module that cannot be read, or that

@@ -450,6 +450,81 @@ void test_imx(const fs::path& dir) {
                        "catalog: skipped packages/swse/SAVER/SETCUR.IMX: an Intermission module that exports "
                        "SETCURRSAVER, which the IMX reader refuses"}));
   for (const auto& l : logged) fprintf(stderr, "  %s\n", l.c_str());
+  // Intermission's other two forms (The Far Side's, Dilbert's): an ASA
+  // animation, by its header ("AniN", or "AniM"), whatever its name; an
+  // .IMQ exporting SAVERMAIN, its own reader, unless it is named as
+  // Intermission's readers are.
+  {
+    const Package* fs_pkg = find_package("farside");
+    CHECK(fs_pkg && fs_pkg->delrina_installer());
+    for (const char* magic : {"AniN", "AniM"}) {
+      CatalogModule a = catalog_module(write("HELL.ASA", std::string(magic) + std::string(600, '\x07')),
+                                       "packages/farside/SAVER/HELL.ASA", fs_pkg);
+      CHECK(a.id == "farside.hell" && a.lane == "ne16" && a.abi == "intermission" && a.entry == "SAVERMAIN");
+      CHECK(a.display_name == "hell" && a.module_name == "hell" && a.about.empty() && !a.credits);
+      CHECK(a.needs.empty() && a.system.empty() && a.package == "farside");
+      CHECK(a.controls.size() == 1 && a.controls[0].name == "Configure..." && a.controls[0].kind == "button");
+    }
+    std::string why = "listed";
+    try {
+      catalog_module(write("FAKE.ASA", "Anim and more"), "x", fs_pkg);
+    } catch (const ImportError& e) {
+      why = e.what();
+    }
+    CHECK(why.find("not a PE32 or NE image") != std::string::npos);
+    const std::vector<std::string> imq = {"WEP", "SAVERMAIN", "SAVERDLGPROC", "SAVERDLGPROC2"};
+    CatalogModule q = catalog_module(write("PTERY.IMQ", synth_imx(imq, {"INTRMLIB", "ANTSW", "DIBDLL", "MMSYSTEM"})),
+                                     "packages/farside/SAVER/PTERY.IMQ", fs_pkg);
+    CHECK(q.id == "farside.ptery" && q.lane == "ne16" && q.abi == "intermission" && q.entry == "SAVERMAIN");
+    CHECK(q.display_name == "ptery" && q.about.empty() && q.controls.size() == 1);
+    CHECK((q.needs == std::vector<std::string>{"ANTSW", "DIBDLL", "INTRMLIB"}) &&
+          (q.system == std::vector<std::string>{"MMSYSTEM"}));
+    CHECK(catalog_module(write("NODLG.IMQ", synth_imx({"WEP", "SAVERMAIN"})), "x", fs_pkg).controls.empty());
+    // MODULE, or SAVERINIT and SAVERDRAW, win over SAVERMAIN, as everywhere.
+    CHECK(catalog_module(write("BOTH.IMQ", synth_imx({"SAVERMAIN", "SAVERINIT", "SAVERDRAW"})), "x", fs_pkg).entry ==
+          "SAVERDRAW");
+    for (const char* reader : {"IMASAPLY.IMQ", "imimxply.imq", "IMAD_PLY.IMQ", "READER.IMX", "READER.DLL"}) {
+      std::string got = "listed";
+      try {
+        catalog_module(write(reader, synth_imx({"WEP", "SAVERMAIN", "SAVERDLGPROC", "MTDLGPROC"})), "x", fs_pkg);
+      } catch (const ImportError& e) {
+        got = e.what();
+      }
+      CHECK_EQ(got, std::string("an Intermission reader (it exports SAVERMAIN), not a module"));
+    }
+    // A Delrina release's module folder lists *.ASA and *.IMQ with *.AD and
+    // *.IMX, sorted together; its ENGINE (the ASA reader's place) lists no
+    // ASA or IMQ, and a reader in the module folder is left out and logged.
+    // Star Wars Screen Entertainment's folders list no ASA or IMQ at all.
+    fs::path droot = dir / L"farside-tree";
+    auto dput = [&](const std::wstring& rel, const std::string& data) {
+      test::write_bytes(droot / rel, std::vector<uint8_t>(data.begin(), data.end()));
+    };
+    dput(L"SAVER\\OCEAN.ASA", "AniN ocean");
+    dput(L"SAVER\\eggfight.asa", "AniM eggfight");
+    dput(L"SAVER\\PTERY.IMQ", synth_imx(imq, {"INTRMLIB", "ANTSW"}));
+    dput(L"SAVER\\IMASAPLY.IMQ", synth_imx(imq, {"INTRMLIB", "ANTSW"}));
+    dput(L"SAVER\\INTRMLIB.DLL", synth_imx({"WEP"}));
+    dput(L"SAVER\\NOTES.TXT", "AniN, but not a module file name");
+    dput(L"ENGINE\\IMASAPLY.IMQ", synth_imx(imq, {"INTRMLIB", "ANTSW"}));
+    dput(L"ENGINE\\HIDDEN.ASA", "AniN in ENGINE");
+    CatalogTree ft;
+    ft.package = fs_pkg;
+    ft.dir = droot;
+    std::vector<std::string> flog;
+    CatalogDoc fcat = build_catalog({ft}, [&](const std::string& s) { flog.push_back(s); });
+    std::vector<std::string> fids, fnames;
+    for (auto& mod : fcat.modules) fids.push_back(mod.id), fnames.push_back(mod.module_name);
+    CHECK((fids == std::vector<std::string>{"farside.ocean", "farside.ptery", "farside.eggfight"}));
+    CHECK((fnames == std::vector<std::string>{"Ocean", "Pterodactyl", "Eggfight"}));
+    CHECK((flog == std::vector<std::string>{"catalog: skipped packages/farside/SAVER/IMASAPLY.IMQ: an Intermission "
+                                            "reader (it exports SAVERMAIN), not a module"}));
+    for (const auto& l : flog) fprintf(stderr, "  %s\n", l.c_str());
+    t.package = swse;
+    t.dir = droot;
+    CHECK(build_catalog({t}).modules.empty());
+  }
+
   // Deluxe's fixed places hold *.AD only: an IMX file there is not listed.
   fs::path files = dir / L"FILES.deluxe";
   const std::string imx = synth_imx(kImxExports), ne = synth_ne();

@@ -75,6 +75,12 @@ std::string ascii_lower(std::string s) {
   return s;
 }
 
+// `name` ends with `ext` (upper case), ASCII case aside.
+bool has_ext(std::string_view name, std::string_view ext) {
+  const std::string u = ascii_upper(std::string(name));
+  return u.size() >= ext.size() && std::string_view(u).substr(u.size() - ext.size()) == ext;
+}
+
 // A Classic About/credits string: the C string, CRLF made LF, trimmed.
 std::string plain_text(std::string_view data) {
   std::string_view s = c_string(data);
@@ -457,7 +463,12 @@ std::string read_whole_file(const fs::path& p) {
 // no module the lane runs, and `why` says so in the lane's words. Exports
 // are found by name, without case, as the lane looks them up (find_ordinal:
 // no entry-table entry needed).
-enum class NeKind { after_dark, intermission, none };
+// SAVERMAIN alone makes an Intermission reader, which the lane runs as an
+// IMQ module, its own reader, when that reader's QUERY says it is a saver;
+// without running anything, the catalog takes an .IMQ (the file type
+// Intermission gives readers) not named as Intermission's own readers are
+// for one (imq), and leaves every other reader out.
+enum class NeKind { after_dark, intermission, imq, none };
 
 NeKind ne_kind(const loader::ne::Image& img, const std::string& file_name, std::string* why) {
   auto exports = [&](const char* name) { return img.find_ordinal(name).has_value(); };
@@ -474,6 +485,7 @@ NeKind ne_kind(const loader::ne::Image& img, const std::string& file_name, std::
     return NeKind::none;
   }
   if (exports("SAVERMAIN")) {
+    if (has_ext(file_name, ".IMQ") && !is_intermission_reader(file_name)) return NeKind::imq;
     *why = "an Intermission reader (it exports SAVERMAIN), not a module";
   } else if (init || draw) {
     *why = std::string("not an Intermission module: it exports ") + (init ? "SAVERINIT" : "SAVERDRAW") + " without " +
@@ -487,6 +499,29 @@ NeKind ne_kind(const loader::ne::Image& img, const std::string& file_name, std::
 void split_dlls(std::set<std::string> dlls, CatalogModule& m) {
   // std::set orders by bytes, as Python's sorted() orders these ASCII names.
   for (const auto& d : dlls) (is_system_dll(d) ? m.system : m.needs).push_back(d);
+}
+
+// What an Intermission entry says beside its lane and id: no resource holds
+// its name or text (the registry's name overrides give moduleName), its
+// settings are a dialog (`dialog`: the Configure... button), and `entry`.
+void intermission_entry(CatalogModule& m, const std::string& base, const char* entry, bool dialog) {
+  m.abi = "intermission";
+  m.entry = entry;
+  m.display_name = base;
+  if (dialog) {
+    CatalogControl b;
+    b.index = 0;
+    b.name = kIntermissionConfigure;
+    b.kind = b.type = "button";
+    m.controls.push_back(std::move(b));
+  }
+  m.module_name = base;
+}
+
+// An Intermission ASA animation's header (the ne16 lane's rule: data that
+// starts "AniN", or "AniM" as The Far Side's EGGFIGHT.ASA does).
+bool asa_header(std::string_view data) {
+  return data.size() >= 4 && (data.substr(0, 4) == "AniN" || data.substr(0, 4) == "AniM");
 }
 
 void add_controls(CatalogModule& m, const std::function<std::optional<std::string_view>(uint16_t)>& find) {
@@ -518,6 +553,11 @@ std::string trim_name(std::string s) {
 
 }  // namespace
 
+bool is_intermission_reader(std::string_view file_name) {
+  const std::string u = ascii_upper(std::string(file_name));
+  return u.size() == 12 && u.compare(0, 2, "IM") == 0 && u.compare(5, 7, "PLY.IMQ") == 0;
+}
+
 CatalogModule catalog_module(const fs::path& file, const std::string& rel_path, const Package* package) {
   std::string data = read_whole_file(file);
   loader::Format fmt = loader::detect_format(data);
@@ -530,6 +570,14 @@ CatalogModule catalog_module(const fs::path& file, const std::string& rel_path, 
     m.package = package->id;
     m.package_title = package->title;
     if (package->screen) m.screen = package->screen;
+  }
+  if (asa_header(data)) {
+    // Played by Intermission's ASA reader, whose dialog its Configure...
+    // button opens; it imports nothing itself.
+    m.lane = "ne16";
+    m.id = (legacy_ids ? "classic." : std::string(package->id) + ".") + base;
+    intermission_entry(m, base, "SAVERMAIN", true);
+    return m;
   }
   if (fmt == loader::Format::pe32) {
     loader::pe::Image img(std::move(data));
@@ -559,21 +607,14 @@ CatalogModule catalog_module(const fs::path& file, const std::string& rel_path, 
     m.id = (legacy_ids ? "classic." : std::string(package->id) + ".") + base;
     std::set<std::string> dlls;
     for (const auto& ref : img.module_refs()) dlls.insert(ascii_upper(loader::latin1_to_utf8(ref)));
-    if (kind == NeKind::intermission) {
-      // No resource holds an IMX module's name or text: the registry's name
-      // overrides give moduleName; its settings are its own dialog.
-      m.abi = "intermission";
-      m.entry = "SAVERDRAW";
-      m.display_name = base;
-      if (img.find_export("SAVERDLGPROC")) {
-        CatalogControl b;
-        b.index = 0;
-        b.name = kIntermissionConfigure;
-        b.kind = b.type = "button";
-        m.controls.push_back(std::move(b));
-      }
+    if (kind == NeKind::intermission || kind == NeKind::imq) {
+      // No resource holds an IMX or IMQ module's name or text: the
+      // registry's name overrides give moduleName; its settings are its own
+      // dialog. The IMX reader calls an IMX module's SAVERDRAW; an IMQ
+      // module is a reader, called at its SAVERMAIN.
+      intermission_entry(m, base, kind == NeKind::imq ? "SAVERMAIN" : "SAVERDRAW",
+                         img.find_export("SAVERDLGPROC") != nullptr);
       split_dlls(std::move(dlls), m);
-      m.module_name = base;
       return m;
     }
     if (auto nm = ne_find(img, uint16_t(2000), 20); nm && !nm->empty()) m.display_name = cp1252_to_utf8(c_string(*nm));
@@ -605,9 +646,10 @@ bool iequals_w(std::wstring_view a, std::wstring_view b) {
   return CompareStringOrdinal(a.data(), int(a.size()), b.data(), int(b.size()), TRUE) == CSTR_EQUAL;
 }
 
-// <dir>\*.AD (and, with `imx`, *.IMX), matched case-insensitively (as glob
-// does on Windows) and sorted by name together.
-std::vector<std::wstring> modules_in(const fs::path& dir, bool imx) {
+// <dir>\*.AD (and, with `imx`, *.IMX; with `asa_imq`, *.ASA and *.IMQ too),
+// matched case-insensitively (as glob does on Windows) and sorted by name
+// together.
+std::vector<std::wstring> modules_in(const fs::path& dir, bool imx, bool asa_imq = false) {
   std::vector<std::wstring> names;
   std::error_code ec;
   auto ends_with = [](std::wstring_view n, std::wstring_view ext) {
@@ -615,7 +657,10 @@ std::vector<std::wstring> modules_in(const fs::path& dir, bool imx) {
   };
   for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
     std::wstring n = it->path().filename().wstring();
-    if (n.size() < 3 || n[0] == L'.' || !(ends_with(n, L".AD") || (imx && n.size() > 4 && ends_with(n, L".IMX"))))
+    const bool four = n.size() > 4;  // a name before a four-character extension
+    if (n.size() < 3 || n[0] == L'.' ||
+        !(ends_with(n, L".AD") || (imx && four && ends_with(n, L".IMX")) ||
+          (asa_imq && four && (ends_with(n, L".ASA") || ends_with(n, L".IMQ")))))
       continue;
     std::error_code fe;
     if (it->is_regular_file(fe)) names.push_back(n);
@@ -640,10 +685,13 @@ std::vector<ModuleFile> module_files(const Package& pkg, const fs::path& dir) {
   std::error_code ec;
   const std::string root = pkg.root;
   // Deluxe's three fixed places hold *.AD only, so its order and ids stay as
-  // they always were; the other packages' folders may hold IMX modules.
+  // they always were; the other packages' folders may hold IMX modules, and
+  // a Delrina release's module folders ASA animations and IMQ modules (never
+  // its ENGINE, where the ASA reader is).
   const bool imx = !pkg.is_deluxe();
   auto add_dir = [&](const std::string& d) {
-    for (const auto& n : modules_in(dir / to_wide(d), imx))
+    const bool asa_imq = pkg.delrina_installer() && d != "ENGINE";
+    for (const auto& n : modules_in(dir / to_wide(d), imx, asa_imq))
       order.push_back({dir / to_wide(d) / n, root + "/" + d + "/" + to_utf8(n), d + "/" + to_utf8(n)});
   };
   bool engine_listed = false;

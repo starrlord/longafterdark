@@ -228,6 +228,26 @@ std::optional<std::string> presage_shortname(const SourceFs& fs) {
   return ini_value(fs.read_all(*n, kMaxInstallDat), "data", "shortname");
 }
 
+// intermission, Delrina's own installer: the Intermission Installer itself,
+// on disk 1 of every release it installs (SETUP.EXE only loads it).
+constexpr char kDelrinaInstaller[] = "IMINST2.EXE";
+
+// intermission, Delrina's installer (Package::delrina_installer): disk 1's
+// tag file, the installer and the release's own file on disk 1 (`marker`),
+// side by side at the source's root (disk 1 itself, the disks together, or
+// a flat folder or ZIP of their files). Nothing is read: their names name
+// the release, as an AD 3.x install's archive members do (the installer has
+// no script; it copies by wildcard).
+bool delrina_fingerprint(const SourceFs& fs, const Package& p) {
+  if (!p.marker || p.required_archives.empty()) return false;
+  const SourceNode root = fs.root();
+  for (const char* n : {p.required_archives[0], kDelrinaInstaller, p.marker}) {
+    auto x = fs.child(root, n);
+    if (!x || x->is_dir) return false;
+  }
+  return true;
+}
+
 // Microsoft Setup's SETUP.LST is a small text file: the real one is 654 bytes.
 constexpr uint64_t kMaxSetupLst = 64 * 1024;
 
@@ -482,6 +502,8 @@ Identified identify(const SourceFs& fs, std::span<const Package> registry, const
   for (const Package& p : registry) {
     if (p.recipe == Recipe::tree) {
       if (auto loc = tree_location(fs, p)) matches.push_back(std::move(*loc));
+    } else if (p.recipe == Recipe::intermission && p.delrina_installer()) {
+      if (delrina_fingerprint(fs, p)) matches.push_back(Identified{&p, fs.root(), ""});
     } else if (p.recipe == Recipe::intermission) {
       // The script names the product; its first archive (disk 1's) must be
       // beside it.
@@ -830,6 +852,11 @@ class Importer {
   // use; the loose files (the registry's, from INSTALL.DAT) go where the
   // registry says, SZDD ones expanded. Only INSTALL.DAT (read to identify),
   // the archives and the loose files are ever opened (I5).
+  // Delrina's installer: every install disk's tag file must be there; then
+  // the registry's loose files, every file the release installs, SZDD ones
+  // expanded. Only the table's files are ever opened (I5): the installer,
+  // the other readers, AD_SND, the drivers, the texts and what a copy of the
+  // disks holds besides (a BBS's notes) are never read.
   void plan_intermission(const SourceFs& fs, const Identified& id) {
     const Package& p = *pkg_;
     const std::string M = root_ + "/" + p.module_dir, E = root_ + "/ENGINE";
@@ -839,6 +866,10 @@ class Importer {
       if (!n || n->is_dir) missing += std::string(missing.empty() ? "" : ", ") + a;
     }
     if (!missing.empty()) needs_every_disk(p, missing);
+    if (p.delrina_installer()) {
+      plan_loose_files(fs, id);
+      return;
+    }
 
     // Each archive is the chain of volumes that starts at one of the
     // registry's .ARJ names, followed for as long as a volume's main header
@@ -1058,7 +1089,8 @@ class Importer {
       if (n->mtime) pl.has_mtime = true, pl.mtime = *n->mtime;  // neither SZDD nor KWAJ records one of its own
       const std::string what = pl.from;
       if (lf.codec == Codec::szdd) {
-        // Small (the disc's largest is 87 KB); its header's size is what is
+        // Small (Star Wars Screen Entertainment's largest is 87 KB, an ASA
+        // animation of The Far Side's 750 KB); its header's size is what is
         // budgeted and checked against the manifest before anything is written.
         auto bytes = std::make_shared<const std::vector<uint8_t>>(fs.read_all(*n, 16ull << 20));
         try {
@@ -1327,21 +1359,36 @@ class Importer {
           out.push_back(f.substr(prefix.size()));
       return out;
     };
+    // An IMQ module the registry puts in a module folder (a Delrina
+    // release's: its own reader, a module).
+    auto registry_module_imq = [&](const std::string& rel) {
+      for (const LooseFile& lf : p.loose_files)
+        if (ascii_upper(lf.to) == rel) return !is_intermission_reader(rel.substr(rel.rfind('/') + 1));
+      return false;
+    };
+    bool asa_modules = false;
     for (const std::string& d : folders) {
       for (const char* n : kNeverBesideModules)
         if (have.count(d + "/" + n)) fail("I1", d + "\\" + n + " would shadow the engine's");
       // Intermission and its readers live in ENGINE: the module folder holds
-      // only the modules and what they load.
+      // only the modules (a Delrina release's IMQ modules among them) and
+      // what they load.
       if (imx)
-        for (const std::string& n : names_in(d))
-          if (n == "INTERMIS.EXE" || ends_with_i(n, ".IMQ")) fail("I1", d + "\\" + n + " belongs in ENGINE");
+        for (const std::string& n : names_in(d)) {
+          if (n == "INTERMIS.EXE" || (ends_with_i(n, ".IMQ") && !registry_module_imq(d + "/" + n)))
+            fail("I1", d + "\\" + n + " belongs in ENGINE");
+          asa_modules = asa_modules || ends_with_i(n, ".ASA");
+        }
       // After Dark 2.0's own host too (the host replaces it; nothing loads it).
       if ((ad2 || isl) && have.count(d + "/AD.EXE")) fail("I1", d + "\\AD.EXE belongs in ENGINE");
     }
     if (imx) {
-      // The IMX reader and the installer's C:\WINDOWS files; and nothing that
-      // would make the 16-bit lane take the package for an After Dark one.
-      if (!have.count("ENGINE/IMIMXPLY.IMQ")) fail("I3", "no ENGINE\\IMIMXPLY.IMQ");
+      // The IMX reader (a Delrina release, which has no IMX module: the ASA
+      // reader, for its ASA animations) and the installer's C:\WINDOWS files;
+      // and nothing that would make the 16-bit lane take the package for an
+      // After Dark one.
+      if (!p.delrina_installer() && !have.count("ENGINE/IMIMXPLY.IMQ")) fail("I3", "no ENGINE\\IMIMXPLY.IMQ");
+      if (asa_modules && !have.count("ENGINE/IMASAPLY.IMQ")) fail("I3", "no ENGINE\\IMASAPLY.IMQ");
       for (const LooseFile& lf : p.loose_files)
         if (std::string_view(lf.to).rfind("WINDOWS/", 0) == 0 && !have.count(ascii_upper(lf.to)))
           fail("I3", "no " + std::string(lf.to));
@@ -1942,7 +1989,9 @@ ImportResult run_import(const Source& src, const ImportOptions& opts) {
     // A known image of the release, or every one of its install disks.
     r.iso_md5_known = image.complete && image.pkg == &pkg;
     imp.log("identified " + std::string(pkg.title) + (id.dir_path.empty() ? "" : " (" + id.dir_path + ")"));
-    if (r.format == "zip" && r.iso_md5_known)
+    if (r.format == "zip" && r.iso_md5_known && r.parts.size() > 1)
+      imp.log("ZIPs of the install disks' files, the known copies of " + std::string(pkg.title) + " (by their md5s)");
+    else if (r.format == "zip" && r.iso_md5_known)
       imp.log("a ZIP of install files, the known copy of " + std::string(pkg.title) + " (by its md5)");
     else if (r.format == "zip")
       imp.log("a ZIP of install files, not an image of the original disks" +

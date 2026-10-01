@@ -1635,7 +1635,7 @@ void test_ui() {
   CHECK(rotation_summary(1, 1, 0, 1) == L"1 selected · 0 can run now");
   CHECK(rotation_summary(0, 1) == L"None in rotation" && rotation_summary(0, 1, 0, 0) == L"None in rotation");
   CHECK(rotation_summary(2, 2) == L"All 2 in rotation" && rotation_summary(1, 2) == L"1 of 2 in rotation");
-  CHECK(rotation_summary(2, 284, 2, 1) == L"2 of 284 selected · 1 distinct");
+  CHECK(rotation_summary(2, 314, 2, 1) == L"2 of 314 selected · 1 distinct");
   // Its tooltip: the copies, and the module the file names to play first.
   CHECK(rotation_tip(202, 202, L"").empty() && rotation_tip(0, 0, L"").empty());
   CHECK(rotation_tip(202, 129, L"") ==
@@ -1696,13 +1696,13 @@ void test_ui() {
   }
 
   // Status text: no closing full stop (the releases' own line is checked in
-  // the releases suite). Not every release is After Dark's: the words fit all twelve.
+  // the releases suite). Not every release is After Dark's: the words fit all fourteen.
   CHECK(assets_summary({}) == L"Nothing imported yet");
   // The not-imported welcome: what importing does.
   CHECK(welcome_text().find(L"The screen saver runs the original modules of After Dark and Star Wars Screen "
                             L"Entertainment from your own discs.\n\n"
-                            L"Import them from any of your discs (twelve releases are supported), a disc image, or the "
-                            L"Internet Archive download.") == 0);
+                            L"Import them from any of your discs (fourteen releases are supported), a disc image, or "
+                            L"the Internet Archive download.") == 0);
   CHECK(welcome_text().find(L"After Dark discs") == std::wstring::npos);
   Catalog c;
   CHECK(parse_catalog(fixture("catalog-win.json"), c, nullptr));
@@ -1809,13 +1809,14 @@ void test_ui() {
   // doesn't show, there was no room for it.
   {
     HDC dc = CreateCompatibleDC(nullptr);
-    // The twelve releases' line, "284 modules from 12 releases", is a digit
-    // longer than the seven's ("232 modules from 7 releases"), whose digits
-    // were already wider in the caption face, Segoe UI Variable Small, than
-    // the six's ("216 modules from 6 releases").
-    const wchar_t* texts[] = {L"Nothing imported yet", L"284 modules from 12 releases",
+    // The fourteen releases' line, "314 modules from 14 releases", is as
+    // long as the twelve's ("284 modules from 12 releases"), a digit longer
+    // than the seven's ("232 modules from 7 releases"), whose digits were
+    // already wider in the caption face, Segoe UI Variable Small, than the
+    // six's ("216 modules from 6 releases").
+    const wchar_t* texts[] = {L"Nothing imported yet", L"314 modules from 14 releases",
                               L"84 modules from After Dark 4.0 Deluxe",
-                              L"284 modules from 12 releases · 2 missing — import again to restore"};
+                              L"314 modules from 14 releases · 2 missing — import again to restore"};
     int shown = 0, hidden = 0, min_twelve = 0;
     std::string min_twelve_at;   // the scales it fits the narrowest window at
     for (int dpi = 96; dpi <= 240; dpi += 24) {
@@ -1872,7 +1873,7 @@ void test_ui() {
           // The status line it sits beside is never under it.
           CHECK(C.box.x > in.assets_right);
         }
-        // Where it matters: with twelve releases it shows at the first-open
+        // Where it matters: with fourteen releases it shows at the first-open
         // size (with room to spare) at every scale; one release's long title
         // and the assets line at its longest (files missing) leave it no room
         // in the minimum window. (In the minimum window beside the releases'
@@ -1900,7 +1901,7 @@ void test_ui() {
         }
       }
     }
-    printf("ui: the credit fits beside \"284 modules from 12 releases\" in the narrowest window at %d of 7 scales (%s)\n",
+    printf("ui: the credit fits beside \"314 modules from 14 releases\" in the narrowest window at %d of 7 scales (%s)\n",
            min_twelve, min_twelve_at.c_str());
     CHECK(shown > 0 && hidden > 0);
     DeleteDC(dc);

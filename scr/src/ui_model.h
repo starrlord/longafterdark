@@ -82,8 +82,9 @@ AssetCounts count_assets(const Catalog& c, const std::vector<bool>& present);
 std::wstring assets_summary(const AssetCounts& a);
 
 // The not-imported welcome's text (under "Welcome to Long After Dark"): what
-// importing does, for every release (eleven of After Dark modules, and Star
-// Wars Screen Entertainment).
+// importing does, for every release (eleven of After Dark modules, and three
+// of Delrina Intermission's: Star Wars Screen Entertainment, The Far Side,
+// Dilbert).
 std::wstring welcome_text();
 
 // ---- string-slider stops ---------------------------------------------------------

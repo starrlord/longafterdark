@@ -56,7 +56,8 @@ void fake_install(const fs::path& assets, const std::vector<std::string>& ids,
   static const std::map<std::string, int> modules = {{"deluxe", 84},   {"ad10", 46},     {"ad32", 44},
                                                       {"tt", 13},       {"simpsons", 15}, {"swse", 14},
                                                       {"startrek", 16}, {"marvel", 1},    {"snoopy", 8},
-                                                      {"looney", 12},   {"screams", 15},  {"disney", 16}};
+                                                      {"looney", 12},   {"screams", 15},  {"disney", 16},
+                                                      {"farside", 14},  {"dilbert", 16}};
   for (const std::string& id : ids) {
     auto md5 = image_md5.find(id);
     const std::string source = md5 == image_md5.end() ? "" : ", \"source\": {\"imageMd5\": \"" + md5->second + "\"}";
@@ -145,7 +146,8 @@ void test_model(const fs::path& dir) {
     CHECK(first.find(L"Long After Dark runs the original Windows modules of After Dark 4.0 Deluxe, After Dark 10th "
                      L"Anniversary, ") == 0);
     for (const Package& p : builtin_packages()) CHECK(first.find(to_wide(p.title)) != std::wstring::npos);
-    CHECK(first.find(L" and The Disney Collection Screen Saver. Choose where to copy them from.") != std::wstring::npos);
+    CHECK(first.find(L", The Disney Collection Screen Saver, The Far Side Screen Saver Collection and Scott Adams' "
+                     L"Dilbert Screen Saver Collection. Choose where to copy them from.") != std::wstring::npos);
     const std::wstring later = gui::sources_intro(true);
     CHECK(later.find(L"After Dark 4.0 Deluxe") == std::wstring::npos);
     CHECK(later.find(L" releases. Choose where to copy them from.") != std::wstring::npos);
@@ -159,6 +161,8 @@ void test_model(const fs::path& dir) {
           L"Anniversary. Choose where to copy them from.");
     if (reg.size() == 10) CHECK(later.find(L" of ten releases. ") != std::wstring::npos);
     if (reg.size() == 12) CHECK(later.find(L" of twelve releases. ") != std::wstring::npos);
+    if (reg.size() == 14) CHECK(later.find(L" of fourteen releases. ") != std::wstring::npos);
+    CHECK_EQ(reg.size(), size_t(14));
   }
 
   // Nothing installed, and an assets folder that doesn't exist stays that way.
@@ -239,7 +243,7 @@ void test_model(const fs::path& dir) {
     fs::resize_file(downloads / d.file_name, d.size);
   }
   auto dl = gui::download_rows(assets, "", downloads);
-  CHECK_EQ(dl.size(), size_t(12));
+  CHECK_EQ(dl.size(), size_t(14));
   for (const auto& r : dl) {
     CHECK(r.text.find(r.title + L"\n") == 0);
     if (r.id == "deluxe" || r.id == "tt")
@@ -258,6 +262,11 @@ void test_model(const fs::path& dir) {
     if (r.id == "screams") CHECK(r.text == L"ScreamSavers\nInstall files (ZIP) \u00b7 3.3 MB\nNot imported yet");
     if (r.id == "marvel") CHECK(r.text == L"Marvel Comics Screen Posters\nInstall files (ZIP) \u00b7 1.9 MB\nNot imported yet");
     if (r.id == "snoopy") CHECK(r.text == L"Snoopy's Screen Savers\nInstall files (ZIP) \u00b7 1.9 MB\nNot imported yet");
+    // A ZIP of each install disk's files (The Far Side's five), and a ZIP of them all (Dilbert's first copy).
+    if (r.id == "farside")
+      CHECK(r.text == L"The Far Side Screen Saver Collection\nInstall files (5 ZIPs) \u00b7 5.5 MB\nNot imported yet");
+    if (r.id == "dilbert")
+      CHECK(r.text == L"Scott Adams' Dilbert Screen Saver Collection\nInstall files (ZIP) \u00b7 4.3 MB\nNot imported yet");
   }
   // With disk 2's image too, the pair is downloaded.
   if (startrek && !startrek->downloads.empty() && !startrek->downloads.front().more_images.empty()) {
@@ -272,8 +281,8 @@ void test_model(const fs::path& dir) {
   CHECK(all.has_value());
   if (all) {
     CHECK((all->ids == std::vector<std::string>{"ad10", "ad32", "simpsons", "swse", "startrek", "marvel", "snoopy",
-                                                "looney", "screams", "disney"}));
-    CHECK(all->text.find(L"Every release not imported yet\n10 releases") == 0);
+                                                "looney", "screams", "disney", "farside", "dilbert"}));
+    CHECK(all->text.find(L"Every release not imported yet\n12 releases") == 0);
   }
   auto one = gui::download_rows(assets, "tt", downloads);
   CHECK_EQ(one.size(), size_t(1));

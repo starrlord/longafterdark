@@ -28,7 +28,10 @@ std::wstring count(size_t n, const wchar_t* one, const wchar_t* many) {
 }
 
 std::wstring download_kind(const Download& d) {
-  if (std::string_view(d.kind) == "zip") return L"Install files (ZIP)";
+  // One ZIP of the install files, or one of each install disk's.
+  if (std::string_view(d.kind) == "zip")
+    return d.more_images.empty() ? L"Install files (ZIP)"
+                                 : L"Install files (" + std::to_wstring(1 + d.more_images.size()) + L" ZIPs)";
   // A release on several install floppies: an image of each.
   if (!d.more_images.empty()) return std::to_wstring(1 + d.more_images.size()) + L" floppy disk images";
   return L"CD image";

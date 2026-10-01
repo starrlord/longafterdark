@@ -56,6 +56,14 @@ const KnownFile kDisneyKnown[] = {
 #include "known_files_disney.inc"
     {nullptr, 0, nullptr},
 };
+const KnownFile kFarsideKnown[] = {
+#include "known_files_farside.inc"
+    {nullptr, 0, nullptr},
+};
+const KnownFile kDilbertKnown[] = {
+#include "known_files_dilbert.inc"
+    {nullptr, 0, nullptr},
+};
 
 template <size_t N>
 std::span<const KnownFile> manifest(const KnownFile (&a)[N]) {
@@ -592,6 +600,188 @@ const NameOverride kDisneyNames[] = {
     {"DISNEY/MERMAID.AD", "Little Mermaid"},
 };
 
+// ---- farside -----------------------------------------------------------------------------
+//
+// The Far Side Screen Saver Collection (Delrina, June 1994; Gary Larson's
+// cartoons under licence) on Intermission 4.0: 14 modules of Intermission's
+// two other forms — 12 ASA animations (data files starting "AniN", "AniM" for
+// EGGFIGHT, that Intermission's ASA reader IMASAPLY.IMQ plays) and two IMQ
+// modules (PTERY, NERDCLOK: 16-bit NE DLLs exporting SAVERMAIN, each its own
+// reader). Five 1.44 MB floppies installed by Delrina's own Intermission
+// Installer (SETUP.EXE, IMINST2.EXE): every file loose, most SZDD-compressed
+// under their installed names, everything put in C:\SAVER
+// (research/win/pkg/farside, gitignored). Its engine files INTRMLIB, ANTSW,
+// MEMMIDI and IMIMXPLY are Star Wars Screen Entertainment's byte for byte.
+
+const char* const kFarsideModuleDirs[] = {"SAVER"};
+// The only intact copy online: a 1994 BBS repack of the five floppies, one
+// ZIP per disk (PNX-FSC1..5.ZIP, the disks' files with their dates and the
+// group's notes beside them, which nothing ever opens), inside the Internet
+// Archive's prog47_55 item. The item named for the release
+// (the-far-side-screen-saver-collection-1-of-5) holds floppy images of which
+// only disk 5's is exact (disk 1's is sector-shifted, disk 3's short, disks 2
+// and 4 have bad sectors in AERIAL.ASA and FISHBOWL.ASA): never listed. A
+// release on five disks: only a set of all five is the release.
+const KnownImage kFarsideImages[] = {
+    {"bfbe487438204b3573e913a774ee964d", 977668,
+     "ZIP of install disk 1's files (a 1994 BBS copy of the five floppies)", "", 1},
+    {"364307265d011ba3e31d383bc178d56d", 1210777,
+     "ZIP of install disk 2's files (a 1994 BBS copy of the five floppies)", "", 2},
+    {"5ac67d84f9a5262f40c92e9f143fdb03", 1202730,
+     "ZIP of install disk 3's files (a 1994 BBS copy of the five floppies)", "", 3},
+    {"7902b2a2a89eb7ed391e179a27958061", 1106810,
+     "ZIP of install disk 4's files (a 1994 BBS copy of the five floppies)", "", 4},
+    {"58351b2eedd8f6ef5ec51fa00c4d8d17", 1248997,
+     "ZIP of install disk 5's files (a 1994 BBS copy of the five floppies)", "", 5},
+};
+// The five ZIPs, each fetched from inside the item's ZIP (the Internet
+// Archive serves a member of a stored ZIP by its path; it publishes no md5
+// for one: these are the members' own, measured 2026-09-30:
+// research/win/pkg/farside).
+const DownloadPart kFarsideDisks2to5[] = {
+    {"https://archive.org/download/prog47_55/prog47_55.zip/prog47_55%2FPROG_52%2FPNX-FSC2.ZIP", L"PNX-FSC2.ZIP",
+     1210777, "364307265d011ba3e31d383bc178d56d"},
+    {"https://archive.org/download/prog47_55/prog47_55.zip/prog47_55%2FPROG_52%2FPNX-FSC3.ZIP", L"PNX-FSC3.ZIP",
+     1202730, "5ac67d84f9a5262f40c92e9f143fdb03"},
+    {"https://archive.org/download/prog47_55/prog47_55.zip/prog47_55%2FPROG_52%2FPNX-FSC4.ZIP", L"PNX-FSC4.ZIP",
+     1106810, "7902b2a2a89eb7ed391e179a27958061"},
+    {"https://archive.org/download/prog47_55/prog47_55.zip/prog47_55%2FPROG_52%2FPNX-FSC5.ZIP", L"PNX-FSC5.ZIP",
+     1248997, "58351b2eedd8f6ef5ec51fa00c4d8d17"},
+};
+const Download kFarsideDownloads[] = {
+    {"https://archive.org/download/prog47_55/prog47_55.zip/prog47_55%2FPROG_52%2FPNX-FSC1.ZIP", L"PNX-FSC1.ZIP",
+     977668, "bfbe487438204b3573e913a774ee964d", "zip", kFarsideDisks2to5},
+};
+// What every module loads (INTRMLIB -> ANTSW; PTERY also DIBDLL; the ASA
+// reader MEMMIDI, by name) and the ASA reader.
+const char* const kFarsideRequired[] = {"SAVER/INTRMLIB.DLL", "SAVER/ANTSW.DLL", "SAVER/DIBDLL.DLL",
+                                        "SAVER/MEMMIDI.DLL", "ENGINE/IMASAPLY.IMQ"};
+// Every install disk's tag file (disk 1's, beside the installer and
+// PTERY.IMQ, is the fingerprint's).
+const char* const kFarsideDiskTags[] = {"DISK1", "DISK2", "DISK3", "DISK4", "DISK5"};
+// IMINST2's install, flattened: the modules and the DLLs they load in the
+// module folder (its C:\SAVER), the ASA reader and Intermission itself
+// (replaced by the host, kept for reference as Star Wars Screen
+// Entertainment's is) in ENGINE. Never installed: AD_SND.DLL (on any search
+// path it breaks the After Dark bridge) and the other readers, IWLIB.DLL,
+// NETPASS.EXE, SSINTERM.SCR, the VxD, the control panel, the sound drivers,
+// the DOS and setup programs, the help file and the texts.
+const LooseFile kFarsideLoose[] = {
+    {"AERIAL.ASA", "SAVER/AERIAL.ASA", Codec::szdd},     {"AMOEBA.ASA", "SAVER/AMOEBA.ASA", Codec::szdd},
+    {"BIRDS.ASA", "SAVER/BIRDS.ASA", Codec::szdd},       {"BISON.ASA", "SAVER/BISON.ASA", Codec::szdd},
+    {"EGGFIGHT.ASA", "SAVER/EGGFIGHT.ASA", Codec::szdd}, {"FISH.ASA", "SAVER/FISH.ASA", Codec::szdd},
+    {"FISHBOWL.ASA", "SAVER/FISHBOWL.ASA", Codec::szdd}, {"FUTURE.ASA", "SAVER/FUTURE.ASA", Codec::szdd},
+    {"HELL.ASA", "SAVER/HELL.ASA", Codec::plain},        {"ISLAND.ASA", "SAVER/ISLAND.ASA", Codec::szdd},
+    {"OCEAN.ASA", "SAVER/OCEAN.ASA", Codec::szdd},       {"REPTILES.ASA", "SAVER/REPTILES.ASA", Codec::szdd},
+    {"NERDCLOK.IMQ", "SAVER/NERDCLOK.IMQ", Codec::szdd}, {"PTERY.IMQ", "SAVER/PTERY.IMQ", Codec::szdd},
+    {"ANTSW.DLL", "SAVER/ANTSW.DLL", Codec::szdd},       {"DIBDLL.DLL", "SAVER/DIBDLL.DLL", Codec::plain},
+    {"INTRMLIB.DLL", "SAVER/INTRMLIB.DLL", Codec::szdd}, {"MEMMIDI.DLL", "SAVER/MEMMIDI.DLL", Codec::szdd},
+    {"IMASAPLY.IMQ", "ENGINE/IMASAPLY.IMQ", Codec::plain}, {"INTERMIS.EXE", "ENGINE/INTERMIS.EXE", Codec::szdd},
+};
+// No resource holds a name: each ASA header's title and the IMQ modules'
+// own strings, without their "FS-" prefix (Intermission's list of every
+// installed product's modules needed it; the saver groups them by release).
+const NameOverride kFarsideNames[] = {
+    {"SAVER/AERIAL.ASA", "Aerial Grounds"},   {"SAVER/AMOEBA.ASA", "Amoeba"},
+    {"SAVER/BIRDS.ASA", "Age of Mammals"},    {"SAVER/BISON.ASA", "Ballooning"},
+    {"SAVER/EGGFIGHT.ASA", "Eggfight"},       {"SAVER/FISH.ASA", "Age of Fish"},
+    {"SAVER/FISHBOWL.ASA", "Fishbowl"},       {"SAVER/FUTURE.ASA", "The Future"},
+    {"SAVER/HELL.ASA", "Hell"},               {"SAVER/ISLAND.ASA", "Deserted Island"},
+    {"SAVER/OCEAN.ASA", "Ocean"},             {"SAVER/REPTILES.ASA", "Age of Reptiles"},
+    {"SAVER/NERDCLOK.IMQ", "Nerd Clock"},     {"SAVER/PTERY.IMQ", "Pterodactyl"},
+};
+
+// ---- dilbert -----------------------------------------------------------------------------
+//
+// Scott Adams' Dilbert Screen Saver Collection (Delrina, October 1994; under
+// licence from United Feature Syndicate) on Intermission 5.0: 16 modules, 13
+// ASA animations and three IMQ modules (DB-BEST, DB-CLOCK, DIL-WHAK), on four
+// 1.44 MB floppies installed by Delrina's own Intermission Installer, as The
+// Far Side's (research/win/pkg/dilbert, gitignored). Its ASA reader is The
+// Far Side's byte for byte; its INTRMLIB, ANTSW and MEMMIDI are newer builds.
+
+const char* const kDilbertModuleDirs[] = {"SAVER"};
+// No image of the floppies exists online: the Internet Archive's flat ZIP
+// of the four disks' files (item dilbert_screensaver_collection), and the
+// same four disks as 1994 BBS copies, one ZIP per disk (DILBERT1..4.ZIP, the
+// group's notes beside the files, never opened, inside item prog70_75):
+// every file of the release is the same in both, byte for byte.
+const KnownImage kDilbertImages[] = {
+    {"ea6e18463d156fbb5c70401e39b45962", 4511167,
+     "ZIP of the four install floppies' files (the Internet Archive's dilbert_screensaver_collection copy)", ""},
+    {"1158cc6333d3b22dcd401a0593006e6f", 1077844,
+     "ZIP of install disk 1's files (a 1994 BBS copy of the four floppies)", "", 1},
+    {"4347386255e85cddb39a5d69ab65bc81", 1146156,
+     "ZIP of install disk 2's files (a 1994 BBS copy of the four floppies)", "", 2},
+    {"0f5408c77ed018db8b99b6b70f2a6a29", 1193935,
+     "ZIP of install disk 3's files (a 1994 BBS copy of the four floppies)", "", 3},
+    {"9064065cfb1edd12cc659823b5ca88ad", 1155239,
+     "ZIP of install disk 4's files (a 1994 BBS copy of the four floppies)", "", 4},
+};
+// The flat ZIP first (the item that also holds the box photo); then the four
+// ZIPs, each fetched from inside prog70_75's ZIP (no md5 published for a
+// member: these are the members' own, measured 2026-09-30). Other bytes,
+// other names.
+const DownloadPart kDilbertDisks2to4[] = {
+    {"https://archive.org/download/prog70_75/prog70_75.zip/prog70_75%2FPROG_70%2FDILBERT2.ZIP", L"DILBERT2.ZIP",
+     1146156, "4347386255e85cddb39a5d69ab65bc81"},
+    {"https://archive.org/download/prog70_75/prog70_75.zip/prog70_75%2FPROG_70%2FDILBERT3.ZIP", L"DILBERT3.ZIP",
+     1193935, "0f5408c77ed018db8b99b6b70f2a6a29"},
+    {"https://archive.org/download/prog70_75/prog70_75.zip/prog70_75%2FPROG_70%2FDILBERT4.ZIP", L"DILBERT4.ZIP",
+     1155239, "9064065cfb1edd12cc659823b5ca88ad"},
+};
+const Download kDilbertDownloads[] = {
+    {"https://archive.org/download/dilbert_screensaver_collection/DilbertS.zip", L"DilbertS.zip", 4511167,
+     "ea6e18463d156fbb5c70401e39b45962", "zip"},
+    {"https://archive.org/download/prog70_75/prog70_75.zip/prog70_75%2FPROG_70%2FDILBERT1.ZIP", L"DILBERT1.ZIP",
+     1077844, "1158cc6333d3b22dcd401a0593006e6f", "zip", kDilbertDisks2to4},
+};
+// What the modules load (INTRMLIB -> ANTSW; DB-BEST and DB-CLOCK also DIBDLL,
+// DB-BEST IM4_EXP; the ASA reader MEMMIDI, by name) and the ASA reader.
+const char* const kDilbertRequired[] = {"SAVER/INTRMLIB.DLL", "SAVER/ANTSW.DLL",   "SAVER/DIBDLL.DLL",
+                                        "SAVER/IM4_EXP.DLL",  "SAVER/MEMMIDI.DLL", "ENGINE/IMASAPLY.IMQ"};
+// Every install disk's tag file (disk 1's, beside the installer and
+// DB-CLOCK.IMQ, is the fingerprint's).
+const char* const kDilbertDiskTags[] = {"DISK1", "DISK2", "DISK3", "DISK4"};
+// IMINST2's install, flattened as The Far Side's. Never installed besides
+// what The Far Side's never installs: ICONDLL.DLL (Intermission's own module
+// icons; it probes WinG), ANTSW2.DLL (nothing imports it), MAPI.DLL and
+// INTERMIS.LIB.
+const LooseFile kDilbertLoose[] = {
+    {"ATWORK.ASA", "SAVER/ATWORK.ASA", Codec::szdd},     {"CONOFHO.ASA", "SAVER/CONOFHO.ASA", Codec::szdd},
+    {"CYBER.ASA", "SAVER/CYBER.ASA", Codec::szdd},       {"DRAW.ASA", "SAVER/DRAW.ASA", Codec::szdd},
+    {"LAWYER.ASA", "SAVER/LAWYER.ASA", Codec::szdd},     {"LUNCH.ASA", "SAVER/LUNCH.ASA", Codec::szdd},
+    {"OPTI.ASA", "SAVER/OPTI.ASA", Codec::szdd},         {"PRESENT.ASA", "SAVER/PRESENT.ASA", Codec::szdd},
+    {"SHRED.ASA", "SAVER/SHRED.ASA", Codec::plain},      {"STDOGB.ASA", "SAVER/STDOGB.ASA", Codec::szdd},
+    {"SWCROSS.ASA", "SAVER/SWCROSS.ASA", Codec::szdd},   {"THOR.ASA", "SAVER/THOR.ASA", Codec::szdd},
+    {"WEDGIES.ASA", "SAVER/WEDGIES.ASA", Codec::szdd},   {"DB-BEST.IMQ", "SAVER/DB-BEST.IMQ", Codec::plain},
+    {"DB-CLOCK.IMQ", "SAVER/DB-CLOCK.IMQ", Codec::plain}, {"DIL-WHAK.IMQ", "SAVER/DIL-WHAK.IMQ", Codec::szdd},
+    {"ANTSW.DLL", "SAVER/ANTSW.DLL", Codec::szdd},       {"DIBDLL.DLL", "SAVER/DIBDLL.DLL", Codec::szdd},
+    {"IM4_EXP.DLL", "SAVER/IM4_EXP.DLL", Codec::szdd},   {"INTRMLIB.DLL", "SAVER/INTRMLIB.DLL", Codec::szdd},
+    {"MEMMIDI.DLL", "SAVER/MEMMIDI.DLL", Codec::szdd},   {"IMASAPLY.IMQ", "ENGINE/IMASAPLY.IMQ", Codec::plain},
+    {"INTERMIS.EXE", "ENGINE/INTERMIS.EXE", Codec::szdd},
+};
+// No resource holds a name (each module's QUERY answers ""): the names the
+// installer's own module list, PACKING.LST, gives them.
+const NameOverride kDilbertNames[] = {
+    {"SAVER/ATWORK.ASA", "Dilbert at Work"},
+    {"SAVER/CONOFHO.ASA", "Conference Room of Horrors"},
+    {"SAVER/CYBER.ASA", "Cyberspace"},
+    {"SAVER/DRAW.ASA", "Artist Doodles"},
+    {"SAVER/LAWYER.ASA", "Whack a Lawyer"},
+    {"SAVER/LUNCH.ASA", "Out to Lunch"},
+    {"SAVER/OPTI.ASA", "Happy Ratbert"},
+    {"SAVER/PRESENT.ASA", "Dilbert Presents"},
+    {"SAVER/SHRED.ASA", "Mad Shredder"},
+    {"SAVER/STDOGB.ASA", "Saint Dogbert"},
+    {"SAVER/SWCROSS.ASA", "Secretary with a Crossbow"},
+    {"SAVER/THOR.ASA", "Thor Dog of Thunder"},
+    {"SAVER/WEDGIES.ASA", "Bob Gives Wedgies"},
+    {"SAVER/DB-BEST.IMQ", "Best of Dilbert"},
+    {"SAVER/DB-CLOCK.IMQ", "Necktie Clock"},
+    {"SAVER/DIL-WHAK.IMQ", "Budget Woes"},
+};
+
 // ---- box covers (COVERS.md §2.3) ------------------------------------------------------------
 //
 // Only URLs, md5s, sizes, paths and crops: the pictures are fetched (md5- and
@@ -781,6 +971,32 @@ const CoverSource kDisneyCovers[] = {
     cover_disc("splash", "Installer art", "your disks", "SETUP.BMP", "39e1bfb21fdf7fe2396525d13798cf50",
                Crop{0, 0, 387, 172}),
 };
+// The Far Side Screen Saver Collection: the photo in the floppy images' item
+// of two boxes on a couch (1080x813 WebP), cropped to the release's. Gary
+// Larson's and Delrina's art: fetched onto the user's machine only, never
+// bundled. (WIC decodes WebP where its codec is installed; else the tile is
+// drawn.) The disks' only picture, the installer's INSTALL.BMP, is
+// SZDD-compressed, out of a disc source's reach.
+const CoverSource kFarsideCovers[] = {
+    cover_download("box", "Box front", "Internet Archive",
+                   "https://archive.org/download/the-far-side-screen-saver-collection-1-of-5/"
+                   "far-side-software-v0-z46qj0d0a2fc1.webp",
+                   "4e7ebc4e9dbced47a3fc37e55054486f", 270222, L"the-far-side-screen-saver-collection_box.webp",
+                   Crop{546, 122, 408, 508}),
+};
+// Scott Adams' Dilbert Screen Saver Collection: the Internet Archive's photo
+// of the box front (the flat ZIP's item; 1200x1600, cropped to the box: the
+// previous owner's name written on it stays), else the installer's picture
+// beside its pages on disk 1 (INSTALL.BMP, Dogbert, 63x123), drawn as a
+// picture. Scott Adams' and Delrina's art: fetched or read onto the user's
+// machine only, never bundled.
+const CoverSource kDilbertCovers[] = {
+    cover_download("box", "Box front", "Internet Archive",
+                   "https://archive.org/download/dilbert_screensaver_collection/box.jpg",
+                   "aa8fe2600200685504ea9f15feaf4352", 167593, L"dilbert_screensaver_collection_box.jpg",
+                   Crop{100, 215, 965, 1315}),
+    cover_disc("panel", "Setup art", "your disks", "INSTALL.BMP", "47199572d43fb457b952dcba197a19c5"),
+};
 
 const Package kPackages[] = {
     {"deluxe", "After Dark 4.0 Deluxe", "Deluxe", Recipe::tree, "FILES", kDeluxeModuleDirs, kDeluxeImages,
@@ -853,11 +1069,26 @@ const Package kPackages[] = {
      kDisneyImages, kDisneyRequired, {}, nullptr, {}, "DISNEY", "ADXPL100.DLL", "DISNEY.AFI", kDisneyArchives, {},
      kDisneyNames, manifest(kDisneyKnown), kDisneyDownloads, kDisneyCovers, "1995-09", nullptr, {}, nullptr, nullptr,
      Package::About::as_is, kDisneyNeverOpened},
+    // The two Delrina Intermission releases follow, so the first twelve keep
+    // their places (and the GUI's command ids). Every file of The Far Side's
+    // disks is dated 1994-06-19 (the BBS copy, 1994-06-30); Dilbert's
+    // 1994-10-06. Intermission's modules are shown at 640x480 by their ABI,
+    // as Star Wars Screen Entertainment's are: no screen of their own.
+    {"farside", "The Far Side Screen Saver Collection", "Far Side", Recipe::intermission, "packages/farside",
+     kFarsideModuleDirs, kFarsideImages, kFarsideRequired, {}, "PTERY.IMQ", {}, "SAVER", nullptr, nullptr,
+     kFarsideDiskTags, {}, kFarsideNames, manifest(kFarsideKnown), kFarsideDownloads, kFarsideCovers, "1994-06",
+     nullptr, kFarsideLoose},
+    {"dilbert", "Scott Adams' Dilbert Screen Saver Collection", "Dilbert", Recipe::intermission, "packages/dilbert",
+     kDilbertModuleDirs, kDilbertImages, kDilbertRequired, {}, "DB-CLOCK.IMQ", {}, "SAVER", nullptr, nullptr,
+     kDilbertDiskTags, {}, kDilbertNames, manifest(kDilbertKnown), kDilbertDownloads, kDilbertCovers, "1994-10",
+     nullptr, kDilbertLoose},
 };
 
 }  // namespace
 
 bool Package::is_deluxe() const { return std::string_view(root) == "FILES"; }
+
+bool Package::delrina_installer() const { return recipe == Recipe::intermission && !install_name; }
 
 const char* recipe_name(Recipe r) {
   switch (r) {

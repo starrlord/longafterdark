@@ -70,34 +70,62 @@ bool dir_exists(const std::string& p) {
   return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
+// The file starts with an Intermission ASA animation's header (package.hh "Form").
+bool asa_file(const std::string& p) {
+  HANDLE h = CreateFileW(widen(p).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+  if (h == INVALID_HANDLE_VALUE) return false;
+  char head[4] = {};
+  DWORD got = 0;
+  const bool ok = ReadFile(h, head, sizeof(head), &got, nullptr) && got == sizeof(head);
+  CloseHandle(h);
+  return ok && asa_header(head);
+}
+
 }  // namespace
 
 std::unique_ptr<Protocol16> Ne16Lane::choose_protocol(const Ne16Layout& layout, const Env& env, std::string* why) {
+  // An ASA animation is data, so no export can say what it is: its header does.
+  if (asa_file(layout.module_path)) {
+    if (env.get("ADNE16KIND")) {
+      log("%s: ADNE16KIND is ignored: an ASA animation is an Intermission module", file_of(layout.module_path).c_str());
+    }
+    return make_imx_protocol(layout, ImxForm::asa);
+  }
   bool is_auto = true;
   ModuleKind kind = ModuleKind::ad3;
+  ImxForm form = ImxForm::imx;
   if (const std::string* k = env.get("ADNE16KIND")) {
     if (!parse_kind_choice(*k, &is_auto, &kind)) {
       log("ADNE16KIND='%s' is not auto, ad3 or imx; using auto", k->c_str());
       is_auto = true;
     }
   }
-  if (is_auto) {
-    std::unique_ptr<loader::ne::Image> img;
+  std::unique_ptr<loader::ne::Image> img;
+  if (is_auto || kind == ModuleKind::imx) {
     try {
       img = std::make_unique<loader::ne::Image>(loader::ne::Image::from_file(layout.module_path));
     } catch (const std::exception&) {
-      return make_ad3_protocol(layout);  // not a readable NE image: the AD3 protocol says so, as before
+      // Not a readable NE image: the AD3 protocol says so, as before (forced, the IMX protocol's reader does).
+      if (is_auto) return make_ad3_protocol(layout);
     }
+  }
+  if (is_auto) {
     KindProbe p = detect_kind(*img, file_of(layout.module_path));
     if (!p.ok) {
       *why = p.why;
       return nullptr;
     }
     kind = p.kind;
+    form = p.form;
   } else {
+    // Forced: the form still follows the exports (an .IMQ is its own reader).
+    if (kind == ModuleKind::imx && img) {
+      KindProbe p = detect_kind(*img, file_of(layout.module_path));
+      if (p.ok && p.kind == ModuleKind::imx) form = p.form;
+    }
     trace("lane", "%s: kind %s (ADNE16KIND)", file_of(layout.module_path).c_str(), kind_name(kind));
   }
-  return kind == ModuleKind::imx ? make_imx_protocol(layout) : make_ad3_protocol(layout);
+  return kind == ModuleKind::imx ? make_imx_protocol(layout, form) : make_ad3_protocol(layout);
 }
 
 Ne16Lane::Ne16Lane() : Ne16Lane(&Ne16Lane::choose_protocol) {}

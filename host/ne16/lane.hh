@@ -75,13 +75,22 @@
 // only), so the lane replaces it and INTRMLIB's LOADSAVER/FREESAVER, as it
 // replaces AFTERDAR.SCR; the reader — the real IMIMXPLY.IMQ, or the native
 // reader that does what it does (ADNE16READER) —, INTRMLIB, ANTSW, SWSE,
-// READJPG, STRESS, SWSFX, MEMMIDI and the module run as real code.
+// READJPG, STRESS, SWSFX, MEMMIDI and the module run as real code. The Far
+// Side Screen Saver Collection's and Dilbert's modules are the reader's two
+// other forms (package.hh "Form"): .ASA animations, data that Intermission's
+// ASA reader IMASAPLY.IMQ plays (with ANTSW's sprites and palettes; no
+// native reader), and .IMQ modules that export SAVERMAIN themselves, each
+// its own reader, loaded as INTRMLIB loaded a reader's record (index −1, no
+// path for LOAD and QUERY) and refused when that QUERY leaves the saver flag
+// 0x1000 clear (a pure reader such as IMIMXPLY.IMQ). Everything below holds
+// for the three forms alike.
 //
 //   init:  the record (0x67 bytes, GMEM_MOVEABLE|GMEM_ZEROINIT, with
 //          INTRMLIB's flags for an enabled module, 0x120C; +0x44 the file
-//          name, +0x63 "C:\SAVER\<FILE>", +4 the saver window, +0x0A the
-//          reader); SAVERMAIN(10) (LOAD: the reader loads the module and
-//          finds its exports), SAVERMAIN(7) (QUERY: its name, the palette
+//          name, +0x63 "C:\SAVER\<FILE>" (0, and +0x59 = −1, for an IMQ
+//          module), +4 the saver window, +0x0A the reader); SAVERMAIN(10)
+//          (LOAD: the reader loads the module and finds its exports, or
+//          opens the animation), SAVERMAIN(7) (QUERY: its name, the palette
 //          type w); when w != 0 (none of the 14) the engine palette:
 //          INTERMIS took INTRMLIB's IMCOPYPALETTE(w), a copy of the palette
 //          INTRMLIB's CANISTART(1) had made at start-up from its resource
@@ -121,8 +130,17 @@
 //          (FREE: the reader frees the module), the path block, the IMQ, the
 //          engine palette, the record.
 // Never interactive: INTERMIS gave input only to a saver flagged 0x2000,
-// which IMIMXPLY never sets. The modules poll instead, to drop what they are
-// loading when the user comes back: SWSE's USERABORT, under Intermission's
+// which IMIMXPLY never sets. Three IMQ modules set it in their QUERY (The Far
+// Side's PTERY, Dilbert's DB-BEST and DIL-WHAK): for them INTERMIS captured
+// the mouse and showed its own cursor (1:074d..1:076a), INTRMLIB's message
+// hook re-posted input to the saver window instead of noting it as activity
+// (SETEATMSGS(1), 6:0587), and a focus loss sent SAVERMAIN(12) rather than
+// ending the blank. Here they run as screen savers under the saver's own wake
+// rules like every Intermission module (the flag is traced, ADTRACE=lane):
+// input ends them, and what they show is what they draw without it (DIL-WHAK,
+// after its desk scene, a small figure walking on black). Star Wars' modules
+// poll instead, to drop what they are loading when the user comes back:
+// SWSE's USERABORT, under Intermission's
 // default Wakeup Options "mbk", checks GetCursorPos against the position at
 // START, the mouse buttons' GetAsyncKeyState, and GetInputState (any key or
 // button message in the saver window's queue); SWSE's FORCETOWAKE then posts
@@ -150,7 +168,10 @@
 // (8) — IMIMXPLY's DialogBox(hLib, "DIALOGBOX", owner, SAVERDLGPROC) —,
 // (11): exit 0 when it showed, 4 for a module without SAVERDLGPROC; any
 // other button fails. What the dialog writes lands in
-// <state>\<package>\WINDOWS\SWSE.INI.
+// <state>\<package>\WINDOWS\SWSE.INI (Star Wars), or ANTSW.INI there, in a
+// section named for the module (The Far Side's and Dilbert's: IMASAPLY's
+// "Animation Player Options" for an ASA animation, an IMQ module's own
+// dialog, such as PTERY's banner text).
 //
 // Input and status (INTERACTION.md §5.2): AFTERDAR.SCR forwarded no key or
 // mouse message to a Classic module (ABI.md §3.1); modules poll

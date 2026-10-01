@@ -14,7 +14,10 @@
 // Marvel Comics Screen Posters' and Snoopy's Screen Savers' (SETUP.PKG, a
 // library split over the two install disks and unsplit ones, written by
 // isz_builder.h, the installer's files, the owners' notes and a disk copier's
-// leftovers). Each fixture is a tree (path -> bytes) that can be written as a
+// leftovers); and Delrina Intermission Installer installs shaped like The Far
+// Side Screen Saver Collection's and Dilbert's (every file loose, ASA
+// animations and IMQ modules, SZDD with Delrina's version stamps, every
+// disk's tag file, decoys). Each fixture is a tree (path -> bytes) that can be written as a
 // folder, an ISO image, a FAT floppy image (or several), a flat ZIP or a ZIP
 // of floppy images, plus exactly what an import must install and the catalog
 // ids it must list. Modules come from module_builder.h: made-up resources, no
@@ -943,6 +946,202 @@ inline PkgFixture startrek_fixture(const std::function<void(Tree&)>& change = {}
            "startrek.planets",  "startrek.scottys",  "startrek.sickbay", "startrek.sounder",
            "startrek.space",    "startrek.spock",    "startrek.tholian", "startrek.tribble"};
   return f;
+}
+
+// ---- Delrina's Intermission Installer: The Far Side's and Dilbert's floppies ----------------
+//
+// Every file loose on the install disks, most SZDD-compressed under their
+// installed names, the shared libraries with Delrina's version stamps after
+// the data; each disk's tag file (DISK1..DISKn); the installer, the other
+// readers, AD_SND and the rest beside them as decoys that must never be
+// opened. Made-up bytes throughout.
+
+// An Intermission ASA animation of our own: the header the lane and the
+// catalog look for ("AniN", or the older "AniM"), then made-up bytes.
+inline std::vector<uint8_t> asa_animation(const std::string& name, bool ani_m = false) {
+  std::vector<uint8_t> v = vec(ani_m ? "AniM" : "AniN");
+  auto body = blob("a made-up animation " + name, 900);
+  v.insert(v.end(), body.begin(), body.end());
+  return v;
+}
+
+// An IMQ module: an NE exporting SAVERMAIN (and, with `dialog`, its dialog
+// procedures), its own reader.
+inline std::vector<uint8_t> imq_module(const std::string& name, const std::vector<std::string>& refs,
+                                       bool dialog = true) {
+  NeSpec ne;
+  ne.module_name = name;
+  ne.module_refs = refs;
+  ne.exports = {"WEP", "SAVERMAIN"};
+  if (dialog) ne.exports.insert(ne.exports.end(), {"SAVERDLGPROC", "SAVERDLGPROC2"});
+  ne.resources = {{5, "", 1, "a made-up dialog template of " + name}};
+  return vec(build_ne(ne));
+}
+
+// SZDD with Delrina's version stamp after the data (its shared libraries').
+inline std::vector<uint8_t> szdd_stamped(const std::vector<uint8_t>& d, const std::string& stamp = "DLL 0401") {
+  std::vector<uint8_t> s = szdd_encode(d);
+  s.insert(s.end(), stamp.begin(), stamp.end());
+  return s;
+}
+
+// One file of a Delrina install: its name on the disks, its disk, and how it
+// is stored there.
+struct DelrinaFile {
+  std::string name;
+  int disk;
+  std::vector<uint8_t> bytes;  // as installed
+  enum class Stored { plain, szdd, stamped } stored = Stored::szdd;
+  std::string to;              // relative to the package root; "" = a decoy, never opened
+};
+
+// The fixture of a Delrina install from its files (a decoy has no `to`),
+// every disk's tag file added, and the catalog ids it must list.
+inline PkgFixture delrina_fixture(const std::string& id, const std::vector<DelrinaFile>& files, int disks,
+                                  std::vector<std::string> ids) {
+  PkgFixture f;
+  const std::string root = "packages/" + id;
+  for (const DelrinaFile& x : files) {
+    f.source[x.name] = x.stored == DelrinaFile::Stored::plain ? x.bytes
+                       : x.stored == DelrinaFile::Stored::szdd ? szdd_encode(x.bytes)
+                                                               : szdd_stamped(x.bytes);
+    if (!x.to.empty()) f.expect[root + "/" + x.to] = x.bytes;
+  }
+  for (int k = 1; k <= disks; k++) f.source["DISK" + std::to_string(k)] = vec("\r\n");
+  f.ids = std::move(ids);
+  return f;
+}
+
+// The Far Side's disks (the real split): the installer, Intermission and
+// its readers, PTERY.IMQ and HELL.ASA on disk 1; the other modules over
+// disks 2-5; DIBDLL, the VxD and the control panel on disk 5.
+inline int farside_disk(const std::string& name) {
+  static const std::map<std::string, int> disk = {
+      {"DISK2", 2},        {"NERDCLOK.IMQ", 2}, {"OCEAN.ASA", 2},   {"AMOEBA.ASA", 2},   {"AERIAL.ASA", 2},
+      {"DISK3", 3},        {"BIRDS.ASA", 3},    {"BISON.ASA", 3},   {"ISLAND.ASA", 3},   {"DISK4", 4},
+      {"FISHBOWL.ASA", 4}, {"FUTURE.ASA", 4},   {"DISK5", 5},       {"EGGFIGHT.ASA", 5}, {"FISH.ASA", 5},
+      {"REPTILES.ASA", 5}, {"DIBDLL.DLL", 5},   {"LASTDISK.ASA", 5}, {"ANTHOOK.386", 5}, {"IMCPL.CPL", 5},
+      {"USERINST.EXE", 5}};
+  auto it = disk.find(name);
+  return it == disk.end() ? 1 : it->second;
+}
+
+// The files an import of The Far Side must never open (I5): the installer
+// and its loader, the other readers, AD_SND, the libraries and programs
+// nothing loads, LASTDISK.ASA (an .ASA the table does not list: the
+// installer's last-disk check), the VxD, the control panel, the readme, the
+// installer's picture, and a BBS's note.
+inline const std::vector<std::string>& farside_decoys() {
+  static const std::vector<std::string> v = {"SETUP.EXE",    "IMINST2.EXE",  "IMINST3.EXE", "IMIMXPLY.IMQ",
+                                             "IMAD_PLY.IMQ", "IMFLCPLY.IMQ", "AD_SND.DLL",  "IWLIB.DLL",
+                                             "NETPASS.EXE",  "SSINTERM.SCR", "INTERMIS.TXT", "INSTALL.BMP",
+                                             "LASTDISK.ASA", "ANTHOOK.386",  "IMCPL.CPL",   "USERINST.EXE",
+                                             "PHOENIX.NFO"};
+  return v;
+}
+
+// The Far Side Screen Saver Collection's five disks' files at the source's
+// root (a copy of all five, or the disks unioned): the 12 ASA animations
+// (EGGFIGHT with the older header; HELL stored plain), the two IMQ modules,
+// the libraries they load, the ASA reader and Intermission, and decoys.
+inline PkgFixture farside_fixture() {
+  using S = DelrinaFile::Stored;
+  const std::vector<std::string> ui = {"KERNEL", "USER", "GDI"};
+  auto with = [&](std::vector<std::string> extra) {
+    std::vector<std::string> r = ui;
+    r.insert(r.end(), extra.begin(), extra.end());
+    return r;
+  };
+  std::vector<DelrinaFile> files;
+  for (const char* m : {"AERIAL", "AMOEBA", "BIRDS", "BISON", "EGGFIGHT", "FISH", "FISHBOWL", "FUTURE", "HELL",
+                        "ISLAND", "OCEAN", "REPTILES"}) {
+    const std::string n = std::string(m) + ".ASA";
+    files.push_back({n, farside_disk(n), asa_animation(m, n == "EGGFIGHT.ASA"),
+                     n == "HELL.ASA" ? S::plain : S::szdd, "SAVER/" + n});
+  }
+  files.push_back({"PTERY.IMQ", 1, imq_module("PTERODACTYL", with({"INTRMLIB", "ANTSW", "DIBDLL", "MMSYSTEM"})),
+                   S::szdd, "SAVER/PTERY.IMQ"});
+  files.push_back({"NERDCLOK.IMQ", 2, imq_module("NERDCLOK", with({"INTRMLIB", "ANTSW"})), S::szdd,
+                   "SAVER/NERDCLOK.IMQ"});
+  files.push_back({"INTRMLIB.DLL", 1, ne_dll("INTRMLIB", with({"ANTSW"})), S::stamped, "SAVER/INTRMLIB.DLL"});
+  files.push_back({"ANTSW.DLL", 1, ne_dll("ANTSW", with({"MMSYSTEM"})), S::stamped, "SAVER/ANTSW.DLL"});
+  files.push_back({"MEMMIDI.DLL", 1, ne_dll("MEMMIDI", {"KERNEL", "MMSYSTEM"}), S::stamped, "SAVER/MEMMIDI.DLL"});
+  files.push_back({"DIBDLL.DLL", 5, ne_dll("DIBDLL", ui), S::plain, "SAVER/DIBDLL.DLL"});
+  files.push_back({"IMASAPLY.IMQ", 1, imq_module("IMASAPLY", with({"ANTSW", "INTRMLIB"})), S::plain,
+                   "ENGINE/IMASAPLY.IMQ"});
+  files.push_back({"INTERMIS.EXE", 1, blob("the Intermission control panel"), S::szdd, "ENGINE/INTERMIS.EXE"});
+  for (const std::string& d : farside_decoys())
+    files.push_back({d, farside_disk(d), blob("decoy " + d, 200), d == "INSTALL.BMP" ? S::szdd : S::plain, ""});
+  return delrina_fixture("farside", files, 5,
+                         {"farside.aerial", "farside.amoeba", "farside.birds", "farside.bison", "farside.eggfight",
+                          "farside.fish", "farside.fishbowl", "farside.future", "farside.hell", "farside.island",
+                          "farside.nerdclok", "farside.ocean", "farside.ptery", "farside.reptiles"});
+}
+
+// Dilbert's disks (the real split): the installer, Intermission, its readers,
+// the module list, DB-CLOCK, DRAW and OPTI on disk 1; the other modules
+// over disks 2-4; DIBDLL, IM4_EXP and the last disk's tag on disk 4.
+inline int dilbert_disk(const std::string& name) {
+  static const std::map<std::string, int> disk = {
+      {"DISK2", 2},       {"STDOGB.ASA", 2},   {"LUNCH.ASA", 2},    {"THOR.ASA", 2},    {"SHRED.ASA", 2},
+      {"DISK3", 3},       {"DB-BEST.IMQ", 3},  {"SWCROSS.ASA", 3},  {"WEDGIES.ASA", 3}, {"CONOFHO.ASA", 3},
+      {"DISK4", 4},       {"CYBER.ASA", 4},    {"PRESENT.ASA", 4},  {"ATWORK.ASA", 4},  {"LAWYER.ASA", 4},
+      {"DIL-WHAK.IMQ", 4}, {"DIBDLL.DLL", 4},  {"IM4_EXP.DLL", 4},  {"LASTDISK.ASA", 4}, {"USERINST.EXE", 4}};
+  auto it = disk.find(name);
+  return it == disk.end() ? 1 : it->second;
+}
+
+// As The Far Side's, and the installer's module list (PACKING.LST: never
+// read, the names of disk 1's files identify the release), Intermission's
+// own icons and the library nothing imports.
+inline const std::vector<std::string>& dilbert_decoys() {
+  static const std::vector<std::string> v = {"SETUP.EXE",    "IMINST2.EXE",  "IMINST3.EXE",  "IMIMXPLY.IMQ",
+                                             "IMSEQPLY.IMQ", "AD_SND.DLL",   "IWLIB.DLL",    "ICONDLL.DLL",
+                                             "ANTSW2.DLL",   "MAPI.DLL",     "PACKING.LST",  "INTERMIS.TXT",
+                                             "LASTDISK.ASA", "USERINST.EXE", "README.TXT"};
+  return v;
+}
+
+// Scott Adams' Dilbert Screen Saver Collection's four disks' files at the
+// source's root: 13 ASA animations (SHRED stored plain), three IMQ modules
+// (DB-BEST and DB-CLOCK stored plain), the libraries, the ASA reader,
+// Intermission, and decoys.
+inline PkgFixture dilbert_fixture() {
+  using S = DelrinaFile::Stored;
+  const std::vector<std::string> ui = {"KERNEL", "USER", "GDI"};
+  auto with = [&](std::vector<std::string> extra) {
+    std::vector<std::string> r = ui;
+    r.insert(r.end(), extra.begin(), extra.end());
+    return r;
+  };
+  std::vector<DelrinaFile> files;
+  for (const char* m : {"ATWORK", "CONOFHO", "CYBER", "DRAW", "LAWYER", "LUNCH", "OPTI", "PRESENT", "SHRED",
+                        "STDOGB", "SWCROSS", "THOR", "WEDGIES"}) {
+    const std::string n = std::string(m) + ".ASA";
+    files.push_back({n, dilbert_disk(n), asa_animation(m), n == "SHRED.ASA" ? S::plain : S::szdd, "SAVER/" + n});
+  }
+  files.push_back({"DB-BEST.IMQ", 3, imq_module("DB-BEST", with({"INTRMLIB", "ANTSW", "DIBDLL", "IM4_EXP", "MMSYSTEM"})),
+                   S::plain, "SAVER/DB-BEST.IMQ"});
+  files.push_back({"DB-CLOCK.IMQ", 1, imq_module("DIL-CLOCK", with({"INTRMLIB", "ANTSW", "DIBDLL", "WIN87EM"})),
+                   S::plain, "SAVER/DB-CLOCK.IMQ"});
+  files.push_back({"DIL-WHAK.IMQ", 4, imq_module("DB-BUDGT", with({"INTRMLIB", "ANTSW", "DIBDLL"}), false), S::szdd,
+                   "SAVER/DIL-WHAK.IMQ"});
+  files.push_back({"INTRMLIB.DLL", 1, ne_dll("INTRMLIB", with({"ANTSW"})), S::stamped, "SAVER/INTRMLIB.DLL"});
+  files.push_back({"ANTSW.DLL", 1, ne_dll("ANTSW", with({"MMSYSTEM"})), S::stamped, "SAVER/ANTSW.DLL"});
+  files.push_back({"MEMMIDI.DLL", 1, ne_dll("MEMMIDI", {"KERNEL", "MMSYSTEM"}), S::stamped, "SAVER/MEMMIDI.DLL"});
+  files.push_back({"DIBDLL.DLL", 4, ne_dll("DIBDLL", ui), S::stamped, "SAVER/DIBDLL.DLL"});
+  files.push_back({"IM4_EXP.DLL", 4, ne_dll("IM4_EXP", {"KERNEL"}), S::szdd, "SAVER/IM4_EXP.DLL"});
+  files.push_back({"IMASAPLY.IMQ", 1, imq_module("IMASAPLY", with({"ANTSW", "INTRMLIB"})), S::plain,
+                   "ENGINE/IMASAPLY.IMQ"});
+  files.push_back({"INTERMIS.EXE", 1, blob("the Intermission control panel, a later build"), S::stamped,
+                   "ENGINE/INTERMIS.EXE"});
+  for (const std::string& d : dilbert_decoys())
+    files.push_back({d, dilbert_disk(d), blob("decoy " + d, 200), S::plain, ""});
+  return delrina_fixture("dilbert", files, 4,
+                         {"dilbert.atwork", "dilbert.conofho", "dilbert.cyber", "dilbert.db-best", "dilbert.db-clock",
+                          "dilbert.dil-whak", "dilbert.draw", "dilbert.lawyer", "dilbert.lunch", "dilbert.opti",
+                          "dilbert.present", "dilbert.shred", "dilbert.stdogb", "dilbert.swcross", "dilbert.thor",
+                          "dilbert.wedgies"});
 }
 
 // ---- InstallShield 2 compressed libraries: Marvel Comics Screen Posters, Snoopy's Screen Savers ----

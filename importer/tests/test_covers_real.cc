@@ -13,10 +13,11 @@
 //      --no-cover-download, so every disc source is extracted: the originals
 //      must come out 387x183 (ad32), 387x172 (simpsons, disney), 387x204
 //      (tt), 387x161 (looney), 350x119 (screams: a bitmap resource of
-//      SETUP.EXE), 79x175 (snoopy: the picture beside its installer's readme)
-//      and 118x226 (ad10, deluxe). A release with no cover source on its disc
-//      (Star Wars Screen Entertainment, Star Trek: The Screen Saver and Marvel
-//      Comics Screen Posters: every picture is inside their archives,
+//      SETUP.EXE), 79x175 (snoopy: the picture beside its installer's readme),
+//      63x123 (dilbert: its installer's picture) and 118x226 (ad10, deluxe).
+//      A release with no cover source on its disc (Star Wars Screen
+//      Entertainment, Star Trek: The Screen Saver, Marvel Comics Screen
+//      Posters and The Far Side: every picture is inside their archives,
 //      compressed files or libraries) is skipped.
 //   3. Every tile is drawn side by side into covers-sheet.png, for a person
 //      to look at.
@@ -124,7 +125,7 @@ int main(int argc, char** argv) {
     const std::map<std::string, std::pair<int, int>> want = {
         {"deluxe", {118, 226}},  {"ad10", {118, 226}},    {"ad32", {387, 183}},  {"tt", {387, 204}},
         {"simpsons", {387, 172}}, {"looney", {387, 161}}, {"screams", {350, 119}}, {"disney", {387, 172}},
-        {"snoopy", {79, 175}}};
+        {"snoopy", {79, 175}},    {"dilbert", {63, 123}}};
     fs::path root = dir / L"root";
     for (const Package& p : builtin_packages()) {
       if (p.images.empty()) continue;

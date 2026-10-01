@@ -2643,8 +2643,25 @@ void test_kinds() {
   k = kind_of({{}, {{"SAVERINIT", 2}}});
   CHECK(!k.ok && k.why.find("SAVERINIT without SAVERDRAW") != std::string::npos, "SAVERINIT alone: refused (%s)",
         k.why.c_str());
-  k = kind_of({{{"SAVERMAIN", 2}}, {}});
-  CHECK(!k.ok && k.why.find("an Intermission reader") != std::string::npos, "SAVERMAIN: a reader (%s)", k.why.c_str());
+  CHECK(k.form == ne16::ImxForm::imx, "SAVERINIT + SAVERDRAW: the IMX form (read by IMIMXPLY.IMQ)");
+  k = kind_of({{{"SAVERMAIN", 2}}, {}}, "PTERY.IMQ");
+  CHECK(k.ok && k.kind == ModuleKind::imx && k.form == ne16::ImxForm::imq,
+        "SAVERMAIN alone: an Intermission .IMQ, its own reader (its QUERY decides whether it is a saver)");
+  k = kind_of({{}, {{"saverMain", 2}, {"SAVERDLGPROC", 3}, {"SAVERDLGPROC2", 4}}}, "DB-BEST.IMQ");
+  CHECK(k.ok && k.form == ne16::ImxForm::imq, "SAVERMAIN in the non-resident table, any case: the same");
+  CHECK(std::string(ne16::form_name(ne16::ImxForm::imx)) == "imx" &&
+            std::string(ne16::form_name(ne16::ImxForm::asa)) == "asa" &&
+            std::string(ne16::form_name(ne16::ImxForm::imq)) == "imq",
+        "form names");
+  CHECK(std::string(ne16::reader_file(ne16::ImxForm::imx)) == "IMIMXPLY.IMQ" &&
+            std::string(ne16::reader_file(ne16::ImxForm::asa)) == "IMASAPLY.IMQ" &&
+            !ne16::reader_file(ne16::ImxForm::imq),
+        "each form's reader file: IMIMXPLY.IMQ, IMASAPLY.IMQ, none (an IMQ module is its own)");
+  {
+    const char asa_n[4] = {'A', 'n', 'i', 'N'}, asa_m[4] = {'A', 'n', 'i', 'M'}, other[4] = {'A', 'n', 'i', 'X'};
+    CHECK(asa_header(asa_n) && asa_header(asa_m) && !asa_header(other) && !asa_header("MZ\x90\x00"),
+          "an ASA animation's header: AniN or AniM");
+  }
   k = kind_of({{}, {{"SAVERINIT", 2}, {"SAVERDRAW", 3}, {"setcurrsaver", 4}}});
   CHECK(!k.ok && k.why.find("SETCURRSAVER") != std::string::npos, "SETCURRSAVER: refused as the reader does (%s)",
         k.why.c_str());
@@ -2701,6 +2718,15 @@ void test_kinds() {
   files[up(pkg + "\\ENGINE\\IMIMXPLY.IMQ")] = true;
   rf = ne16::find_reader(l, exists);
   CHECK(rf.host == pkg + "\\ENGINE\\IMIMXPLY.IMQ" && rf.in_engine_dir, "the engine dir's first (%s)", rf.host.c_str());
+  CHECK(ne16::find_reader(l, exists, ne16::kAsaReader).host.empty(), "no IMASAPLY.IMQ anywhere: no ASA reader");
+  files[up(pkg + "\\SAVER\\IMASAPLY.IMQ")] = true;
+  rf = ne16::find_reader(l, exists, ne16::kAsaReader);
+  CHECK(rf.host == pkg + "\\SAVER\\IMASAPLY.IMQ" && !rf.in_engine_dir, "the module dir's ASA reader (%s)",
+        rf.host.c_str());
+  files[up(pkg + "\\ENGINE\\IMASAPLY.IMQ")] = true;
+  rf = ne16::find_reader(l, exists, ne16::kAsaReader);
+  CHECK(rf.host == pkg + "\\ENGINE\\IMASAPLY.IMQ" && rf.in_engine_dir, "the engine dir's ASA reader first (%s)",
+        rf.host.c_str());
 
   // The lane's default factory, on files: the exports choose; ADNE16KIND forces.
   std::string root = temp_dir("kind");
@@ -2717,6 +2743,8 @@ void test_kinds() {
   const ne16::Ne16Layout imx = put("IMX.IMX", ne_image("IMX", {}, {{{"WEP", 1}}, {{"SAVERINIT", 2}, {"SAVERDRAW", 3}}}));
   const ne16::Ne16Layout reader = put("READER.IMQ", ne_image("READER", {}, {{}, {{"SAVERMAIN", 2}}}));
   const ne16::Ne16Layout junk = put("JUNK.AD", "not an NE image at all");
+  const ne16::Ne16Layout anim = put("ANIM.ASA", std::string("AniN") + std::string(28, '\0'));
+  const ne16::Ne16Layout anim_m = put("OLD.ASA", std::string("AniM") + std::string(28, '\0'));
   auto choose = [](const ne16::Ne16Layout& layout, const Env& env, std::string* why) {
     std::unique_ptr<ne16::Protocol16> p = ne16::Ne16Lane::choose_protocol(layout, env, why);
     return p ? std::string(p->name()).substr(0, 4) : std::string("refused");
@@ -2727,9 +2755,12 @@ void test_kinds() {
   CHECK(choose(ad3, none, &why) == "ad3/", "MODULE: the AD3 protocol");
   CHECK(choose(imx, none, &why) == "imx/", "SAVERINIT + SAVERDRAW: the IMX protocol");
   why.clear();
-  CHECK(choose(reader, none, &why) == "refused" && why.find("reader") != std::string::npos, "a reader: refused (%s)",
-        why.c_str());
+  CHECK(choose(reader, none, &why) == "imx/" && why.empty(),
+        "an IMQ (SAVERMAIN): the IMX protocol, the IMQ its own reader (%s)", why.c_str());
   CHECK(choose(junk, none, &why) == "ad3/", "not an NE image: the AD3 protocol, which reports it as before");
+  CHECK(choose(anim, none, &why) == "imx/" && choose(anim_m, none, &why) == "imx/",
+        "an ASA animation (AniN, AniM): the IMX protocol, by its header");
+  CHECK(choose(anim, force_ad3, &why) == "imx/", "an ASA animation whatever ADNE16KIND says");
   CHECK(choose(ad3, force_imx, &why) == "imx/" && choose(imx, force_ad3, &why) == "ad3/" &&
             choose(reader, force_imx, &why) == "imx/",
         "ADNE16KIND forces the protocol");
@@ -2761,13 +2792,16 @@ struct ImRig {
   };
   std::vector<Draw> draws;
   // The IMIMXPLY stand-in: its answers by message (1 otherwise), what it saw.
+  // IMASAPLY (the ASA reader) and FAKEIMQ (an IMQ module, its own reader) are
+  // the same stand-in under their names.
   std::map<uint16_t, uint32_t> answers;
   uint8_t palette_type = 0;  // written at +0x53 by its QUERY
+  uint32_t query_clears = 0; // flags its QUERY clears (0x1000: a reader's QUERY without a path)
   bool post_task = false;    // its DRAW posts a message to the task (FORCETOWAKE)
   struct Seen {
     uint16_t msg = 0, hwnd = 0, hdc = 0, hpal = 0, reader = 0, index = 0xFFFF;
-    uint32_t flags = 0;
-    std::string file, path;
+    uint32_t flags = 0, path_ptr = 0;
+    std::string file, path, module;
   };
   std::vector<Seen> seen;
   std::function<void(uint16_t msg)> after_saver_main;  // runs as its SAVERMAIN returns
@@ -2813,33 +2847,39 @@ struct ImRig {
     });
     r.add("SETIMX", 7, "SETCURRSAVER", Conv16::pascal_, true, 0, [](Call16& c) { c.ret(0); });
     // SAVERMAIN(LPVOID info, WORD msg): info pushed first, msg last.
-    r.add("IMIMXPLY", 2, "SAVERMAIN", Conv16::pascal_, false, 6, [this](Call16& c) {
-      uint32_t info = c.ptr();
-      uint16_t msg = c.w();
-      Seen s;
-      s.msg = msg;
-      s.flags = c.rt.rd32(info);
-      s.hwnd = c.rt.rd16(info + 4);
-      s.hdc = c.rt.rd16(info + 6);
-      s.hpal = c.rt.rd16(info + 8);
-      s.reader = c.rt.rd16(info + 0x0A);
-      s.index = c.rt.rd16(info + 0x59);
-      s.file = c.rt.read_str(info + 0x44, 14);
-      if (uint32_t p = c.rt.rd32(info + 0x63)) s.path = c.rt.read_str(p, 0x104);
-      seen.push_back(s);
-      calls.push_back("SAVERMAIN(" + std::to_string(msg) + ")");
-      if (msg == 7) {
-        c.rt.write_str(info + 0x14, "Fake Saver", 41);
-        c.rt.wr8(info + 0x53, palette_type);
-      }
-      if (msg == 0 && post_task) {
-        call("USER", "PostAppMessage", {win16::w16(win16::kernel16_current_task(c.rt)), win16::w16(0x0200),
-                                        win16::w16(0xFFFF), win16::l16(0)});
-      }
-      if (after_saver_main) after_saver_main(msg);
-      auto a = answers.find(msg);
-      c.ret(a == answers.end() ? 1 : a->second);
-    });
+    for (const char* reader : {"IMIMXPLY", "IMASAPLY", "FAKEIMQ"}) {
+      std::string module = reader;
+      r.add(reader, 2, "SAVERMAIN", Conv16::pascal_, false, 6, [this, module](Call16& c) {
+        uint32_t info = c.ptr();
+        uint16_t msg = c.w();
+        Seen s;
+        s.msg = msg;
+        s.module = module;
+        s.flags = c.rt.rd32(info);
+        s.hwnd = c.rt.rd16(info + 4);
+        s.hdc = c.rt.rd16(info + 6);
+        s.hpal = c.rt.rd16(info + 8);
+        s.reader = c.rt.rd16(info + 0x0A);
+        s.index = c.rt.rd16(info + 0x59);
+        s.file = c.rt.read_str(info + 0x44, 14);
+        s.path_ptr = c.rt.rd32(info + 0x63);
+        if (s.path_ptr) s.path = c.rt.read_str(s.path_ptr, 0x104);
+        seen.push_back(s);
+        calls.push_back("SAVERMAIN(" + std::to_string(msg) + ")");
+        if (msg == 7) {
+          c.rt.write_str(info + 0x14, "Fake Saver", 41);
+          c.rt.wr8(info + 0x53, palette_type);
+          c.rt.wr32(info, c.rt.rd32(info) & ~query_clears);
+        }
+        if (msg == 0 && post_task) {
+          call("USER", "PostAppMessage", {win16::w16(win16::kernel16_current_task(c.rt)), win16::w16(0x0200),
+                                          win16::w16(0xFFFF), win16::l16(0)});
+        }
+        if (after_saver_main) after_saver_main(msg);
+        auto a = answers.find(msg);
+        c.ret(a == answers.end() ? 1 : a->second);
+      });
+    }
     // What a reader and the protocol ask of Windows.
     wrap("USER", "DialogBox", [this](Call16& c) {
       uint16_t h = c.w();
@@ -3403,6 +3443,134 @@ void test_imx_protocol() {
   RemoveDirectoryA(root.c_str());
 }
 
+// The other two forms of an Intermission module (package.hh "Form"): an ASA
+// animation, read by IMASAPLY.IMQ (from the engine dir, else the module
+// dir; no native reader), and an IMQ module that is its own reader (its
+// record a reader's: index -1, no path; refused when its QUERY clears the
+// saver flag). The stand-ins are ImRig's (IMASAPLY, FAKEIMQ).
+void test_imx_forms() {
+  std::string root = temp_dir("imxforms");
+  std::vector<std::string> dirs = {root + "\\packages", root + "\\packages\\forms", root + "\\packages\\forms\\SAVER",
+                                   root + "\\packages\\forms\\ENGINE"};
+  for (const std::string& d : dirs) CreateDirectoryA(d.c_str(), nullptr);
+  const std::string pkg = dirs[1];
+  std::vector<std::string> files;
+  auto put = [&](const std::string& rel, const std::string& bytes) {
+    files.push_back(pkg + "\\" + rel);
+    write_file(files.back(), bytes);
+  };
+  auto drop = [&](const std::string& rel) { DeleteFileA((pkg + "\\" + rel).c_str()); };
+  auto exists = [](const std::string& f) {
+    DWORD a = GetFileAttributesA(f.c_str());
+    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+  };
+  put("SAVER\\ANIM.ASA", std::string("AniN") + std::string(60, '\0'));
+  put("SAVER\\FAKEIMQ.IMQ", ne_image("FAKEIMQ", {}, {{}, {{"SAVERMAIN", 2}, {"SAVERDLGPROC", 3}}}));
+  InputState input;
+  VirtualClock clock0(VirtualClock::Mode::fixed_step, 16667);
+  Screen screen0(64, 48);
+  struct Ran {
+    std::string name, calls;
+    bool ok = false;
+    std::vector<ImRig::Seen> seen;
+  };
+  // configure_runtime, mount, load, two passes, unload, close: what the stand-ins saw.
+  using Vars = std::initializer_list<std::pair<std::string, std::string>>;
+  auto run = [&](const std::string& module, ne16::ImxForm form, Vars kv, uint32_t query_clears = 0) {
+    std::map<std::string, std::string> vars = {{"AD_ASSETS_DIR", root}};
+    vars.insert(kv.begin(), kv.end());
+    Env env = Env::parse(vars);
+    LaneContext ctx0{env, screen0, clock0, input};
+    const ne16::Ne16Layout layout = ne16::resolve_layout(pkg + "\\SAVER\\" + module, root, exists);
+    auto p = ne16::make_imx_protocol(layout, form);
+    win16::Runtime16Options opts;
+    p->configure_runtime(opts, ctx0);
+    ImRig g(opts);
+    g.query_clears = query_clears;
+    LaneContext ctx{env, g.screen, g.clock, input};
+    p->mount(g.rt, env);
+    g.calls.clear();
+    Ran r;
+    r.name = p->name();
+    r.ok = p->load(g.rt, win16::user16_saver_window(g.rt), 0, ctx);
+    for (int i = 0; i < 2 && r.ok; i++) {
+      p->call();
+      p->after_call();
+    }
+    if (r.ok) p->unload();
+    p->close();
+    r.calls = g.only({"LoadLibrary", "SAVERMAIN", "FreeLibrary"});
+    r.seen = g.seen;
+    return r;
+  };
+
+  // An ASA animation: IMASAPLY.IMQ from the engine dir, LOAD and QUERY with the file's path.
+  put("ENGINE\\IMASAPLY.IMQ", "stands for the ASA reader: the IMASAPLY stand-in answers");
+  Ran a = run("ANIM.ASA", ne16::ImxForm::asa, {});
+  CHECK(a.ok && a.name == "imx/imq" &&
+            a.calls == "LoadLibrary(C:\\WINDOWS\\SYSTEM\\IMASAPLY.IMQ) SAVERMAIN(10) SAVERMAIN(7) SAVERMAIN(1) "
+                       "SAVERMAIN(0) SAVERMAIN(2) SAVERMAIN(11) FreeLibrary",
+        "an ASA animation: IMASAPLY.IMQ from C:\\WINDOWS\\SYSTEM, LOAD, QUERY, START, DRAW, STOP, FREE (%s)",
+        a.calls.c_str());
+  CHECK(!a.seen.empty() && a.seen[0].module == "IMASAPLY" && a.seen[0].msg == 10 && a.seen[0].index == 0 &&
+            a.seen[0].file == "ANIM.ASA" && a.seen[0].path == "C:\\SAVER\\ANIM.ASA" &&
+            a.seen[0].flags == ne16::iminfo::kModuleFlags,
+        "LOAD's record: the animation's path at +0x63, reader index 0, file ANIM.ASA (%s, %s)",
+        a.seen.empty() ? "" : a.seen[0].path.c_str(), a.seen.empty() ? "" : a.seen[0].file.c_str());
+  a = run("ANIM.ASA", ne16::ImxForm::asa, {{"ADNE16READER", "native"}});
+  CHECK(a.ok && a.name == "imx/imq" && a.calls.rfind("LoadLibrary(C:\\WINDOWS\\SYSTEM\\IMASAPLY.IMQ)", 0) == 0,
+        "ADNE16READER=native: ignored for an ASA animation (%s)", a.calls.c_str());
+  drop("ENGINE\\IMASAPLY.IMQ");
+  put("SAVER\\IMASAPLY.IMQ", "the ASA reader beside the modules, as Intermission's installer put it");
+  a = run("ANIM.ASA", ne16::ImxForm::asa, {});
+  CHECK(a.ok && a.calls.rfind("LoadLibrary(C:\\SAVER\\IMASAPLY.IMQ) SAVERMAIN(10)", 0) == 0,
+        "IMASAPLY.IMQ from the module dir when the engine dir has none (%s)", a.calls.c_str());
+  drop("SAVER\\IMASAPLY.IMQ");
+  a = run("ANIM.ASA", ne16::ImxForm::asa, {});
+  CHECK(!a.ok && a.name == "imx/imq" && a.calls.empty(), "no IMASAPLY.IMQ: nothing loaded, the load fails (%s)",
+        a.calls.c_str());
+
+  // An IMQ module: loaded by its own path, a reader's record (index -1, +0x63 = 0), QUERY without a path.
+  Ran q = run("FAKEIMQ.IMQ", ne16::ImxForm::imq, {});
+  CHECK(q.ok && q.name == "imx/imq" &&
+            q.calls == "LoadLibrary(C:\\SAVER\\FAKEIMQ.IMQ) SAVERMAIN(10) SAVERMAIN(7) SAVERMAIN(1) SAVERMAIN(0) "
+                       "SAVERMAIN(2) SAVERMAIN(11) FreeLibrary",
+        "an IMQ module: itself as the reader, LOAD, QUERY, START, DRAW, STOP, FREE (%s)", q.calls.c_str());
+  CHECK(q.seen.size() >= 2 && q.seen[0].module == "FAKEIMQ" && q.seen[0].index == 0xFFFF && q.seen[0].path_ptr == 0 &&
+            q.seen[0].file == "FAKEIMQ.IMQ" && q.seen[1].msg == 7 && q.seen[1].path_ptr == 0 && q.seen[0].reader >= 32,
+        "its record: index -1, no path for LOAD and QUERY, file FAKEIMQ.IMQ, its own instance at +0x0A");
+  q = run("FAKEIMQ.IMQ", ne16::ImxForm::imq, {{"ADNE16READER", "native"}});
+  CHECK(q.ok && q.calls.rfind("LoadLibrary(C:\\SAVER\\FAKEIMQ.IMQ)", 0) == 0,
+        "ADNE16READER=native: ignored for an IMQ module (%s)", q.calls.c_str());
+  q = run("FAKEIMQ.IMQ", ne16::ImxForm::imq, {}, ne16::iminfo::kSaver);
+  CHECK(!q.ok && q.calls == "LoadLibrary(C:\\SAVER\\FAKEIMQ.IMQ) SAVERMAIN(10) SAVERMAIN(7) SAVERMAIN(11) FreeLibrary",
+        "an IMQ whose QUERY clears 0x1000 is a reader: FREE, freed, refused (%s)", q.calls.c_str());
+
+  // A button on an IMQ module: LOAD, QUERY, CONFIGURE (+4 = the owner), FREE, through itself.
+  {
+    Env env = Env::parse({{"AD_ASSETS_DIR", root}});
+    const ne16::Ne16Layout layout = ne16::resolve_layout(pkg + "\\SAVER\\FAKEIMQ.IMQ", root, exists);
+    auto p = ne16::make_imx_protocol(layout, ne16::ImxForm::imq);
+    win16::Runtime16Options opts;
+    p->configure_button_runtime(opts, env);
+    ImRig g(opts);
+    LaneContext ctx{env, g.screen, g.clock, input};
+    p->mount(g.rt, env);
+    g.calls.clear();
+    ne16::Protocol16::Button b = p->button(g.rt, 0, 0xC004, ctx);
+    p->close();
+    CHECK(b.ran && b.failure.empty() &&
+              g.only({"LoadLibrary", "SAVERMAIN", "FreeLibrary"}) ==
+                  "LoadLibrary(C:\\SAVER\\FAKEIMQ.IMQ) SAVERMAIN(10) SAVERMAIN(7) SAVERMAIN(8) SAVERMAIN(11) "
+                  "FreeLibrary" &&
+              g.seen.size() == 4 && g.seen[2].hwnd == 0xC004 && g.seen[2].path_ptr == 0,
+          "an IMQ module's button: CONFIGURE through itself, owned by --owner (%s)", g.joined().c_str());
+  }
+  for (const std::string& f : files) DeleteFileA(f.c_str());
+  for (auto d = dirs.rbegin(); d != dirs.rend(); ++d) RemoveDirectoryA(d->c_str());
+  RemoveDirectoryA(root.c_str());
+}
+
 int run_all_unit() {
   run_unit();
   test_layout();
@@ -3422,6 +3590,11 @@ int run_all_unit() {
     test_imx_protocol();
   } catch (const std::exception& e) {
     CHECK(false, "IMX protocol: exception %s", e.what());
+  }
+  try {
+    test_imx_forms();
+  } catch (const std::exception& e) {
+    CHECK(false, "IMX forms: exception %s", e.what());
   }
   try {
     test_native_bridge();

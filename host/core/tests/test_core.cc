@@ -781,13 +781,21 @@ TEST(probe_module_kinds) {
   dos_bytes[1] = 'Z';
   std::string dos = write_temp("dos.exe", dos_bytes);
   std::string txt = write_temp("hello.txt", {'h', 'e', 'l', 'l', 'o'});
+  // Intermission ASA animations: data that starts AniN (or the older AniM), however short.
+  std::string asa = write_temp("anim.asa", {'A', 'n', 'i', 'N', 0x20, 0, 0x20, 3, 0x58, 2});
+  std::string asa_m = write_temp("old.asa", {'A', 'n', 'i', 'M'});
+  std::string asa_x = write_temp("other.asa", {'A', 'n', 'i', 'X', 0, 0, 0, 0});
+  std::string ani = write_temp("ani.asa", {'A', 'n', 'i'});
   CHECK(probe_module(pe).kind == LaneKind::pe32);
   CHECK(probe_module(pe64).kind == LaneKind::unsupported);
   CHECK(probe_module(ne).kind == LaneKind::ne16);
   CHECK(probe_module(dos).kind == LaneKind::unsupported);
   CHECK(probe_module(txt).kind == LaneKind::unsupported);
+  CHECK(probe_module(asa).kind == LaneKind::ne16 && probe_module(asa).detail == "Intermission ASA animation");
+  CHECK(probe_module(asa_m).kind == LaneKind::ne16);
+  CHECK(probe_module(asa_x).kind == LaneKind::unsupported && probe_module(ani).kind == LaneKind::unsupported);
   CHECK(probe_module(temp_dir() + "adw_core_test_does_not_exist.ad").kind == LaneKind::unreadable);
-  for (auto& p : {pe, pe64, ne, dos, txt}) DeleteFileW(widen(p).c_str());
+  for (auto& p : {pe, pe64, ne, dos, txt, asa, asa_m, asa_x, ani}) DeleteFileW(widen(p).c_str());
 }
 
 // ---- run_host in-process -----------------------------------------------------

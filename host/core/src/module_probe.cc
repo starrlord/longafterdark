@@ -1,6 +1,10 @@
 // Lane selection by header alone (the loader owns real parsing): an MZ stub
 // whose e_lfanew points at "PE\0\0" + i386 is an After Dark 4 module (PE32),
-// one pointing at "NE" is a Classic module (Win16).
+// one pointing at "NE" is a Classic module (Win16). A file that starts
+// "AniN" or "AniM" is a Delrina Intermission ASA animation: data, not code,
+// which Intermission's ASA reader (IMASAPLY.IMQ, a Win16 DLL) plays, so it
+// is a Classic module too (the ne16 lane's Intermission protocol; IMASAPLY
+// itself checks for these two headers).
 #include <cstdio>
 #include <cstring>
 
@@ -8,6 +12,10 @@
 #include "adw/core/text.h"
 
 namespace adw {
+
+bool asa_header(const void* first4) {
+  return memcmp(first4, "AniN", 4) == 0 || memcmp(first4, "AniM", 4) == 0;
+}
 
 const char* lane_kind_name(LaneKind k) {
   switch (k) {
@@ -30,6 +38,12 @@ ModuleProbe probe_module(const std::string& path_utf8) {
     return fseek(f, off, SEEK_SET) == 0 && fread(buf, 1, n, f) == n;
   };
   uint8_t mz[64];
+  if (read_at(0, mz, 4) && asa_header(mz)) {
+    fclose(f);
+    p.kind = LaneKind::ne16;
+    p.detail = "Intermission ASA animation";
+    return p;
+  }
   if (!read_at(0, mz, sizeof(mz))) {
     fclose(f);
     p.kind = LaneKind::unsupported;

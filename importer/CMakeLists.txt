@@ -1,5 +1,5 @@
 # adw_import + adimport.exe — the Windows asset importer (DESIGN.md §6,
-# PACKAGES.md) and the catalog generator (§6a), for the twelve releases of its
+# PACKAGES.md) and the catalog generator (§6a), for the fourteen releases of its
 # registry (packages.h). The library depends on Win32 (WinHTTP, CNG, shell),
 # on adw_loader, whose PE/NE readers the catalog uses, and on zlib (raw
 # inflate for the AD 3.x installers' PKZIP archives, CRC-32 for them and for
@@ -75,7 +75,7 @@ target_link_libraries(adimport PRIVATE adw_import adw_import_gui)
 # package's Internet Archive copy (or reuses a verified local copy) and also
 # only runs with AD_E2E=1, import.covers_real, which fetches every registry
 # cover (AD_E2E=1), and import.pkg_real, which imports the real sources of the
-# eleven packages besides Deluxe and only runs with AD_E2E_PKG=1 (exit 77 =
+# thirteen packages besides Deluxe and only runs with AD_E2E_PKG=1 (exit 77 =
 # skipped otherwise).
 function(adw_import_test name)
   add_executable(test_import_${name} tests/test_${name}.cc)

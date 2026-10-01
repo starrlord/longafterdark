@@ -23,8 +23,27 @@
 // After Dark 2.x/3.x module (ad3; it wins when both are there); SAVERINIT
 // and SAVERDRAW an Intermission module (imx), unless it also exports
 // SETCURRSAVER or its file name starts IMXX_, both of which Intermission's
-// IMX reader refuses (IMIMXPLY 2:03c7, 2:044d); SAVERMAIN alone is an
-// Intermission reader, not a module; anything else is not a module at all.
+// IMX reader refuses (IMIMXPLY 2:03c7, 2:044d); SAVERMAIN alone an
+// Intermission .IMQ (imx, form imq, below); anything else is not a module at
+// all. A file that starts "AniN" or "AniM" is an Intermission ASA animation
+// (imx, form asa), whatever ADNE16KIND says.
+//
+// Form (imx): what the Intermission module's file is, which picks its
+// reader. INTRMLIB's FINDALLMODULES (1:1e06) made every *.IMQ of the saver
+// directory a reader's record (reader index −1) and every file whose
+// extension is a reader's type (+0x5B, from the reader's QUERY without a
+// path) a module's record with that reader's index; LOADSAVER (1:1fc0)
+// loaded the reader for a module's record and sent it LOAD with the file's
+// path, and loaded an IMQ's record as itself, with no path. So:
+//   imx  an IMX module (SAVERINIT + SAVERDRAW): read by IMIMXPLY.IMQ, type IMX
+//   asa  an ASA animation (data): read by IMASAPLY.IMQ, type ASA ("ASA
+//        Player"); the host has no native ASA reader
+//   imq  an .IMQ that exports SAVERMAIN: its own reader, sent LOAD and QUERY
+//        with no path. Such a file is a module when that QUERY makes it a
+//        runnable saver (flag 0x1000, as INTERMIS listed savers: The Far
+//        Side's PTERY and NERDCLOK, Dilbert's DB-BEST, DB-CLOCK and
+//        DIL-WHAK); a reader's QUERY clears the flag (IMIMXPLY 2:02a6,
+//        IMASAPLY 2:3f4a), and the protocol refuses it then.
 //
 // Bridge (ADNE16BRIDGE=auto|oldmod16|native, ad3): auto runs the real
 // OLDMOD16.DLL when the engine dir holds one, else the host-native AD3 bridge
@@ -68,7 +87,9 @@
 // Reader (ADNE16READER=auto|imq|native, imx): auto runs Intermission's own
 // IMX reader, IMIMXPLY.IMQ, from the engine dir (the guest's
 // C:\WINDOWS\SYSTEM), else from the module dir, when either holds it; else
-// the host-native reader (imreader.hh).
+// the host-native reader (imreader.hh). An ASA animation's reader is
+// IMASAPLY.IMQ, looked for in the same places, and an IMQ module is its own;
+// neither has a native reader, so ADNE16READER=native is ignored for them.
 #pragma once
 
 #include <windows.h>
@@ -110,11 +131,15 @@ Ne16Layout resolve_layout(const std::string& module_full_path, const std::string
 
 enum class ModuleKind { ad3, imx };
 const char* kind_name(ModuleKind k);  // "ad3", "imx"
+// An Intermission module's form (the rule above).
+enum class ImxForm { imx, asa, imq };
+const char* form_name(ImxForm f);  // "imx", "asa", "imq"
 // What the exports say (the rule above). !ok: the lane refuses the module,
 // and `why` says what it is instead.
 struct KindProbe {
   bool ok = false;
   ModuleKind kind = ModuleKind::ad3;
+  ImxForm form = ImxForm::imx;  // kind imx: imx or imq (asa is the file's header's, not the exports')
   std::string why;
 };
 // `file_name` is the module file's name (the IMXX_ rule).
@@ -128,13 +153,17 @@ enum class ReaderKind { imq, native };
 const char* reader_name(ReaderKind k);  // "imq", "native"
 // ADNE16READER's value ("" = auto). False when it is not auto, imq or native.
 bool parse_reader_choice(const std::string& value, bool* is_auto, ReaderKind* forced);
-// IMIMXPLY.IMQ in the engine dir, else in the module dir (host = "" when neither has it).
+// The reader file in the engine dir, else in the module dir (host = "" when neither has it).
 struct ReaderFile {
   std::string host;
   bool in_engine_dir = false;  // else the module dir's
 };
-constexpr const char* kImxReader = "IMIMXPLY.IMQ";
-ReaderFile find_reader(const Ne16Layout& layout, const FileExists& exists);
+constexpr const char* kImxReader = "IMIMXPLY.IMQ";  // type IMX
+constexpr const char* kAsaReader = "IMASAPLY.IMQ";  // type ASA
+// The reader file a form needs from the package: IMIMXPLY.IMQ, IMASAPLY.IMQ,
+// or none (nullptr) for an IMQ module, its own reader.
+const char* reader_file(ImxForm f);
+ReaderFile find_reader(const Ne16Layout& layout, const FileExists& exists, const char* file = kImxReader);
 
 // ADNE16BRIDGE's value ("" = auto). False when the value is not one of the three.
 bool parse_bridge_choice(const std::string& value, bool* is_auto, BridgeKind* forced);

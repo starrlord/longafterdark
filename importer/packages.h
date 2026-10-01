@@ -1,9 +1,10 @@
 // The package registry (PACKAGES.md §2): every release the importer knows,
-// compiled in: the After Dark releases and Star Wars Screen Entertainment,
-// LucasArts' Intermission-based screen savers. Registry order is the
-// catalog's module order and the precedence order for display-name
-// disambiguation (§6); the catalog's packages list goes by `released`
-// instead.
+// compiled in: the After Dark releases and three Delrina Intermission
+// products — Star Wars Screen Entertainment (LucasArts'), The Far Side Screen
+// Saver Collection and Scott Adams' Dilbert Screen Saver Collection.
+// Registry order is the catalog's module order and the precedence order for
+// display-name disambiguation (§6); the catalog's packages list goes by
+// `released` instead.
 //
 //   deluxe    After Dark 4.0 Deluxe               tree          -> <win>\FILES\{AD40,CLASSIC,ENGINE,AFI}
 //   ad10      After Dark 10th Anniversary         tree          -> <win>\packages\ad10\{AD10TH,ENGINE,AFI}
@@ -17,6 +18,9 @@
 //   looney    The Looney Tunes Screen Saver       ad3zip        -> <win>\packages\looney\{LNYTUNES,ENGINE}
 //   screams   ScreamSavers                        ad3zip        -> <win>\packages\screams\{SCREAMS,ENGINE}
 //   disney    The Disney Collection Screen Saver  ad3zip        -> <win>\packages\disney\{DISNEY,ENGINE}
+//   farside   The Far Side Screen Saver Collection intermission -> <win>\packages\farside\{SAVER,ENGINE}
+//   dilbert   Scott Adams' Dilbert Screen Saver Collection
+//                                                 intermission  -> <win>\packages\dilbert\{SAVER,ENGINE}
 //
 // Each entry carries what identifies the release (known image md5s — of one
 // image, or of every install disk of a set — and fingerprints), how to
@@ -90,9 +94,12 @@ struct NameOverride {
 
 // tree: plain files copied from the disc's FILES dir. ad3zip: the AD 3.x
 // InstallShield installs (encrypted PKZIP), their placement baked in.
-// intermission: Presage's installer for Intermission products (multi-volume
-// ARJ archives and SZDD-compressed loose files, INSTALL.DAT read only to
-// identify the release), its placement baked in too. ad2kwaj: the After Dark
+// intermission: the installers of Intermission products, their placement
+// baked in too: Presage's (multi-volume ARJ archives and SZDD-compressed
+// loose files, INSTALL.DAT read only to identify the release), or Delrina's
+// own Intermission Installer (IMINST2.EXE: every file loose on the install
+// floppies, most SZDD-compressed under their installed names; nothing read
+// to identify the release but the names of disk 1's files). ad2kwaj: the After Dark
 // 2.0 Microsoft Setup installs (KWAJ-compressed files on the install floppies,
 // SETUP.LST read only to identify the release), their placement baked in from
 // the installer's script (no INF or MS Test interpreter). islib: the
@@ -112,9 +119,10 @@ enum class Codec { plain, szdd, kwaj };
 
 // A file the intermission and ad2kwaj recipes install from outside any
 // archive, from the install dir: `from` as the source lists it, `to`
-// relative to the package root. The installer gave a compressed file its
-// installed name (INSTALL.DAT, or ST_NSTLL.INF), so it is never installed
-// under its own.
+// relative to the package root. Presage's and Microsoft's installers gave a
+// compressed file its installed name (INSTALL.DAT, or ST_NSTLL.INF), so it is
+// never installed under its own; Delrina's compressed its files under their
+// installed names.
 struct LooseFile {
   const char* from;
   const char* to;
@@ -159,10 +167,11 @@ struct Download {
   // the package's known images (the ZIP is the release's known copy:
   // verified: image).
   const char* kind;
-  // An "image" copy of a release on several install disks: the images of
-  // the other disks (the first one's is the fields above). The copy is used
-  // only when every part is fetched and verifies; the images are then read
-  // as one, as several --image are.
+  // A copy of a release on several install disks: the images of the other
+  // disks (the first one's is the fields above), or for a "zip" copy made of
+  // one ZIP per install disk, the other disks' ZIPs. The copy is used only
+  // when every part is fetched and verifies; the parts are then read as one,
+  // as several --image are.
   std::span<const DownloadPart> more_images = {};
 };
 // Every part of a copy together, in bytes (what the lists show).
@@ -220,7 +229,10 @@ struct Package {
   // identifies it too: the fingerprint wants both, and `marker` when set),
   // and the archives that must be present (so a split-floppy source is
   // complete). intermission: the module folder and the archives (every
-  // volume: every install disk) too. ad2kwaj: the module folder, and every
+  // volume: every install disk) too; with Delrina's installer, every install
+  // disk's tag file instead (DISK1..DISKn; disk 1's is the fingerprint's),
+  // and `marker`, a file of the release's own on disk 1 beside it and the
+  // installer, IMINST2.EXE (the fingerprint). ad2kwaj: the module folder, and every
   // install disk's tag file (the Setup script's [Source Media Descriptions];
   // disk 1's is the fingerprint's), which must all be present. islib: the
   // module folder, and every volume of the libraries the recipe reads (every
@@ -243,8 +255,10 @@ struct Package {
   const char* released = "";
   // intermission: the INSTALL.DAT [data] shortname that names the package
   // (the fingerprint, with required_archives[0] beside INSTALL.DAT), and the
-  // files taken from outside the archives, under their installed names.
-  // ad2kwaj: every file it installs is a loose file.
+  // files taken from outside the archives, under their installed names;
+  // nullptr for a release Delrina's installer installs (delrina_installer()),
+  // every file of which is a loose file. ad2kwaj: every file it installs is
+  // a loose file.
   const char* install_name = nullptr;
   std::span<const LooseFile> loose_files = {};
   // ad2kwaj: the SETUP.LST [Params] WndTitle that names the package (the
@@ -276,6 +290,13 @@ struct Package {
   std::span<const LibraryMember> library_members = {};
 
   bool is_deluxe() const;
+  // An Intermission release installed by Delrina's own Intermission
+  // Installer (recipe intermission, no INSTALL.DAT shortname): The Far Side's
+  // and Dilbert's. Its module folder holds Intermission's other two module
+  // forms, ASA animations (*.ASA, data that the ASA reader IMASAPLY.IMQ
+  // plays, from ENGINE) and IMQ modules (*.IMQ, each its own reader), and no
+  // IMX modules.
+  bool delrina_installer() const;
 };
 
 // The built-in registry, in registry order.

@@ -581,10 +581,13 @@ int run_list_packages(const Args& a) {
     std::string dl = "no download";
     if (!s.package->downloads.empty()) {
       const Download& d = s.package->downloads.front();
+      const bool zip = std::string_view(d.kind) == "zip";
+      const std::string parts = std::to_string(1 + d.more_images.size());
       dl = "download " + mb(download_size(d)) +
-           (std::string_view(d.kind) == "zip" ? " (ZIP of the install files)"
-            : d.more_images.empty()           ? " (disc image)"
-                                              : " (" + std::to_string(1 + d.more_images.size()) + " floppy images)");
+           (zip && d.more_images.empty() ? " (ZIP of the install files)"
+            : zip                        ? " (" + parts + " ZIPs of the install disks' files)"
+            : d.more_images.empty()      ? " (disc image)"
+                                         : " (" + parts + " floppy images)");
     }
     printf("  %-9s %-*s %s; %s\n", s.package->id, title_w, s.package->title, state.c_str(), dl.c_str());
   }
