@@ -777,8 +777,10 @@ running. Only files named that way are ever deleted.
   another ABI than After Dark's (`rotation_needs_capabilities` in
   `releases.h`), `/s` and `/p` ask the host first (`--capabilities`; the
   first hosts wait for the answer, 2 s at most, and without one the rotation
-  keeps every module; a late answer is logged, and only a window a later
-  monitor change makes goes by it), and Random leaves
+  keeps every module; a late answer is logged, and by default a monitor
+  added later joins the rotation the others play, built before the answer,
+  while with `DifferentPerMonitor=1` its window's own rotation goes by it),
+  and Random leaves
   out every module whose lane or ABI the host doesn't list
   (`rotation_for_host`; the logs say "rotation: left out N module(s) this
   host can't run", counting what the rotation would have held: a list of

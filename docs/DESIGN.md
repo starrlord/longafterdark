@@ -515,7 +515,11 @@ chosen, `-` = nothing checked; the saver ignores it), `DurationMin=<n>|0` (0 = f
 `Scale=1.0|1.5` (the Resolution setting, 480 or 720 lines, for the other
 modules; an Intermission module, and one whose catalog entry gives a
 `screen` — Star Trek, ScreamSavers, Marvel —, always gets 640×480, scaled
-to fit the monitor in its 4:3 shape: `scr/README.md`), `Monitors=all|primary`, `StartFromDesktop=1|0` (no UI;
+to fit the monitor in its 4:3 shape: `scr/README.md`), `Monitors=all|primary`,
+`DifferentPerMonitor=1|0` (default 0: a rotation plays the same module on
+every monitor and switches them together; 1: each monitor has a rotation of
+its own, the settings window's "A different module on each monitor"),
+`StartFromDesktop=1|0` (no UI;
 INTERACTION.md §8), `Collections=<package id>,…` (the box-strip filter;
 empty or missing = every release), `Sound=1|0` (default 1), `Volume=0..100`
 (default 50), `SoundMonitor=primary` (reserved; §10, AUDIO.md §9);
