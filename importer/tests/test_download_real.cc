@@ -74,6 +74,8 @@ const std::map<std::string, Expect> kExpect = {
     {"screams", {15, "image"}},  {"disney", {16, "image"}},
     // The ZIPs of each install disk's files (The Far Side), the ZIP of them all (Dilbert).
     {"farside", {14, "image"}},  {"dilbert", {16, "image"}},
+    // The CD.
+    {"tng", {13, "image"}},
 };
 
 // Every file of a copy: its own, then the images of further install disks.

@@ -1,7 +1,8 @@
 // Synthetic sources shaped like the known releases (PACKAGES.md §2–§4), for
 // the package tests: the Deluxe and 10th Anniversary CDs' plain FILES trees;
 // the AD 3.x InstallShield installs (AD 3.2, Totally Twisted, the Simpsons
-// floppies, the Looney Tunes, ScreamSavers and the Disney Collection) with
+// floppies, the Looney Tunes, ScreamSavers, the Disney Collection and Star
+// Trek: The Next Generation Screen Saver) with
 // encrypted PKZIP archives under the test-only password and an
 // INSTALL.INS-like script that holds it among decoys, their MODMISC.ZIP and
 // AFI.ZIP holding what the real ones do (the names the fingerprint reads), and
@@ -629,6 +630,59 @@ inline PkgFixture disney_fixture() {
   p.zip("Beautyol.zip", {{"BEAUTY.AD", ne_module("  Beauty", {"KERNEL", "ADXPL100", "AD_RSRC", "USER"})}});
   p.f.source[kDisneyNote] = blob("the owner's note", 40);
   p.f.ids = module_ids("disney", disney_modules());
+  return p.f;
+}
+
+// Star Trek: The Next Generation Screen Saver: 13 modules on ADXPL320, with an
+// art and a sound library beside it in MODMISC.ZIP, MUSIC.ZIP's MIDI files
+// (no MUSICG.ZIP), and an AFI.ZIP that also holds six other products' folder
+// files; the install files at the CD's root.
+inline const std::vector<Ad3Module>& tng_modules() {
+  static const std::vector<Ad3Module> v = {
+      {"DATA.ZIP", "DATA.AD", "Data Dances"},          {"ENC.ZIP", "ENC.AD", "Encounters"},
+      {"NANITES.ZIP", "NANITES.AD", "Nanites"},        {"OFFREV.ZIP", "OFFREV.AD", "Officer's Review"},
+      {"PERSFILE.ZIP", "PERSFILE.AD", "Personnel Files"}, {"STARBASE.ZIP", "STARBASE.AD", "Starbase"},
+      {"STATIONS.ZIP", "STATIONS.AD", "Science Stations"}, {"TACHYON.ZIP", "TACHYON.AD", "Tachyon Particle Field"},
+      {"THEBORG.ZIP", "THEBORG.AD", "The Borg"},       {"TNGMESG.ZIP", "TNGMESG.AD", "Starfleet Messages"},
+      {"TROI.ZIP", "TROI.AD", "Counselor Troi"},       {"WARPEFCT.ZIP", "WARPEFCT.AD", "Warp Effect"},
+      {"WORF.ZIP", "WORF.AD", "Worf's Weapons"},
+  };
+  return v;
+}
+
+// `engine`: MODMISC.ZIP holds ADXPL320.DLL. Without it the source is a decoy
+// (ST-TNG.AFI is in its AFI.ZIP, but nothing else names the release).
+inline PkgFixture tng_fixture(bool engine = true) {
+  Ad3Parts p;
+  p.install = "";
+  p.root = "packages/tng";
+  p.mdir = "ST-TNG";
+  p.installer_files({"DISK.1", "DISK.2", "DISK.CD"});
+  p.f.source["SETUP.BMP"] = blob("tng setup splash", 2000);
+  for (const char* f : {"CHANGES.TXT", "DUNZIP.DLL", "INS0762.LIB"}) p.f.source[f] = blob(f, 300);
+  p.engine_zip();
+  auto xpl = blob("ADXPL320"), art = blob("TNG_ART", 1500), snd = blob("TNG_SND", 3000), rsrc = blob("AD_RSRC"),
+       afi = blob("ST-TNG.AFI"), m1 = blob("theme mid"), m2 = blob("tap mid");
+  std::vector<std::pair<std::string, std::vector<uint8_t>>> misc = {
+      {"TNG_ART.DLL", art}, {"TNG_SND.DLL", snd}, {"EDITFILE.TXT", blob("edit")}};
+  if (engine) misc.insert(misc.begin(), {"ADXPL320.DLL", xpl});
+  p.zip("MODMISC.ZIP", misc);
+  if (engine) p.expect("ST-TNG/ADXPL320.DLL", xpl);
+  p.expect("ST-TNG/TNG_ART.DLL", art);
+  p.expect("ST-TNG/TNG_SND.DLL", snd);
+  p.zip("MUSIC.ZIP", {{"THEME.MID", m1}, {"TAP.MID", m2}});
+  p.expect("ST-TNG/MUSIC/THEME.MID", m1);
+  p.expect("ST-TNG/MUSIC/TAP.MID", m2);
+  p.zip("WIN.ZIP", {{"AD_RSRC.DLL", rsrc}, {"UNLINK.EXE", blob("unlink")}});
+  p.expect("ST-TNG/AD_RSRC.DLL", rsrc);
+  p.zip("WINSYS.ZIP", {{"PLACE.TXT", pattern(42, 9)}});
+  auto afis = afi_members("tng", {"AD2.AFI", "DISNEY.AFI", "MAD.AFI", "MARVEL.AFI", "STARTREK.AFI", "STUMP.AFI"});
+  afis.push_back({"ST-TNG.AFI", afi});
+  p.zip("AFI.ZIP", afis);
+  p.expect("ST-TNG/FOLDER.AFI", afi);
+  p.zip("HELP.ZIP", {{"ST-TNG.HLP", blob("help")}});
+  for (const Ad3Module& m : tng_modules()) p.module(m.zip, {{m.file, ne_module(m.name, {"KERNEL", "ADXPL320"})}});
+  p.f.ids = module_ids("tng", tng_modules());
   return p.f;
 }
 

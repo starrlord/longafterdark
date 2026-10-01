@@ -59,7 +59,7 @@
 //   2. Every package plus Deluxe (imported --from the installed assets, which
 //      are only read: AD_ASSETS_DIR picks them, e.g.
 //      <repo>/build/win-pkg-setup/assets, else the data folder's) in one root:
-//      314 modules (232 over the first seven), display names unique per lane,
+//      327 modules (232 over the first seven), display names unique per lane,
 //      sameAs consistent (73), and every Deluxe entry's existing fields equal
 //      to the installed catalog's.
 //   3. Re-importing each package into that root changes nothing else.
@@ -120,11 +120,13 @@ const std::map<std::string, Expect> kExpect = {
     {"disney", {31, {{"DISNEY", 26}, {"ENGINE", 5}}, 16, 0}},
     {"farside", {20, {{"SAVER", 18}, {"ENGINE", 2}}, 14, 0}},
     {"dilbert", {23, {{"SAVER", 21}, {"ENGINE", 2}}, 16, 0}},
+    {"tng", {31, {{"ST-TNG", 26}, {"ENGINE", 5}}, 13, 0}},
 };
 // The catalog over every release with the Deluxe tree: 232 entries over the
 // first seven, 284 with Marvel Comics Screen Posters, Snoopy's Screen Savers,
 // the Looney Tunes, ScreamSavers and the Disney Collection, 314 with The Far
-// Side and Dilbert; still 73 of them the same bytes as an earlier entry.
+// Side and Dilbert, 327 with Star Trek: The Next Generation Screen Saver;
+// still 73 of them the same bytes as an earlier entry.
 size_t combined_modules() {
   size_t n = 84;
   for (const auto& [id, e] : kExpect) n += e.modules;
@@ -296,6 +298,8 @@ void check_catalog_of(const phosg::JSON& cat, const Package& p) {
       const std::string p_id = p.id;
       if (p_id == "disney") CHECK_EQ(needs.size(), size_t(2));  // ADXPL100, AD_RSRC
       if (p_id == "looney") CHECK(needs.size() == 1 && needs[0]->as_string() == "ADXPL41");
+      // Every TNG module but Warp Effect (an older build) imports ADXPL320.
+      if (p_id == "tng" && id != "tng.warpefct") CHECK(needs.size() == 1 && needs[0]->as_string() == "ADXPL320");
       if (p_id == "screams") CHECK(needs.size() == 1 && needs[0]->as_string() == "AD_SND");
     }
     if (isl) {
@@ -1135,14 +1139,15 @@ int main(int argc, char** argv) {
   // The packages list: oldest release first (Star Trek: The Screen Saver,
   // 1992-11, then Marvel Comics Screen Posters, 1993-12, then The Far Side,
   // 1994-06); swse ties with the Simpsons (1994-08) and follows it, as in the
-  // registry, and Snoopy's Screen Savers and Dilbert (1994-10) follow them,
-  // in registry order too; ScreamSavers ties with the Looney Tunes (1995-04)
-  // the same way; the Disney Collection (1995-09) comes after Totally Twisted.
+  // registry, and Snoopy's Screen Savers, Dilbert and Star Trek: The Next
+  // Generation Screen Saver (1994-10) follow them, in registry order too;
+  // ScreamSavers ties with the Looney Tunes (1995-04) the same way; the
+  // Disney Collection (1995-09) comes after Totally Twisted.
   {
     std::vector<std::string> order;
     for (auto& pk : cat.at("packages").as_list()) order.push_back(pk->get_string("id"));
     CHECK((order == std::vector<std::string>{"startrek", "marvel", "farside", "simpsons", "swse", "snoopy", "dilbert",
-                                             "looney", "screams", "ad32", "tt", "disney", "deluxe", "ad10"}));
+                                             "tng", "looney", "screams", "ad32", "tt", "disney", "deluxe", "ad10"}));
   }
   // The Looney Tunes' Messages comes after 3.2's: it is told apart by its
   // short title.

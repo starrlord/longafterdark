@@ -64,6 +64,10 @@ const KnownFile kDilbertKnown[] = {
 #include "known_files_dilbert.inc"
     {nullptr, 0, nullptr},
 };
+const KnownFile kTngKnown[] = {
+#include "known_files_tng.inc"
+    {nullptr, 0, nullptr},
+};
 
 template <size_t N>
 std::span<const KnownFile> manifest(const KnownFile (&a)[N]) {
@@ -782,6 +786,36 @@ const NameOverride kDilbertNames[] = {
     {"SAVER/DIL-WHAK.IMQ", "Budget Woes"},
 };
 
+// ---- tng ---------------------------------------------------------------------------------
+//
+// Star Trek: The Next Generation Screen Saver (Berkeley Systems, 1994, under
+// licence from Paramount Pictures): 13 AD 3.x Classic modules on their own
+// engine, ADXPL320.DLL, with an art and a sound library (TNG_ART.DLL,
+// TNG_SND.DLL), eight MIDI pieces and the After Dark 3.0 host of March 1995;
+// the same InstallShield install of encrypted ZIPs as 3.2's, on a CD
+// (research/win/pkg/tng, gitignored). Its AFI.ZIP also holds six other
+// products' folder files.
+
+const char* const kTngModuleDirs[] = {"ST-TNG"};
+// The CD (volume STAR_TRE, every file dated 1995-04-09), the Internet
+// Archive's copy read clean. (The item of the 1994 floppies is another copy,
+// not listed.)
+const KnownImage kTngImages[] = {
+    {"0b95b9271c75b9ff1d89b57a0e15ee7b", 6133760, "ISO-9660 CD of the install files", "STAR_TRE"},
+};
+// The published name has a colon, which no Windows file name can hold.
+const Download kTngDownloads[] = {
+    {"https://archive.org/download/star-trek-the-next-generation-screensaver/"
+     "Star%20Trek%3A%20The%20Next%20Generation%20-%20screensaver.iso",
+     L"Star Trek - The Next Generation - screensaver.iso", 6133760, "0b95b9271c75b9ff1d89b57a0e15ee7b", "image"},
+};
+const char* const kTngRequired[] = {"ST-TNG/ADXPL320.DLL", "ST-TNG/TNG_ART.DLL", "ST-TNG/TNG_SND.DLL",
+                                    "ENGINE/AD_SND.DLL", "ENGINE/ADTASK.DLL"};
+// The 13 module archives and MUSIC.ZIP.
+const char* const kTngArchives[] = {"DATA.ZIP",     "ENC.ZIP",     "NANITES.ZIP", "OFFREV.ZIP",   "PERSFILE.ZIP",
+                                    "STARBASE.ZIP", "STATIONS.ZIP", "TACHYON.ZIP", "THEBORG.ZIP",  "TNGMESG.ZIP",
+                                    "TROI.ZIP",     "WARPEFCT.ZIP", "WORF.ZIP",    "MUSIC.ZIP"};
+
 // ---- box covers (COVERS.md §2.3) ------------------------------------------------------------
 //
 // Only URLs, md5s, sizes, paths and crops: the pictures are fetched (md5- and
@@ -997,6 +1031,25 @@ const CoverSource kDilbertCovers[] = {
                    Crop{100, 215, 965, 1315}),
     cover_disc("panel", "Setup art", "your disks", "INSTALL.BMP", "47199572d43fb457b952dcba197a19c5"),
 };
+// Star Trek: The Next Generation Screen Saver: the box front from Berkeley
+// Systems' product page (1997, through the Wayback Machine; 126x160, the same
+// bytes in the /lite/ captures), else the installer splash, cropped above its
+// warning text, else the Internet Archive's photo of the disc (6000x4000,
+// cropped to the disc). Paramount's and Berkeley's art: fetched or read onto
+// the user's machine only, never bundled.
+const CoverSource kTngCovers[] = {
+    cover_download("box", "Box front", "Wayback Machine",
+                   "https://web.archive.org/web/19970720113647id_/"
+                   "http://www.berksys.com:80/products/afterdark/box.stngL.jpg",
+                   "d7286d0d288c5f8c9982c2a97470a2f8", 23278, L"berksys_box.stngL.jpg"),
+    cover_disc("splash", "Installer art", "your disc", "SETUP.BMP", "b54082b26b50a8bf44653fa079f36320",
+               Crop{0, 0, 387, 168}),
+    cover_download("disc", "Disc label", "Internet Archive",
+                   "https://archive.org/download/star-trek-the-next-generation-screensaver/"
+                   "Star%20Trek%3A%20The%20Next%20Generation%20-%20screensaver_disc.jpg",
+                   "419a2ba9a3c762531365cef84d02ef45", 11258025,
+                   L"star-trek-the-next-generation-screensaver_disc.jpg", Crop{1200, 270, 3600, 3600}),
+};
 
 const Package kPackages[] = {
     {"deluxe", "After Dark 4.0 Deluxe", "Deluxe", Recipe::tree, "FILES", kDeluxeModuleDirs, kDeluxeImages,
@@ -1082,6 +1135,18 @@ const Package kPackages[] = {
      kDilbertModuleDirs, kDilbertImages, kDilbertRequired, {}, "DB-CLOCK.IMQ", {}, "SAVER", nullptr, nullptr,
      kDilbertDiskTags, {}, kDilbertNames, manifest(kDilbertKnown), kDilbertDownloads, kDilbertCovers, "1994-10",
      nullptr, kDilbertLoose},
+    // After the first fourteen, so they keep their places (and the GUI's
+    // command ids). The modules are dated 1994-10-06/07 and the folder file
+    // 1994-10-13 (the CD's files, 1995-04-09, are its mastering). It ties
+    // with Snoopy's and Dilbert's and comes after them by registry order.
+    // Several modules compose a fixed 640x480 scene (Science Stations' panel
+    // sits top-left at larger screens; Encounters, Personnel Files, Officer's
+    // Review and Starfleet Messages sit small in the middle; Counselor Troi's
+    // and Data Dances' cards top-left): the catalog gives all 13 that screen,
+    // as for Star Trek: The Screen Saver.
+    {"tng", "Star Trek: The Next Generation Screen Saver", "Star Trek TNG", Recipe::ad3zip, "packages/tng",
+     kTngModuleDirs, kTngImages, kTngRequired, {}, nullptr, {}, "ST-TNG", "ADXPL320.DLL", "ST-TNG.AFI", kTngArchives,
+     {}, {}, manifest(kTngKnown), kTngDownloads, kTngCovers, "1994-10", nullptr, {}, nullptr, "640x480"},
 };
 
 }  // namespace

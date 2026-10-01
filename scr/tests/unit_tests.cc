@@ -1733,12 +1733,12 @@ void test_ui() {
   }
 
   // Status text: no closing full stop (the releases' own line is checked in
-  // the releases suite). Not every release is After Dark's: the words fit all fourteen.
+  // the releases suite). Not every release is After Dark's: the words fit all fifteen.
   CHECK(assets_summary({}) == L"Nothing imported yet");
   // The not-imported welcome: what importing does.
   CHECK(welcome_text().find(L"The screen saver runs the original modules of After Dark and Star Wars Screen "
                             L"Entertainment from your own discs.\n\n"
-                            L"Import them from any of your discs (fourteen releases are supported), a disc image, or "
+                            L"Import them from any of your discs (fifteen releases are supported), a disc image, or "
                             L"the Internet Archive download.") == 0);
   CHECK(welcome_text().find(L"After Dark discs") == std::wstring::npos);
   Catalog c;
@@ -1846,14 +1846,15 @@ void test_ui() {
   // doesn't show, there was no room for it.
   {
     HDC dc = CreateCompatibleDC(nullptr);
-    // The fourteen releases' line, "314 modules from 14 releases", is as
-    // long as the twelve's ("284 modules from 12 releases"), a digit longer
-    // than the seven's ("232 modules from 7 releases"), whose digits were
+    // The fifteen releases' line, "327 modules from 15 releases", is as
+    // long as the fourteen's ("314 modules from 14 releases") and the
+    // twelve's ("284 modules from 12 releases"), a digit longer than the
+    // seven's ("232 modules from 7 releases"), whose digits were
     // already wider in the caption face, Segoe UI Variable Small, than the
     // six's ("216 modules from 6 releases").
-    const wchar_t* texts[] = {L"Nothing imported yet", L"314 modules from 14 releases",
+    const wchar_t* texts[] = {L"Nothing imported yet", L"327 modules from 15 releases",
                               L"84 modules from After Dark 4.0 Deluxe",
-                              L"314 modules from 14 releases · 2 missing — import again to restore"};
+                              L"327 modules from 15 releases · 2 missing — import again to restore"};
     int shown = 0, hidden = 0, min_twelve = 0;
     std::string min_twelve_at;   // the scales it fits the narrowest window at
     for (int dpi = 96; dpi <= 240; dpi += 24) {
@@ -1910,7 +1911,7 @@ void test_ui() {
           // The status line it sits beside is never under it.
           CHECK(C.box.x > in.assets_right);
         }
-        // Where it matters: with fourteen releases it shows at the first-open
+        // Where it matters: with fifteen releases it shows at the first-open
         // size (with room to spare) at every scale; one release's long title
         // and the assets line at its longest (files missing) leave it no room
         // in the minimum window. (In the minimum window beside the releases'
@@ -1938,7 +1939,7 @@ void test_ui() {
         }
       }
     }
-    printf("ui: the credit fits beside \"314 modules from 14 releases\" in the narrowest window at %d of 7 scales (%s)\n",
+    printf("ui: the credit fits beside \"327 modules from 15 releases\" in the narrowest window at %d of 7 scales (%s)\n",
            min_twelve, min_twelve_at.c_str());
     CHECK(shown > 0 && hidden > 0);
     DeleteDC(dc);
@@ -2940,13 +2941,17 @@ void test_strip_wrap() {
   CHECK(strip_band(false, 1) == 120 && strip_band(true, 1) == 80);
   CHECK(strip_band(false, 2) == 236 && strip_band(true, 2) == 156 && strip_band(false, 3) == 352);
   // The first-open height: one row of regular covers (836) up to seven
-  // releases, two (952) for eight to fourteen.
+  // releases, two (952) for eight to fourteen, three (1068) for fifteen to
+  // twenty-one (five a row: the window then opens as tall as the work area
+  // allows, and the strip goes compact where three rows don't fit).
   CHECK(design_client_h(0) == kDesignClientH && design_client_h(1) == kDesignClientH);
   for (int n = 2; n <= 7; ++n) CHECK(design_client_h(n) == kDesignClientHStrip);
   for (int n = 8; n <= 14; ++n) CHECK(design_client_h(n) == 952);
-  // Every scale, 1 to 14 releases, both forms, several widths.
+  CHECK(design_client_h(15) == 1068 && design_client_h(21) == 1068);
+  CHECK((strip_grid(15, false, 776) == StripGrid{3, 5}) && (strip_grid(15, true, 776) == StripGrid{2, 8}));
+  // Every scale, 1 to 15 releases, both forms, several widths.
   for (int dpi = 96; dpi <= 240; dpi += 24) {
-    for (int n = 1; n <= 14; ++n) {
+    for (int n = 1; n <= 15; ++n) {
       for (bool compact : {false, true}) {
         for (double w : {min_area, 776.0, 1024.0, 300.0, 850.0, 855.5, 856.0, 1336.0}) {
           StripInput in{n, compact, 24, 48, w, 0, dpi};

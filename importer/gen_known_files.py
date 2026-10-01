@@ -59,6 +59,8 @@ PACKAGES = {
     "farside": ((), "packages/farside", ("SAVER", "ENGINE")),
     # The flat ZIP of the four floppies' files, and (DISKS below) a ZIP of each disk's.
     "dilbert": (("ea6e18463d156fbb5c70401e39b45962",), "packages/dilbert", ("SAVER", "ENGINE")),
+    # The CD.
+    "tng": (("0b95b9271c75b9ff1d89b57a0e15ee7b",), "packages/tng", ("ST-TNG", "ENGINE")),
 }
 
 # packages.cc: the known images of releases on several install disks

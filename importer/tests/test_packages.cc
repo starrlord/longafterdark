@@ -239,7 +239,8 @@ int main(int argc, char** argv) {
                          tt = test::tt_fixture(), simpsons = test::simpsons_fixture(), swse = test::swse_fixture(),
                          startrek = test::startrek_fixture(), looney = test::looney_fixture(),
                          screams = test::screams_fixture(), disney = test::disney_fixture(),
-                         farside = test::farside_fixture(), dilbert = test::dilbert_fixture();
+                         farside = test::farside_fixture(), dilbert = test::dilbert_fixture(),
+                         tng = test::tng_fixture();
   const test::IslibFixture marvel = test::marvel_fixture(), snoopy = test::snoopy_fixture();
   test::TestRegistry reg = registry_for({{"deluxe", &deluxe},
                                          {"ad10", &ad10},
@@ -254,7 +255,8 @@ int main(int argc, char** argv) {
                                          {"screams", &screams},
                                          {"disney", &disney},
                                          {"farside", &farside},
-                                         {"dilbert", &dilbert}});
+                                         {"dilbert", &dilbert},
+                                         {"tng", &tng}});
 
   // ---- the registry's box covers (COVERS.md §2.2, §2.3) ----------------------------------------------
   {
@@ -368,7 +370,7 @@ int main(int argc, char** argv) {
     CHECK((std::vector<std::string>(order.begin(), order.begin() + std::min<size_t>(order.size(), 7)) ==
            std::vector<std::string>{"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek"}));
     CHECK((order == std::vector<std::string>{"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek", "marvel",
-                                             "snoopy", "looney", "screams", "disney", "farside", "dilbert"}));
+                                             "snoopy", "looney", "screams", "disney", "farside", "dilbert", "tng"}));
     for (const char* id : {"looney", "screams", "disney"}) CHECK(std::find(order.begin(), order.end(), id) != order.end());
     CHECK(std::find(order.begin(), order.end(), "looney") < std::find(order.begin(), order.end(), "screams"));
     CHECK(std::find(order.begin(), order.end(), "screams") < std::find(order.begin(), order.end(), "disney"));
@@ -621,6 +623,11 @@ int main(int argc, char** argv) {
   }
   test::write_tree(src / L"disney", disney.source);
   test::write_bytes(src / L"disney.zip", test::zip_folder(disney.source));
+  // Star Trek: The Next Generation Screen Saver: its CD, and a copy of it
+  // without ADXPL320.DLL (a decoy: ST-TNG.AFI alone names no release).
+  test::write_bytes(src / L"tng.iso", test::iso_of(tng, false, "STAR_TRE"));
+  test::write_tree(src / L"tng", tng.source);
+  test::write_tree(src / L"tng-no-engine", test::tng_fixture(false).source);
   for (int k = 1; k <= 3; k++) {
     test::write_tree(src / (L"disney-disk" + std::to_wstring(k)), test::disk_files(disney.source, k, test::disney_disk));
     test::write_tree(src / (L"screams-disk" + std::to_wstring(k)), test::disk_files(screams.source, k, test::screams_disk));
@@ -2303,6 +2310,20 @@ int main(int argc, char** argv) {
       CHECK(identify_folder(src / L"tt", nullptr, reg.span()) == &reg.get("tt"));
       CHECK(identify_folder(src / L"simpsons", nullptr, reg.span()) == &reg.get("simpsons"));
       CHECK(identify_folder(src / L"looney") == find_package("looney"));  // the built-in registry too
+      CHECK(identify_folder(src / L"tng", nullptr, reg.span()) == &reg.get("tng"));
+      CHECK(identify_folder(src / L"tng") == find_package("tng"));
+      // ST-TNG.AFI without ADXPL320.DLL is no release; another release's
+      // AFI.ZIP holding ST-TNG.AFI is still that release.
+      CHECK(identify_folder(src / L"tng-no-engine", nullptr, reg.span()) == nullptr);
+      {
+        test::Tree t = looney.source;
+        test::ZipBuilder b;
+        b.password = test::kTestZipPassword;
+        for (const char* n : {"AD2.AFI", "LNYTUNES.AFI", "ST-TNG.AFI"}) b.add(n, test::blob(n), true);
+        t["AFI.ZIP"] = b.build();
+        test::write_tree(src / L"looney-tng-afi", t);
+        CHECK(identify_folder(src / L"looney-tng-afi", nullptr, reg.span()) == &reg.get("looney"));
+      }
       // The windows' check of a folder: a copy of the disks in DISK<n> folders too.
       CHECK(identify_folder(src / L"screams-disks", nullptr, reg.span()) == &reg.get("screams"));
       ImportResult r = run("--package ad32 on ScreamSavers", folder(src / L"screams", "ad32"),
@@ -2406,6 +2427,49 @@ int main(int argc, char** argv) {
       for (auto& p : pk) order.push_back(p->get_string("id"));
       CHECK((order == std::vector<std::string>{"looney", "screams", "disney"}));  // 1995-04, 1995-04, 1995-09
     }
+  }
+
+  // ---- Star Trek: The Next Generation Screen Saver: an AD 3.x install on a CD ---------------------------
+  {
+    // The registry: after the first fourteen (their GUI command ids), the CD
+    // as its known image and download, the box, the splash and the disc.
+    const Package* p = find_package("tng");
+    CHECK(p != nullptr);
+    if (p) {
+      CHECK(builtin_packages().size() == 15 && &builtin_packages()[14] == p);
+      CHECK(p->recipe == Recipe::ad3zip && std::string(p->root) == "packages/tng");
+      CHECK(std::string(p->module_dir) == "ST-TNG" && std::string(p->engine_dll) == "ADXPL320.DLL" &&
+            std::string(p->folder_afi) == "ST-TNG.AFI" && !p->marker);
+      CHECK(std::string(p->title) == "Star Trek: The Next Generation Screen Saver");
+      CHECK(std::string(p->released) == "1994-10" && p->screen && std::string(p->screen) == "640x480");
+      CHECK_EQ(p->required_archives.size(), size_t(14));
+      CHECK(p->images.size() == 1 && std::string(p->images[0].md5) == "0b95b9271c75b9ff1d89b57a0e15ee7b" &&
+            p->images[0].size == 6133760 && std::string(p->images[0].volume_id) == "STAR_TRE");
+      CHECK(p->downloads.size() == 1 && std::string(p->downloads[0].md5) == p->images[0].md5 &&
+            p->downloads[0].size == p->images[0].size && std::string(p->downloads[0].kind) == "image");
+      CHECK(std::wstring_view(p->downloads[0].file_name).find(L':') == std::wstring_view::npos);
+      CHECK(p->covers.size() == 3 && std::string(p->covers[0].art) == "box" &&
+            p->covers[1].kind == CoverSource::Kind::disc && std::string(p->covers[1].path) == "SETUP.BMP" &&
+            std::string(p->covers[2].art) == "disc");
+      CHECK_EQ(p->manifest.size(), size_t(31));
+      CHECK(p->name_overrides.empty() && p->never_opened.empty());
+    }
+    // The CD alone: ADXPL320 and both libraries beside the modules, the MIDI
+    // files in MUSIC, ST-TNG.AFI as the folder file, EDITFILE.TXT left out.
+    fs::path root = dir / L"alone-tng";
+    ImportResult r = run("tng iso", image(src / L"tng.iso"), opts_for(root, reg), Status::ok);
+    CHECK_EQ(r.package_id, std::string("tng"));
+    CHECK_EQ(r.verified, std::string("files"));
+    CHECK_EQ(r.package_modules, size_t(13));
+    check_installed(root / L"win", tng, "packages/tng");
+    CHECK(catalog_ids(root / L"win") == tng.ids);
+    CHECK(!fs::exists(root / L"win" / L"packages" / L"tng" / L"ST-TNG" / L"EDITFILE.TXT"));
+    CHECK(no_leftovers(root / L"win"));
+    // The copy without ADXPL320.DLL is not a known release.
+    r = run("tng without its engine library", folder(src / L"tng-no-engine"), opts_for(dir / L"tng-decoy", reg),
+            Status::source_invalid);
+    CHECK(r.message.find("not a known release") != std::string::npos);
+    CHECK(!fs::exists(dir / L"tng-decoy" / L"win" / L"packages" / L"tng"));
   }
 
   // ---- identification ---------------------------------------------------------------------------
@@ -3011,7 +3075,7 @@ int main(int argc, char** argv) {
     CHECK_EQ(win_assets_dir(dir / L"fresh"), dir / L"fresh" / L"win");
 
     auto states = list_packages(root, reg.span());
-    CHECK_EQ(states.size(), size_t(14));
+    CHECK_EQ(states.size(), size_t(15));
     for (auto& s : states) {
       bool want = std::string(s.package->id) == "ad32" || std::string(s.package->id) == "simpsons";
       CHECK_EQ(s.installed, want);
@@ -3058,29 +3122,31 @@ int main(int argc, char** argv) {
     run("dilbert", image(src / L"dilbert.zip"), opts_for(all, reg), Status::ok);
     run("ad10", image(src / L"ad10.iso"), opts_for(all, reg), Status::ok);
     run("farside", folder(src / L"farside-disks"), opts_for(all, reg), Status::ok);
+    run("tng", image(src / L"tng.iso"), opts_for(all, reg), Status::ok);
     phosg::JSON cat = json_at(all / L"win" / L"catalog-win.json");
     CHECK_EQ(cat.get_string("generator"), std::string(kCatalogGenerator));
     std::vector<std::string> ids;
     for (auto& m : cat.at("modules").as_list()) ids.push_back(m->get_string("id"));
     CHECK(ids == concat({deluxe.ids, ad10.ids, ad32.ids, tt.ids, simpsons.ids, swse.ids, startrek.ids, marvel.ids,
-                         snoopy.ids, looney.ids, screams.ids, disney.ids, farside.ids, dilbert.ids}));
+                         snoopy.ids, looney.ids, screams.ids, disney.ids, farside.ids, dilbert.ids, tng.ids}));
     // The top-level packages list: oldest release first (the cover strip's and the list
     // groups' order), while modules above stay in registry order. Star Trek:
     // The Screen Saver (1992-11) comes first, Marvel Comics Screen Posters
     // (1993-12) next, then The Far Side (1994-06); Star Wars Screen
     // Entertainment ties with the Simpsons (1994-08) and follows it, as in
-    // the registry, and Snoopy's Screen Savers and Dilbert (1994-10) follow
-    // them, in registry order too; ScreamSavers ties with the Looney Tunes
-    // (1995-04) the same way, and the Disney Collection (1995-09) comes
-    // between Totally Twisted and Deluxe.
+    // the registry, and Snoopy's Screen Savers, Dilbert and Star Trek: The
+    // Next Generation Screen Saver (1994-10) follow them, in registry order
+    // too; ScreamSavers ties with the Looney Tunes (1995-04) the same way,
+    // and the Disney Collection (1995-09) comes between Totally Twisted and
+    // Deluxe.
     const auto& pk = cat.at("packages").as_list();
-    CHECK_EQ(pk.size(), size_t(14));
+    CHECK_EQ(pk.size(), size_t(15));
     std::vector<std::pair<std::string, size_t>> want_pk = {
         {"startrek", startrek.ids.size()}, {"marvel", marvel.ids.size()},   {"farside", farside.ids.size()},
         {"simpsons", simpsons.ids.size()}, {"swse", swse.ids.size()},       {"snoopy", snoopy.ids.size()},
-        {"dilbert", dilbert.ids.size()},   {"looney", looney.ids.size()},   {"screams", screams.ids.size()},
-        {"ad32", ad32.ids.size()},         {"tt", tt.ids.size()},           {"disney", disney.ids.size()},
-        {"deluxe", deluxe.ids.size()},     {"ad10", ad10.ids.size()}};
+        {"dilbert", dilbert.ids.size()},   {"tng", tng.ids.size()},         {"looney", looney.ids.size()},
+        {"screams", screams.ids.size()},   {"ad32", ad32.ids.size()},       {"tt", tt.ids.size()},
+        {"disney", disney.ids.size()},     {"deluxe", deluxe.ids.size()},   {"ad10", ad10.ids.size()}};
     for (size_t i = 0; i < pk.size(); i++) {
       const Package* p = find_package(pk[i]->get_string("id"));
       CHECK(p && pk[i]->get_string("released") == std::string(p->released));
@@ -3154,11 +3220,12 @@ int main(int argc, char** argv) {
       size_t end = text.find("\n  }", at);
       CHECK(at != std::string::npos && text.rfind("\"abi\": \"intermission\"\n", end) > at);
     }
-    // Only Star Trek: The Screen Saver's, Marvel Comics Screen Posters' and
-    // ScreamSavers' modules carry "screen" (last).
+    // Only Star Trek: The Screen Saver's, Marvel Comics Screen Posters',
+    // ScreamSavers' and Star Trek: The Next Generation Screen Saver's
+    // modules carry "screen" (last).
     for (auto& m : cat.at("modules").as_list()) {
       const std::string p = m->get_string("package");
-      const bool fixed = p == "startrek" || p == "marvel" || p == "screams";
+      const bool fixed = p == "startrek" || p == "marvel" || p == "screams" || p == "tng";
       CHECK_EQ(m->contains("screen"), fixed);
       if (fixed) CHECK_EQ(m->get_string("screen"), std::string("640x480"));
     }
@@ -3305,7 +3372,7 @@ int main(int argc, char** argv) {
         if (col != std::string::npos) cols.push_back(line.rfind("not ", col) == col - 4 ? col - 4 : col);
         pos += 3;
       }
-      CHECK_EQ(cols.size(), size_t(14));
+      CHECK_EQ(cols.size(), size_t(15));
       for (size_t c : cols) CHECK_EQ(c, cols.front());
       CHECK(out.find("  swse      Star Wars Screen Entertainment               installed, ") != std::string::npos);
       CHECK(out.find("  startrek  Star Trek: The Screen Saver                  installed, ") != std::string::npos);

@@ -234,6 +234,8 @@ int main(int argc, char** argv) {
                  "not installed; download 5.5 MB (5 ZIPs of the install disks' files)") != std::string::npos);
   CHECK(out.find("\n  dilbert   Scott Adams' Dilbert Screen Saver Collection "
                  "not installed; download 4.3 MB (ZIP of the install files)") != std::string::npos);
+  CHECK(out.find("\n  tng       Star Trek: The Next Generation Screen Saver  "
+                 "not installed; download 5.8 MB (disc image)") != std::string::npos);
   CHECK_EQ(run(exe, {L"--set-cover", L"tt", pic, L"--dest", dest.wstring()}, "--set-cover, not imported", &out), 1);
   CHECK(out.find("Totally Twisted After Dark isn't imported") != std::string::npos);
   CHECK_EQ(run(exe, {L"--set-cover", L"deluxe", pic, L"--dest", dest.wstring()}, "--set-cover, no picture"), 2);

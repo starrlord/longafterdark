@@ -21,6 +21,8 @@
 //   farside   The Far Side Screen Saver Collection intermission -> <win>\packages\farside\{SAVER,ENGINE}
 //   dilbert   Scott Adams' Dilbert Screen Saver Collection
 //                                                 intermission  -> <win>\packages\dilbert\{SAVER,ENGINE}
+//   tng       Star Trek: The Next Generation Screen Saver
+//                                                 ad3zip        -> <win>\packages\tng\{ST-TNG,ENGINE}
 //
 // Each entry carries what identifies the release (known image md5s — of one
 // image, or of every install disk of a set — and fingerprints), how to
