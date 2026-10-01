@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="LongAfterDark.adhostwin" version="1.4.0.0" processorArchitecture="*"/>
+  <assemblyIdentity type="win32" name="LongAfterDark.adhostwin" version="1.4.1.0" processorArchitecture="*"/>
   <description>Long After Dark emulator host</description>
   <!-- Deliberately without dpiAwareness or Common Controls 6: the lanes were
        built and verified with the process defaults (DPI unaware, the classic
