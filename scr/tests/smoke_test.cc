@@ -3210,6 +3210,98 @@ int test_config_monitors(const Opts& o) {
   return 0;
 }
 
+// "Stretch to fit the screen" (Settings::stretch_to_fit): off in a file
+// without the key; checked and saved by OK (StretchToFit=1, the file's other
+// keys kept); shown checked when reopened, and Cancel keeps it; drawn across
+// the options card between Resolution and Sound, its text whole, at 100% and
+// 150%, light and dark, at the first-open and the minimum size.
+int test_config_stretch(const Opts& o) {
+  Work w = prepare(o, "config-stretch");
+  auto ready = [](DWORD pid) -> HWND {
+    HWND d = find_dialog(pid);
+    HWND list = d ? GetDlgItem(d, IDC_MODULE_LIST) : nullptr;
+    return list && SendMessageW(list, LVM_GETITEMCOUNT, 0, 0) > 0 ? d : nullptr;
+  };
+  auto checked = [](HWND dlg) { return SendDlgItemMessageW(dlg, IDC_STRETCH, BM_GETCHECK, 0, 0) == BST_CHECKED; };
+  auto set_check = [](HWND dlg, bool on) {
+    HWND sb = GetDlgItem(dlg, IDC_STRETCH);
+    SendMessageW(sb, BM_SETCHECK, on ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDC_STRETCH, BN_CLICKED), (LPARAM)sb);
+  };
+
+  // ---- session 1: a file without the key: unchecked; checked, then OK.
+  bool first = true, visible = false, acted = false;
+  std::string label;
+  RunResult r = run_scr(o, L"/c", base_env(o, w), 60000, [&](DWORD pid) {
+    if (acted) return;
+    HWND dlg = ready(pid);
+    if (!dlg) return;
+    first = checked(dlg);
+    visible = IsWindowVisible(GetDlgItem(dlg, IDC_STRETCH)) != FALSE;
+    label = window_text(GetDlgItem(dlg, IDC_STRETCH));
+    set_check(dlg, true);
+    PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), (LPARAM)GetDlgItem(dlg, IDOK));
+    acted = true;
+  });
+  CHECK(acted);
+  if (!expect_exit(w, r, 0)) return 1;
+  CHECK(!first && visible && label == "Stretc&h to fit the screen (no black bars)");
+  Settings s;
+  CHECK(load_settings(w.settings.wstring(), s) && s.stretch_to_fit);
+  std::string text;
+  read_file(w.settings.wstring(), text);
+  CHECK(text.find("StretchToFit=1\r\n") != std::string::npos);
+  CHECK(text.find("FutureKey=keep me\r\n") != std::string::npos);
+
+  // ---- session 2: shown checked; unchecked, then Cancel writes nothing.
+  bool reopened = false;
+  acted = false;
+  r = run_scr(o, L"/c", base_env(o, w), 60000, [&](DWORD pid) {
+    if (acted) return;
+    HWND dlg = ready(pid);
+    if (!dlg) return;
+    reopened = checked(dlg);
+    set_check(dlg, false);
+    PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED), (LPARAM)GetDlgItem(dlg, IDCANCEL));
+    acted = true;
+  });
+  CHECK(acted);
+  if (!expect_exit(w, r, 0)) return 1;
+  CHECK(reopened);
+  std::string again;
+  read_file(w.settings.wstring(), again);
+  CHECK(again == text);
+
+  // ---- renders (kept as stretch-<name>.png in the test's folder)
+  const std::string base = "mode=single;stretch=1;wait=5000;frames=3;size=";
+  const std::vector<std::pair<const char*, std::string>> shots = {
+      {"light-100", "theme=light;dpi=96;" + base + "1040x716"},
+      {"dark-100", "theme=dark;dpi=96;" + base + "1040x716"},
+      {"light-150", "theme=light;dpi=144;" + base + "1040x716"},
+      {"dark-150-focus", "theme=dark;dpi=144;focus=stretch;" + base + "1040x716"},
+      {"light-100-min", "theme=light;dpi=96;" + base + "900x600"},
+  };
+  for (const auto& [name, state] : shots) {
+    auto kv = dialog_report(o, w, state);
+    const fs::path png = w.dir / (std::string("stretch-") + name + ".png");
+    std::error_code ec;
+    fs::copy_file(w.dir / "dialog.png", png, fs::copy_options::overwrite_existing, ec);
+    RECT sb{}, card{}, scale{}, sound{};
+    CHECK(report_rect(kv["stretch"], &sb) && report_rect(kv["options_card"], &card));
+    CHECK(report_rect(kv["scale"], &scale) && report_rect(kv["sound"], &sound));
+    CHECK(kv["stretch_checked"] == "1" && kv["stretch_fits"] == "1");
+    CHECK(sb.left >= card.left && sb.right <= card.right && sb.top >= card.top && sb.bottom <= card.bottom);
+    CHECK(sb.top >= scale.bottom && sb.bottom <= sound.top && std::abs(sb.left - scale.left) <= 1);
+    if (g_failures) {
+      fprintf(stderr, "%s: stretch=%s options_card=%s scale=%s sound=%s fits=%s\n", name, kv["stretch"].c_str(),
+              kv["options_card"].c_str(), kv["scale"].c_str(), kv["sound"].c_str(), kv["stretch_fits"].c_str());
+      return 1;
+    }
+  }
+  check_hosts_gone(w);
+  return 0;
+}
+
 // The hosts' start lines for modules whose path ends in `suffix`, in order.
 std::vector<std::map<std::string, std::string>> starts_of(const Work& w, const char* suffix) {
   std::vector<std::map<std::string, std::string>> v;
@@ -3577,6 +3669,46 @@ int test_screen_field(const Opts& o) {
     }
     check_hosts_gone(w);
     if (g_failures) dump_logs(w);
+  }
+  // "Stretch to fit the screen" (StretchToFit=1): the same 640x480 frame over
+  // the whole 16:9 monitor, no bars; its desktop seed is the whole monitor.
+  {
+    fs::remove(w.scr_log);
+    fs::remove(w.host_log);
+    edit_settings(w, [](Settings& s) { s.stretch_to_fit = true; });
+    const fs::path caps = w.dir / "captures-stretch";
+    fs::create_directories(caps);
+    EnvList env = base_env(o, w);
+    env.push_back({L"AD_SCR_TEST_MONITORS", wide});
+    env.push_back({L"AD_SCR_TEST_CAPTURE", caps.wstring()});
+    env.push_back({L"AD_SCR_TEST_CAPTURE_FRAMES", L"20"});
+    env.push_back({L"AD_SCR_TESTEXIT_AFTER_FRAMES", L"30"});
+    RunResult r = run_scr(o, L"/s", env, 60000);
+    if (!expect_exit(w, r, 0)) return 1;
+    auto starts = host_events(w, "start");
+    CHECK(starts.size() == 1);
+    for (auto& e : starts) CHECK(ends_with(e["module"], "MISSION.AD") && screen_is(e, "640", "480"));
+    CHECK(count_in_log(w.scr_log, " stretch=1") == 1);
+    CHECK(count_in_log(w.scr_log, "capture window=0 frame=20 ok 1280x720 host=640x480 ") == 1);
+    if (count_in_log(w.scr_log, "seed window=0 ") > 0) {
+      CHECK(count_in_log(w.scr_log, "seed window=0 640x480 from 1280x720 ") == 1);
+    }
+    int sw = 0, sh = 0;
+    std::vector<uint8_t> px;
+    if (load_png(caps / "window0-frame20.png", &sw, &sh, &px) && sw == 1280 && sh == 720) {
+      auto lit = [&](int x, int y) {
+        const uint8_t* q = &px[((size_t)y * sw + x) * 4];
+        return q[0] + q[1] + q[2] > 48;
+      };
+      int sides = 0, n = 0;
+      for (int y = 20; y < 720; y += 40, ++n) sides += lit(2, y) + lit(80, y) + lit(1200, y) + lit(1277, y);
+      CHECK(sides * 10 >= n * 4 * 9);   // where the bars were, the picture
+    } else {
+      failf("no 1280x720 capture of window 0 at frame 20 (stretched)");
+    }
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+    edit_settings(w, [](Settings& s) { s.stretch_to_fit = false; });
   }
   // A monitor change of aspect (16:9 to 4:3): the window moves, its host
   // carries on (an After Dark module's would be replaced: screen-abi).
@@ -6391,6 +6523,7 @@ int wmain(int argc, wchar_t** argv) {
       {L"rotate-abi-wait", test_rotate_abi_wait},
       {L"rotate-monitors", test_rotate_monitors},
       {L"config-monitors", test_config_monitors},
+      {L"config-stretch", test_config_stretch},
       {L"screen-abi", test_screen_abi},
       {L"screen-field", test_screen_field},
       {L"config-twelve", test_config_twelve},

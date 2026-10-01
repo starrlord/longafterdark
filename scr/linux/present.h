@@ -104,6 +104,9 @@ class Presenter {
   // The emulated screen of the host whose frames come next: where they will
   // land (frame_rect) before the first of them arrives.
   void set_screen(SizeI emu);
+  // Frames fill the whole window instead of keeping their shape (--stretch,
+  // for a module with a screen of its own); set before set_screen.
+  void set_stretch(bool on) { stretch_ = on; }
   // Where frames land in the window: the letterbox of the last frame, else
   // of the screen set, else the whole window.
   RectI frame_rect() const;
@@ -199,6 +202,7 @@ class Presenter {
   RawFrame last_;                   // the frame on the screen (or waiting for it)
   bool have_last_ = false;
   SizeI screen_emu_{};
+  bool stretch_ = false;   // set_stretch
 
   std::string message_;
   bool showing_message_ = false;

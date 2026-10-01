@@ -519,7 +519,9 @@ to fit the monitor in its 4:3 shape: `scr/README.md`), `Monitors=all|primary`,
 `DifferentPerMonitor=1|0` (default 0: a rotation plays the same module on
 every monitor and switches them together; 1: each monitor has a rotation of
 its own, the settings window's "A different module on each monitor"),
-`StartFromDesktop=1|0` (no UI;
+`StretchToFit=1|0` (default 0: a 640×480 module keeps its 4:3 shape with
+bars; 1: its frame fills each monitor, the settings window's "Stretch to fit
+the screen"; never in `/p`), `StartFromDesktop=1|0` (no UI;
 INTERACTION.md §8), `Collections=<package id>,…` (the box-strip filter;
 empty or missing = every release), `Sound=1|0` (default 1), `Volume=0..100`
 (default 50), `SoundMonitor=primary` (reserved; §10, AUDIO.md §9);

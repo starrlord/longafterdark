@@ -22,6 +22,10 @@ struct Options {
   // -root: a rotation in an order of its own, not the clock's that the
   // players on the other monitors follow too (rotation.h).
   bool different_modules = false;
+  // A module with a screen of its own (640x480: Star Wars, Star Trek, ...)
+  // fills the window instead of keeping its shape between bars (the Windows
+  // "Stretch to fit the screen", StretchToFit=1).
+  bool stretch = false;
   bool list = false;
   int scale = 0;
   int lines = 480;   // After Dark modules' screen: 480 or 720 lines (the Windows Resolution setting)

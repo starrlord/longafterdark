@@ -573,9 +573,12 @@ WindowLayout layout_window(const LayoutInput& in) {
 
   // Right column: the module's details, then the saver-wide options.
   const double rx = lx + lw + kGap, rw = x0 + C - rx;
-  // Two rows of labelled controls and the sound note's caption line.
+  // Two rows of labelled controls with the "Stretch to fit" checkbox between
+  // them, and the sound note's caption line.
   const double option_row = kLabelH + 4 + kControlH;
-  const double options_h = kCardPad - 4 + option_row + 12 + option_row + 4 + kCaptionH + kCardPad - 4;   // 176
+  const double stretch_row = 8 + kControlH + 8;   // between the two rows (they were 12 apart)
+  const double options_h =
+      kCardPad - 4 + option_row + stretch_row + option_row + 4 + kCaptionH + kCardPad - 4;   // 212
   const double oy = bottom - options_h;
   L.options_card = s.rc(rx, oy, rw, options_h);
   const double dy = top, dh = oy - kGap - top;
@@ -621,11 +624,14 @@ WindowLayout layout_window(const LayoutInput& in) {
 
   // Options: two rows of labelled controls, each at the start of its half
   // of the card and at most kComboMaxW: Resolution and Monitors, then Sound
-  // and Volume; the note on where sound plays under them, across the card.
+  // and Volume; "Stretch to fit the screen" across the card between them
+  // (it goes with the display's settings); the note on where sound plays
+  // under them, across the card.
   const double half = (rw - 2 * kCardPad - 24) / 2;
   const double cw = std::min<double>(kComboMaxW, half);
+  L.stretch = s.rc(rx + kCardPad, oy + kCardPad - 4 + option_row + 8, rw - 2 * kCardPad, kControlH);
   for (int row = 0; row < 2; ++row) {
-    const double ly = oy + kCardPad - 4 + row * (option_row + 12), cy = ly + kLabelH + 4;
+    const double ly = oy + kCardPad - 4 + row * (option_row + stretch_row), cy = ly + kLabelH + 4;
     for (int i = 0; i < 2; ++i) {
       const double x = rx + kCardPad + i * (half + 24);
       Rc label = s.rc(x, ly, cw, kLabelH), control = s.rc(x, cy, cw, kControlH);

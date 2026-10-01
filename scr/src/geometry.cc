@@ -39,6 +39,11 @@ RectI fit_rect(int src_w, int src_h, int dst_w, int dst_h) {
   return {(dst_w - w) / 2, (dst_h - h) / 2, w, h};
 }
 
+RectI frame_rect(int src_w, int src_h, int dst_w, int dst_h, bool stretch) {
+  if (stretch) return {0, 0, std::max(dst_w, 0), std::max(dst_h, 0)};
+  return fit_rect(src_w, src_h, dst_w, dst_h);
+}
+
 SizeI own_screen(std::string_view abi, SizeI catalog_screen) {
   // The catalog's word first (parse_catalog keeps only a size a host renders
   // and the saver reads back): the importer knows what a release's modules
@@ -59,13 +64,13 @@ ModuleScreen module_screen(std::string_view abi, double display_aspect, double s
   return module_screen(own_screen(abi), display_aspect, scale);
 }
 
-RectI seed_source(const ModuleScreen& screen, int w, int h) {
-  if (!screen.fixed) return RectI{0, 0, std::max(w, 0), std::max(h, 0)};
+RectI seed_source(const ModuleScreen& screen, int w, int h, bool stretch) {
+  if (!screen.fixed || stretch) return RectI{0, 0, std::max(w, 0), std::max(h, 0)};
   return fit_rect(screen.emu.w, screen.emu.h, w, h);
 }
 
 std::vector<SeedShotPlan> plan_seed_shots(const std::vector<ModuleScreen>& screens, int mw, int mh,
-                                          size_t* left_out) {
+                                          size_t* left_out, bool stretch) {
   // Each screen once (sets: a catalog may hold any number): After Dark's
   // first (the first one given; its file keeps the name it has always had),
   // then modules' own sizes, 640x480 (Intermission's, Star Trek's,
@@ -97,7 +102,7 @@ std::vector<SeedShotPlan> plan_seed_shots(const std::vector<ModuleScreen>& scree
   if (left_out) *left_out = follows.size() + owns.size() - each.size();
   std::vector<SeedShotPlan> plan;
   for (const ModuleScreen& ms : each) {
-    SeedShotPlan p{ms, seed_source(ms, mw, mh)};
+    SeedShotPlan p{ms, seed_source(ms, mw, mh, stretch)};
     // The first earlier picture it matches owns the file: one that shares a
     // file comes after the picture it shares.
     for (size_t j = 0; j < plan.size() && p.same < 0; ++j) {

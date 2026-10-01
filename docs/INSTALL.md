@@ -221,7 +221,11 @@ data folder (see below); deleting `state\swse` brings back the disc's
 defaults. The **Resolution** setting does not apply to them: they compose
 their scenes for a 640×480 screen, so they always get one, scaled to fit
 your monitor in its 4:3 shape (with bars at the sides on a widescreen
-monitor, above and below on a 5:4 or portrait one).
+monitor, above and below on a 5:4 or portrait one). Check **Stretch to fit
+the screen (no black bars)**, under **Resolution** and **Monitors**, to
+have them, and every other module that always gets 640×480, fill the
+monitor instead, stretched out of their shape. The live preview shows it
+as you check it; After Dark's own modules fill the screen either way.
 
 The Far Side's and Dilbert's modules have one such button too,
 **Configure...**. For an animation it opens Intermission's own "Animation

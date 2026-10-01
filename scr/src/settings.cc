@@ -295,6 +295,7 @@ Settings parse_settings(std::string_view text) {
   }
   if (auto* v = ini.get(kSaver, "Monitors")) s.all_monitors = !iequals(trim(*v), "primary");
   if (auto* v = ini.get(kSaver, "DifferentPerMonitor")) parse_switch(*v, s.different_per_monitor);
+  if (auto* v = ini.get(kSaver, "StretchToFit")) parse_switch(*v, s.stretch_to_fit);
   if (auto* v = ini.get(kSaver, "StartFromDesktop"); v && parse_int(*v, n)) s.start_from_desktop = n != 0;
   if (auto* v = ini.get(kSaver, "Sound")) parse_switch(*v, s.sound);
   if (auto* v = ini.get(kSaver, "Volume"); v && parse_int(*v, n)) s.volume = (int)std::clamp<long long>(n, 0, 100);
@@ -342,6 +343,12 @@ std::string serialize_settings(const Settings& s, std::string_view base) {
     const std::string* v = ini.get(kSaver, "DifferentPerMonitor");
     if (!v || !parse_switch(*v, cur) || cur != s.different_per_monitor)
       ini.set(kSaver, "DifferentPerMonitor", s.different_per_monitor ? "1" : "0");
+  }
+  {
+    bool cur = !s.stretch_to_fit;
+    const std::string* v = ini.get(kSaver, "StretchToFit");
+    if (!v || !parse_switch(*v, cur) || cur != s.stretch_to_fit)
+      ini.set(kSaver, "StretchToFit", s.stretch_to_fit ? "1" : "0");
   }
   // No UI sets it: written only when it differs from the default, or when
   // the file already says something else.

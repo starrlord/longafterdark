@@ -265,6 +265,12 @@ class SaverWindow {
   HostProcess* host() const { return host_.get(); }
   // The cursor (screen px) as a point on the host's emulated screen.
   POINT map_cursor(POINT screen) const;
+  // Where a frame `fw` x `fh` is drawn in a client `cw` x `ch`: all of it
+  // when the current host's frames are stretched to fit (stretch_; a frame
+  // of another size, an earlier host's, keeps its shape), else fit_rect.
+  RectI frame_fit(int fw, int fh, int cw, int ch) const {
+    return frame_rect(fw, fh, cw, ch, stretch_ && fw == screen_.emu.w && fh == screen_.emu.h);
+  }
   // The letterboxed frame, in screen coordinates.
   RECT frame_screen() const;
   int caps_sent = -1;              // the Caps Lock toggle the host last heard (ADCAPS, then CAPS lines)
@@ -317,6 +323,10 @@ class SaverWindow {
   std::unique_ptr<HostProcess> host_;
   uint64_t generation_ = 0;
   ModuleScreen screen_{};          // the current host's emulated screen (its module's: module_screen)
+  // The current host's frames fill the window ("Stretch to fit",
+  // Settings::stretch_to_fit, for a module with a screen of its own; never
+  // in /p, whose 320x240 is every module's): frame_fit.
+  bool stretch_ = false;
   std::vector<Seed> seeds_;        // consumed by the first spawn
   AdwHostStatusV1 status_cache_{};
   bool status_valid_ = false;
@@ -790,6 +800,7 @@ void SaverWindow::spawn() {
   host_->set_min_go_interval(app_.preview ? 30ms : 12ms);
   status_valid_ = false;
   screen_ = screen;
+  stretch_ = app_.settings.stretch_to_fit && !app_.preview && screen.fixed;
   caps_sent = caps;
   numlock_sent = numlock_var.second.empty() ? -1 : numlock;
   std::wstring err;
@@ -803,9 +814,10 @@ void SaverWindow::spawn() {
   }
   app_.pacer.add(host_.get());
   last_log("spawn window=%d gen=%llu module=%s path=%s size=%dx%d cvset=%s caps=%d numlock=%d seed=%d sound=%d volume=%d "
-           "pid=%lu",
+           "pid=%lu stretch=%d",
            index_, (unsigned long long)generation_, m->id.c_str(), narrow(spec.module_path).c_str(), emu.w, emu.h,
-           cvset.c_str(), caps, numlock_sent, seeded ? 1 : 0, sound.on ? 1 : 0, sound.on ? sound.volume : -1, host_->pid());
+           cvset.c_str(), caps, numlock_sent, seeded ? 1 : 0, sound.on ? 1 : 0, sound.on ? sound.volume : -1, host_->pid(),
+           stretch_ ? 1 : 0);
 }
 
 void SaverWindow::kill_host(bool wait) {
@@ -860,12 +872,12 @@ OwnerStatus SaverWindow::status() {
 // monitor, and its clicks and moves land on it (Final Exam's mouse move ends
 // its exam).
 POINT SaverWindow::map_cursor(POINT screen) const {
-  RectI fit = fit_rect(screen_.emu.w, screen_.emu.h, rc_.right - rc_.left, rc_.bottom - rc_.top);
+  RectI fit = frame_fit(screen_.emu.w, screen_.emu.h, rc_.right - rc_.left, rc_.bottom - rc_.top);
   return map_to_frame(screen, rc_, fit, screen_.emu);
 }
 
 RECT SaverWindow::frame_screen() const {
-  RectI fit = fit_rect(screen_.emu.w, screen_.emu.h, rc_.right - rc_.left, rc_.bottom - rc_.top);
+  RectI fit = frame_fit(screen_.emu.w, screen_.emu.h, rc_.right - rc_.left, rc_.bottom - rc_.top);
   return frame_screen_rect(rc_, fit);
 }
 
@@ -1074,7 +1086,7 @@ bool SaverWindow::present_d2d(const Frame& f) {
   d2d_fresh_ = !d2d_->ready();
   RECT cr{};
   GetClientRect(hwnd, &cr);
-  const RectI fit = fit_rect(f.width, f.height, cr.right, cr.bottom);
+  const RectI fit = frame_fit(f.width, f.height, cr.right, cr.bottom);
   std::string err;
   bool lost = false;
   if (d2d_->present(hwnd, f, fit, filter_for(true, true), &err, &lost)) {
@@ -1107,7 +1119,7 @@ void SaverWindow::maybe_capture() {
   RECT cr{};
   GetClientRect(hwnd, &cr);
   const Frame& f = *current_;
-  const RectI fit = fit_rect(f.width, f.height, cr.right, cr.bottom);
+  const RectI fit = frame_fit(f.width, f.height, cr.right, cr.bottom);
   const bool upscale = fit.w > f.width || fit.h > f.height;
   const Filter filter = filter_for(last_d2d_, upscale);
   const std::wstring base = join_path(h.capture_dir, L"window" + std::to_wstring(index_) + L"-frame" +
@@ -1140,7 +1152,7 @@ void SaverWindow::set_status(std::wstring text, int test_exit) {
 bool SaverWindow::paint_frame(HDC dc, const Frame& f, bool force_bars) {
   RECT cr{};
   GetClientRect(hwnd, &cr);
-  RectI r = fit_rect(f.width, f.height, cr.right, cr.bottom);
+  RectI r = frame_fit(f.width, f.height, cr.right, cr.bottom);
   if (force_bars || !(r == last_fit_)) {
     HBRUSH black = (HBRUSH)GetStockObject(BLACK_BRUSH);
     RECT bars[4] = {{0, 0, cr.right, r.y},
@@ -1423,9 +1435,10 @@ void App::capture_seeds(const std::vector<Monitor>& mons) {
     // file name, then 640x480 and the smallest of the other sizes of their
     // own); one the same as a picture before it, as on a 4:3 monitor at 480
     // lines, is that one's file, and no picture of its own (a shot without a
-    // size).
+    // size). Stretched to fit, a module's own screen covers the whole
+    // monitor, so its picture is of all of it.
     size_t left_out = 0;
-    const std::vector<SeedShotPlan> plan = plan_seed_shots(screens, mw, mh, &left_out);
+    const std::vector<SeedShotPlan> plan = plan_seed_shots(screens, mw, mh, &left_out, settings.stretch_to_fit);
     std::vector<SeedShot> shots;
     for (const SeedShotPlan& p : plan) shots.push_back(p.same < 0 ? SeedShot{p.src, p.screen.emu} : SeedShot{});
     auto t0 = Clock::now();

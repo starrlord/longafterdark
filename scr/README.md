@@ -212,7 +212,7 @@ column at most 1240 DIP wide, centred.
   Space toggles while the chevrons have scrolled it away, comes into view,
   and with a filter saved (or kept through a reload) the row opens scrolled
   to the first selected cover. The
-  window opens at 1040×800 DIP with the strip (at least 680 tall).
+  window opens at 1040×836 DIP with the strip (at least 680 tall; 716 without it).
 * **Single module / Random** at the top left chooses what the saver plays.
   Below it, the **module list**, grouped by release (the release's title and
   its number of modules, oldest release first), with a hairline and 12 DIP of
@@ -311,8 +311,11 @@ column at most 1240 DIP wide, centred.
   (dropdowns at most 280 DIP wide; Resolution, 480 or 720 lines, is for the
   modules that follow the display alone: an Intermission, Star Trek,
   ScreamSavers or Marvel module always runs at its own 640×480, see
-  **Emulated screen**), and under
-  them **Sound** ("Primary
+  **Emulated screen**), then across the card **Stretch to fit the screen
+  (no black bars)** (`StretchToFit`: those 640×480 modules fill each monitor,
+  stretched, in `/s` and the settings window's live preview, never in `/p`;
+  modules that follow the display are unaffected), and under
+  it **Sound** ("Primary
   monitor" / "Off") and **Volume** (a 0–100 slider with its value at the end
   of its label row; screen readers call it "Volume"; greyed, with its label,
   while Sound is Off), then the note "Sound plays from the primary monitor’s
@@ -516,6 +519,7 @@ DurationMin=5            ; Random switches module this often; 0 = never
 Scale=1.0                ; 1.0 = 480-line emulated screen, 1.5 = 720-line (modules that follow the display; Intermission, Star Trek, ScreamSavers and Marvel modules: always 640x480)
 Monitors=all             ; or primary (the other monitors stay black)
 DifferentPerMonitor=0    ; 1: in a rotation each monitor follows its own order; 0 or missing: the same module on all, switching together
+StretchToFit=0           ; 1: 640x480 modules (Intermission, catalog screen) fill each monitor instead of keeping 4:3 with bars; not in /p
 StartFromDesktop=1       ; 0: /s starts every module on black (no desktop capture); no UI
 Collections=simpsons,tt  ; the strip's filter: release ids; empty or missing = every release
 Sound=1                  ; 0: no sound from any module (1, or on/yes/true, is the default)
@@ -652,7 +656,11 @@ running. Only files named that way are ever deleted.
     monitor at least 4:3 wide (bars at the sides on a widescreen), at its
     full width on a narrower one (5:4, portrait: bars above and below).
     Their clicks and moves are mapped into that frame (Final Exam's mouse
-    move included), and a game's cursor clip is that frame. The catalog
+    move included), and a game's cursor clip is that frame. With
+    `StretchToFit=1` the frame is the whole monitor instead (`frame_rect`,
+    `geometry.h`), out of its shape, and so are the mapping, the clip and the
+    part of the desktop a seed takes (`seed_source`); the log's spawn line
+    ends `stretch=1`. The catalog
     parser takes `screen` only as `<w>x<h>` with 1 to 5 decimal digits
     either side (either `x`; leading zeros count, so `000640x480` is none,
     and no axis can overflow), each axis 1..8192 and at most 4096×4096
@@ -665,7 +673,7 @@ running. Only files named that way are ever deleted.
     at the preview box's own 16:9 aspect, 856×480 (848×480 where the box's
     whole pixels come out a little taller; it ignores the Resolution
     setting), modules with a screen of their own at that screen (640×480),
-    pillarboxed; its thumbnails take every module at 640×480 (a module's own
+    pillarboxed, or filling the box while Stretch to fit is checked; its thumbnails take every module at 640×480 (a module's own
     screen of another size at that size).
 * **Pacing:** the first `GO` goes out with the spawn (the host waits only
   250 ms for it before frame 0). After that a clock thread wakes on every

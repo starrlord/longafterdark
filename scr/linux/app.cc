@@ -181,6 +181,9 @@ void print_help() {
       "      --different-modules\n"
       "                          with -root, a rotation in an order of its own: a different module\n"
       "                          on each monitor\n"
+      "      --stretch           stretch modules with a 640x480 screen of their own (Star Wars,\n"
+      "                          Star Trek, ScreamSavers, Marvel, The Far Side, Dilbert) to fill the\n"
+      "                          window, instead of keeping their shape with black bars\n"
       "  -window-id <id>         draw in an existing window (xscreensaver-settings' preview, which\n"
       "                          passes --window-id): silent, a 320x240 screen, 30 frames a second\n"
       "      --verbose           log what the player and the host do on stderr\n"
@@ -332,6 +335,7 @@ class App {
   uint64_t generation_ = 0;
   Clock::duration period_{};
   SizeI host_screen_{};             // the current host's emulated screen (ADSCREENW/H)
+  bool host_stretch_ = false;       // its frames fill the window (--stretch, a screen of its own)
   bool started_ = false;            // the first host has been asked for
   bool map_gate_ = false;           // ...but waits for the window to be placed
   Clock::time_point map_gate_until_{};
@@ -1061,6 +1065,10 @@ void App::spawn() {
   host_ = std::make_unique<HostProcess>();
   first_frame_logged_ = false;
   host_screen_ = emu;
+  // --stretch: a module with a screen of its own fills the window (never a
+  // preview, whose 320x240 is every module's).
+  host_stretch_ = opt_.stretch && opt_.mode != WindowMode::embed && m && own_screen(m->abi, m->screen).w > 0;
+  pres_.set_stretch(host_stretch_);
   pres_.set_screen(emu);   // where its frames will land, before the first of them
   caps_sent_ = caps > 0 ? 1 : 0;
   numlock_sent_ = numlock_env ? (numlock > 0 ? 1 : 0) : -1;
@@ -1358,7 +1366,9 @@ PointI App::pointer_root() {
 // "MOUSE coordinates"; the Windows saver's fit of screen_.emu).
 PointI App::mapped_pointer() const {
   const SizeI emu = host_screen_.w > 0 && host_screen_.h > 0 ? host_screen_ : SizeI{640, 480};
-  return map_to_frame(pointer_win_, fit_rect(emu.w, emu.h, pres_.width(), pres_.height()), emu);
+  const RectI fit = host_stretch_ ? RectI{0, 0, pres_.width(), pres_.height()}
+                                  : fit_rect(emu.w, emu.h, pres_.width(), pres_.height());
+  return map_to_frame(pointer_win_, fit, emu);
 }
 
 int App::caps_state() {

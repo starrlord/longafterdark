@@ -22,6 +22,11 @@
   <boolean id="different" _label="A different module on each monitor"
            arg-set="--different-modules"/>
 
+  <!-- 640x480 modules (Star Wars, Star Trek, ...) fill the screen instead of
+       keeping their shape with black bars at the sides. -->
+  <boolean id="stretch" _label="Stretch to fit the screen (no black bars)"
+           arg-set="--stretch"/>
+
   <select id="lines">
     <option id="480" _label="Resolution: Classic (480 lines)"/>
     <option id="720" _label="Resolution: Sharp (720 lines)" arg-set="--lines 720"/>

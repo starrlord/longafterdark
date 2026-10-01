@@ -63,6 +63,8 @@ BEGIN
   COMBOBOX        IDC_SCALE, 0, 0, 10, 80, CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP
   LTEXT           "Moni&tors", IDC_MONITORS_LABEL, 0, 0, 10, 8
   COMBOBOX        IDC_MONITORS, 0, 0, 10, 80, CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP
+  // 640x480 modules (Star Wars, Star Trek, ...) fill the monitor instead of keeping their shape.
+  AUTOCHECKBOX    "Stretc&h to fit the screen (no black bars)", IDC_STRETCH, 0, 0, 10, 10, WS_TABSTOP
   LTEXT           "So&und", IDC_SOUND_LABEL, 0, 0, 10, 8
   COMBOBOX        IDC_SOUND, 0, 0, 10, 80, CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP
   LTEXT           "&Volume", IDC_VOLUME_LABEL, 0, 0, 10, 8

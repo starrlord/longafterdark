@@ -332,9 +332,9 @@ What you need
       XScreenSaver notices the change by itself.
    f. In xscreensaver-settings, choose Long After Dark. Its Settings... has
       the module to show (Module: an id from "./longafterdark --list";
-      empty, every module in turn), how often the module changes, the
-      resolution, the sound and the volume; the preview there is always
-      silent. XScreenSaver's own Cycle After setting also restarts it,
+      empty, every module in turn), how often the module changes, whether
+      640x480 modules stretch to fill the screen, the resolution, the sound
+      and the volume; the preview there is always silent. XScreenSaver's own Cycle After setting also restarts it,
       with another module unless one is chosen (0 turns that off).
    XScreenSaver ends it on any key or mouse move, so the games are played
    in longafterdark's own full-screen mode.
@@ -545,7 +545,8 @@ for the other two next to itself.
    inside the emulated PC: your own desktop never changes. The resolution
    applies to the other modules: the Star Wars, Far Side, Dilbert, Star
    Trek, ScreamSavers and Marvel modules always get 640x480, scaled up to
-   fit the screen.
+   fit the screen, with bars at the sides on a widescreen monitor unless
+   "Stretch to fit the screen" is checked.
 
    Sound is on by default. Only the primary monitor's screen saver plays
    it, at the default volume (50): the modules' wave effects, their MIDI

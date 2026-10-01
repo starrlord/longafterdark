@@ -68,6 +68,9 @@
 // under "Change module every" in Random on a PC with several monitors
 // (ui_model.h: per_monitor_choice).
 #define IDC_PER_MONITOR     1043
+// "Stretch to fit the screen" (Settings::stretch_to_fit), across the options
+// card under Resolution and Monitors (ui_model.h: WindowLayout::stretch).
+#define IDC_STRETCH         1044
 #define IDC_COVER_TILE_BASE 3000
 
 // Runtime-built controls in the module-settings panel: one block of IDs per

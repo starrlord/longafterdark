@@ -30,6 +30,11 @@ SizeI emulated_screen_size(double display_aspect, double scale, int base_w = 640
 // centred (the remainder is letterbox/pillarbox).
 RectI fit_rect(int src_w, int src_h, int dst_w, int dst_h);
 
+// Where a frame is drawn in dst_w x dst_h: all of it when `stretch` (the
+// "Stretch to fit" setting, Settings::stretch_to_fit, for a module with a
+// screen of its own: ModuleScreen::fixed), else fit_rect, keeping its shape.
+RectI frame_rect(int src_w, int src_h, int dst_w, int dst_h, bool stretch);
+
 // ---- a module's emulated screen ----------------------------------------------------
 // The one rule for the screen a module's host is given (ADSCREENW /
 // ADSCREENH) by everything that starts one for it: the /s windows (a
@@ -75,8 +80,9 @@ ModuleScreen module_screen(std::string_view abi, double display_aspect, double s
 // `screen` (the desktop capture, INTERACTION.md §8): all of it, shrunk to a
 // screen that follows the display (After Dark's, as before); for a module's
 // own size, the part its letterboxed frame covers (fit_rect), so the
-// desktop shows where it was.
-RectI seed_source(const ModuleScreen& screen, int w, int h);
+// desktop shows where it was; all of it when that frame is stretched to fit
+// (`stretch`: frame_rect).
+RectI seed_source(const ModuleScreen& screen, int w, int h, bool stretch = false);
 
 // One picture of a monitor for a window's first host: the part `src`
 // (seed_source) shrunk to `screen`'s emulated size. `same`: an earlier
@@ -105,8 +111,9 @@ inline constexpr size_t kMaxOwnSeedShots = 2;
 // `left_out`, when given, is how many screens were. Where two are the same
 // picture (a 4:3 monitor at 480 lines, the whole of it at 640x480 either
 // way), the later one shares the first's file. No screens, no pictures.
+// `stretch`: modules' own screens are stretched to fit (seed_source).
 std::vector<SeedShotPlan> plan_seed_shots(const std::vector<ModuleScreen>& screens, int mw, int mh,
-                                          size_t* left_out = nullptr);
+                                          size_t* left_out = nullptr, bool stretch = false);
 
 // ---- monitor topology changes ------------------------------------------------------
 // /s puts one window on every monitor. When monitors come, go, change mode

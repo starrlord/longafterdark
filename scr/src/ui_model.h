@@ -155,11 +155,13 @@ struct Rc {
 };
 
 // Design sizes, DIPs.
-inline constexpr int kDesignClientW = 1040, kDesignClientH = 680;   // first-open client size
+// The first-open heights carry the options card's "Stretch to fit" row (36
+// DIPs over 680 and 800), so the preview keeps its size.
+inline constexpr int kDesignClientW = 1040, kDesignClientH = 716;   // first-open client size
 inline constexpr int kMinClientW = 900, kMinClientH = 600;          // the window can't shrink past this
 // With the box-cover strip (two or more releases, COVERS.md §1.2): the
 // regular band on top of those, and a compact band below kStripCompactBelow.
-inline constexpr int kDesignClientHStrip = 800, kMinClientHStrip = 680, kStripCompactBelow = 760;
+inline constexpr int kDesignClientHStrip = 836, kMinClientHStrip = 680, kStripCompactBelow = 760;
 
 // ---- the box-cover strip (COVERS.md §1.2, §1.3) ------------------------------------
 // One 4:5 tile per release across the top of the content column, left-aligned
@@ -284,9 +286,11 @@ struct WindowLayout {
                                     // edge (the box starts kLinkPad before)
   // Options card: two rows of two, each labelled and at the start of its half
   // of the card -- Resolution and Monitors, then Sound (a dropdown) and
-  // Volume (a slider with its readout at the end of its label row) -- and a
-  // caption line under them saying where sound plays (AUDIO.md §9).
+  // Volume (a slider with its readout at the end of its label row) -- with
+  // "Stretch to fit the screen" across the card between them, and a caption
+  // line under them saying where sound plays (AUDIO.md §9).
   Rc scale_label, scale, monitors_label, monitors;
+  Rc stretch;                       // the "Stretch to fit" checkbox, its box at the card's padding
   Rc sound_label, sound, volume_label, volume_value, volume, sound_note;
   // Footer.
   Rc assets, import, preview_button, ok, cancel;

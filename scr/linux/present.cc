@@ -548,7 +548,7 @@ void Presenter::free_image() {
 }
 
 int Presenter::layout(int frame_w, int frame_h) {
-  const RectI fit = fit_rect(frame_w, frame_h, win_w_, win_h_);
+  const RectI fit = stretch_ ? RectI{0, 0, win_w_, win_h_} : fit_rect(frame_w, frame_h, win_w_, win_h_);
   if (image_ && fit == fit_ && img_w_ == fit.w && img_h_ == fit.h) return 0;
   fit_ = fit;
   if (!alloc_image(fit.w, fit.h)) {
@@ -755,7 +755,8 @@ void Presenter::set_screen(SizeI emu) {
 
 RectI Presenter::frame_rect() const {
   if (have_last_ && !showing_message_ && fit_.w > 0 && fit_.h > 0) return fit_;
-  if (screen_emu_.w > 0 && screen_emu_.h > 0) return fit_rect(screen_emu_.w, screen_emu_.h, win_w_, win_h_);
+  if (screen_emu_.w > 0 && screen_emu_.h > 0)
+    return stretch_ ? RectI{0, 0, win_w_, win_h_} : fit_rect(screen_emu_.w, screen_emu_.h, win_w_, win_h_);
   return RectI{0, 0, win_w_, win_h_};
 }
 

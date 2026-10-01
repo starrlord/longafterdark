@@ -202,7 +202,8 @@ carry beside the release's files are never opened.
 - **Star Wars, Far Side, Dilbert, Star Trek, ScreamSavers and Marvel
   modules** always get 640×480, scaled up to fit the screen in its 4:3 shape (with bars at the
   sides on a widescreen monitor). The Resolution setting applies to the
-  rest.
+  rest. To have them fill the screen instead, stretched, with no bars,
+  check **Stretch to fit the screen** under Resolution and Monitors.
 - **Your files** are all in `%LOCALAPPDATA%\LongAfterDark` (paste that into
   File Explorer's address bar): the imported releases, downloads, your
   settings and what the modules save themselves, such as message texts and

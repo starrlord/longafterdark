@@ -20,7 +20,8 @@ The same as on Windows:
   shape, 480 lines high, or 720 with `--lines 720` (the Windows setting
   **Sharp — 720 lines**); Star Wars, Far Side, Dilbert, Star Trek,
   ScreamSavers and Marvel modules always get 640×480, with black bars at the
-  sides on a widescreen display;
+  sides on a widescreen display, or stretched to fill it with `--stretch`
+  (the Windows setting **Stretch to fit the screen**);
 * what the modules save themselves (message texts, high scores, the Star
   Wars and Star Trek modules' settings files) is kept from run to run.
 
@@ -196,6 +197,7 @@ imported, it shows the emulator's test pattern.
 | `-w`, `--window` | In a window of 640×480. |
 | `-s`, `--scale <n>` | The window `n` times as large (1 to 8). |
 | `--lines 480` or `720` | The screen After Dark modules get: 480 lines (the default) or 720, as wide as the display's shape. Star Wars, Far Side, Dilbert, Star Trek, ScreamSavers and Marvel modules always get 640×480. |
+| `--stretch` | Star Wars, Far Side, Dilbert, Star Trek, ScreamSavers and Marvel modules fill the window, stretched, instead of keeping their 4:3 shape with black bars. XScreenSaver's settings call it **Stretch to fit the screen (no black bars)**; its small preview always keeps the shape. |
 | `--module <module>` | The module to run, named as above: the same as naming it at the end of the line. XScreenSaver's settings write it this way. |
 | `-r`, `--random` | Every module in turn even when one is named (it plays first). |
 | `--cycle <seconds>` | How long each module plays in the rotation (default 300; 0 never changes it). |
@@ -327,10 +329,11 @@ each desktop; in short:
 * **Settings...** has the module to show (**Module**: an id from
   `longafterdark --list`, such as `ad40.toasters`; empty, every module in
   turn), how often the module changes (0: never), **A different module on
-  each monitor** (below), the resolution of After Dark modules, **Sound**
-  and **Volume**. They are saved on the entry's line in `~/.xscreensaver`,
-  as the options `--module`, `--cycle`, `--different-modules`,
-  `--lines 720`, `--no-sound` and `--volume`, and shown again next time.
+  each monitor** (below), **Stretch to fit the screen (no black bars)**,
+  the resolution of After Dark modules, **Sound** and **Volume**. They are
+  saved on the entry's line in `~/.xscreensaver`, as the options
+  `--module`, `--cycle`, `--different-modules`, `--stretch`, `--lines 720`,
+  `--no-sound` and `--volume`, and shown again next time.
 * XScreenSaver's own **Cycle After** setting (10 minutes unless you change
   it) also stops `longafterdark` and starts it again. Unless a module is
   chosen, it comes back on the module the clock has reached (below), the

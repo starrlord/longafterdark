@@ -77,6 +77,14 @@ class Preview {
     InvalidateRect(hwnd_, nullptr, FALSE);
   }
 
+  // "Stretch to fit" (Settings::stretch_to_fit): the same host, its frames
+  // drawn over the whole preview or kept in shape.
+  void set_stretch(bool on) {
+    if (on == stretch_) return;
+    stretch_ = on;
+    InvalidateRect(hwnd_, nullptr, FALSE);
+  }
+
   void run(const LiveTarget& t) {
     if (have_target_ && same_target(t, target_) && (host_ || pending_)) return;
     stop_host(false);
@@ -363,7 +371,10 @@ class Preview {
       draw_hero(dc, cr);
     } else if (current_) {
       const Frame& f = *current_;
-      RectI r = fit_rect(f.width, f.height, cr.right, cr.bottom);
+      // Stretched to fit, a module with a screen of its own (geometry.h
+      // own_screen) fills the preview as it fills a monitor.
+      const bool own = own_screen(target_.abi, target_.screen).w > 0;
+      RectI r = frame_rect(f.width, f.height, cr.right, cr.bottom, stretch_ && own);
       Bitmapinfo256 bmi{};
       bmi.h.biSize = sizeof(BITMAPINFOHEADER);
       bmi.h.biWidth = f.width;
@@ -448,6 +459,7 @@ class Preview {
   int dpi_ = 96;
   Fonts fonts_;
   bool hover_ = false, hero_ = false;
+  bool stretch_ = false;   // set_stretch
   ThumbTaker taker_;
   HANDLE job_ = nullptr;
   Pacer pacer_;
@@ -517,6 +529,10 @@ void live_preview_hero(HWND preview, bool on) {
 
 void live_preview_set_hover(HWND preview, bool hover) {
   if (Preview* p = of(preview)) p->set_hover(hover);
+}
+
+void live_preview_set_stretch(HWND preview, bool on) {
+  if (Preview* p = of(preview)) p->set_stretch(on);
 }
 
 void live_preview_pause(HWND preview, bool paused) {

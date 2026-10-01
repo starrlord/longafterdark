@@ -880,6 +880,7 @@ void layout(State& st) {
   place(item(IDC_MONITORS_LABEL), L.monitors_label);
   place_combo(IDC_SCALE, L.scale);
   place_combo(IDC_MONITORS, L.monitors);
+  place(item(IDC_STRETCH), L.stretch, fm);
   place(item(IDC_SOUND_LABEL), L.sound_label);
   place_combo(IDC_SOUND, L.sound);
   place(item(IDC_VOLUME_LABEL), L.volume_label);
@@ -2470,6 +2471,7 @@ Settings gather(State& st) {
   // As it stands, even while hidden (one monitor, Single module) or greyed
   // (Primary monitor only): the file's value stays until the user changes it.
   s.different_per_monitor = IsDlgButtonChecked(st.dlg, IDC_PER_MONITOR) == BST_CHECKED;
+  s.stretch_to_fit = IsDlgButtonChecked(st.dlg, IDC_STRETCH) == BST_CHECKED;
   // Sound (AUDIO.md §9); SoundMonitor stays as loaded (reserved).
   s.sound = SendDlgItemMessageW(st.dlg, IDC_SOUND, CB_GETCURSEL, 0, 0) != 1;
   s.volume = std::clamp((int)SendDlgItemMessageW(st.dlg, IDC_VOLUME, TBM_GETPOS, 0, 0), 0, 100);
@@ -3145,7 +3147,7 @@ void init_dialog(State& st) {
   auto item = [&](int id) { return GetDlgItem(st.dlg, id); };
   // Which surface each control sits on (for its background).
   for (int id : {IDC_MODULE_TITLE, IDC_MODULE_BADGE, IDC_ABOUT, IDC_CREDITS, IDC_SCALE_LABEL, IDC_SCALE,
-                 IDC_MONITORS_LABEL, IDC_MONITORS, IDC_SOUND_LABEL, IDC_SOUND, IDC_VOLUME_LABEL, IDC_VOLUME,
+                 IDC_MONITORS_LABEL, IDC_MONITORS, IDC_STRETCH, IDC_SOUND_LABEL, IDC_SOUND, IDC_VOLUME_LABEL, IDC_VOLUME,
                  IDC_VOLUME_VALUE, IDC_SOUND_NOTE, IDC_PANEL_DEFAULTS, IDC_WELCOME_IMPORT}) {
     set_surface(item(id), Surface::card);
   }
@@ -3261,6 +3263,10 @@ void init_dialog(State& st) {
   // (DifferentPerMonitor=1) a different one on each.
   CheckDlgButton(st.dlg, IDC_PER_MONITOR, st.settings.different_per_monitor ? BST_CHECKED : BST_UNCHECKED);
   st.monitors = count_monitors(0);
+  // 640x480 modules stretched over the monitor (StretchToFit=1), or kept in
+  // shape between bars; the live preview shows it as it stands.
+  CheckDlgButton(st.dlg, IDC_STRETCH, st.settings.stretch_to_fit ? BST_CHECKED : BST_UNCHECKED);
+  live_preview_set_stretch(st.preview, st.settings.stretch_to_fit);
 
   // Sound (AUDIO.md §9): where it plays, or Off; and After Dark's volume.
   HWND snd = item(IDC_SOUND);
@@ -3498,6 +3504,10 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case IDC_MONITORS:
           if (HIWORD(wp) == CBN_SELCHANGE) update_per_monitor(*st);
           return TRUE;
+        case IDC_STRETCH:
+          if (HIWORD(wp) == BN_CLICKED)
+            live_preview_set_stretch(st->preview, IsDlgButtonChecked(st->dlg, IDC_STRETCH) == BST_CHECKED);
+          return TRUE;
         case IDC_STRIP_SHOW_ALL:
           if (st->strip && st->strip->selected_count()) {
             // Back to every release; the keyboard goes to the tiles (the link hides).
@@ -3723,6 +3733,10 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 //     (per_monitor_enabled=, per_monitor_checked=) and its text fits beside its box
 //     (per_monitor_fits=), and where "Change module every"'s dropdown and the list's card are
 //     (duration=, list_card=)
+//     stretch=1|0 (the "Stretch to fit the screen" box checked or not; the live preview
+//     follows)  focus=stretch (its focus ring); the report says where it shows (stretch=),
+//     whether it is checked (stretch_checked=) and its text fits (stretch_fits=), and where
+//     the options card, Resolution's and Sound's dropdowns are (options_card=, scale=, sound=)
 
 std::map<std::wstring, std::wstring> parse_state(const std::wstring& s) {
   std::map<std::wstring, std::wstring> kv;
@@ -3822,6 +3836,10 @@ int run_screenshot(State& st, const std::wstring& png) {
     update_per_monitor(st);
   }
   if (!kv[L"different"].empty()) CheckDlgButton(dlg, IDC_PER_MONITOR, kv[L"different"] == L"1" ? BST_CHECKED : BST_UNCHECKED);
+  if (!kv[L"stretch"].empty()) {
+    CheckDlgButton(dlg, IDC_STRETCH, kv[L"stretch"] == L"1" ? BST_CHECKED : BST_UNCHECKED);
+    live_preview_set_stretch(st.preview, kv[L"stretch"] == L"1");
+  }
   if (kv[L"hover"] == L"preview") {
     st.hover_preview = true;
     live_preview_set_hover(st.preview, true);
@@ -3845,7 +3863,7 @@ int run_screenshot(State& st, const std::wstring& png) {
                                                     {L"random", IDC_MODE_RANDOM}, {L"duration", IDC_DURATION},
                                                     {L"preview", IDC_PREVIEW}, {L"sound", IDC_SOUND},
                                                     {L"volume", IDC_VOLUME}, {L"credit", IDC_FOOTER_CREDIT},
-                                                    {L"permonitor", IDC_PER_MONITOR}};
+                                                    {L"permonitor", IDC_PER_MONITOR}, {L"stretch", IDC_STRETCH}};
     SendMessageW(dlg, WM_CHANGEUISTATE, MAKEWPARAM(UIS_CLEAR, UISF_HIDEFOCUS | UISF_HIDEACCEL), 0);
     HWND f = nullptr;
     if (auto it = ids.find(kv[L"focus"]); it != ids.end()) f = GetDlgItem(dlg, it->second);
@@ -3999,6 +4017,21 @@ int run_screenshot(State& st, const std::wstring& png) {
                 "\nper_monitor_checked=" + (IsDlgButtonChecked(dlg, IDC_PER_MONITOR) == BST_CHECKED ? "1" : "0") +
                 "\nper_monitor_fits=" + (fits ? "1" : "0") + "\nduration=" + (dur ? pic(st.L.duration) : "hidden") +
                 "\nlist_card=" + pic(st.L.list_card) + "\n";
+    }
+    // "Stretch to fit the screen": where it shows, whether it is checked and
+    // its text fits beside its box; the options card and Resolution and
+    // Sound's dropdowns around it.
+    {
+      HWND sb = GetDlgItem(dlg, IDC_STRETCH);
+      const bool shown = (GetWindowLongW(sb, GWL_STYLE) & WS_VISIBLE) != 0 && !st.L.stretch.empty();
+      HDC dc = GetDC(sb);
+      const int text_w = measure_text(dc, without_mnemonic(window_text(sb)), st.theme.fonts.body).cx;
+      ReleaseDC(sb, dc);
+      const bool fits = st.L.stretch.w - st.theme.px(20) - st.theme.px(8) >= text_w;
+      report += "stretch=" + (shown ? pic(st.L.stretch) : std::string("hidden")) +
+                "\nstretch_checked=" + (IsDlgButtonChecked(dlg, IDC_STRETCH) == BST_CHECKED ? "1" : "0") +
+                "\nstretch_fits=" + (fits ? "1" : "0") + "\noptions_card=" + pic(st.L.options_card) +
+                "\nscale=" + pic(st.L.scale) + "\nsound=" + pic(st.L.sound) + "\n";
     }
     write_file_atomic(kv[L"report"], report);
   }

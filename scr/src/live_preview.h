@@ -59,6 +59,9 @@ void live_preview_message(HWND preview, const std::wstring& title, const std::ws
 void live_preview_hero(HWND preview, bool on);
 // The pointer is over the preview: show the module's name along its foot.
 void live_preview_set_hover(HWND preview, bool hover);
+// "Stretch to fit" (Settings::stretch_to_fit): a module with a screen of its
+// own fills the preview instead of keeping its shape; the host carries on.
+void live_preview_set_stretch(HWND preview, bool on);
 // While the full-screen Preview runs, the live one stops asking for frames.
 void live_preview_pause(HWND preview, bool paused);
 // Starts the current module again in a new host (after a module button's

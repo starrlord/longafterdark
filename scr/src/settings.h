@@ -5,6 +5,9 @@
 //                                      1 = a different module on each, each
 //                                      switching on its own; 0 or missing = the
 //                                      same module on all, switching together)
+//            StretchToFit=1|0  (1 = a module with a screen of its own,
+//                               640x480, fills the monitor instead of keeping
+//                               its shape with black bars; 0 or missing = bars)
 //            RandomizeSaved=<id>,<id>,…|-  (the dialog's checklist while a single
 //                                          module is chosen, "-" = nothing
 //                                          checked; the saver ignores it)
@@ -70,6 +73,12 @@ struct Settings {
   // the key, written before there was one): they all play the same module
   // and switch together, following one rotation (SharedRotation, saver.cc).
   bool different_per_monitor = false;
+  // [Saver] StretchToFit: a module with a screen of its own (geometry.h
+  // module_screen: an Intermission, Star Trek, ScreamSavers or Marvel
+  // module's 640x480) is stretched over the whole monitor instead of keeping
+  // its shape between black bars (frame_rect). Modules that follow the
+  // display (After Dark's) fill it either way. False, the default.
+  bool stretch_to_fit = false;
   // [Saver] StartFromDesktop=0: /s starts every module on black instead of
   // on a capture of the desktop (INTERACTION.md §8). No UI; default 1.
   bool start_from_desktop = true;

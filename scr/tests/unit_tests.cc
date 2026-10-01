@@ -343,6 +343,27 @@ void test_settings() {
   CHECK(parse_settings("[Saver]\nScale=abc\n").scale == 1.0);
   CHECK(parse_settings("[Saver]\nScale=9\n").scale == 1.0);
 
+  // StretchToFit: off unless it says 1 (a file without it keeps the bars);
+  // written after DifferentPerMonitor, 1 or 0; round trips.
+  CHECK(!d.stretch_to_fit && !s.stretch_to_fit);
+  for (const char* on : {"1", "on", "YES", "true"}) {
+    CHECK(parse_settings(std::string("[Saver]\nStretchToFit=") + on + "\n").stretch_to_fit);
+  }
+  for (const char* off : {"0", "off", "no", "", "maybe"}) {
+    CHECK(!parse_settings(std::string("[Saver]\nStretchToFit=") + off + "\n").stretch_to_fit);
+  }
+  CHECK(parse_settings("[saver]\nstretchtofit=1\n").stretch_to_fit);
+  {
+    Settings p;
+    p.stretch_to_fit = true;
+    const std::string fresh = serialize_settings(p);
+    CHECK(fresh.find("DifferentPerMonitor=0\r\nStretchToFit=1\r\n") != std::string::npos);
+    CHECK(parse_settings(fresh) == p);
+    p.stretch_to_fit = false;
+    CHECK(serialize_settings(p).find("StretchToFit=0\r\n") != std::string::npos);
+    CHECK(serialize_settings(p, "[Saver]\r\nStretchToFit=no\r\n").find("StretchToFit=no\r\n") != std::string::npos);
+  }
+
   // DifferentPerMonitor: Random plays the same module on every monitor unless
   // it says 1 -- a file without it (the fixture, any file written before it)
   // included. Read as written or as a hand might write it, like Sound.
@@ -827,6 +848,18 @@ void test_geometry() {
   CHECK((seed_source(imx, 1280, 1024) == RectI{0, 32, 1280, 960}));
   CHECK((seed_source(imx, 640, 480) == RectI{0, 0, 640, 480}));
   CHECK((seed_source(imx, 1080, 1920) == RectI{0, 555, 1080, 810}));
+  // "Stretch to fit": a module's own screen drawn over the whole window (and
+  // so its desktop seed is the whole monitor); a screen that follows the
+  // display is the whole monitor either way.
+  CHECK((frame_rect(imx.emu.w, imx.emu.h, 1920, 1080, true) == RectI{0, 0, 1920, 1080}));
+  CHECK((frame_rect(imx.emu.w, imx.emu.h, 1920, 1080, false) == RectI{240, 0, 1440, 1080}));
+  CHECK((frame_rect(imx.emu.w, imx.emu.h, 1080, 1920, true) == RectI{0, 0, 1080, 1920}));
+  CHECK((seed_source(imx, 1920, 1080, true) == RectI{0, 0, 1920, 1080}));
+  CHECK((seed_source(module_screen(kAfterDarkAbi, 1920.0 / 1080.0, 1.0), 1920, 1080, true) == RectI{0, 0, 1920, 1080}));
+  {
+    const std::vector<SeedShotPlan> plan = plan_seed_shots({imx}, 1920, 1080, nullptr, true);
+    CHECK(plan.size() == 1 && plan[0].src == (RectI{0, 0, 1920, 1080}));
+  }
   // A Star Trek module at the 720-line setting on a 16:9 monitor: its
   // 640x480 at the monitor's full height, bars at the sides only (at
   // 1280x720 The Mission's scene sat at the top left beside a grey band, and
@@ -1471,8 +1504,8 @@ void check_layout(const WindowLayout& L, int cw, int ch, bool random) {
   apart("details", {L.preview, L.about, L.module_icon, L.module_title, L.module_badge, L.panel});
   apart("details with credits", {L.preview, L.credits, L.module_icon, L.module_title, L.module_badge, L.panel});
   apart("controls column", {L.module_icon, L.panel, L.defaults});
-  apart("options", {L.scale_label, L.scale, L.monitors_label, L.monitors, L.sound_label, L.sound, L.volume_label,
-                    L.volume_value, L.volume, L.sound_note});
+  apart("options", {L.scale_label, L.scale, L.monitors_label, L.monitors, L.stretch, L.sound_label, L.sound,
+                    L.volume_label, L.volume_value, L.volume, L.sound_note});
   apart("footer", {L.import, L.assets, L.preview_button, L.ok, L.cancel});
   CHECK(inside(L.list_card, L.list));
   for (const Rc& r : {L.preview, L.about, L.credits, L.controls, L.module_icon, L.module_title, L.module_badge, L.panel,
@@ -1495,10 +1528,14 @@ void check_layout(const WindowLayout& L, int cw, int ch, bool random) {
   // "Restore defaults" (where it is pinned) has its text on the credits' first line.
   CHECK(std::abs(L.defaults.y + L.defaults.h / 2 - (L.credits.y + dip(8, d))) <= 1);
   CHECK(L.panel.bottom() < L.defaults.y);
-  for (const Rc& r : {L.scale_label, L.scale, L.monitors_label, L.monitors, L.sound_label, L.sound, L.volume_label,
-                      L.volume_value, L.volume, L.sound_note}) {
+  for (const Rc& r : {L.scale_label, L.scale, L.monitors_label, L.monitors, L.stretch, L.sound_label, L.sound,
+                      L.volume_label, L.volume_value, L.volume, L.sound_note}) {
     CHECK(inside(L.options_card, r));
   }
+  // "Stretch to fit the screen": under Resolution and Monitors, above Sound,
+  // starting where Resolution does, a control's height.
+  CHECK(!L.stretch.empty() && L.stretch.y > L.scale.bottom() && L.stretch.bottom() < L.sound_label.y);
+  CHECK(std::abs(L.stretch.x - L.scale.x) <= 1 && L.stretch.h >= dip(32, d) - 1);
   // Sound and Volume (AUDIO.md §9): a second row under Resolution and
   // Monitors, in the same columns and as wide; Volume's readout ends its
   // label row at the slider's end; the note under both, across the card.
@@ -2739,7 +2776,8 @@ void test_releases_layout() {
   CHECK(layout_strip(StripInput{0, false, 24, 48, 600, 0, 96}).mode == StripMode::hidden);
 
   // The window with the strip (COVERS.md §1.2).
-  CHECK(kDesignClientHStrip == 800 && kMinClientHStrip == 680 && kStripCompactBelow == 760);
+  // (836: 800 and the options card's "Stretch to fit" row.)
+  CHECK(kDesignClientHStrip == 836 && kMinClientHStrip == 680 && kStripCompactBelow == 760);
   for (int dpi = 96; dpi <= 240; dpi += 24) {
     for (auto [w, h] : {std::pair{kDesignClientW, kDesignClientHStrip}, std::pair{kMinClientW, kMinClientHStrip},
                         std::pair{1600, 1000}, std::pair{1040, 759}, std::pair{1040, 760}}) {

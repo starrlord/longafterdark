@@ -78,6 +78,8 @@ int parse_options(int argc, char** argv, Options& o) {
       if (!number(i, a, 0, 86400, &o.cycle_s)) return kExitUsage;
     } else if (a == "--different-modules") {
       o.different_modules = true;
+    } else if (a == "--stretch") {
+      o.stretch = true;
     } else if (a == "-l" || a == "--list") {
       o.list = true;
     } else if (a == "-s" || a == "--scale") {
