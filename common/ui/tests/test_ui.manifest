@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="LongAfterDark.test_ui" version="1.4.1.0" processorArchitecture="*"/>
+  <assemblyIdentity type="win32" name="LongAfterDark.test_ui" version="1.4.2.0" processorArchitecture="*"/>
   <!-- Common Controls 6, as the .scr and adimport run with: the subclass API
        (SetWindowSubclass…) is exported by name only from version 6. -->
   <dependency>
