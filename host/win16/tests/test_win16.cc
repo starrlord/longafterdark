@@ -4265,7 +4265,344 @@ void test_dos_drives() {
   RemoveDirectoryA(dir.c_str());
 }
 
+// ---- tasks: a Win16 application run as the runtime's task (modules16.hh "Tasks") ---------------------------
+
+// Writes an NE application (no LIBRARY bit, MULTIPLEDATA): segment 1 is
+// `code`, segment 2 DGROUP (0x40 bytes of static data), heap 0x200, stack
+// 0x400, CS:IP 1:0, SS:SP 2:0; `imports` are pointer32 import-ordinal
+// fixups (module 1 KERNEL, 2 USER) at their code offsets.
+struct AppImport {
+  uint16_t at, module, ordinal;
+};
+std::string build_ne_app(const std::vector<uint8_t>& code_bytes, const std::vector<AppImport>& imports) {
+  auto w16 = [](std::string& s, size_t at, uint16_t v) {
+    if (s.size() < at + 2) s.resize(at + 2, '\0');
+    s[at] = char(v);
+    s[at + 1] = char(v >> 8);
+  };
+  std::string f(0x40, '\0');
+  f[0] = 'M';
+  f[1] = 'Z';
+  f[0x3C] = 0x40;
+  std::string h(0x40, '\0');
+  h[0] = 'N';
+  h[1] = 'E';
+  std::string resident, modref, imp, entry;
+  resident += char(7) + std::string("TESTAPP") + std::string("\0\0", 2);
+  resident += '\0';
+  imp += '\0';
+  imp += char(6) + std::string("KERNEL");
+  imp += char(4) + std::string("USER");
+  w16(modref, 0, 1);
+  w16(modref, 2, 8);
+  entry += '\0';
+  uint16_t off = 0x40;
+  const uint16_t seg_off = off;
+  off += 16;
+  const uint16_t res_off = off, resident_off = off;
+  off += uint16_t(resident.size());
+  const uint16_t modref_off = off;
+  off += uint16_t(modref.size());
+  const uint16_t imp_off = off;
+  off += uint16_t(imp.size());
+  const uint16_t entry_off = off;
+  off += uint16_t(entry.size());
+  w16(h, 0x04, entry_off);
+  w16(h, 0x06, uint16_t(entry.size()));
+  w16(h, 0x0C, 0x0002);  // MULTIPLEDATA, an application
+  w16(h, 0x0E, 2);       // autodata = segment 2
+  w16(h, 0x10, 0x200);   // heap
+  w16(h, 0x12, 0x400);   // stack
+  w16(h, 0x14, 0);       // IP
+  w16(h, 0x16, 1);       // CS
+  w16(h, 0x18, 0);       // SP 0: the top of the stack area
+  w16(h, 0x1A, 2);       // SS = DGROUP
+  w16(h, 0x1C, 2);
+  w16(h, 0x1E, 2);
+  w16(h, 0x22, seg_off);
+  w16(h, 0x24, res_off);
+  w16(h, 0x26, resident_off);
+  w16(h, 0x28, modref_off);
+  w16(h, 0x2A, imp_off);
+  w16(h, 0x32, 4);
+  h[0x36] = 2;
+  w16(h, 0x3E, 0x030A);
+  std::string code(code_bytes.begin(), code_bytes.end());
+  code.resize((code.size() + 15) & ~size_t(15), '\x90');
+  std::string rel;
+  w16(rel, 0, uint16_t(imports.size()));
+  for (size_t i = 0; i < imports.size(); i++) {
+    const size_t at = 2 + i * 8;
+    rel.resize(at + 8, '\0');
+    rel[at] = 3;      // pointer32
+    rel[at + 1] = 1;  // import ordinal
+    w16(rel, at + 2, imports[i].at);
+    w16(rel, at + 4, imports[i].module);
+    w16(rel, at + 6, imports[i].ordinal);
+  }
+  // The code at 0x200 (sector 0x20), its relocations after it, the data in the next sector.
+  const uint16_t data_sector = uint16_t((0x200 + code.size() + rel.size() + 15) >> 4);
+  std::string segt;
+  w16(segt, 0, 0x20);
+  w16(segt, 2, uint16_t(code.size()));
+  w16(segt, 4, 0x0100 | 0x0010);
+  w16(segt, 6, uint16_t(code.size()));
+  w16(segt, 8, data_sector);
+  w16(segt, 10, 0x40);
+  w16(segt, 12, 0x0001);
+  w16(segt, 14, 0x40);
+  std::string all = f + h + segt + resident + modref + imp + entry;
+  all.resize(0x200, '\0');
+  all += code;
+  all += rel;
+  all.resize(size_t(data_sector) << 4, '\0');
+  all.resize(all.size() + 0x40, '\0');
+  return all;
+}
+
+// A made-up program: InitTask, its registers stored in DGROUP (AX 10h, BX
+// 12h, CX 14h, DX 16h, SI 18h, DI 1Ah, ES 1Ch, SP 1Eh, SS 20h), then
+// GetMessage(DS:30h, 0, 0, 0) (its result at 22h, the message at 24h), then
+// INT 21h AH=4Ch with code 7.
+std::string task_program() {
+  const std::vector<uint8_t> code = {
+      0x9A, 0xFF, 0xFF, 0x00, 0x00,  // 00 lcall InitTask
+      0xA3, 0x10, 0x00,              // 05 mov [10h], ax
+      0x89, 0x1E, 0x12, 0x00,        // 08 mov [12h], bx
+      0x89, 0x0E, 0x14, 0x00,        // 0C mov [14h], cx
+      0x89, 0x16, 0x16, 0x00,        // 10 mov [16h], dx
+      0x89, 0x36, 0x18, 0x00,        // 14 mov [18h], si
+      0x89, 0x3E, 0x1A, 0x00,        // 18 mov [1Ah], di
+      0x8C, 0x06, 0x1C, 0x00,        // 1C mov [1Ch], es
+      0x89, 0x26, 0x1E, 0x00,        // 20 mov [1Eh], sp
+      0x8C, 0x16, 0x20, 0x00,        // 24 mov [20h], ss
+      0x1E,                          // 28 push ds
+      0xB8, 0x30, 0x00, 0x50,        // 29 mov ax, 30h; push ax
+      0x31, 0xC0, 0x50, 0x50, 0x50,  // 2D xor ax, ax; push ax (x3)
+      0x9A, 0xFF, 0xFF, 0x00, 0x00,  // 32 lcall GetMessage
+      0xA3, 0x22, 0x00,              // 37 mov [22h], ax
+      0xA1, 0x32, 0x00,              // 3A mov ax, [32h]
+      0xA3, 0x24, 0x00,              // 3D mov [24h], ax
+      0xB8, 0x07, 0x4C, 0xCD, 0x21,  // 40 mov ax, 4C07h; int 21h
+  };
+  return build_ne_app(code, {{0x01, 1, 91}, {0x33, 2, 108}});
+}
+
+std::string write_temp(const std::string& name, const std::string& bytes) {
+  char dir[MAX_PATH];
+  GetTempPathA(MAX_PATH, dir);
+  std::string p = std::string(dir) + "adw_win16_" + std::to_string(GetCurrentProcessId()) + "_" + name;
+  FILE* fh = fopen(p.c_str(), "wb");
+  fwrite(bytes.data(), 1, bytes.size(), fh);
+  fclose(fh);
+  return p;
+}
+
+void test_app_task() {
+  const std::string path = write_temp("task.exe", task_program());
+  {
+    // The start and InitTask's contract; GetMessage waits (the frame ends
+    // through the yield hook, which posts a message meanwhile).
+    Machine m;
+    uint16_t err = 0;
+    CHECK(!m.rt.modules().load_host(path, &err) && err == 11, "an application is no DLL for LoadLibrary (%u)", err);
+    Module16* mod = m.rt.modules().load_task(path, "C:\\APP\\TASK.EXE", " /s", &err);
+    const Task16* t = m.rt.modules().task();
+    CHECK(mod && t && t->module == mod, "the application loads as the task (error %u)", err);
+    if (!mod || !t) return;
+    CHECK(!m.rt.modules().load_task(path, "C:\\APP\\TASK.EXE", " /s", &err), "one task per runtime");
+    CHECK(t->ss == mod->dgroup && t->sp == 0x440 && t->stack_size == 0x400 && t->heap_size == 0x200,
+          "SS:SP is DGROUP's stack top: the static data, then the stack (%04X:%04X)", t->ss, t->sp);
+    const uint32_t psp = uint32_t(t->psp) << 16;
+    CHECK(t->psp == dos16_psp(m.rt) && m.rt.rd8(psp + 0x80) == 3 && m.rt.read_str(psp + 0x81, 3) == " /s" &&
+              m.rt.rd8(psp + 0x84) == 0x0D,
+          "the PSP's command tail");
+    user16_set_app_task(m.rt, true);
+    int yields = 0;
+    m.rt.set_yield_hook([&] {
+      yields++;
+      user16_post_message(m.rt, 0, WM_USER + 1, 0, 0);
+      return true;
+    });
+    std::string why;
+    try {
+      m.rt.modules().run_task();
+    } catch (const GuestError16& e) {
+      CHECK(e.kind() == GuestError16::Kind::exit, "the program exits through INT 21h AH=4Ch (%s)", e.what());
+      why = e.what();
+    }
+    CHECK(why.find("code 7") != std::string::npos, "with its code (%s)", why.c_str());
+    const uint32_t ds = uint32_t(mod->dgroup) << 16;
+    CHECK(m.rt.rd16(ds + 0x10) == 1 && m.rt.rd16(ds + 0x12) == 0x82 && m.rt.rd16(ds + 0x14) == 0x40 + 150 &&
+              m.rt.rd16(ds + 0x16) == 1 && m.rt.rd16(ds + 0x18) == 0 && m.rt.rd16(ds + 0x1A) == mod->hinstance &&
+              m.rt.rd16(ds + 0x1C) == t->psp,
+          "InitTask: AX 1, BX the command line past its blank (%04X), CX pStackTop (%04X), DX nCmdShow, SI 0, DI "
+          "hInstance, ES the PSP",
+          m.rt.rd16(ds + 0x12), m.rt.rd16(ds + 0x14));
+    CHECK(m.rt.rd16(ds + 0x20) == mod->dgroup && m.rt.rd16(ds + 0x1E) == 0x440 - 4,
+          "the program runs on its own stack (SS %04X SP %04X)", m.rt.rd16(ds + 0x20), m.rt.rd16(ds + 0x1E));
+    CHECK(m.rt.rd16(ds + 0x0A) == 0x40 + 150 && m.rt.rd16(ds + 0x0C) == 0x440 && m.rt.rd16(ds + 0x0E) == 0x440 &&
+              m.rt.rd16(ds + 6) == 0x440 && m.rt.local().has_heap(mod->dgroup),
+          "the instance data's stack words and the local heap above the stack (pLocalHeap %04X)", m.rt.rd16(ds + 6));
+    CHECK(yields == 1 && m.rt.rd16(ds + 0x22) == 1 && m.rt.rd16(ds + 0x24) == WM_USER + 1 && user16_app_waits(m.rt) == 1,
+          "GetMessage waited once (the frame ended) and took what came meanwhile (%d, %04X)", yields,
+          m.rt.rd16(ds + 0x24));
+    CHECK(!m.rt.task_budget(), "the task budget is off once the task has ended");
+  }
+  {
+    // Without an application task: GetMessage's WM_NULL at once, as before.
+    Machine m;
+    Module16* mod = m.rt.modules().load_task(path, "C:\\APP\\TASK.EXE", "", nullptr);
+    CHECK(mod != nullptr, "loads");
+    if (!mod) return;
+    try {
+      m.rt.modules().run_task();
+    } catch (const GuestError16&) {
+    }
+    const uint32_t ds = uint32_t(mod->dgroup) << 16;
+    CHECK(m.rt.rd16(ds + 0x12) == 0x80 && m.rt.rd16(ds + 0x22) == 1 && m.rt.rd16(ds + 0x24) == WM_NULL,
+          "no task wait: WM_NULL (BX %04X, message %04X)", m.rt.rd16(ds + 0x12), m.rt.rd16(ds + 0x24));
+  }
+  {
+    // An application task with nothing to wait for and no frame to end: an error, never a hang.
+    Machine m;
+    Module16* mod = m.rt.modules().load_task(path, "C:\\APP\\TASK.EXE", " /s", nullptr);
+    CHECK(mod != nullptr, "loads");
+    if (!mod) return;
+    user16_set_app_task(m.rt, true);
+    std::string why;
+    try {
+      m.rt.modules().run_task();
+    } catch (const GuestError16& e) {
+      why = e.what();
+    }
+    CHECK(why.find("nothing can come") != std::string::npos, "a wait for nothing fails (%s)", why.c_str());
+  }
+  {
+    // ... and with a timer, virtual time moves on to it.
+    Machine m;
+    Module16* mod = m.rt.modules().load_task(path, "C:\\APP\\TASK.EXE", " /s", nullptr);
+    CHECK(mod != nullptr, "loads");
+    if (!mod) return;
+    user16_set_app_task(m.rt, true);
+    api(m, "USER", "SetTimer", {w16(0), w16(0), w16(500), l16(0)});
+    const uint64_t t0 = m.rt.peek_us();
+    try {
+      m.rt.modules().run_task();
+    } catch (const GuestError16&) {
+    }
+    const uint32_t ds = uint32_t(mod->dgroup) << 16;
+    CHECK(m.rt.rd16(ds + 0x24) == WM_TIMER && m.rt.peek_us() >= t0 + 500000,
+          "no frame to end: time moves on to the timer (%04X after %llu us)", m.rt.rd16(ds + 0x24),
+          (unsigned long long)(m.rt.peek_us() - t0));
+  }
+  DeleteFileA(path.c_str());
+}
+
+// An application task's windows and the calls Johnny Castaway added.
+void test_app_task_calls() {
+  Machine m;
+  Screen screen(64, 48);
+  m.rt.attach_display(screen);
+  struct Got {
+    uint16_t hwnd, msg, wp;
+    uint32_t lp;
+  };
+  std::vector<Got> got;
+  uint32_t erase_result = 1;
+  m.rt.shims().add("TESTWP", 1, "APPPROC", Conv16::pascal_, false, 10, [&](Call16& c) {
+    Got g{c.w(), c.w(), c.w(), c.l()};
+    got.push_back(g);
+    if (g.msg == WM_ERASEBKGND) return c.ret32(erase_result);
+    if (g.msg == WM_CLOSE || g.msg == WM_PAINT) {
+      // DefWindowProc's, as SCRNSAVE.LIB's DefScreenSaverProc passed them on.
+      Shim16Entry* d = c.rt.shims().find_name("USER", "DefWindowProc");
+      return c.ret32(c.rt.call_far(c.rt.thunk_far(*d), {w16(g.hwnd), w16(g.msg), w16(g.wp), l16(g.lp)}));
+    }
+    c.ret32(0);
+  });
+  user16_set_app_task(m.rt, true);
+  uint16_t ds = m.data(256);
+  uint32_t d = uint32_t(ds) << 16;
+  m.rt.write_str(d, "APPCLS", 16);
+  m.rt.wr32(d + 0x20 + 2, m.rt.thunk_far(*m.rt.shims().find_name("TESTWP", "APPPROC")));
+  m.rt.wr32(d + 0x20 + 22, d);
+  api(m, "USER", "RegisterClass", {l16(d + 0x20)});
+  uint16_t hwnd = uint16_t(api(m, "USER", "CreateWindow", {l16(d), l16(d), l16(WS_POPUP | WS_VISIBLE), w16(2), w16(3),
+                                                             w16(40), w16(30), w16(0), w16(0), w16(0x1234), l16(0)}));
+  CHECK(hwnd && got.size() == 3 && got[0].msg == WM_CREATE && got[1].msg == WM_SIZE && got[1].wp == SIZE_RESTORED &&
+            got[1].lp == ((30u << 16) | 40) && got[2].msg == WM_MOVE && got[2].lp == ((3u << 16) | 2),
+        "an application task's CreateWindow: WM_CREATE, WM_SIZE, WM_MOVE (%zu)", got.size());
+  CHECK(user16_main_window(m.rt, 0x1234) == hwnd, "the instance's main window");
+  const uint32_t msg = d + 0x80;
+  CHECK((api(m, "USER", "GetMessage", {l16(msg), w16(0), w16(0), w16(0)}) & 0xFFFF) && m.rt.rd16(msg) == hwnd &&
+            m.rt.rd16(msg + 2) == WM_PAINT,
+        "a shown window is invalid: GetMessage brings its WM_PAINT");
+  got.clear();
+  erase_result = 0;
+  const uint32_t ps = d + 0xA0;
+  const uint16_t hdc = uint16_t(api(m, "USER", "BeginPaint", {w16(hwnd), l16(ps)}));
+  CHECK(hdc && got.size() == 1 && got[0].msg == WM_ERASEBKGND && got[0].wp == hdc && m.rt.rd16(ps + 2) == 1,
+        "BeginPaint sends WM_ERASEBKGND with its DC first; left undone, fErase is set");
+  api(m, "USER", "EndPaint", {w16(hwnd), l16(ps)});
+  got.clear();
+  api(m, "USER", "InvalidateRect", {w16(hwnd), l16(0), w16(0)});
+  CHECK((api(m, "USER", "PeekMessage", {l16(msg), w16(0), w16(0), w16(0), w16(PM_REMOVE)}) & 0xFFFF) &&
+            m.rt.rd16(msg + 2) == WM_PAINT,
+        "InvalidateRect: WM_PAINT again");
+  api(m, "USER", "DispatchMessage", {l16(msg)});
+  CHECK(!(api(m, "USER", "PeekMessage", {l16(msg), w16(0), w16(0), w16(0), w16(PM_REMOVE)}) & 0xFFFF),
+        "DefWindowProc's WM_PAINT validates the window");
+  api(m, "USER", "SetTimer", {w16(hwnd), w16(1), w16(50), l16(0)});
+  got.clear();
+  CHECK(!(api(m, "USER", "SendMessage", {w16(hwnd), w16(WM_CLOSE), w16(0), l16(0)}) & 0xFFFF) && !user16_window_exists(m.rt, hwnd),
+        "DefWindowProc's WM_CLOSE destroys the window");
+  CHECK(got.size() == 2 && got[1].msg == WM_DESTROY, "with its WM_DESTROY (%zu)", got.size());
+  m.clock.begin_frame();
+  m.clock.begin_frame();
+  m.clock.begin_frame();
+  m.clock.begin_frame();
+  CHECK(!(api(m, "USER", "PeekMessage", {l16(msg), w16(0), w16(0), w16(0), w16(PM_REMOVE)}) & 0xFFFF),
+        "its timer died with it");
+  // The calls Johnny Castaway's census added.
+  CHECK((api(m, "KERNEL", "WaitEvent", {w16(0)}) & 0xFFFF) == 0, "WaitEvent: the start event is there: FALSE at once");
+  CHECK((api(m, "USER", "InitApp", {w16(0x1234)}) & 0xFFFF) == 1, "InitApp: the queue is there");
+  CHECK((api(m, "USER", "SetCursor", {w16(0x0F00)}) & 0xFFFF) == 0 &&
+            (api(m, "USER", "SetCursor", {w16(0)}) & 0xFFFF) == 0x0F00,
+        "SetCursor returns the cursor before it");
+  CHECK((api(m, "USER", "ShowCursor", {w16(0)}) & 0xFFFF) == 0xFFFF &&
+            (api(m, "USER", "ShowCursor", {w16(1)}) & 0xFFFF) == 0,
+        "ShowCursor counts");
+  const uint32_t rc = d + 0xC0;
+  api(m, "USER", "GetClipCursor", {l16(rc)});
+  CHECK(m.rt.rd16(rc) == 0 && m.rt.rd16(rc + 4) == 64 && m.rt.rd16(rc + 6) == 48, "no clip: the whole screen");
+  m.rt.wr16(rc, 1), m.rt.wr16(rc + 2, 2), m.rt.wr16(rc + 4, 3), m.rt.wr16(rc + 6, 4);
+  api(m, "USER", "ClipCursor", {l16(rc)});
+  m.rt.wr32(rc, 0), m.rt.wr32(rc + 4, 0);
+  api(m, "USER", "GetClipCursor", {l16(rc)});
+  CHECK(m.rt.rd16(rc) == 1 && m.rt.rd16(rc + 6) == 4, "ClipCursor's rectangle, emulated state only");
+  api(m, "USER", "ClipCursor", {l16(0)});
+  api(m, "USER", "GetClipCursor", {l16(rc)});
+  CHECK(m.rt.rd16(rc + 4) == 64, "ClipCursor(NULL): the whole screen again");
+  m.rt.write_str(d + 0xE0, "WILLY.FON", 16);
+  CHECK((api(m, "GDI", "AddFontResource", {l16(d + 0xE0)}) & 0xFFFF) == 0,
+        "AddFontResource of a file that is not there: 0");
+  CHECK(api(m, "MMSYSTEM", "mciSendCommand", {w16(5), w16(0x0804), l16(0), l16(0)}) == 257,
+        "mciSendCommand(MCI_CLOSE) of a device that is not open: MCIERR_INVALID_DEVICE_ID");
+  CHECK(api(m, "MMSYSTEM", "mciSendCommand", {w16(5), w16(0x0803), l16(0), l16(0)}) == 257,
+        "any command to a device ID that is not open: MCIERR_INVALID_DEVICE_ID");
+  user16_set_app_task(m.rt, false);
+  api(m, "USER", "WaitMessage", {});
+  CHECK(true, "WaitMessage outside an application task returns at once");
+  user16_post_message(m.rt, 0, WM_USER, 0, 0);
+  user16_set_app_task(m.rt, true);
+  api(m, "USER", "WaitMessage", {});
+  CHECK(user16_app_waits(m.rt) == 0, "WaitMessage with a message there: no wait");
+}
+
 int run_unit() {
+  test_app_task();
+  test_app_task_calls();
   test_template_converter();
   test_message_table();
   test_keyboard_tables();

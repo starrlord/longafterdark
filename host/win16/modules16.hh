@@ -25,6 +25,26 @@
 //
 // hInstance is the DGROUP selector (or hModule for a DLL without data);
 // both find the module (by_handle).
+//
+// Tasks: a Win16 application (an NE file that is no library: a Windows 3.1
+// screen saver's .SCR, the ne16 lane's scrnsave protocol) runs as this
+// runtime's one task, started as Windows 3.1's loader started one
+// (load_task, then run_task on the lane's guest fiber):
+//   * its segments and imports as a DLL's (steps 1–4), its exported entries'
+//     prologs patched as a SINGLEDATA DLL's (step 5: one instance, so
+//     `mov ax, DGROUP` is what MakeProcInstance's thunk loaded), and no
+//     LibEntry: the NE entry point is the task's start (Borland's C0W, …);
+//   * DGROUP as Windows laid it out: the static data, the stack (the
+//     header's stack size) above it, the local heap (the header's heap size)
+//     above that, which KERNEL's InitTask makes (kernel16.cc);
+//   * SS:SP the header's (SP 0: the top of the stack area);
+//   * the PSP (dos16.hh dos16_psp) holds the command tail; hInstance is the
+//     DGROUP selector, hPrevInstance 0;
+//   * the start's registers are the loader's: BX the stack size, CX the heap
+//     size, DI hInstance, SI hPrevInstance, BP 0, DS DGROUP, ES the PSP.
+// run_task returns only if the start returns far (C0W never does: it ends
+// with INT 21h AH=4Ch, GuestError16 exit); while it runs, the runtime's
+// task budget is on (Runtime16::set_task_budget).
 #pragma once
 
 #include <cstdint>
@@ -61,10 +81,31 @@ struct Module16 {
   bool is_dll() const { return image && image->header().is_dll(); }
 };
 
+// The task (see Tasks above): its module and what its start and InitTask hand it.
+struct Task16 {
+  Module16* module = nullptr;
+  uint16_t psp = 0;                  // the PSP's selector (ES)
+  uint16_t ss = 0, sp = 0;           // the start's stack
+  uint16_t stack_size = 0, heap_size = 0;
+  uint16_t stack_low = 0;            // the stack area's lowest offset (the static data's end)
+  uint16_t cmd_show = 1;             // nCmdShow: SW_SHOWNORMAL
+  std::string command_tail;          // as the PSP holds it (" /s")
+};
+
 class ModuleTable16 {
  public:
   explicit ModuleTable16(Runtime16& rt);
   ~ModuleTable16();
+
+  // Loads the application at host_path (its guest path `guest_path`) as the
+  // task, `command_tail` its PSP's command tail (DOS style, " /s"). Null on
+  // failure (*err: 2 not found, 11 not an application or not loadable, 14
+  // out of memory), or when a task is loaded already.
+  Module16* load_task(const std::string& host_path, const std::string& guest_path, const std::string& command_tail,
+                      uint16_t* err = nullptr);
+  const Task16* task() const { return task_.module ? &task_ : nullptr; }
+  // Starts the task (see Tasks above) and returns DX:AX if its start returns.
+  uint32_t run_task();
 
   // Host directories searched for a bare DLL name after the guest's
   // directories (current, Windows, System) resolve nowhere.
@@ -99,7 +140,7 @@ class ModuleTable16 {
  private:
   Module16* system_module(const std::string& name);
   std::string find_file(std::string_view name, std::string* guest_path);
-  Module16* load_file(const std::string& host_path, const std::string& guest_path, uint16_t* err);
+  Module16* load_file(const std::string& host_path, const std::string& guest_path, uint16_t* err, bool task = false);
   bool initialize(Module16* m);
   loader::ne::FarPtr resolve(Module16* m, const loader::ne::Target& t);
   loader::ne::FarPtr resolve_import(std::string_view module, uint16_t ordinal, std::string_view name);
@@ -113,6 +154,7 @@ class ModuleTable16 {
   std::vector<std::string> search_dirs_;
   std::vector<std::unique_ptr<Module16>> modules_;
   std::vector<std::pair<uint32_t, uint16_t>> fixed_sels_;  // __A000H & co.
+  Task16 task_;
 };
 
 }  // namespace adw::win16

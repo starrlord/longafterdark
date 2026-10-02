@@ -5,6 +5,11 @@
 // Behaviour notes:
 //   * GetVersion: Windows "3.95" on DOS 7.00 — what Win16 code saw on Windows
 //     95; GetWinFlags: protected + enhanced mode, 486, x87.
+//   * InitTask and WaitEvent serve an application's start (modules16.hh
+//     "Tasks"): InitTask's register contract as Windows 3.1's (the instance
+//     data's stack words, the local heap above the stack, BX at the command
+//     line past its blanks, ES the PSP); WaitEvent takes the start event at
+//     once.
 //   * Profiles go through the shared store (win32/ini_store.hh, INTERACTION.md
 //     §7.3): the seeds register_dos made (MODULES.INI's per-install settings,
 //     WIN.INI's [Berkeley Systems], which points the AD data/INI directories
@@ -375,7 +380,49 @@ void register_kernel16(Runtime16& rt) {
   // Windows 3.95 on DOS 7.00: AX = 0x5F03, DX = 0x0700.
   r.impl(K, "GetVersion", [](Call16& c) { c.ret32(0x07005F03); });
   r.impl(K, "GetWinFlags", [](Call16& c) { c.ret32(kWinFlags); });
-  r.impl(K, "InitTask", [](Call16& c) { c.rt.cpu().registers().w_ax(1); });
+  // InitTask, the first call of an application's start (modules16.hh
+  // "Tasks"), as Windows 3.1's KERNEL answered it: from the start's BX (the
+  // stack size) and CX (the heap size) — trusted, as Windows did — the
+  // instance data's pStackTop (the lowest SP: the stack's top less its size,
+  // plus 150, Wine's figure), pStackMin and pStackBottom (the start's SP) at
+  // DS:0Ah/0Ch/0Eh and the local heap above the stack (LocalInit); then AX
+  // = 1, BX = the command line's offset in the PSP with its leading blanks
+  // skipped (SCRNSAVE.LIB's WinMain reads "/s" at lpCmdLine[0]), CX =
+  // pStackTop, DX = nCmdShow, SI = hPrevInstance (0), DI = hInstance, ES =
+  // the PSP. Without a task (a library calling it): AX = 1 alone.
+  r.impl(K, "InitTask", [](Call16& c) {
+    auto& regs = c.rt.cpu().registers();
+    const Task16* t = c.rt.modules().task();
+    if (!t) return regs.w_ax(1);
+    const uint16_t ds = caller_ds(c), stack = regs.r_bx(), heap = regs.r_cx();
+    const uint16_t bottom = t->sp;
+    const uint16_t top = uint16_t((bottom > stack ? bottom - stack : 0) + 150);
+    c.rt.wr16((uint32_t(ds) << 16) | 0x0A, top);
+    c.rt.wr16((uint32_t(ds) << 16) | 0x0C, bottom);
+    c.rt.wr16((uint32_t(ds) << 16) | 0x0E, bottom);
+    if (heap) c.rt.local().init(ds, 0, heap);
+    // An empty tail: BX = 80h, its length byte, an empty string (Wine's answer too).
+    const uint32_t psp = (uint32_t(t->psp) << 16);
+    const uint8_t len = c.rt.rd8(psp | 0x80);
+    uint16_t cmd = len ? 0x81 : 0x80;
+    while (len && cmd < 0x81 + len && (c.rt.rd8(psp | cmd) == ' ' || c.rt.rd8(psp | cmd) == '\t')) cmd++;
+    trace("mod16", "InitTask: stack %u, heap %u, pStackTop %04X, pStackBottom %04X, command line PSP:%04X \"%s\"", stack,
+          heap, top, bottom, cmd, c.rt.read_str(psp | cmd, size_t(0x81 + len - cmd)).c_str());
+    regs.w_ax(1);
+    regs.w_bx(cmd);
+    regs.w_cx(top);
+    regs.w_dx(t->cmd_show);
+    regs.w_si(0);
+    regs.w_di(t->module->hinstance);
+    c.rt.cpu().load_segment(SegReg::ES, t->psp);
+  });
+  // WaitEvent(hTask): the task's start event is there (Windows scheduled the
+  // task by posting it), so the first call takes it and returns FALSE at
+  // once, as KERNEL did; a task waits in GetMessage, never here.
+  r.impl(K, "WaitEvent", [](Call16& c) {
+    c.w();
+    c.ret(0);
+  });
   r.impl(K, "GetCurrentTask", [](Call16& c) {
     uint16_t task = kernel16_current_task(c.rt);
     // DX: the first task of the task list (TDB+0 links the next, +1Ch is the

@@ -342,10 +342,11 @@ class BitIn {
 
 // The output: a 64 KiB ring (the window of at most 4096 bytes, and up to
 // 32 KiB not yet handed on), emitted in chunks of at most 32 KiB. No token
-// may produce a byte past `size` or copy from before the first byte.
+// may produce a byte past `size` (`exact`: the member's recorded size; else
+// the caller's bound, IszTooLarge) or copy from before the first byte.
 class Output {
  public:
-  Output(uint32_t size, const Sink& sink) : size_(size), sink_(sink), ring_(kRing) {}
+  Output(uint64_t size, bool exact, const Sink& sink) : size_(size), exact_(exact), sink_(sink), ring_(kRing) {}
 
   uint64_t produced() const { return produced_; }
 
@@ -374,11 +375,13 @@ class Output {
  private:
   static constexpr size_t kRing = 65536, kMask = kRing - 1, kChunk = 32768;
   const uint64_t size_;
+  const bool exact_;
   const Sink& sink_;
   std::vector<uint8_t> ring_;
   uint64_t produced_ = 0, emitted_ = 0;
 
   [[noreturn]] void past() const {
+    if (!exact_) throw IszTooLarge("the data expands past " + num(size_) + " bytes, the most allowed");
     throw IszError("the data expands past its recorded size, " + num(size_) + " bytes");
   }
 
@@ -388,14 +391,18 @@ class Output {
   }
 };
 
-void explode_pieces(const std::vector<std::span<const uint8_t>>& pieces, uint32_t size, const Sink& sink) {
+// One stream to its end code: exactly `size` bytes (`exact`, the member's
+// recorded size), or at most `size` (an InstallShield 1 file, which records
+// none). Returns how many there were.
+uint64_t explode_pieces(const std::vector<std::span<const uint8_t>>& pieces, uint64_t size, bool exact,
+                        const Sink& sink) {
   BitIn in(pieces);
   if (in.bytes_left() < 2) throw IszError("the compressed data is shorter than its 2-byte header");
   const unsigned mode = in.byte(), dict = in.byte();
   if (mode == 1) throw IszError("PKWARE's coded-literal (ASCII) mode is not supported");
   if (mode != 0) throw IszError("unknown literal mode " + num(mode));
   if (dict < 4 || dict > 6) throw IszError("dictionary bits " + num(dict) + " (only 4, 5 and 6 exist)");
-  Output out(size, sink);
+  Output out(size, exact, sink);
   for (;;) {
     if (!in.bits(1)) {
       out.literal(uint8_t(in.bits(8)));
@@ -410,18 +417,19 @@ void explode_pieces(const std::vector<std::span<const uint8_t>>& pieces, uint32_
   }
   // The end code: exactly the recorded size, and nothing after it but the
   // rest of its last byte, zero.
-  if (out.produced() != size)
+  if (exact && out.produced() != size)
     throw IszError("the data ends after " + num(out.produced()) + " bytes, " + num(size) + " recorded");
   if (in.bytes_left()) throw IszError(num(in.bytes_left()) + " byte(s) follow the end code");
   if (in.leftover()) throw IszError("the bits after the end code are not zero");
   out.flush();
+  return out.produced();
 }
 
 }  // namespace
 
 namespace isz_detail {
 
-void explode(std::span<const uint8_t> in, uint32_t size, const Sink& sink) { explode_pieces({in}, size, sink); }
+void explode(std::span<const uint8_t> in, uint32_t size, const Sink& sink) { explode_pieces({in}, size, true, sink); }
 
 }  // namespace isz_detail
 
@@ -611,7 +619,7 @@ void IszLibrary::extract(const IszMember& m, const Sink& sink) const {
     in_sink = false;
   };
   try {
-    explode_pieces(pieces, m.size, emit);
+    explode_pieces(pieces, m.size, true, emit);
   } catch (const IszError& e) {
     if (in_sink) throw;
     throw IszError(what + ": " + e.what());
@@ -637,6 +645,78 @@ std::optional<std::string> isz_volume_name(std::string_view first, unsigned n) {
   for (char c : first.substr(dot + 1))
     if (c < '0' || c > '9') return std::nullopt;
   return std::string(first.substr(0, dot + 1)) + std::to_string(n);
+}
+
+// ---- InstallShield 1's compressed files ------------------------------------------------------
+
+namespace {
+
+constexpr uint8_t kIs1Magic[8] = {0x65, 0x5D, 0x13, 0x8C, 0x08, 0x01, 0x03, 0x00};
+constexpr size_t kIs1Fields = 0x1D;  // the header's fields before the name
+// The largest such file the importer reads (the release's largest is 1 MB).
+constexpr uint64_t kIs1MaxFile = 16ull << 20;
+
+// An 8.3 DOS name: 1 to 8 characters, then optionally a dot and 1 to 3.
+bool dos_8_3(const std::string& raw) {
+  const size_t dot = raw.find('.');
+  if (dot == std::string::npos) return raw.size() >= 1 && raw.size() <= 8;
+  const size_t ext = raw.size() - dot - 1;
+  return dot >= 1 && dot <= 8 && ext >= 1 && ext <= 3 && raw.find('.', dot + 1) == std::string::npos;
+}
+
+}  // namespace
+
+Is1Header is1_header(std::span<const uint8_t> d, std::string_view where_view) {
+  const std::string where(where_view);
+  if (d.size() < kIs1Fields || !std::equal(kIs1Magic, kIs1Magic + 8, d.data()))
+    throw IszError(where + ": not an InstallShield 1 compressed file");
+  if (d.size() > kIs1MaxFile) throw IszError(where + ": larger than any InstallShield 1 file the importer reads");
+  auto bad = [&](const char* what) { return IszError(where + ": damaged header (" + std::string(what) + ")"); };
+  if (le32(d.data() + 0x08) != 1 || d[0x0C] != 0x00 || d[0x0D] != 0x12) throw bad("its fixed fields");
+  if (le32(d.data() + 0x12) != 0 || le16(d.data() + 0x1A) != 0) throw bad("its zero fields");
+  const uint16_t date = le16(d.data() + 0x16), time = le16(d.data() + 0x18);
+  if (!dos_date_valid(date, time)) throw bad("an invalid date");
+  Is1Header h;
+  const size_t n = d[0x1C];
+  if (d.size() < kIs1Fields + n + 1) throw IszError(where + ": truncated (inside the header)");
+  const std::string raw(reinterpret_cast<const char*>(d.data() + kIs1Fields), n);
+  if (d[kIs1Fields + n] != 0) throw bad("the stored name's end");
+  if (raw.find('\0') != std::string::npos || !dos_8_3(raw)) throw bad("the stored name is no 8.3 DOS name");
+  h.name = oem437_to_utf8(raw);
+  if (h.name.find_first_of("/\\:") != std::string::npos) throw bad("the stored name is no bare file name");
+  try {
+    check_component(h.name, where);
+  } catch (const ImportError&) {
+    throw bad("the stored name is no usable file name");
+  }
+  h.data_offset = kIs1Fields + n + 1;
+  h.csize = le32(d.data() + 0x0E);
+  h.dos_datetime = uint32_t(date) << 16 | time;
+  if (h.csize != d.size() - h.data_offset)
+    throw IszError(where + ": the header records " + num(h.csize) + " compressed bytes, the file holds " +
+                   num(d.size() - h.data_offset) + " (truncated, or something appended)");
+  return h;
+}
+
+uint64_t is1_expand(std::span<const uint8_t> file, std::string_view where, uint64_t max_size, const Sink& sink) {
+  const Is1Header h = is1_header(file, where);
+  // Messages from the decoder are completed with `where`; whatever the
+  // caller's sink throws passes through unchanged.
+  bool in_sink = false;
+  const Sink emit = [&](const uint8_t* p, size_t n) {
+    in_sink = true;
+    sink(p, n);
+    in_sink = false;
+  };
+  try {
+    return explode_pieces({file.subspan(h.data_offset)}, max_size, false, emit);
+  } catch (const IszTooLarge& e) {
+    if (in_sink) throw;
+    throw IszTooLarge(std::string(where) + ": " + e.what());
+  } catch (const IszError& e) {
+    if (in_sink) throw;
+    throw IszError(std::string(where) + ": " + e.what());
+  }
 }
 
 }  // namespace adw::import

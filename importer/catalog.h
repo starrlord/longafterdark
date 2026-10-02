@@ -63,6 +63,20 @@
 //     needs        an IMQ module's imports; none for an ASA (its reader's
 //                  are ENGINE's business)
 //     abi          "intermission"
+//   Windows 3.1 screen-saver programs (lane ne16; an InstallShield 1
+//   package's module folders, which list *.SCR: Screen Antics: Johnny
+//   Castaway's SCRANTIC.SCR): an NE program (no library) exporting
+//   SCREENSAVERPROC but none of MODULE, SAVERINIT and SAVERDRAW, SAVERMAIN —
+//   Microsoft's SCRNSAVE.LIB convention, run as Windows 3.1 ran it
+//     displayName  its description after "SCRNSAVE :" (the name Windows
+//                  3.1's Control Panel listed: "Screen Antics"), else the
+//                  file stem; the registry's name overrides may give
+//                  moduleName (Johnny Castaway's: "Johnny Castaway")
+//     about        ""
+//     controls     one button, {0, "Setup...", button}, when it exports
+//                  SCREENSAVERCONFIGUREDIALOG (its own dialog, /c)
+//     entry        "SCREENSAVERPROC"
+//     abi          "scrnsave"
 //   Any lane, from the registry: "screen" ("640x480"), the fixed screen every
 //   module of a package is shown at (Package::screen: Star Trek: The Screen
 //   Saver's, several of whose modules compose a fixed scene for it), written
@@ -128,8 +142,8 @@ struct CatalogModule {
   std::string md5;                      // of the module file
   std::string same_as;                  // id of the first entry with the same md5 ("" = none)
   // The module ABI when it is not After Dark's: "intermission" for an
-  // Intermission module, IMX, ASA or IMQ ("" = After Dark; the JSON then has
-  // no "abi").
+  // Intermission module, IMX, ASA or IMQ, "scrnsave" for a Windows 3.1
+  // screen-saver program ("" = After Dark; the JSON then has no "abi").
   std::string abi;
   // The fixed screen the module is shown at, "WxH", from its package's
   // registry entry ("" = any screen; the JSON then has no "screen").
@@ -194,6 +208,9 @@ bool is_system_dll(std::string_view name);
 // The name of the button an Intermission module's configure dialog is behind
 // (Intermission's own "Confi&gure...", without the mnemonic).
 inline constexpr char kIntermissionConfigure[] = "Configure...";
+// The name of the button a Windows 3.1 screen-saver program's own dialog is
+// behind (Control Panel's Desktop dialog's "S&etup...", without the mnemonic).
+inline constexpr char kScrnsaveSetup[] = "Setup...";
 
 // One of Intermission's own readers, by its file name: IM???PLY.IMQ, as
 // every one is named (IMIMXPLY "IMX Player", IMASAPLY "ASA Player", IMAD_PLY,

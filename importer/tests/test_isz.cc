@@ -26,6 +26,12 @@
 //   bit flips    every single-bit flip of the vectors of 1 KB or less, and
 //                of a small split set: an IszError, or exactly the recorded
 //                size, never a crash
+//   is1          InstallShield 1's "$" files (is1_header, is1_expand),
+//                written by isz_builder.h from made-up bytes: the header,
+//                its stored name, its date and its compressed size each
+//                held to its rule; the stream to its end code, bounded by
+//                max_size (IszTooLarge), its damage refused; every bit flip
+//                of a small one an IszError or a whole stream, never a crash
 //   real         (opt-in, AD_E2E_PKG=1) the user's Marvel Comics Screen
 //                Posters and Snoopy's Screen Savers ZIPs, found by size and
 //                md5 and read as DISK<n> sources (the union lists every
@@ -1076,6 +1082,138 @@ int main(int argc, char** argv) {
     CHECK_EQ(lib_flips.bad, size_t(0));
     CHECK_EQ(stream_flips.bad, size_t(0));
     CHECK(lib_flips.tried > 50000 && stream_flips.tried > 20000);
+  }
+
+  // ---- InstallShield 1's "$" files ----------------------------------------------------------------
+  {
+    using T = DclToken;
+    // What a "$" file expands to, or the IszError's message in `why`.
+    auto expand1 = [](const Bytes& f, uint64_t max, std::string* why = nullptr) -> std::optional<Bytes> {
+      Bytes out;
+      try {
+        const uint64_t n =
+            is1_expand(f, "MADE.UP$", max, [&](const uint8_t* p, size_t k) { out.insert(out.end(), p, p + k); });
+        if (n != out.size()) return std::nullopt;
+      } catch (const IszError& e) {
+        if (why) *why = e.what();
+        return std::nullopt;
+      }
+      return out;
+    };
+    auto refused = [&](const Bytes& f, const std::string& what, const std::string& expect) {
+      std::string why;
+      if (expand1(f, 1u << 20, &why)) {
+        fprintf(stderr, "  %s: expanded, should have been refused\n", what.c_str());
+        return false;
+      }
+      if (why.find(expect) == std::string::npos || why.rfind("MADE.UP$: ", 0) != 0) {
+        fprintf(stderr, "  %s: refused with \"%s\", expected \"%s\"\n", what.c_str(), why.c_str(), expect.c_str());
+        return false;
+      }
+      return true;
+    };
+    // Literals and copies, overlapping ones too, at each dictionary size.
+    const std::vector<T> tokens = cat(test::dcl_literals("Made-up program bytes, "),
+                                      {T::copy(9, 7), T::copy(40, 3), T::lit(0), T::lit(0xFF), T::copy(2, 2)});
+    const Bytes plain = expand(tokens);
+    for (int dict : {4, 5, 6}) {
+      const Bytes f = test::is1_file("MADEUP.EXE", test::dcl_write(with_end(tokens), 0, dict));
+      CHECK(expand1(f, 1u << 20) == plain);
+      const Is1Header h = is1_header(f, "MADE.UP$");
+      CHECK(h.name == "MADEUP.EXE" && h.data_offset == 0x1E + 10 && h.csize == f.size() - h.data_offset);
+      CHECK_EQ(h.dos_datetime, (uint32_t(0x1989) << 16) | 0x645C);
+    }
+    // A big one in chunks of at most 64 KiB; nothing past max_size.
+    {
+      std::vector<T> big = test::dcl_literals("x");
+      for (int i = 0; i < 400; i++) big.push_back(T::copy(518, 1));
+      const Bytes f = test::is1_file("BIG.DAT", test::dcl_write(with_end(big)));
+      size_t chunks = 0, biggest = 0, got = 0;
+      CHECK_EQ(is1_expand(f, "BIG.DA$", 1u << 20,
+                          [&](const uint8_t*, size_t n) {
+                            chunks++;
+                            biggest = std::max(biggest, n);
+                            got += n;
+                          }),
+               uint64_t(1 + 400 * 518));
+      CHECK(got == 1 + 400 * 518 && chunks > 3 && biggest <= 65536);
+      // Exactly the size is enough; a byte less is too large (IszTooLarge), and
+      // nothing past the bound reaches the sink.
+      CHECK(expand1(f, 1 + 400 * 518).has_value());
+      size_t sunk = 0;
+      bool too_large = false;
+      try {
+        is1_expand(f, "BIG.DA$", 400 * 518, [&](const uint8_t*, size_t n) { sunk += n; });
+      } catch (const IszTooLarge& e) {
+        too_large = std::string(e.what()).rfind("BIG.DA$: ", 0) == 0;
+      }
+      CHECK(too_large && sunk <= 400 * 518);
+      // An empty file: the end code alone.
+      CHECK(expand1(test::is1_file("EMPTY.DAT", test::dcl_write({T::end()})), 0) == Bytes());
+    }
+    // The header's rules, each broken alone.
+    const Bytes good = test::is1_literals("RESOURCE.001", Bytes{'d', 'a', 't', 'a'});
+    CHECK(expand1(good, 100) == Bytes({'d', 'a', 't', 'a'}));
+    auto with = [&](size_t at, uint8_t v) {
+      Bytes f = good;
+      f[at] = v;
+      return f;
+    };
+    CHECK(refused(Bytes(good.begin(), good.begin() + 20), "20 bytes", "not an InstallShield 1 compressed file"));
+    CHECK(refused(with(0, 0x13), "another magic", "not an InstallShield 1"));
+    CHECK(refused(with(4, 0x3A), "an InstallShield 2 library's signature", "not an InstallShield 1"));
+    CHECK(refused(with(6, 0x02), "another version byte", "not an InstallShield 1"));
+    CHECK(refused(with(8, 2), "u32 at 8 not 1", "its fixed fields"));
+    CHECK(refused(with(0x0D, 0x13), "bytes at 12 not 00 12", "its fixed fields"));
+    CHECK(refused(with(0x12, 1), "u32 at 0x12 not 0", "its zero fields"));
+    CHECK(refused(with(0x1B, 1), "u16 at 0x1A not 0", "its zero fields"));
+    CHECK(refused(with(0x16, 0x80), "a date in month 0", "an invalid date"));
+    CHECK(refused(with(0x18, 0x1E), "62 seconds", "an invalid date"));
+    CHECK(refused(test::is1_file("RESOURCE.001", test::dcl_write({T::end()}), std::nullopt, 0x1989, 0xC000),
+                  "hour 24", "an invalid date"));
+    // The stored name: an 8.3 DOS name, NUL-terminated, a usable file name.
+    for (const char* bad :
+         {"", "TOOLONGNAME.EXE", "NAME.LONG", ".EXE", "A.B.C", "NAME.", "CON.EXE", "A:B.EXE", "A\\B.EXE"}) {
+      CHECK(refused(test::is1_file(bad, test::dcl_write({T::end()})), std::string("the stored name \"") + bad + "\"",
+                    "damaged header"));
+    }
+    {
+      Bytes f = good;
+      f[0x1D + 12] = 'X';  // the name's NUL
+      CHECK(refused(f, "no NUL after the name", "the stored name's end"));
+      Bytes g = good;
+      g[0x1C] = 40;  // a name running past the file
+      CHECK(refused(g, "a name past the end", "truncated"));
+    }
+    // The compressed size: exactly the rest of the file.
+    CHECK(refused(Bytes(good.begin(), good.end() - 1), "cut short", "the header records"));
+    CHECK(refused(cat(good, {0}), "a byte appended", "the header records"));
+    {
+      Bytes f = good;
+      f[0x0E]++;
+      CHECK(refused(f, "the size recorded one more", "the header records"));
+    }
+    // The stream's rules: the end code ending the data, its last bits zero.
+    CHECK(refused(test::is1_file("A.DAT", test::dcl_write(test::dcl_literals("no end"))), "no end code", "truncated"));
+    CHECK(refused(test::is1_file("A.DAT", cat(test::dcl_write(with_end(test::dcl_literals("x"))), {0})),
+                  "a byte after the end code", "follow the end code"));
+    CHECK(refused(test::is1_file("A.DAT", test::dcl_write(with_end(test::dcl_literals("x")), 0, 6, true)),
+                  "one-bits after the end code", "not zero"));
+    CHECK(refused(test::is1_file("A.DAT", test::dcl_write(with_end(test::dcl_literals("x")), 1)), "coded literals",
+                  "ASCII"));
+    CHECK(refused(test::is1_file("A.DAT", test::dcl_write(with_end({T::lit('x'), T::copy(3, 2)}))),
+                  "a copy before the first byte", "bytes back"));
+    // Every bit flip of a small one: an IszError, or a stream to its end code
+    // (the header's fields are checked; the data has no checksum), never a crash.
+    size_t tried = 0, refusals = 0;
+    for (size_t bit = 0; bit < good.size() * 8; bit++) {
+      Bytes f = good;
+      f[bit / 8] ^= uint8_t(1 << (bit % 8));
+      tried++;
+      if (!expand1(f, 1u << 16)) refusals++;
+    }
+    fprintf(stderr, "  bit flips of a \"$\" file: %zu tried, %zu refused\n", tried, refusals);
+    CHECK(refusals > tried / 3);
   }
   return test::finish("import.isz");
 }

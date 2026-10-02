@@ -61,6 +61,8 @@ PACKAGES = {
     "dilbert": (("ea6e18463d156fbb5c70401e39b45962",), "packages/dilbert", ("SAVER", "ENGINE")),
     # The CD.
     "tng": (("0b95b9271c75b9ff1d89b57a0e15ee7b",), "packages/tng", ("ST-TNG", "ENGINE")),
+    # The floppy (its image in the KryoFlux dump's ZIP). No ENGINE: the program is its own.
+    "castaway": (("81087ea7cc6a304896e81c722b0a85ec",), "packages/castaway", ("SCRANTIC",)),
 }
 
 # packages.cc: the known images of releases on several install disks

@@ -1,9 +1,11 @@
 # adw_lane_ne16 — the Classic lane: an After Dark 2.x/3.x module (NE .AD) run
 # through the real OLDMOD16.DLL (+ AD_SND, ADXPL300, helpers) on the Win16
 # guest runtime (host/win16), driven as AFTERDAR.SCR drove it through
-# OLDMOD32 (docs/ABI.md §3), or an Intermission module (NE .IMX) driven as
-# INTERMIS.EXE drove it through IMIMXPLY.IMQ. See lane.hh; the module
-# protocols are behind protocol.hh (ad3_protocol.cc, imx_protocol.cc).
+# OLDMOD32 (docs/ABI.md §3), an Intermission module (NE .IMX) driven as
+# INTERMIS.EXE drove it through IMIMXPLY.IMQ, or a Windows 3.1 screen saver
+# (an NE .SCR application) run as Windows 3.1 ran it. See lane.hh; the module
+# protocols are behind protocol.hh (ad3_protocol.cc, imx_protocol.cc,
+# scr_protocol.cc).
 
 add_library(adw_lane_ne16 STATIC
   lane.cc
@@ -11,6 +13,7 @@ add_library(adw_lane_ne16 STATIC
   bridge.cc
   imx_protocol.cc
   imreader.cc
+  scr_protocol.cc
   package.cc
 )
 target_include_directories(adw_lane_ne16 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

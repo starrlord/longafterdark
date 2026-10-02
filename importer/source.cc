@@ -15,6 +15,7 @@
 #include "iso9660.h"
 #include "md5.h"
 #include "names.h"
+#include "sevenzip.h"
 #include "winutil.h"
 #include "zip.h"
 
@@ -412,6 +413,110 @@ std::unique_ptr<SourceFs> open_zip(const fs::path& path, std::string* note) {
   return union_of(std::move(parts), std::move(labels));
 }
 
+// ---- 7z ----------------------------------------------------------------------------------
+
+// A 7z of an install folder, read as a ZIP of one is (above): its members
+// are the files at the source's root, or a disk set's DISK<n>/<bare name>.
+// It is held in memory, and a member is decoded (its block once, however
+// many files share it: sevenzip.h) and its size and CRC-32 checked as it is
+// read. One view shows the root's files, or one DISK<n> folder's.
+class SevenZipFs : public SourceFs {
+ public:
+  SevenZipFs(std::shared_ptr<const SevenZipArchive> archive, unsigned disk, std::vector<const SevenZipMember*> files)
+      : archive_(std::move(archive)), disk_(disk), files_(std::move(files)) {}
+
+  SourceNode root() const override {
+    SourceNode n;
+    n.is_dir = true;
+    return n;
+  }
+
+  std::vector<SourceNode> list(const SourceNode& dir) const override {
+    std::vector<SourceNode> out;
+    if (!dir.is_dir) return out;
+    for (const SevenZipMember* m : files_) {
+      SourceNode n;
+      n.name = ascii_upper(m->name.substr(m->name.find('/') + 1));  // without its DISK<n> folder
+      n.size = m->size;
+      if (m->mtime) n.mtime = FILETIME{DWORD(*m->mtime), DWORD(*m->mtime >> 32)};
+      n.impl = std::shared_ptr<const void>(archive_, m);  // the member lives as long as its archive
+      out.push_back(std::move(n));
+    }
+    return out;
+  }
+
+  void read(const SourceNode& file, const Sink& sink) const override {
+    try {
+      archive_->extract(*static_cast<const SevenZipMember*>(file.impl.get()), sink);
+    } catch (const SevenZipError& e) {
+      invalid(e.what());
+    }
+  }
+
+  std::string format() const override { return "7z"; }
+  // Flat: the root (or the disk's folder) is the only directory.
+  std::string dir_key(const SourceNode& dir) const override {
+    return !dir.is_dir ? "" : disk_ ? "disk" + std::to_string(disk_) : "root";
+  }
+
+ private:
+  std::shared_ptr<const SevenZipArchive> archive_;
+  unsigned disk_;
+  std::vector<const SevenZipMember*> files_;  // the members it shows, in archive order
+};
+
+bool starts_with_7z_signature(const fs::path& path) {
+  Handle in(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr));
+  uint8_t sig[6] = {};
+  DWORD got = 0;
+  return in.valid() && ReadFile(in.get(), sig, 6, &got, nullptr) && got == 6 && is_7z_signature(sig);
+}
+
+// A 7z of install files: flat, or a disk set of flat DISK<n> folders (every
+// member in one of them, besides the folders' own entries), read as the
+// union of one view per disk — the rule a ZIP source follows.
+std::unique_ptr<SourceFs> open_7z(const fs::path& path, std::string* note) {
+  static const char* const kRule = " (a 7z source holds the install files at its root, or only DISK<n> folders)";
+  const std::string name = to_utf8(path.filename().wstring());
+  auto data = read_zip_bytes(path);
+  if (!data) invalid(name + " is too large for a 7z of install files");
+  std::shared_ptr<SevenZipArchive> archive;
+  try {
+    archive = std::make_shared<SevenZipArchive>(std::move(data), name);
+  } catch (const SevenZipError& e) {
+    invalid(e.what());
+  }
+  // Each disk once, in disk order, under the folder name it first appears as.
+  std::map<unsigned, std::string> disks;
+  std::map<unsigned, std::vector<const SevenZipMember*>> files;
+  const SevenZipMember* at_root = nullptr;
+  for (const SevenZipMember& m : archive->members()) {
+    const size_t slash = m.name.find('/');
+    const std::string folder = slash != std::string::npos ? m.name.substr(0, slash) : m.directory ? m.name : "";
+    const unsigned disk = folder.empty() ? 0 : disk_folder_number(folder);
+    // A folder entry is a DISK<n> folder at the root; a file is at the root
+    // or directly in one.
+    const bool flat = slash == std::string::npos || (!m.directory && m.name.find('/', slash + 1) == std::string::npos);
+    if (!folder.empty() && (!disk || !flat))
+      invalid(name + ": entry \"" + m.name + "\" is not a bare file name or a file in a DISK<n> folder" + kRule);
+    if (disk) disks.emplace(disk, folder);
+    if (m.directory) continue;
+    files[disk].push_back(&m);
+    if (!disk && !at_root) at_root = &m;
+  }
+  if (disks.empty()) return std::make_unique<SevenZipFs>(std::move(archive), 0, std::move(files[0]));
+  std::vector<std::string> labels;
+  for (const auto& [n, folder] : disks) labels.push_back(folder);
+  if (at_root)
+    invalid(name + " holds files at its root (" + at_root->name + ") beside DISK<n> folders (" + disks_named(labels) +
+            ")" + kRule);
+  std::vector<std::unique_ptr<SourceFs>> parts;
+  for (const auto& [n, folder] : disks) parts.push_back(std::make_unique<SevenZipFs>(archive, n, std::move(files[n])));
+  if (note)
+    *note = "reading " + name + " as the union of its folders " + disks_named(labels) + " (one install disk each)";
+  return union_of(std::move(parts), std::move(labels));
+}
+
 // ---- disk sets ----------------------------------------------------------------------------
 
 // One folder of another source, seen as a source of its own: a disk of a disk
@@ -612,13 +717,14 @@ std::unique_ptr<SourceFs> open_image(const fs::path& path, std::string* note) {
   }
   if (image) return disk_set(std::move(image), name, note);
   // A local file header at byte 0: a ZIP of install files, never a floppy
-  // (whose boot sector starts with a jump).
+  // (whose boot sector starts with a jump). The same for 7z's signature.
   if (starts_with_zip_signature(path)) return open_zip(path, note);
+  if (starts_with_7z_signature(path)) return open_7z(path, note);
   try {
     image = std::make_unique<FatFs>(std::make_unique<FatImage>(path));
   } catch (const FatError& e) {
     invalid(name + " is neither an ISO-9660 disc image (" + iso_why + "), a FAT floppy image (" + e.what() +
-            ") nor a ZIP of install files");
+            ") nor a ZIP or 7z of install files");
   }
   return disk_set(std::move(image), name, note);
 }
@@ -659,32 +765,39 @@ std::vector<ZippedImage> floppy_images_in_zip(const fs::path& path, std::vector<
                                               uint64_t max_bytes) {
   std::vector<ZippedImage> out;
   std::error_code ec;
-  if (!fs::is_regular_file(path, ec) || !starts_with_zip_signature(path)) return out;
-  // Too large, or no ZIP open_image would read: open_image says why.
+  if (!fs::is_regular_file(path, ec)) return out;
+  const bool seven = starts_with_7z_signature(path);
+  if (!seven && !starts_with_zip_signature(path)) return out;
+  // Too large, or no ZIP or 7z open_image would read: open_image says why.
   auto data = read_zip_bytes(path);
   if (!data) return out;
   const std::string name = to_utf8(path.filename().wstring());
   std::unique_ptr<ZipArchive> zip;
+  std::shared_ptr<SevenZipArchive> sz;
   try {
-    zip = std::make_unique<ZipArchive>(data, name);
+    if (seven) sz = std::make_shared<SevenZipArchive>(data, name);
+    else zip = std::make_unique<ZipArchive>(data, name);
   } catch (const ZipError&) {
+    return out;
+  } catch (const SevenZipError&) {
     return out;
   }
   std::vector<std::string> others;
   struct NoBootSector {};
   uint64_t inflated = 0;  // the members with a boot sector, inflated whole
-  for (const ZipMember& m : zip->members()) {
+  // One member: its name, size, and how to stream it (the archive's errors
+  // made source_invalid).
+  auto take = [&](const std::string& member, uint64_t size, const std::function<void(const Sink&)>& extract) {
     // The sizes of DOS floppies, 160 KB to 2.88 MB: nothing else is
     // inflated (a whole item's scans and metadata are only named).
-    const bool floppy_sized = m.usize % 512 == 0 && m.usize >= 163840 && m.usize <= 2949120;
+    const bool floppy_sized = size % 512 == 0 && size >= 163840 && size <= 2949120;
     if (!floppy_sized) {
-      others.push_back(m.name);
-      continue;
+      others.push_back(member);
+      return;
     }
-    if (m.encrypted()) invalid(name + "!" + m.name + " is password-protected");
     auto bytes = std::make_shared<std::vector<uint8_t>>();
     try {
-      zip->extract(m, "", [&](const uint8_t* p, size_t n) {
+      extract([&](const uint8_t* p, size_t n) {
         const bool first = bytes->size() < 512;
         bytes->insert(bytes->end(), p, p + n);
         if (!first || bytes->size() < 512) return;
@@ -696,25 +809,50 @@ std::vector<ZippedImage> floppy_images_in_zip(const fs::path& path, std::vector<
         const unsigned bps = unsigned(bs[11] | bs[12] << 8);
         if (bs[510] != 0x55 || bs[511] != 0xAA || (bps != 512 && bps != 1024 && bps != 2048 && bps != 4096))
           throw NoBootSector{};
-        if (m.usize > max_bytes - std::min(inflated, max_bytes))
+        if (size > max_bytes - std::min(inflated, max_bytes))
           invalid(name + " holds more than " + std::to_string(max_bytes >> 20) +
                   " MB of disk images; no release came on that many disks");
-        bytes->reserve(m.usize);
+        bytes->reserve(size_t(size));
       });
     } catch (const NoBootSector&) {
-      others.push_back(m.name);  // floppy-sized, but no FAT volume
-      continue;
-    } catch (const ZipError& e) {
-      invalid(e.what());
+      others.push_back(member);  // floppy-sized, but no FAT volume
+      return;
     }
-    inflated += m.usize;
+    inflated += size;
     try {
       FatImage probe{std::shared_ptr<const std::vector<uint8_t>>(bytes)};
     } catch (const FatError&) {
-      others.push_back(m.name);  // floppy-sized, but no FAT volume
-      continue;
+      others.push_back(member);  // floppy-sized, but no FAT volume
+      return;
     }
-    out.push_back({m.name, std::move(bytes)});
+    out.push_back({member, std::move(bytes)});
+  };
+  if (zip) {
+    for (const ZipMember& m : zip->members()) {
+      const bool floppy_sized = m.usize % 512 == 0 && m.usize >= 163840 && m.usize <= 2949120;
+      if (floppy_sized && m.encrypted()) invalid(name + "!" + m.name + " is password-protected");
+      take(m.name, m.usize, [&](const Sink& sink) {
+        try {
+          zip->extract(m, "", sink);
+        } catch (const ZipError& e) {
+          invalid(e.what());
+        }
+      });
+    }
+  } else {
+    // A 7z's images may sit in a folder ("<folder>/DISK1.IMG"): only its
+    // name in messages and in import.json; folders' own entries are skipped.
+    // An encrypted 7z never opens (sevenzip.h).
+    for (const SevenZipMember& m : sz->members()) {
+      if (m.directory) continue;
+      take(m.name, m.size, [&](const Sink& sink) {
+        try {
+          sz->extract(m, sink);
+        } catch (const SevenZipError& e) {
+          invalid(e.what());
+        }
+      });
+    }
   }
   if (ignored && !out.empty()) *ignored = std::move(others);
   return out;

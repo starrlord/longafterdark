@@ -155,9 +155,13 @@ struct Arg16 {
 inline Arg16 w16(uint32_t v) { return Arg16{v & 0xFFFF, false}; }
 inline Arg16 l16(uint32_t v) { return Arg16{v, true}; }
 
-// Register inputs for call_far (the NE DLL entry takes DI/DS/CX/ES:SI).
+// Register inputs for call_far (the NE DLL entry takes DI/DS/CX/ES:SI). With
+// ss and sp the call runs on that stack instead of the current one (a task's
+// start: its own stack in its DGROUP, modules16.hh "Tasks"); bp is BP at the
+// callee's first instruction.
 struct Regs16In {
   std::optional<uint16_t> ax, bx, cx, dx, si, di, ds, es;
+  std::optional<uint16_t> ss, sp, bp;
 };
 
 class Runtime16 {
@@ -301,9 +305,18 @@ class Runtime16 {
   // to another fiber and come back, or throw to abandon the guest call.
   void set_deadline(uint64_t us, std::function<void()> fn) {
     deadline_us_ = us;
+    work_deadline_ = UINT64_MAX;
     deadline_fn_ = std::move(fn);
   }
-  void clear_deadline() { deadline_fn_ = nullptr; }
+  // With a deadline set: `fn` also runs at the first API call (or
+  // retrace-port read) once work_insns() reaches `work` — the lane's frame
+  // budget for a protocol whose one call is a task (ne16/lane.hh "Windows 3.1
+  // screen savers"). set_deadline clears it.
+  void set_work_deadline(uint64_t work) { work_deadline_ = work; }
+  void clear_deadline() {
+    deadline_fn_ = nullptr;
+    work_deadline_ = UINT64_MAX;
+  }
   // Audio delivery (sound16.hh, AUDIO.md §8.6): `fn` runs at every API call
   // at or after virtual time `due` (peek_us()'s scale) — after the scanout
   // and deadline hooks, before the call does anything — until the owner
@@ -323,6 +336,22 @@ class Runtime16 {
   // `us`, a realtime or read-step clock is offset by what is left.
   void set_yield_hook(std::function<bool()> fn) { yield_fn_ = std::move(fn); }
   void wait_until_us(uint64_t us);
+  // Ends the presented frame here through the yield hook, and returns when a
+  // later frame resumes the guest (true); false when nothing can yield (no
+  // hook, or not inside the lane's long call). A Win16 application's message
+  // wait (user16 GetMessage/WaitMessage in an application task).
+  bool yield_frame() { return yield_fn_ && yield_fn_(); }
+  // Runs the audio hook when an audio event is due by now, as every API call
+  // does first: what a wait inside an API call delivers before it looks again.
+  void deliver_due_audio() {
+    if (audio_fn_ && peek_us() >= audio_due_) audio_fn_();
+  }
+  // An application task's budget (modules16.hh "Tasks"): its one call runs
+  // for the whole run, so a call made while this is on is hung only after
+  // call_budget instructions without an API call — at every call level —
+  // rather than call_budget in all.
+  void set_task_budget(bool on) { task_budget_ = on; }
+  bool task_budget() const { return task_budget_; }
 
   // Software-interrupt services (dos16.cc registers 21h, 1Ah, 2Fh, …).
   using IntHandler = std::function<void(Runtime16&)>;
@@ -406,10 +435,12 @@ class Runtime16 {
   uint64_t next_scanout_us_ = 0;
   std::function<void()> deadline_fn_;
   uint64_t deadline_us_ = 0;
+  uint64_t work_deadline_ = UINT64_MAX;
   void check_deadline();
   std::function<void()> audio_fn_;
   uint64_t audio_due_ = UINT64_MAX;
   std::function<bool()> yield_fn_;
+  bool task_budget_ = false;
 };
 
 }  // namespace adw::win16

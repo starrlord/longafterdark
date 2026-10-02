@@ -18,7 +18,10 @@
 // leftovers); and Delrina Intermission Installer installs shaped like The Far
 // Side Screen Saver Collection's and Dilbert's (every file loose, ASA
 // animations and IMQ modules, SZDD with Delrina's version stamps, every
-// disk's tag file, decoys). Each fixture is a tree (path -> bytes) that can be written as a
+// disk's tag file, decoys); and an InstallShield 1 floppy shaped like Screen
+// Antics: Johnny Castaway's ("$" files written by isz_builder.h, a Windows
+// 3.1 screen-saver program, the installer's files and a placeholder that must
+// never be read). Each fixture is a tree (path -> bytes) that can be written as a
 // folder, an ISO image, a FAT floppy image (or several), a flat ZIP or a ZIP
 // of floppy images, plus exactly what an import must install and the catalog
 // ids it must list. Modules come from module_builder.h: made-up resources, no
@@ -1449,6 +1452,52 @@ inline IslibFixture snoopy_fixture(const std::function<void(std::vector<IslibLib
   }
   f.ids = {"snoopy.is_colag", "snoopy.is_dance", "snoopy.is_faces", "snoopy.is_fly",
            "snoopy.is_linus", "snoopy.is_litry", "snoopy.is_sptlt", "snoopy.is_thrpy"};
+  return f;
+}
+
+// ---- InstallShield 1: Screen Antics: Johnny Castaway's floppy --------------------------------
+
+// A Windows 3.1 screen-saver program built on SCRNSAVE.LIB: an NE program
+// (no library) described "SCRNSAVE :<name>", exporting SCREENSAVERPROC and
+// (`dialog`) SCREENSAVERCONFIGUREDIALOG, importing what the real one does.
+inline std::vector<uint8_t> scrnsave_program(const std::string& name, bool dialog = true) {
+  NeSpec ne;
+  ne.module_name = "SCRNMADE";
+  ne.program = true;
+  ne.description = "SCRNSAVE :" + name;
+  ne.module_refs = {"MMSYSTEM", "GDI", "KERNEL", "USER"};
+  ne.exports = {"SCREENSAVERPROC"};
+  if (dialog) ne.exports.push_back("SCREENSAVERCONFIGUREDIALOG");
+  ne.exports.push_back("PASSWORDDIALOG");
+  return vec(build_ne(ne));
+}
+
+// The files a Johnny Castaway import must never open (I5): the installer
+// (its launcher, script and expanded installer), its logos, and the floppy's
+// placeholder under RESOURCE.00$'s installed name.
+inline const std::vector<std::string>& castaway_decoys() {
+  static const std::vector<std::string> v = {"SETUP.EXE", "INSTALL.INS", "INSTALL.EX$",
+                                             "LOGO.BMP",  "SLOGO.BMP",   "RESOURCE.001"};
+  return v;
+}
+
+// Its install floppy's files: the program and its data as "$" files (made-up
+// bytes as literals, the program's stored as SCRANTIC.EXE), the map plain,
+// and the decoys. `placeholder_only`: no RESOURCE.00$, only the placeholder
+// (a decoy source: the placeholder is never installed).
+inline PkgFixture castaway_fixture(bool placeholder_only = false) {
+  PkgFixture f;
+  const std::string root = "packages/castaway/SCRANTIC/";
+  const std::vector<uint8_t> scr = scrnsave_program("Made Up Antics"), res = blob("made-up story data", 5000),
+                             map = blob("made-up resource map", 300);
+  f.source["SCRANTIC.SC$"] = is1_literals("SCRANTIC.EXE", scr);
+  if (!placeholder_only) f.source["RESOURCE.00$"] = is1_literals("RESOURCE.001", res);
+  f.source["RESOURCE.MAP"] = map;
+  for (const std::string& d : castaway_decoys()) f.source[d] = blob("decoy " + d, 200);
+  f.expect[root + "SCRANTIC.SCR"] = scr;
+  f.expect[root + "RESOURCE.001"] = res;
+  f.expect[root + "RESOURCE.MAP"] = map;
+  f.ids = {"castaway.scrantic"};
   return f;
 }
 

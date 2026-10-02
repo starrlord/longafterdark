@@ -57,7 +57,8 @@ void fake_install(const fs::path& assets, const std::vector<std::string>& ids,
                                                       {"tt", 13},       {"simpsons", 15}, {"swse", 14},
                                                       {"startrek", 16}, {"marvel", 1},    {"snoopy", 8},
                                                       {"looney", 12},   {"screams", 15},  {"disney", 16},
-                                                      {"farside", 14},  {"dilbert", 16},  {"tng", 13}};
+                                                      {"farside", 14},  {"dilbert", 16},  {"tng", 13},
+                                                      {"castaway", 1}};
   for (const std::string& id : ids) {
     auto md5 = image_md5.find(id);
     const std::string source = md5 == image_md5.end() ? "" : ", \"source\": {\"imageMd5\": \"" + md5->second + "\"}";
@@ -147,8 +148,8 @@ void test_model(const fs::path& dir) {
                      L"Anniversary, ") == 0);
     for (const Package& p : builtin_packages()) CHECK(first.find(to_wide(p.title)) != std::wstring::npos);
     CHECK(first.find(L", The Disney Collection Screen Saver, The Far Side Screen Saver Collection, Scott Adams' "
-                     L"Dilbert Screen Saver Collection and Star Trek: The Next Generation Screen Saver. Choose where "
-                     L"to copy them from.") != std::wstring::npos);
+                     L"Dilbert Screen Saver Collection, Star Trek: The Next Generation Screen Saver and Screen Antics: "
+                     L"Johnny Castaway. Choose where to copy them from.") != std::wstring::npos);
     const std::wstring later = gui::sources_intro(true);
     CHECK(later.find(L"After Dark 4.0 Deluxe") == std::wstring::npos);
     CHECK(later.find(L" releases. Choose where to copy them from.") != std::wstring::npos);
@@ -164,7 +165,8 @@ void test_model(const fs::path& dir) {
     if (reg.size() == 12) CHECK(later.find(L" of twelve releases. ") != std::wstring::npos);
     if (reg.size() == 14) CHECK(later.find(L" of fourteen releases. ") != std::wstring::npos);
     if (reg.size() == 15) CHECK(later.find(L" of fifteen releases. ") != std::wstring::npos);
-    CHECK_EQ(reg.size(), size_t(15));
+    if (reg.size() == 16) CHECK(later.find(L" of sixteen releases. ") != std::wstring::npos);
+    CHECK_EQ(reg.size(), size_t(16));
   }
 
   // Nothing installed, and an assets folder that doesn't exist stays that way.
@@ -227,6 +229,10 @@ void test_model(const fs::path& dir) {
   }
   CHECK(gui::verified_words("image", "simpsons") == L"verified against the original disks");
   CHECK(gui::verified_words("image", "startrek") == L"verified against the original disks");
+  // One floppy, from its image, the KryoFlux dump's ZIP or the 7z (each by the image's md5).
+  CHECK(gui::verified_words("image", "castaway") == L"verified against the original disk");
+  CHECK(gui::verified_words("image", "castaway", "81087ea7cc6a304896e81c722b0a85ec") ==
+        L"verified against the original disk");
   CHECK(gui::verified_words("image", "swse") == L"verified against the original disc");
   CHECK(gui::verified_words("files", "simpsons") == L"every file verified");
   CHECK(gui::verified_words("none", "deluxe") == L"not verified");
@@ -282,7 +288,7 @@ void test_model(const fs::path& dir) {
     fs::resize_file(downloads / d.file_name, d.size);
   }
   auto dl = gui::download_rows(assets, "", downloads);
-  CHECK_EQ(dl.size(), size_t(15));
+  CHECK_EQ(dl.size(), size_t(16));
   for (const auto& r : dl) {
     CHECK(r.text.find(r.title + L"\n") == 0);
     if (r.id == "deluxe" || r.id == "tt")
@@ -308,6 +314,9 @@ void test_model(const fs::path& dir) {
       CHECK(r.text == L"The Far Side Screen Saver Collection\nInstall files (5 ZIPs) \u00b7 5.5 MB\nNot imported yet");
     if (r.id == "dilbert")
       CHECK(r.text == L"Scott Adams' Dilbert Screen Saver Collection\nInstall files (ZIP) \u00b7 4.3 MB\nNot imported yet");
+    // One floppy's image, in the KryoFlux dump's ZIP.
+    if (r.id == "castaway")
+      CHECK(r.text == L"Screen Antics: Johnny Castaway\nFloppy disk image \u00b7 1.3 MB\nNot imported yet");
   }
   // With disk 2's image too, the pair is downloaded.
   if (startrek && !startrek->downloads.empty() && !startrek->downloads.front().more_images.empty()) {
@@ -322,8 +331,9 @@ void test_model(const fs::path& dir) {
   CHECK(all.has_value());
   if (all) {
     CHECK((all->ids == std::vector<std::string>{"ad10", "ad32", "simpsons", "swse", "startrek", "marvel", "snoopy",
-                                                "looney", "screams", "disney", "farside", "dilbert", "tng"}));
-    CHECK(all->text.find(L"Every release not imported yet\n13 releases") == 0);
+                                                "looney", "screams", "disney", "farside", "dilbert", "tng",
+                                                "castaway"}));
+    CHECK(all->text.find(L"Every release not imported yet\n14 releases") == 0);
   }
   auto one = gui::download_rows(assets, "tt", downloads);
   CHECK_EQ(one.size(), size_t(1));
@@ -558,23 +568,24 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
     }
   }
   // The Sources page on common screens, every release installed: their
-  // covers are a grid, five to a row (fifteen on three rows), which shows
-  // whole at 150% on a 2560x1440 monitor (a 2560x1392 DIP work area) and on a
-  // 1080-line screen at 100%. A work area too short for it (640x900 at 100%)
-  // shows as many whole rows as fit (two), and the grid scrolls in its card.
-  // On a very short one (640x520) the grid keeps its fallback: fewer than
-  // two rows, or its full height with the whole body scrolling. With cover
-  // downloads off there is no "Get the covers" line (most of these releases
-  // have no picture), so the page is the one of a root whose covers are all
-  // there.
+  // covers are a grid, six to a row in the 720-DIP window (sixteen on three
+  // rows), which shows whole at 150% on a 2560x1440 monitor (a 2560x1392 DIP
+  // work area) and on a 1080-line screen at 100%. A work area too narrow and
+  // short for it (640x900 at 100%: five to a row, four rows) shows as many
+  // whole rows as fit (two), and the grid scrolls in its card. On a very
+  // short one (640x520) the grid keeps its fallback: fewer than two rows, or
+  // its full height with the whole body scrolling. With cover downloads off
+  // there is no "Get the covers" line (most of these releases have no
+  // picture), so the page is the one of a root whose covers are all there.
   struct Rows {
     std::wstring state;
     int at_least;   // whole rows that must show (-1: every one; 0: the fallback)
+    int cols;       // covers to a row
   };
-  const std::vector<Rows> rows = {{L"workarea=2560x1392;dpi=144", -1},
-                                  {L"workarea=1920x1032;dpi=96", -1},
-                                  {L"workarea=640x900;dpi=96", 2},
-                                  {L"workarea=640x520;dpi=144", 0}};
+  const std::vector<Rows> rows = {{L"workarea=2560x1392;dpi=144", -1, 6},
+                                  {L"workarea=1920x1032;dpi=96", -1, 6},
+                                  {L"workarea=640x900;dpi=96", 2, 5},
+                                  {L"workarea=640x520;dpi=144", 0, 5}};
   for (const Rows& t : rows) {
     std::wstring tag = t.state;
     for (wchar_t& c : tag)
@@ -590,7 +601,7 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
     sscanf(read_report(report)["list"].c_str(), "%d,%d,%d,%d,%d", &shown, &whole, &row, &grid_rows, &cols);
     fprintf(stderr, "sources covers at %s: grid %d of %d px, %d rows of %d px, %d to a row\n", to_utf8(t.state).c_str(),
             shown, whole, grid_rows, row, cols);
-    CHECK(cols == 5 && grid_rows == (int(all_ids.size()) + 4) / 5);
+    CHECK(cols == t.cols && grid_rows == (int(all_ids.size()) + t.cols - 1) / t.cols);
     // The grid's margins: 8 DIP above and below it, less the gap a row's height counts.
     const int frame = whole - grid_rows * row;
     CHECK(row > 0 && frame > 0 && frame < row);

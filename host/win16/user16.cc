@@ -9,7 +9,13 @@
 // window procedures called for the messages USER sends synchronously
 // (WM_CREATE, WM_DESTROY, SendMessage, DispatchMessage). The message queue
 // holds posted messages and timer ticks against the virtual clock; nothing
-// blocks.
+// blocks — but an application task's GetMessage and WaitMessage wait for a
+// message, ending the frame (user16_set_app_task, shim_families16.hh: the
+// ne16 lane's Windows 3.1 screen savers), and its windows get what Windows
+// 3.1's USER sent an application's: CreateWindow's WM_SIZE and WM_MOVE,
+// GetMessage's WM_PAINT, BeginPaint's WM_ERASEBKGND, DefWindowProc's
+// WM_CLOSE and WM_PAINT. The cursor (SetCursor, ShowCursor, ClipCursor) is
+// state only, never the host's.
 //
 // The synthetic desktop (a Program Manager window and its PROGMAN.INI groups,
 // for ADXPL40's and ADXPL310's desktop-icon gatherers) appears on the first
@@ -52,7 +58,8 @@
 // USER):
 //   * in the saver, dialogs and menus are refused (configure mode makes
 //     dialogs real; menus stay refused).
-//   * GetMessage never blocks: with an empty queue it returns a WM_NULL.
+//   * GetMessage never blocks outside an application task: with an empty
+//     queue it returns a WM_NULL (WaitMessage returns at once).
 //   * GetTopWindow is 0, EnumTaskWindows calls nothing back, and GetWindow's
 //     GW_OWNER is 0 (no owners are tracked).
 #include <windows.h>
@@ -86,6 +93,7 @@ struct Wnd16 {
   uint16_t parent = 0, hinst = 0, id = 0;
   uint32_t style = 0, exstyle = 0;
   bool visible = true, enabled = true, invalid = false;
+  bool erase = false;  // an application task's window: BeginPaint sends WM_ERASEBKGND first
   std::map<int16_t, uint16_t> words;
   std::map<std::string, uint16_t> props;
 };
@@ -184,6 +192,15 @@ struct UserState : RuntimeState16 {
   };
   std::map<std::pair<uint16_t, std::string>, LoadedIcon> loaded_icons;
   uint16_t progman = 0;  // the synthetic Program Manager, once the desktop exists
+  // An application task's message loop (user16_set_app_task).
+  bool app_task = false;
+  uint64_t waits = 0;  // GetMessage/WaitMessage waits that ended a frame or moved time on
+  // The cursor's emulated state (never the host's): SetCursor's handle,
+  // ShowCursor's count, ClipCursor's rectangle.
+  uint16_t cursor = 0;
+  bool clipped = false;
+  RECT16 clip{0, 0, 0, 0};
+  std::string last_box;  // the last MessageBox's caption and text (user16_last_message_box)
 };
 
 UserState& us(Runtime16& rt) {
@@ -228,6 +245,56 @@ uint32_t send(Runtime16& rt, uint16_t hwnd, uint16_t msg, uint16_t wp, uint32_t 
   auto it = s.windows.find(hwnd);
   if (it == s.windows.end()) return 0;
   return call_wndproc(rt, it->second.proc, hwnd, msg, wp, lp);
+}
+
+// DestroyWindow: WM_DESTROY, then the window is gone (not the desktop or the
+// lane's saver window). False when there is no such window.
+bool destroy_window(Runtime16& rt, uint16_t h) {
+  UserState& s = us(rt);
+  if (!s.windows.count(h) || h == s.saver || h == s.desktop) return false;
+  send(rt, h, WM_DESTROY, 0, 0);
+  s.windows.erase(h);
+  // Its timers die with it, as Windows' did.
+  s.timers.erase(std::remove_if(s.timers.begin(), s.timers.end(), [&](const Timer16& t) { return s.app_task && t.hwnd == h; }),
+                 s.timers.end());
+  return true;
+}
+
+// Whether a message is there for GetMessage(hwnd 0, no filter) in an
+// application task: posted, input, a window to paint, a timer due.
+bool app_message_ready(Runtime16& rt) {
+  UserState& s = us(rt);
+  if (!s.queue.empty() || !s.input.empty()) return true;
+  for (const auto& [h, w] : s.windows) {
+    if (w.invalid && w.visible && w.proc) return true;
+  }
+  const uint64_t now = rt.peek_us();
+  for (const Timer16& t : s.timers) {
+    if (now >= t.due_us) return true;
+  }
+  return false;
+}
+
+// An application task's wait for a message (GetMessage, WaitMessage; Windows
+// 3.1 gave the CPU to other tasks there): the frame ends here when the lane
+// can end it (Runtime16::yield_frame), so the next frame looks again with
+// virtual time moved on; else virtual time moves to the next timer or audio
+// event at once. Nothing that could ever come: a fatal error, never a hang.
+void app_wait(Runtime16& rt) {
+  UserState& s = us(rt);
+  s.waits++;
+  if (!rt.yield_frame()) {
+    const uint64_t now = rt.peek_us();
+    uint64_t next = rt.audio_due();
+    for (const Timer16& t : s.timers) {
+      if (t.due_us > now) next = std::min(next, t.due_us);
+    }
+    if (next == UINT64_MAX) {
+      throw GuestError16(GuestError16::Kind::fatal, "the task waits for a message, and nothing can come");
+    }
+    rt.wait_until_us(next);
+  }
+  rt.deliver_due_audio();
 }
 
 // ---- wsprintf ----------------------------------------------------------------------------------------
@@ -833,6 +900,25 @@ int user16_dispatch_host(Runtime16& rt, int max) {
 
 bool user16_window_exists(Runtime16& rt, uint16_t hwnd) { return hwnd && us(rt).windows.count(hwnd) != 0; }
 
+void user16_set_app_task(Runtime16& rt, bool on) { us(rt).app_task = on; }
+
+void user16_post_message(Runtime16& rt, uint16_t hwnd, uint16_t msg, uint16_t wparam, uint32_t lparam) {
+  us(rt).queue.push_back({hwnd, msg, wparam, lparam});
+  trace("user16", "posted msg %04X (%04X, %08X) to %04X for the guest", msg, wparam, lparam, hwnd);
+}
+
+std::string user16_last_message_box(Runtime16& rt) { return us(rt).last_box; }
+
+uint64_t user16_app_waits(Runtime16& rt) { return us(rt).waits; }
+
+uint16_t user16_main_window(Runtime16& rt, uint16_t hinst) {
+  UserState& s = us(rt);
+  for (const auto& [h, w] : s.windows) {
+    if (h != s.saver && h != s.desktop && w.hinst == hinst && !(w.style & WS_CHILD)) return h;
+  }
+  return 0;
+}
+
 int user16_dispatch_guest(Runtime16& rt, int max) {
   UserState& s = us(rt);
   int n = 0;
@@ -937,9 +1023,36 @@ void register_user16(Runtime16& rt) {
     const InputState& in = c.rt.input();
     c.ret32((uint32_t(uint16_t(in.mouse_y)) << 16) | uint16_t(in.mouse_x));
   });
+  // The cursor is emulated state only, never the host's: SetCursor returns
+  // the cursor before it, ShowCursor the display count, ClipCursor keeps the
+  // rectangle GetClipCursor reports (NULL: the whole screen).
   r.impl(U, "SetCursor", [](Call16& c) {
+    UserState& s = us(c);
+    uint16_t old = s.cursor;
+    s.cursor = c.w();
+    c.ret(old);
+  });
+  r.impl(U, "ShowCursor", [](Call16& c) {
+    UserState& s = us(c);
+    s.cursor_count += c.w() ? 1 : -1;
+    c.ret(uint16_t(int16_t(s.cursor_count)));
+  });
+  r.impl(U, "ClipCursor", [](Call16& c) {
+    uint32_t p = c.ptr();
+    UserState& s = us(c);
+    s.clipped = p != 0;
+    if (p) s.clip = rrect(c, p);
+    trace("user16", "ClipCursor(%s): emulated state only", p ? "a rectangle" : "NULL");
+  });
+  r.impl(U, "GetClipCursor", [](Call16& c) {
+    uint32_t p = c.ptr();
+    UserState& s = us(c);
+    wrect(c, p, s.clipped ? s.clip : RECT16{0, 0, int16_t(screen_w(c.rt)), int16_t(screen_h(c.rt))});
+  });
+  // InitApp(hInstance): the task's message queue (USER made it here): there.
+  r.impl(U, "InitApp", [](Call16& c) {
     c.w();
-    c.ret(0);
+    c.ret(1);
   });
   r.impl(U, "LoadCursor", [](Call16& c) {
     c.w();
@@ -1203,7 +1316,15 @@ void register_user16(Runtime16& rt) {
     uint8_t zero[32] = {};
     c.rt.write_bytes(ps, zero, sizeof(zero));
     c.rt.wr16(ps, dc);
-    c.rt.wr16(ps + 2, 1);
+    uint16_t must_erase = 1;
+    if (w && w->erase && us(c).app_task) {
+      // An application task's window: WM_ERASEBKGND with the DC first, as
+      // BeginPaint sent it; fErase says whether the window left it undone.
+      w->erase = false;
+      must_erase = send(c.rt, h, WM_ERASEBKGND, dc, 0) ? 0 : 1;
+      w = wnd(c, h);
+    }
+    c.rt.wr16(ps + 2, must_erase);
     RECT16 rc{0, 0, 0, 0};
     if (w) rc = RECT16{0, 0, int16_t(w->rect.right - w->rect.left), int16_t(w->rect.bottom - w->rect.top)};
     write16(c.rt, ps + 4, rc);
@@ -1217,7 +1338,10 @@ void register_user16(Runtime16& rt) {
   });
   r.impl(U, "InvalidateRect", [](Call16& c) {
     Wnd16* w = wnd(c, c.w());
+    c.ptr();
+    const bool erase = c.w() != 0;
     if (w) w->invalid = true;
+    if (w && erase) w->erase = true;
   });
   r.impl(U, "ValidateRect", [](Call16& c) {
     Wnd16* w = wnd(c, c.w());
@@ -1335,6 +1459,15 @@ void register_user16(Runtime16& rt) {
         s.windows.erase(hwnd);
         return c.ret(0);
       }
+      // An application task's window gets what Windows' CreateWindow sent
+      // after WM_CREATE — WM_SIZE (SIZE_RESTORED) and WM_MOVE — and, shown,
+      // is all invalid: GetMessage brings its WM_PAINT, BeginPaint its
+      // WM_ERASEBKGND (SCRANTIC centres its scene by the WM_SIZE it got).
+      if (s.app_task && s.windows.count(hwnd)) {
+        call_wndproc(c.rt, wn.proc, hwnd, WM_SIZE, SIZE_RESTORED, (uint32_t(uint16_t(h)) << 16) | uint16_t(w));
+        if (s.windows.count(hwnd)) call_wndproc(c.rt, wn.proc, hwnd, WM_MOVE, 0, (uint32_t(uint16_t(y)) << 16) | uint16_t(x));
+        if (Wnd16* n = wnd(c, hwnd); n && n->visible) n->invalid = n->erase = true;
+      }
     }
     c.ret(hwnd);
   };
@@ -1343,13 +1476,7 @@ void register_user16(Runtime16& rt) {
     uint32_t ex = c.l();
     create_window(c, ex);
   });
-  r.impl(U, "DestroyWindow", [](Call16& c) {
-    uint16_t h = c.w();
-    if (!wnd(c, h) || h == us(c).saver || h == us(c).desktop) return c.ret(0);
-    send(c.rt, h, WM_DESTROY, 0, 0);
-    us(c).windows.erase(h);
-    c.ret(1);
-  });
+  r.impl(U, "DestroyWindow", [](Call16& c) { c.ret_bool(destroy_window(c.rt, c.w())); });
   r.impl(U, "ShowWindow", [](Call16& c) {
     uint16_t h = c.w();
     int16_t cmd = c.sw();
@@ -1623,8 +1750,18 @@ void register_user16(Runtime16& rt) {
 
   // ---- messages ----
   r.impl(U, "DefWindowProc", [](Call16& c) {
-    c.w();
+    uint16_t h = c.w();
     uint16_t msg = c.w();
+    // An application task's window (user16_set_app_task): WM_CLOSE destroys
+    // it and WM_PAINT validates it, as Windows' DefWindowProc did.
+    if (us(c).app_task && msg == WM_CLOSE) {
+      destroy_window(c.rt, h);
+      return c.ret32(0);
+    }
+    if (us(c).app_task && msg == WM_PAINT) {
+      if (Wnd16* w = wnd(c, h)) w->invalid = w->erase = false;
+      return c.ret32(0);
+    }
     c.ret32(msg == WM_ERASEBKGND ? 1 : 0);
   });
   r.impl(U, "CallWindowProc", [](Call16& c) {
@@ -1694,6 +1831,19 @@ void register_user16(Runtime16& rt) {
       have = true;
       break;
     }
+    if (!have && s.app_task) {
+      // An application task's windows to paint, after the input and before
+      // the timers, as Win16's GetMessage made WM_PAINT; it stays until the
+      // window is validated (BeginPaint, DefWindowProc).
+      for (const auto& [h, w] : s.windows) {
+        Msg16 pm{h, WM_PAINT, 0, 0};
+        if (w.invalid && w.visible && w.proc && pass(pm)) {
+          m = pm;
+          have = true;
+          break;
+        }
+      }
+    }
     if (!have) {
       uint64_t now = c.rt.peek_us();
       for (auto& t : s.timers) {
@@ -1727,12 +1877,22 @@ void register_user16(Runtime16& rt) {
   r.impl(U, "GetMessage", [take](Call16& c) {
     uint32_t out = c.ptr();
     uint16_t hwnd = c.w(), lo = c.w(), hi = c.w();
-    if (!take(c, out, hwnd, lo, hi, true)) {
-      // Nothing queued and nothing can arrive while we wait: a WM_NULL.
-      uint8_t zero[18] = {};
-      c.rt.write_bytes(out, zero, sizeof(zero));
+    while (!take(c, out, hwnd, lo, hi, true)) {
+      if (!us(c).app_task) {
+        // Nothing queued and nothing can arrive while we wait: a WM_NULL.
+        uint8_t zero[18] = {};
+        c.rt.write_bytes(out, zero, sizeof(zero));
+        break;
+      }
+      // An application task waits for its message (app_wait).
+      app_wait(c.rt);
     }
     c.ret_bool(c.rt.rd16(out + 2) != WM_QUIT);
+  });
+  // WaitMessage: an application task waits until a message is there
+  // (app_wait); for anything else it returns at once, as GetMessage's WM_NULL does.
+  r.impl(U, "WaitMessage", [](Call16& c) {
+    while (us(c).app_task && !app_message_ready(c.rt)) app_wait(c.rt);
   });
   // WM_KEYDOWN/WM_SYSKEYDOWN → WM_CHAR/WM_SYSCHAR ahead of everything else
   // in the input queue, the US layout's character (input16.hh), Shift and
@@ -1895,6 +2055,7 @@ void register_user16(Runtime16& rt) {
     std::string text = c.rt.read_str(c.ptr()), cap = c.rt.read_str(c.ptr());
     uint16_t type = c.w();
     log("win16 MessageBox \"%s\": %s", cap.c_str(), text.c_str());
+    us(c).last_box = "\"" + cap + "\": " + text;
     static const uint16_t kAnswer[] = {IDOK, IDOK, IDIGNORE, IDNO, IDNO, IDCANCEL};
     c.ret((type & 0xF) < 6 ? kAnswer[type & 0xF] : IDOK);
   });

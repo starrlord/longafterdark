@@ -76,6 +76,8 @@ const std::map<std::string, Expect> kExpect = {
     {"farside", {14, "image"}},  {"dilbert", {16, "image"}},
     // The CD.
     {"tng", {13, "image"}},
+    // The KryoFlux dump's ZIP of the floppy's image (the image inside is known).
+    {"castaway", {1, "image"}},
 };
 
 // Every file of a copy: its own, then the images of further install disks.

@@ -2,8 +2,10 @@
 // takes (PACKAGES.md §3): an ISO-9660/Joliet image, a FAT12/16 floppy image,
 // a flat ZIP of install files (the Internet Archive's Simpsons copies), the
 // floppy images a ZIP holds (the Internet Archive's ZIP of Star Trek: The
-// Screen Saver's two disks), a host folder (a CD drive, a copy of a disc or
-// floppies), or several images unioned into one tree (split floppies).
+// Screen Saver's two disks), a 7z of either (sevenzip.h: the user's copy of
+// Johnny Castaway is a 7z of its floppy image), a host folder (a CD drive, a
+// copy of a disc or floppies), or several images unioned into one tree
+// (split floppies).
 //
 // Disk sets. A source whose root holds nothing but folders named DISK<n>
 // (zip.h disk_folder_number: DISK1..DISK99, any case) is a release's install
@@ -63,7 +65,7 @@ class SourceFs {
   virtual std::vector<SourceNode> list(const SourceNode& dir) const = 0;
   // Streams a file's bytes in order.
   virtual void read(const SourceNode& file, const Sink& sink) const = 0;
-  // "iso9660", "iso9660+joliet", "fat12", "fat16", "zip" or "folder".
+  // "iso9660", "iso9660+joliet", "fat12", "fat16", "zip", "7z" or "folder".
   virtual std::string format() const = 0;
   virtual std::string volume_id() const { return {}; }
   // What a directory is, independent of the name it was reached by: an ISO
@@ -90,7 +92,8 @@ std::optional<FILETIME> dos_filetime(uint16_t date, uint16_t time);
 // An image file, sniffed by content: ISO-9660 (cooked or raw sectors) first,
 // then a ZIP (a local file header at byte 0: its members are the root's
 // files, bare names only, or a disk set's DISK<n>/<bare name>; none
-// password-protected), then FAT12/16. A disk set is read as its union (see
+// password-protected), then a 7z (its signature at byte 0; the same rule,
+// format "7z"), then FAT12/16. A disk set is read as its union (see
 // above), and `note`, when given, then says so ("" otherwise). Throws
 // ImportError(source_invalid) when it is none of them.
 std::unique_ptr<SourceFs> open_image(const std::filesystem::path& path, std::string* note = nullptr);
@@ -110,11 +113,14 @@ inline constexpr uint64_t kMaxZippedImageBytes = 64ull << 20;
 // label scan, the metadata of a whole Internet Archive item) is only named in
 // `ignored`, never inflated; nor is a floppy-sized one past its first 64 KiB
 // (the output chunk that completes its first sector) when that sector is no
-// boot sector (55 AA, a sector size FatImage takes). Empty
-// when the file is no ZIP, or holds no floppy image: it is then a ZIP of
-// install files, read by open_image. Throws ImportError(source_invalid) for a
-// floppy-sized member that is password-protected or damaged, and when the
-// members with a boot sector add up to more than `max_bytes`.
+// boot sector (55 AA, a sector size FatImage takes). A 7z is read the same
+// way (its signature at byte 0; sevenzip.h), its images in any folder
+// ("<folder>/DISK1.IMG"), each decoded with its size and CRC-32 checked.
+// Empty when the file is no ZIP or 7z, or holds no floppy image: it is then
+// a ZIP or 7z of install files, read by open_image. Throws
+// ImportError(source_invalid) for a floppy-sized member that is
+// password-protected or damaged, and when the members with a boot sector add
+// up to more than `max_bytes`.
 std::vector<ZippedImage> floppy_images_in_zip(const std::filesystem::path& path,
                                               std::vector<std::string>* ignored = nullptr,
                                               uint64_t max_bytes = kMaxZippedImageBytes);

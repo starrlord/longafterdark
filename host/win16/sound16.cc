@@ -1613,6 +1613,41 @@ void register_sound16(Runtime16& rt) {
           (unsigned long long)op.t, err, ret.c_str());
     c.ret32(err);
   });
+
+  // mciSendCommand(wDeviceID, wMessage, dwParam1, dwParam2): MCI_CLOSE (0x0804)
+  // of a device mciSendString opened (MCI_ALL_DEVICE_ID: every one), as its
+  // "close" — with MCI_NOTIFY (dwParam1 bit 0) to the MCI_GENERIC_PARMS'
+  // dwCallback window. A device ID that is not open is MCIERR_INVALID_DEVICE_ID
+  // whatever the command, as MMSYSTEM checked the ID first (Johnny Castaway's
+  // one call, MCI_CLOSE of a song it never opens, 5:00ab); every other
+  // command is MCIERR_UNSUPPORTED_FUNCTION.
+  r.impl(M, "mciSendCommand", [](Call16& c) {
+    const uint16_t id = c.w(), msg = c.w();
+    const uint32_t flags = c.l(), parms = c.l();
+    Sound16& s = snd(c.rt);
+    constexpr uint16_t kMciClose = 0x0804;
+    constexpr uint32_t kMciNotifyFlag = 0x00000001, kMciInvalidDeviceId = 256 + 1;
+    uint32_t err = kMciInvalidDeviceId;
+    if (id == kMciAllDevices || s.mci.count(id)) {
+      if (msg != kMciClose) {
+        err = kMciUnsupportedFunction;
+      } else if (!s.on) {
+        err = kMciInvalidDeviceId;
+      } else {
+        std::string cmd = "close " + (id == kMciAllDevices ? std::string("all") : s.mci.at(id).name);
+        uint16_t callback = 0;
+        if ((flags & kMciNotifyFlag) && parms) {
+          callback = uint16_t(c.rt.rd32(parms));
+          cmd += " notify";
+        }
+        Op op(c.rt, s, c.rt.peek_us());
+        std::string ret;
+        err = mci_command(c.rt, s, op.t, cmd, callback, &ret);
+      }
+    }
+    trace("sound", "mciSendCommand(%u, %04X, %08X, %08X) -> %u", id, msg, flags, parms, err);
+    c.ret32(err);
+  });
 }
 
 }  // namespace adw::win16

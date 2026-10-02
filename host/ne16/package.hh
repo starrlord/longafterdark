@@ -18,15 +18,18 @@
 // OLDMOD16.DLL), and DLLs come from the module dir, <win>\FILES\CLASSIC, then
 // the engine dir.
 //
-// Kind (ADNE16KIND=auto|ad3|imx; lane.hh "Module protocols"): auto reads the
-// module's exports, resident or non-resident, in any case — MODULE is an
+// Kind (ADNE16KIND=auto|ad3|imx|scr; lane.hh "Module protocols"): auto reads
+// the module's exports, resident or non-resident, in any case — MODULE is an
 // After Dark 2.x/3.x module (ad3; it wins when both are there); SAVERINIT
 // and SAVERDRAW an Intermission module (imx), unless it also exports
 // SETCURRSAVER or its file name starts IMXX_, both of which Intermission's
 // IMX reader refuses (IMIMXPLY 2:03c7, 2:044d); SAVERMAIN alone an
-// Intermission .IMQ (imx, form imq, below); anything else is not a module at
-// all. A file that starts "AniN" or "AniM" is an Intermission ASA animation
-// (imx, form asa), whatever ADNE16KIND says.
+// Intermission .IMQ (imx, form imq, below); an application (an NE file that
+// is no library) exporting SCREENSAVERPROC a Windows 3.1 screen saver, a
+// .SCR built on SCRNSAVE.LIB (scr: Johnny Castaway's SCRANTIC.SCR; any other
+// application is refused); anything else is not a module at all. A file
+// that starts "AniN" or "AniM" is an Intermission ASA animation (imx, form
+// asa), whatever ADNE16KIND says.
 //
 // Form (imx): what the Intermission module's file is, which picks its
 // reader. INTRMLIB's FINDALLMODULES (1:1e06) made every *.IMQ of the saver
@@ -129,8 +132,8 @@ Ne16Layout resolve_layout(const std::string& module_full_path, const std::string
 
 // ---- the module's kind ----------------------------------------------------------------------------------------
 
-enum class ModuleKind { ad3, imx };
-const char* kind_name(ModuleKind k);  // "ad3", "imx"
+enum class ModuleKind { ad3, imx, scr };
+const char* kind_name(ModuleKind k);  // "ad3", "imx", "scr"
 // An Intermission module's form (the rule above).
 enum class ImxForm { imx, asa, imq };
 const char* form_name(ImxForm f);  // "imx", "asa", "imq"
@@ -144,7 +147,7 @@ struct KindProbe {
 };
 // `file_name` is the module file's name (the IMXX_ rule).
 KindProbe detect_kind(const loader::ne::Image& img, const std::string& file_name);
-// ADNE16KIND's value ("" = auto). False when it is not auto, ad3 or imx.
+// ADNE16KIND's value ("" = auto). False when it is not auto, ad3, imx or scr.
 bool parse_kind_choice(const std::string& value, bool* is_auto, ModuleKind* forced);
 
 // ---- the IMX reader -------------------------------------------------------------------------------------------

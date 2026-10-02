@@ -108,6 +108,11 @@ int main(int argc, char** argv) {
   std::string out;
   CHECK_EQ(run(exe, {L"--help"}, "help", &out), 0);
   CHECK(out.find("usage: adimport") != std::string::npos);
+  // Every release by title, and every id for --package, the sixteenth last.
+  const size_t tng_at = out.find("\n  Star Trek: The Next Generation Screen Saver"),
+               castaway_at = out.find("\n  Screen Antics: Johnny Castaway");
+  CHECK(tng_at != std::string::npos && castaway_at != std::string::npos && tng_at < castaway_at);
+  CHECK(out.find(", farside, dilbert, tng, castaway)") != std::string::npos);
   CHECK_EQ(run(exe, {}, "no arguments, no console"), 1);
   CHECK_EQ(run(exe, {L"--bogus"}, "unknown flag"), 1);
   CHECK_EQ(run(exe, {L"--iso", iso.wstring(), L"--from", dir.wstring()}, "two sources"), 1);
@@ -236,6 +241,8 @@ int main(int argc, char** argv) {
                  "not installed; download 4.3 MB (ZIP of the install files)") != std::string::npos);
   CHECK(out.find("\n  tng       Star Trek: The Next Generation Screen Saver  "
                  "not installed; download 5.8 MB (disc image)") != std::string::npos);
+  CHECK(out.find("\n  castaway  Screen Antics: Johnny Castaway               "
+                 "not installed; download 1.3 MB (floppy image)") != std::string::npos);
   CHECK_EQ(run(exe, {L"--set-cover", L"tt", pic, L"--dest", dest.wstring()}, "--set-cover, not imported", &out), 1);
   CHECK(out.find("Totally Twisted After Dark isn't imported") != std::string::npos);
   CHECK_EQ(run(exe, {L"--set-cover", L"deluxe", pic, L"--dest", dest.wstring()}, "--set-cover, no picture"), 2);

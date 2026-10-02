@@ -240,7 +240,7 @@ int main(int argc, char** argv) {
                          startrek = test::startrek_fixture(), looney = test::looney_fixture(),
                          screams = test::screams_fixture(), disney = test::disney_fixture(),
                          farside = test::farside_fixture(), dilbert = test::dilbert_fixture(),
-                         tng = test::tng_fixture();
+                         tng = test::tng_fixture(), castaway = test::castaway_fixture();
   const test::IslibFixture marvel = test::marvel_fixture(), snoopy = test::snoopy_fixture();
   test::TestRegistry reg = registry_for({{"deluxe", &deluxe},
                                          {"ad10", &ad10},
@@ -256,7 +256,8 @@ int main(int argc, char** argv) {
                                          {"disney", &disney},
                                          {"farside", &farside},
                                          {"dilbert", &dilbert},
-                                         {"tng", &tng}});
+                                         {"tng", &tng},
+                                         {"castaway", &castaway}});
 
   // ---- the registry's box covers (COVERS.md §2.2, §2.3) ----------------------------------------------
   {
@@ -370,7 +371,8 @@ int main(int argc, char** argv) {
     CHECK((std::vector<std::string>(order.begin(), order.begin() + std::min<size_t>(order.size(), 7)) ==
            std::vector<std::string>{"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek"}));
     CHECK((order == std::vector<std::string>{"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek", "marvel",
-                                             "snoopy", "looney", "screams", "disney", "farside", "dilbert", "tng"}));
+                                             "snoopy", "looney", "screams", "disney", "farside", "dilbert", "tng",
+                                             "castaway"}));
     for (const char* id : {"looney", "screams", "disney"}) CHECK(std::find(order.begin(), order.end(), id) != order.end());
     CHECK(std::find(order.begin(), order.end(), "looney") < std::find(order.begin(), order.end(), "screams"));
     CHECK(std::find(order.begin(), order.end(), "screams") < std::find(order.begin(), order.end(), "disney"));
@@ -628,6 +630,19 @@ int main(int argc, char** argv) {
   test::write_bytes(src / L"tng.iso", test::iso_of(tng, false, "STAR_TRE"));
   test::write_tree(src / L"tng", tng.source);
   test::write_tree(src / L"tng-no-engine", test::tng_fixture(false).source);
+  // Screen Antics: Johnny Castaway: its floppy and a folder of its files; the
+  // floppy without RESOURCE.00$ (only the placeholder: a decoy), and another
+  // InstallShield 1 product's floppy (a decoy).
+  test::write_bytes(src / L"castaway.img", test::floppy_of(castaway.source));
+  test::write_tree(src / L"castaway", castaway.source);
+  test::write_tree(src / L"castaway-placeholder", test::castaway_fixture(true).source);
+  {
+    test::Tree other;
+    for (const char* n : {"SETUP.EXE", "INSTALL.INS", "INSTALL.EX$"}) other[n] = test::blob(std::string("other ") + n);
+    other["OTHERSAV.SC$"] = test::is1_literals("OTHERSAV.EXE", test::scrnsave_program("Another Saver"));
+    other["OTHER.MAP"] = test::blob("another map");
+    test::write_tree(src / L"is1-other", other);
+  }
   for (int k = 1; k <= 3; k++) {
     test::write_tree(src / (L"disney-disk" + std::to_wstring(k)), test::disk_files(disney.source, k, test::disney_disk));
     test::write_tree(src / (L"screams-disk" + std::to_wstring(k)), test::disk_files(screams.source, k, test::screams_disk));
@@ -2436,7 +2451,7 @@ int main(int argc, char** argv) {
     const Package* p = find_package("tng");
     CHECK(p != nullptr);
     if (p) {
-      CHECK(builtin_packages().size() == 15 && &builtin_packages()[14] == p);
+      CHECK(builtin_packages().size() >= 15 && &builtin_packages()[14] == p);
       CHECK(p->recipe == Recipe::ad3zip && std::string(p->root) == "packages/tng");
       CHECK(std::string(p->module_dir) == "ST-TNG" && std::string(p->engine_dll) == "ADXPL320.DLL" &&
             std::string(p->folder_afi) == "ST-TNG.AFI" && !p->marker);
@@ -2470,6 +2485,126 @@ int main(int argc, char** argv) {
             Status::source_invalid);
     CHECK(r.message.find("not a known release") != std::string::npos);
     CHECK(!fs::exists(dir / L"tng-decoy" / L"win" / L"packages" / L"tng"));
+  }
+
+  // ---- Screen Antics: Johnny Castaway: an InstallShield 1 floppy -------------------------------------
+  {
+    // The registry: after the first fifteen (their GUI command ids), the
+    // floppy, the KryoFlux dump's ZIP of it and the user's 7z of it as its
+    // known images, that ZIP its one download, the box front its cover; its
+    // program named Johnny Castaway.
+    const Package* p = find_package("castaway");
+    CHECK(p != nullptr);
+    if (p) {
+      CHECK(builtin_packages().size() == 16 && &builtin_packages()[15] == p);
+      CHECK(p->recipe == Recipe::is1 && std::string(recipe_name(p->recipe)) == "is1" &&
+            std::string(p->root) == "packages/castaway");
+      CHECK(std::string(p->title) == "Screen Antics: Johnny Castaway" &&
+            std::string(p->short_title) == "Johnny Castaway");
+      CHECK(std::string(p->released) == "1992-12" && p->screen && std::string(p->screen) == "640x480");
+      CHECK(std::string(p->module_dir) == "SCRANTIC" && p->module_dirs.size() == 1 &&
+            std::string(p->module_dirs[0]) == "SCRANTIC" && !p->engine_dll && !p->folder_afi && !p->marker);
+      CHECK((std::vector<std::string>(p->required_archives.begin(), p->required_archives.end()) ==
+             std::vector<std::string>{"SCRANTIC.SC$", "RESOURCE.00$", "RESOURCE.MAP"}));
+      CHECK(p->loose_files.size() == 3);
+      // Never the floppy's RESOURCE.001: the installed one comes from RESOURCE.00$.
+      for (const LooseFile& lf : p->loose_files) {
+        CHECK(std::string_view(lf.from) != "RESOURCE.001");
+        CHECK_EQ(lf.codec == Codec::is1, ends_with_i(lf.from, "$"));
+      }
+      CHECK(p->images.size() == 3 && std::string(p->images[0].md5) == "81087ea7cc6a304896e81c722b0a85ec" &&
+            p->images[0].size == 1474560 && std::string(p->images[2].md5) == "edf027407e258f73d8056ae8dc87215f" &&
+            p->images[2].size == 1355520);
+      for (const KnownImage& k : p->images) CHECK(k.disk == 0);
+      CHECK(p->downloads.size() == 1 && std::string(p->downloads[0].md5) == p->images[1].md5 &&
+            p->downloads[0].size == p->images[1].size && std::string(p->downloads[0].kind) == "image");
+      CHECK(p->covers.size() == 1 && p->covers[0].kind == CoverSource::Kind::download &&
+            std::string(p->covers[0].art) == "box");
+      CHECK_EQ(p->manifest.size(), size_t(3));
+      CHECK(p->name_overrides.size() == 1 && std::string(p->name_overrides[0].module) == "SCRANTIC/SCRANTIC.SCR" &&
+            std::string(p->name_overrides[0].name) == "Johnny Castaway");
+      CHECK(p->fixups.empty() && p->never_opened.empty() && p->library_members.empty() && !p->install_name &&
+            !p->setup_title);
+    }
+    // Identified by the installer's files and SCRANTIC.SC$ beside them;
+    // another InstallShield 1 floppy is no release, and the InstallShield 2
+    // and Delrina floppies are still themselves.
+    CHECK(identify_folder(src / L"castaway", nullptr, reg.span()) == &reg.get("castaway"));
+    CHECK(identify_folder(src / L"castaway") == find_package("castaway"));
+    CHECK(identify_folder(src / L"is1-other", nullptr, reg.span()) == nullptr);
+    CHECK(identify_folder(src / L"marvel", nullptr, reg.span()) == &reg.get("marvel"));
+    CHECK(identify_folder(src / L"snoopy", nullptr, reg.span()) == &reg.get("snoopy"));
+    // The floppy alone: the program and its data expanded from their "$"
+    // files under their installed names, the map copied; the decoys, locked,
+    // are never opened.
+    fs::path root = dir / L"alone-castaway";
+    std::vector<HANDLE> held;
+    for (const std::string& decoy : test::castaway_decoys()) {
+      const fs::path p = src / L"castaway" / to_wide(decoy);
+      held.push_back(CreateFileW(p.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr));
+    }
+    for (HANDLE h : held) CHECK(h != INVALID_HANDLE_VALUE);
+    ImportResult r = run("castaway folder, decoys locked", folder(src / L"castaway"),
+                         opts_for(dir / L"castaway-locked", reg), Status::ok);
+    for (HANDLE h : held) CloseHandle(h);
+    check_installed(dir / L"castaway-locked" / L"win", castaway, "packages/castaway");
+    r = run("castaway floppy", image(src / L"castaway.img"), opts_for(root, reg), Status::ok);
+    CHECK_EQ(r.package_id, std::string("castaway"));
+    CHECK_EQ(r.verified, std::string("files"));
+    CHECK_EQ(r.package_modules, size_t(1));
+    check_installed(root / L"win", castaway, "packages/castaway");
+    CHECK(catalog_ids(root / L"win") == castaway.ids);
+    CHECK(no_leftovers(root / L"win"));
+    {
+      // A file's time is its "$" file's own (1992-12-09 12:34:56, local).
+      WIN32_FILE_ATTRIBUTE_DATA a{};
+      CHECK(GetFileAttributesExW((root / L"win" / L"packages" / L"castaway" / L"SCRANTIC" / L"SCRANTIC.SCR").c_str(),
+                                 GetFileExInfoStandard, &a));
+      SYSTEMTIME utc{}, st{};
+      FileTimeToSystemTime(&a.ftLastWriteTime, &utc);
+      SystemTimeToTzSpecificLocalTime(nullptr, &utc, &st);  // that date's daylight rules, as dos_filetime's
+      CHECK(st.wYear == 1992 && st.wMonth == 12 && st.wDay == 9 && st.wHour == 12 && st.wMinute == 34);
+    }
+    // The catalog entry: a Windows 3.1 screen-saver program, named Johnny
+    // Castaway by the registry (its description says otherwise), with
+    // Control Panel's Setup...
+    phosg::JSON cat = json_at(root / L"win" / L"catalog-win.json");
+    CHECK_EQ(cat.at("modules").as_list().size(), size_t(1));
+    if (cat.at("modules").as_list().size() == 1) {
+      const phosg::JSON& m = *cat.at("modules").as_list()[0];
+      CHECK_EQ(m.get_string("lane"), std::string("ne16"));
+      CHECK_EQ(m.get_string("path"), std::string("packages/castaway/SCRANTIC/SCRANTIC.SCR"));
+      CHECK_EQ(m.get_string("entry"), std::string("SCREENSAVERPROC"));
+      CHECK_EQ(m.get_string("abi"), std::string("scrnsave"));
+      CHECK_EQ(m.get_string("screen"), std::string("640x480"));
+      CHECK_EQ(m.get_string("moduleName"), std::string("Johnny Castaway"));
+      CHECK_EQ(m.get_string("displayName"), std::string("Johnny Castaway"));
+      CHECK_EQ(m.get_string("about"), std::string());
+      CHECK(m.at("needs").as_list().empty() && m.at("system").as_list().size() == 4);
+      const auto& ctl = m.at("controls").as_list();
+      CHECK(ctl.size() == 1 && ctl[0]->get_int("index") == 0 && ctl[0]->get_string("name") == "Setup..." &&
+            ctl[0]->get_string("type") == "button");
+    }
+    // Without RESOURCE.00$ it is not the whole release: the placeholder
+    // beside it is never installed.
+    r = run("castaway, the placeholder only", folder(src / L"castaway-placeholder"),
+            opts_for(dir / L"castaway-decoy", reg), Status::source_invalid);
+    CHECK(r.message.find("RESOURCE.00$") != std::string::npos);
+    CHECK(!fs::exists(dir / L"castaway-decoy" / L"win" / L"packages" / L"castaway"));
+    // Another InstallShield 1 product's floppy is no release.
+    r = run("another InstallShield 1 floppy", folder(src / L"is1-other"), opts_for(dir / L"is1-decoy", reg),
+            Status::source_invalid);
+    CHECK(r.message.find("not a known release") != std::string::npos);
+    // A damaged "$" file (cut short) is a corrupt source, never a verify failure.
+    {
+      test::Tree t = castaway.source;
+      t["SCRANTIC.SC$"].resize(t["SCRANTIC.SC$"].size() - 7);
+      test::write_tree(src / L"castaway-cut", t);
+      r = run("castaway, SCRANTIC.SC$ cut short", folder(src / L"castaway-cut"), opts_for(dir / L"castaway-cut", reg),
+              Status::source_invalid);
+      CHECK(r.message.find("SCRANTIC.SC$") != std::string::npos);
+      CHECK(!fs::exists(dir / L"castaway-cut" / L"win" / L"packages" / L"castaway"));
+    }
   }
 
   // ---- identification ---------------------------------------------------------------------------
@@ -3075,7 +3210,7 @@ int main(int argc, char** argv) {
     CHECK_EQ(win_assets_dir(dir / L"fresh"), dir / L"fresh" / L"win");
 
     auto states = list_packages(root, reg.span());
-    CHECK_EQ(states.size(), size_t(15));
+    CHECK_EQ(states.size(), size_t(16));
     for (auto& s : states) {
       bool want = std::string(s.package->id) == "ad32" || std::string(s.package->id) == "simpsons";
       CHECK_EQ(s.installed, want);
@@ -3123,16 +3258,19 @@ int main(int argc, char** argv) {
     run("ad10", image(src / L"ad10.iso"), opts_for(all, reg), Status::ok);
     run("farside", folder(src / L"farside-disks"), opts_for(all, reg), Status::ok);
     run("tng", image(src / L"tng.iso"), opts_for(all, reg), Status::ok);
+    run("castaway", image(src / L"castaway.img"), opts_for(all, reg), Status::ok);
     phosg::JSON cat = json_at(all / L"win" / L"catalog-win.json");
     CHECK_EQ(cat.get_string("generator"), std::string(kCatalogGenerator));
     std::vector<std::string> ids;
     for (auto& m : cat.at("modules").as_list()) ids.push_back(m->get_string("id"));
     CHECK(ids == concat({deluxe.ids, ad10.ids, ad32.ids, tt.ids, simpsons.ids, swse.ids, startrek.ids, marvel.ids,
-                         snoopy.ids, looney.ids, screams.ids, disney.ids, farside.ids, dilbert.ids, tng.ids}));
+                         snoopy.ids, looney.ids, screams.ids, disney.ids, farside.ids, dilbert.ids, tng.ids,
+                         castaway.ids}));
     // The top-level packages list: oldest release first (the cover strip's and the list
     // groups' order), while modules above stay in registry order. Star Trek:
-    // The Screen Saver (1992-11) comes first, Marvel Comics Screen Posters
-    // (1993-12) next, then The Far Side (1994-06); Star Wars Screen
+    // The Screen Saver (1992-11) comes first, Johnny Castaway (1992-12)
+    // next, Marvel Comics Screen Posters (1993-12) then, then The Far Side
+    // (1994-06); Star Wars Screen
     // Entertainment ties with the Simpsons (1994-08) and follows it, as in
     // the registry, and Snoopy's Screen Savers, Dilbert and Star Trek: The
     // Next Generation Screen Saver (1994-10) follow them, in registry order
@@ -3140,9 +3278,10 @@ int main(int argc, char** argv) {
     // and the Disney Collection (1995-09) comes between Totally Twisted and
     // Deluxe.
     const auto& pk = cat.at("packages").as_list();
-    CHECK_EQ(pk.size(), size_t(15));
+    CHECK_EQ(pk.size(), size_t(16));
     std::vector<std::pair<std::string, size_t>> want_pk = {
-        {"startrek", startrek.ids.size()}, {"marvel", marvel.ids.size()},   {"farside", farside.ids.size()},
+        {"startrek", startrek.ids.size()}, {"castaway", castaway.ids.size()},
+        {"marvel", marvel.ids.size()},     {"farside", farside.ids.size()},
         {"simpsons", simpsons.ids.size()}, {"swse", swse.ids.size()},       {"snoopy", snoopy.ids.size()},
         {"dilbert", dilbert.ids.size()},   {"tng", tng.ids.size()},         {"looney", looney.ids.size()},
         {"screams", screams.ids.size()},   {"ad32", ad32.ids.size()},       {"tt", tt.ids.size()},
@@ -3204,11 +3343,13 @@ int main(int argc, char** argv) {
     }
     CHECK_EQ(module_by_id(cat, "ad32.guts2")->get_string("moduleName"), std::string("guts"));
     CHECK_EQ(module_by_id(cat, "ad10.toast2k")->get_string("moduleName"), std::string("Toasters 2k (early build)"));
-    // Only the Intermission modules carry "abi", as their last field.
+    // Only the Intermission modules and Johnny Castaway's program carry
+    // "abi", as their last field.
     for (auto& m : cat.at("modules").as_list()) {
       const std::string package = m->get_string("package");
       const bool imx = package == "swse" || package == "farside" || package == "dilbert";
-      CHECK_EQ(m->contains("abi"), imx);
+      CHECK_EQ(m->contains("abi"), imx || package == "castaway");
+      if (package == "castaway") CHECK_EQ(m->get_string("abi"), std::string("scrnsave"));
       // (The fixture's DIL-WHAK has no dialog, so no button.)
       if (imx)
         CHECK(m->get_string("abi") == "intermission" &&
@@ -3221,11 +3362,11 @@ int main(int argc, char** argv) {
       CHECK(at != std::string::npos && text.rfind("\"abi\": \"intermission\"\n", end) > at);
     }
     // Only Star Trek: The Screen Saver's, Marvel Comics Screen Posters',
-    // ScreamSavers' and Star Trek: The Next Generation Screen Saver's
-    // modules carry "screen" (last).
+    // ScreamSavers', Star Trek: The Next Generation Screen Saver's and
+    // Johnny Castaway's modules carry "screen" (last).
     for (auto& m : cat.at("modules").as_list()) {
       const std::string p = m->get_string("package");
-      const bool fixed = p == "startrek" || p == "marvel" || p == "screams" || p == "tng";
+      const bool fixed = p == "startrek" || p == "marvel" || p == "screams" || p == "tng" || p == "castaway";
       CHECK_EQ(m->contains("screen"), fixed);
       if (fixed) CHECK_EQ(m->get_string("screen"), std::string("640x480"));
     }
@@ -3372,7 +3513,7 @@ int main(int argc, char** argv) {
         if (col != std::string::npos) cols.push_back(line.rfind("not ", col) == col - 4 ? col - 4 : col);
         pos += 3;
       }
-      CHECK_EQ(cols.size(), size_t(15));
+      CHECK_EQ(cols.size(), size_t(16));
       for (size_t c : cols) CHECK_EQ(c, cols.front());
       CHECK(out.find("  swse      Star Wars Screen Entertainment               installed, ") != std::string::npos);
       CHECK(out.find("  startrek  Star Trek: The Screen Saver                  installed, ") != std::string::npos);
@@ -3386,6 +3527,8 @@ int main(int argc, char** argv) {
                      "not installed; download 5.5 MB (5 ZIPs of the install disks' files)") != std::string::npos);
       CHECK(out.find("  dilbert   Scott Adams' Dilbert Screen Saver Collection not installed; download 4.3 MB (ZIP of "
                      "the install files)") != std::string::npos);
+      CHECK(out.find("  castaway  Screen Antics: Johnny Castaway               "
+                     "not installed; download 1.3 MB (floppy image)") != std::string::npos);
     }
     CHECK_EQ(cli({L"--list-packages", L"--image", L"x"}, "--list-packages + a source"), 1);
     CHECK_EQ(cli({L"--remove", L"tt", L"--catalog-only"}, "--remove + --catalog-only"), 1);

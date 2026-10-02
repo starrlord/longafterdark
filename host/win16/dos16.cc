@@ -62,6 +62,28 @@ struct DosState : RuntimeState16 {
 
 DosState& ds_state(Runtime16& rt) { return rt.state<DosState>(); }
 
+}  // namespace
+
+uint16_t dos16_psp(Runtime16& rt) {
+  DosState& st = ds_state(rt);
+  if (!st.psp_sel) {
+    st.psp_sel = rt.ldt().alloc(1);
+    rt.ldt().set(st.psp_sel, cpu::SegDesc{layout::kSysBase + layout::kSysPsp, 0xFF, true, false, true, false, 3});
+    rt.ldt().set_tag(st.psp_sel, "PSP");
+  }
+  return st.psp_sel;
+}
+
+void dos16_set_command_tail(Runtime16& rt, std::string_view tail) {
+  const uint32_t psp = layout::kSysBase + layout::kSysPsp;
+  const size_t n = std::min<size_t>(tail.size(), 126);
+  rt.mem().write_u8(psp + 0x80, uint8_t(n));
+  if (n) rt.mem().memcpy(psp + 0x81, tail.data(), n);
+  rt.mem().write_u8(psp + 0x81 + uint32_t(n), 0x0D);
+}
+
+namespace {
+
 SYSTEMTIME now_local(Runtime16& rt) {
   uint64_t ft = rt.local_filetime();
   FILETIME f{DWORD(ft), DWORD(ft >> 32)};
@@ -614,12 +636,7 @@ void dos_int21(Runtime16& rt) {
       break;
     case 0x51:  // get PSP
     case 0x62:
-      if (!st.psp_sel) {
-        st.psp_sel = rt.ldt().alloc(1);
-        rt.ldt().set(st.psp_sel, cpu::SegDesc{layout::kSysBase + layout::kSysPsp, 0xFF, true, false, true, false, 3});
-        rt.ldt().set_tag(st.psp_sel, "PSP");
-      }
-      r.w_bx(st.psp_sel);
+      r.w_bx(dos16_psp(rt));
       break;
     case 0x56: {  // rename DS:DX → ES:DI
       std::string from = rt.read_str(ds_dx());
@@ -1020,6 +1037,18 @@ void seed_intermission(Runtime16& rt, const IntermissionSeeds& seeds) {
   std::string antsw = o.windows_dir + "\\ANTSW.INI";
   ini.add_seed(antsw, "Intermission", "Volume", std::to_string(std::clamp(seeds.volume, 0, 100)));
   ini.add_seed(antsw, "Intermission", "Saver Path", seeds.saver_path.empty() ? o.guest_dir : seeds.saver_path);
+}
+
+void seed_scrnsave(Runtime16& rt, const ScrnsaveSeeds& seeds) {
+  const Runtime16Options& o = rt.options();
+  win32::IniStore& ini = profiles16(rt);
+  const std::string win = o.windows_dir + "\\WIN.INI";
+  ini.add_seed(win, "Windows", "ScreenSaveActive", "1");
+  ini.add_seed(win, "Windows", "ScreenSaveTimeOut", "120");
+  if (!seeds.program.empty()) ini.add_seed(o.windows_dir + "\\SYSTEM.INI", "boot", "SCRNSAVE.EXE", seeds.program);
+  if (!seeds.source_dir.empty()) {
+    ini.add_seed(o.windows_dir + "\\SCRANTIC.INI", "ScreenSaver.ScreenAntics", "SourceDir", seeds.source_dir);
+  }
 }
 
 void seed_after_dark2(Runtime16& rt) {

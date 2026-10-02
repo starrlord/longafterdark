@@ -116,6 +116,15 @@ win32::IniStore& profiles16(Runtime16& rt);
 // them), the INI files After Dark's installer left there as empty virtual
 // files, their settings (and WIN.INI's [Berkeley Systems]) as profile seeds.
 void register_dos(Runtime16& rt);
+
+// The task's PSP (the system segment's, kSysPsp): its selector, made on first
+// use (INT 21h AH=51h/62h answer it; a task's start and InitTask hand it in
+// ES, modules16.hh "Tasks"), with the environment's selector at 2Ch.
+uint16_t dos16_psp(Runtime16& rt);
+// The PSP's command tail, DOS style: its length at 80h, the text from 81h
+// (" /s": a blank first, as Windows' loader left it), CR after it; at most
+// 126 characters.
+void dos16_set_command_tail(Runtime16& rt, std::string_view tail);
 // (Re)seeds C:\WINDOWS\MODULES.INI's per-install settings for what the
 // install directory (C:\AFTERDRK) holds now; register_dos seeds it before
 // anything is mounted, the lane again once the module's folder is (PACKAGES.md
@@ -144,6 +153,23 @@ void seed_modules_ini(Runtime16& rt);
 //        "Off": no effects and no music (1:7073..1:70D2) — and Saver Path =
 //        saver_path (default: the guest directory), where INTRMLIB looks for
 //        savers (1:2243..1:225C; its default is "c:\saver").
+// The profile seeds a Windows 3.1 screen saver (the ne16 lane's scr
+// protocol) runs over, read as seed ⊕ file and never written out — what
+// its installer left (Johnny Castaway's INSTALL.INS, InstallSHIELD 1.02):
+//   WIN.INI [Windows] ScreenSaveActive = 1, ScreenSaveTimeOut = 120;
+//   SYSTEM.INI [boot] SCRNSAVE.EXE = program, the saver's guest path;
+//   with source_dir (SCRANTIC.SCR's install dir): SCRANTIC.INI
+//        [ScreenSaver.ScreenAntics] SourceDir = source_dir, where the
+//        program finds RESOURCE.MAP and RESOURCE.001 (its default is the
+//        current directory).
+// What the program writes there (SCRANTIC.INI's story: NumDays,
+// CurrentYear/Month/Day, StartTime, Introduction; its Setup... settings)
+// lands in C:\WINDOWS's upper layer, ADSTATE's when set.
+struct ScrnsaveSeeds {
+  std::string program;
+  std::string source_dir;
+};
+void seed_scrnsave(Runtime16& rt, const ScrnsaveSeeds& seeds);
 struct IntermissionSeeds {
   int volume = 0;
   bool swse_gdi = false;

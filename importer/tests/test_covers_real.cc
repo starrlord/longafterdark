@@ -19,7 +19,8 @@
 //      A release with no cover source on its disc (Star Wars Screen
 //      Entertainment, Star Trek: The Screen Saver, Marvel Comics Screen
 //      Posters and The Far Side: every picture is inside their archives,
-//      compressed files or libraries) is skipped.
+//      compressed files or libraries; Johnny Castaway: its floppy holds only
+//      the installer's logos) is skipped.
 //   3. Every tile is drawn side by side into covers-sheet.png, for a person
 //      to look at.
 // Nothing is written outside <scratch> and the sheet; the scratch tree is

@@ -407,6 +407,16 @@ uint32_t Runtime16::call_far(uint32_t proc, std::span<const Arg16> args, const R
   if (!proc) throw GuestError16(GuestError16::Kind::fatal, "far call to a NULL procedure");
   SavedRegs saved = save();
   auto& r = cpu_->registers();
+  if (in && in->ss) {
+    // The callee's own stack (a task's start): restore() brings the caller's back.
+    try {
+      cpu_->load_segment(SegReg::SS, *in->ss);
+    } catch (const X86::fault_error& e) {
+      restore(saved);
+      throw GuestError16(GuestError16::Kind::fault, std::string("call_far stack: ") + e.what());
+    }
+    r.w_esp(in->sp.value_or(0));
+  }
   const cpu::SegDesc& ss = cpu_->get_segment_desc(SegReg::SS);
   uint16_t sp = r.r_sp();
   auto push = [&](uint16_t v) {
@@ -432,6 +442,7 @@ uint32_t Runtime16::call_far(uint32_t proc, std::span<const Arg16> args, const R
     if (in->dx) r.w_dx(*in->dx);
     if (in->si) r.w_si(*in->si);
     if (in->di) r.w_di(*in->di);
+    if (in->bp) r.w_bp(*in->bp);
   }
   try {
     if (in && in->ds) {
@@ -457,7 +468,18 @@ uint32_t Runtime16::call_far(uint32_t proc, std::span<const Arg16> args, const R
   depth_++;
   X86::StopReason why;
   try {
-    why = cpu_->run_until(thunk_sel_, 0, budget);
+    if (task_budget_) {
+      // An application task (set_task_budget): slices of call_budget, on as
+      // long as each one made an API call.
+      for (;;) {
+        const uint64_t api0 = api_charged_;
+        budget_end_ = cpu_->cycles() + opts_.call_budget;
+        why = cpu_->run_until(thunk_sel_, 0, opts_.call_budget);
+        if (why != X86::StopReason::LIMIT || api_charged_ == api0) break;
+      }
+    } else {
+      why = cpu_->run_until(thunk_sel_, 0, budget);
+    }
   } catch (const GuestUnwind16&) {
     // A Throw to a Catch further out: this level's registers go back to the
     // caller's (the shim that called us), which the target level then
@@ -483,8 +505,10 @@ uint32_t Runtime16::call_far(uint32_t proc, std::span<const Arg16> args, const R
     if (fault_state_.empty()) fault_state_ = state_text("at the stop", true);
     restore(saved);
     throw GuestError16(GuestError16::Kind::hang, "far call to " + describe(uint16_t(proc >> 16), proc & 0xFFFF) +
-                                                     " did not return within " + std::to_string(opts_.call_budget) +
-                                                     " instructions (stopped at " + where + ")");
+                                                     (task_budget_ ? " ran " : " did not return within ") +
+                                                     std::to_string(opts_.call_budget) +
+                                                     (task_budget_ ? " instructions without an API call" : " instructions") +
+                                                     " (stopped at " + where + ")");
   }
   uint32_t result = (uint32_t(r.r_dx()) << 16) | r.r_ax();
   last_sp_after_ = r.r_sp();
@@ -514,7 +538,7 @@ void Runtime16::on_interrupt(X86& cpu, uint8_t vector) {
 }
 
 void Runtime16::check_deadline() {
-  if (!deadline_fn_ || peek_us() < deadline_us_) return;
+  if (!deadline_fn_ || (peek_us() < deadline_us_ && work_insns() < work_deadline_)) return;
   std::function<void()> fn = std::move(deadline_fn_);
   deadline_fn_ = nullptr;
   fn();

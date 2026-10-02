@@ -70,6 +70,27 @@ bool user16_window_exists(Runtime16& rt, uint16_t hwnd);
 // takes them. At most `max` messages are handled; returns how many were.
 int user16_dispatch_guest(Runtime16& rt, int max = 64);
 
+// An application task's message loop (modules16.hh "Tasks"; the ne16 lane's
+// scrnsave protocol turns it on): GetMessage and WaitMessage with nothing to
+// deliver wait as Windows 3.1's did — the frame ends there
+// (Runtime16::yield_frame) and the next one looks again, or, with no frame
+// to end, virtual time moves on to the next timer — instead of returning a
+// WM_NULL at once; the task's windows get CreateWindow's WM_SIZE and WM_MOVE,
+// GetMessage's WM_PAINT for a window to paint, BeginPaint's WM_ERASEBKGND,
+// and DefWindowProc closes (WM_CLOSE) and validates (WM_PAINT) as Windows'
+// did; DestroyWindow takes the window's timers along. Off, nothing changes.
+void user16_set_app_task(Runtime16& rt, bool on);
+// PostMessage's, from the host: a message in the guest's posted queue, for
+// the guest's own loop to take (not a host-posted one: user16_post_host).
+void user16_post_message(Runtime16& rt, uint16_t hwnd, uint16_t msg, uint16_t wparam, uint32_t lparam);
+// The waits so far (frames ended, or time moved on, inside GetMessage/WaitMessage).
+uint64_t user16_app_waits(Runtime16& rt);
+// The last MessageBox's caption and text ("" when none was shown).
+std::string user16_last_message_box(Runtime16& rt);
+// The first top-level window of the instance `hinst` (not the lane's saver
+// window or the desktop), 0 when none.
+uint16_t user16_main_window(Runtime16& rt, uint16_t hinst);
+
 // The task this runtime is (GetCurrentTask; made on first use), and the task
 // the synthetic desktop's Program Manager belongs to (GetWindowTask, IsTask;
 // no task list shows it).

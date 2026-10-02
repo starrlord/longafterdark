@@ -7,6 +7,7 @@
 
 #include "adw/core/log.h"
 #include "adw/core/text.h"
+#include "win16/dos16.hh"
 #include "win16/runtime16.hh"
 #include "win16/shim_families16.hh"
 #include "win32/vfs.hh"
@@ -202,7 +203,56 @@ Module16* ModuleTable16::load_host(const std::string& host_path, uint16_t* err) 
   return load_file(host_path, guest, err);
 }
 
-Module16* ModuleTable16::load_file(const std::string& host_path, const std::string& guest_path, uint16_t* err) {
+Module16* ModuleTable16::load_task(const std::string& host_path, const std::string& guest_path,
+                                   const std::string& command_tail, uint16_t* err) {
+  if (err) *err = 0;
+  if (task_.module) {
+    log("win16: %s: a task is loaded already (%s)", host_path.c_str(), task_.module->file.c_str());
+    if (err) *err = 11;
+    return nullptr;
+  }
+  if (!host_file_exists(host_path)) {
+    if (err) *err = 2;
+    return nullptr;
+  }
+  task_.command_tail = command_tail.substr(0, 126);
+  return load_file(host_path, guest_path, err, /*task=*/true);
+}
+
+uint32_t ModuleTable16::run_task() {
+  if (!task_.module) throw GuestError16(GuestError16::Kind::fatal, "run_task: no task is loaded");
+  Module16* m = task_.module;
+  const ne::Header& h = m->image->header();
+  if (!h.cs || h.cs > m->seg_sel.size()) throw GuestError16(GuestError16::Kind::fatal, m->file + " has no entry point");
+  Regs16In in;
+  in.ax = 0;
+  in.bx = task_.stack_size;
+  in.cx = task_.heap_size;
+  in.dx = 0;
+  in.si = 0;  // hPrevInstance
+  in.di = m->hinstance;
+  in.bp = 0;
+  in.ds = m->dgroup;
+  in.es = task_.psp;
+  in.ss = task_.ss;
+  in.sp = task_.sp;
+  trace("mod16", "%s: the task starts at %u:%04X, SS:SP %04X:%04X, stack %u, heap %u, PSP %04X, command tail \"%s\"",
+        m->file.c_str(), h.cs, h.ip, task_.ss, task_.sp, task_.stack_size, task_.heap_size, task_.psp,
+        task_.command_tail.c_str());
+  const bool was = rt_.task_budget();
+  rt_.set_task_budget(true);
+  try {
+    uint32_t r = rt_.call_far((uint32_t(m->seg_sel[h.cs - 1]) << 16) | h.ip, {}, &in);
+    rt_.set_task_budget(was);
+    return r;
+  } catch (...) {
+    rt_.set_task_budget(was);
+    throw;
+  }
+}
+
+Module16* ModuleTable16::load_file(const std::string& host_path, const std::string& guest_path, uint16_t* err,
+                                   bool task) {
   for (auto& m : modules_) {
     if (!m->system && CompareStringOrdinal(widen(m->host_path).c_str(), -1, widen(host_path).c_str(), -1, TRUE) ==
                           CSTR_EQUAL) {
@@ -222,9 +272,14 @@ Module16* ModuleTable16::load_file(const std::string& host_path, const std::stri
     if (err) *err = 2;
     return nullptr;
   }
-  if (!img->header().is_dll()) {
-    // The Classic lane runs libraries only (every .AD and helper is one).
+  if (!img->header().is_dll() && !task) {
+    // Libraries only, but the one application the runtime runs as its task (load_task).
     log("win16: %s is a Win16 application, not a DLL", host_path.c_str());
+    if (err) *err = 11;
+    return nullptr;
+  }
+  if (task && img->header().is_dll()) {
+    log("win16: %s is a Win16 library, not an application", host_path.c_str());
     if (err) *err = 11;
     return nullptr;
   }
@@ -237,6 +292,8 @@ Module16* ModuleTable16::load_file(const std::string& host_path, const std::stri
   m->guest_path = guest_path;
   m->image = img;
   m->refs = 1;
+  // The task's start is its entry point (run_task), never a LibEntry.
+  if (task) m->initialized = true;
 
   // The module database: the NE header as the file has it ('NE' at 0).
   const ne::Header& h = img->header();
@@ -282,11 +339,28 @@ Module16* ModuleTable16::load_file(const std::string& host_path, const std::stri
       if (GlobalBlock* dg = rt_.global().find(m->dgroup)) rt_.global().set_limit(*dg, 0x10000);
       const ne::Segment& ds = img->segment(h.autodata_segment);
       uint32_t static_end = (ds.flags & ne::seg_iterated) ? ds.min_alloc : std::max(ds.file_size, ds.min_alloc);
-      rt_.local().note_dgroup(m->dgroup, uint16_t(std::min<uint32_t>(static_end, 0xFFF0)));
+      static_end = std::min<uint32_t>(static_end, 0xFFF0);
+      if (task) {
+        // The task's DGROUP (Tasks): the stack above the static data, the
+        // local heap above the stack (InitTask makes it); SP 0 is the stack's top.
+        const uint32_t top = std::min<uint32_t>(static_end + h.stack_size, 0xFFF0);
+        task_.module = m;
+        task_.stack_size = h.stack_size;
+        task_.heap_size = h.heap_size;
+        task_.stack_low = uint16_t(static_end);
+        task_.ss = h.ss && h.ss <= m->seg_sel.size() ? m->seg_sel[h.ss - 1] : m->dgroup;
+        task_.sp = uint16_t(h.sp ? h.sp : top & ~1u);
+        dos16_set_command_tail(rt_, task_.command_tail);
+        task_.psp = dos16_psp(rt_);
+        rt_.local().note_dgroup(m->dgroup, uint16_t(top));
+      } else {
+        rt_.local().note_dgroup(m->dgroup, uint16_t(static_end));
+      }
     }
 
-    // Prolog patching (ABI.md §3.6): exported entries of a SINGLEDATA DLL.
-    if (m->dgroup && (h.flags & ne::mod_singledata)) {
+    // Prolog patching (ABI.md §3.6): exported entries of a SINGLEDATA DLL,
+    // and of the task (one instance: what MakeProcInstance's thunk loaded).
+    if (m->dgroup && ((h.flags & ne::mod_singledata) || task)) {
       int patched = 0;
       for (const ne::Entry& e : img->entries()) {
         if (!e.exported() || e.segment == 0 || e.segment >= 0xFE || e.segment > m->seg_sel.size()) continue;
@@ -398,6 +472,7 @@ void ModuleTable16::unload(Module16* m) {
   }
   std::vector<Module16*> deps = std::move(m->deps);
   m->deps.clear();
+  if (task_.module == m) task_ = Task16{};
   if (m->dgroup) rt_.local().forget(m->dgroup);
   rt_.global().free_owned(m->hmodule);
   auto it = std::find_if(modules_.begin(), modules_.end(), [&](auto& p) { return p.get() == m; });

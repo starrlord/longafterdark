@@ -96,7 +96,7 @@ std::unique_ptr<Protocol16> Ne16Lane::choose_protocol(const Ne16Layout& layout, 
   ImxForm form = ImxForm::imx;
   if (const std::string* k = env.get("ADNE16KIND")) {
     if (!parse_kind_choice(*k, &is_auto, &kind)) {
-      log("ADNE16KIND='%s' is not auto, ad3 or imx; using auto", k->c_str());
+      log("ADNE16KIND='%s' is not auto, ad3, imx or scr; using auto", k->c_str());
       is_auto = true;
     }
   }
@@ -125,6 +125,7 @@ std::unique_ptr<Protocol16> Ne16Lane::choose_protocol(const Ne16Layout& layout, 
     }
     trace("lane", "%s: kind %s (ADNE16KIND)", file_of(layout.module_path).c_str(), kind_name(kind));
   }
+  if (kind == ModuleKind::scr) return make_scr_protocol(layout);
   return kind == ModuleKind::imx ? make_imx_protocol(layout, form) : make_ad3_protocol(layout);
 }
 
@@ -223,6 +224,14 @@ bool Ne16Lane::init_impl(const std::string& module_path, LaneContext& ctx) {
   max_draws_ = opts.insns_per_us ? uint32_t(std::clamp<uint64_t>(env_u64(env, "ADMAXDRAWS", 64), 1, 100000)) : 1;
   // Long calls (lane.hh): on with the virtual CPU; ADNE16LONGCALLS=0 turns them off.
   long_calls_ = opts.insns_per_us && !(env.get("ADNE16LONGCALLS") && !env.flag("ADNE16LONGCALLS"));
+  // A protocol whose one call lasts the whole run (scr: the program's task)
+  // has its frames end inside it, so it cannot run without them.
+  if (proto_->runs_as_task() && !long_calls_) {
+    log("%s: this module runs only with long calls (its program's task is one call that lasts the run); "
+        "ADMIPS=0 and ADNE16LONGCALLS=0 turn them off",
+        module_name_.c_str());
+    return false;
+  }
   // Carried overruns (lane.hh "Pacing"): the protocol's choice, with the
   // DRAWFRAME budget on; ADNE16IMXCARRY=0 turns them off.
   carry_ = proto_->carries_overruns() && draw_mips_ && !(env.get("ADNE16IMXCARRY") && !env.flag("ADNE16IMXCARRY"));
@@ -311,6 +320,10 @@ bool Ne16Lane::init_impl(const std::string& module_path, LaneContext& ctx) {
         long_calls_ = false;
       }
     }
+    if (proto_->runs_as_task() && !long_calls_) {
+      census();
+      return false;
+    }
     // A synchronous sndPlaySound lasts its sound's duration (lane.hh "Sound"):
     // the frames go on meanwhile, as in a long call.
     if (long_calls_) rt.set_yield_hook([this] { return suspend_frame(); });
@@ -398,6 +411,9 @@ void Ne16Lane::queue_input(const Command& c) {
     p.was_down = key_down_[p.vk];
     key_down_[p.vk] = p.down;
   } else if (c.kind == Command::Kind::mouse) {
+    // A protocol that takes no mouse messages (scr): the mouse state alone,
+    // which run_host has updated (GetCursorPos).
+    if (!proto_->takes_mouse_messages()) return;
     // Guest coordinates: the output's, scaled up with the guest display (sync_input).
     const int k = guest_scale_;
     const int w = guest_screen_ ? guest_screen_->width() : ctx_->screen.width();
@@ -494,8 +510,11 @@ LaneStatus Ne16Lane::status() const {
   s.interactive = wants_events_;
   s.cursor = cursor_;
   s.source = wants_events_ ? kStatusSourceAd3 : 0;  // the toggle is AD3's 0x0E (Protocol16::Call)
-  // Within the last 120 steps it read the saver window's queue, or a keyboard hook is in.
-  s.key_filter = hooked_ || (read_queue_ && frames_ - last_read_frame_ < kReaderSteps);
+  // Within the last 120 steps it read the saver window's queue, or a keyboard
+  // hook is in — unless the protocol takes neither key nor mouse messages
+  // (scr): then nothing it reads or hooks is the saver's input.
+  const bool takes_input = proto_ && (proto_->takes_key_messages() || proto_->takes_mouse_messages());
+  s.key_filter = takes_input && (hooked_ || (read_queue_ && frames_ - last_read_frame_ < kReaderSteps));
   s.wake = wake_;
   s.eaten = eaten_;
   // Input still in the saver window's queue (kept while a suspended DRAWFRAME
@@ -532,8 +551,13 @@ bool Ne16Lane::draw_run() {
     } else if (r.kind == Protocol16::Call::Kind::cursor_on || r.kind == Protocol16::Call::Kind::cursor_off) {
       cursor_ = r.kind == Protocol16::Call::Kind::cursor_on;
     } else if (r.kind == Protocol16::Call::Kind::stop) {
-      log("%s: frame %" PRIu64 ": the module stopped (result %d): %s", module_name_.c_str(), frames_, r.code,
-          proto_->error_text().c_str());
+      if (winding_down_) {
+        trace("lane", "%s: closing: the module ended (result %d): %s", module_name_.c_str(), r.code,
+              proto_->error_text().c_str());
+      } else {
+        log("%s: frame %" PRIu64 ": the module stopped (result %d): %s", module_name_.c_str(), frames_, r.code,
+            proto_->error_text().c_str());
+      }
       return false;
     } else if (r.kind == Protocol16::Call::Kind::wake) {
       // The module asked the saver to end, as the user's input would (AD.EXE
@@ -644,6 +668,10 @@ StepResult Ne16Lane::step() {
       // host's, to present).
       frame_deadline_ = rt_->modeled_time() ? ctx_->clock.now_us() + period : rt_->peek_us() + period * 9 / 10;
       rt_->set_deadline(frame_deadline_, [this] { on_deadline(); });
+      // A task's frame (lane.hh "Windows 3.1 screen savers") also ends at the
+      // first API call past the frame's work budget: the 486-class machine's
+      // share of the period, as a run of DRAWFRAMEs gets (Pacing).
+      if (proto_->runs_as_task() && frame_budget_) rt_->set_work_deadline(frame_w0_ + frame_budget_);
       run_result_ = Run::none;
       SwitchToFiber(guest_fiber_);
       rt_->clear_deadline();
@@ -761,6 +789,34 @@ void Ne16Lane::abandon_long_call() {
   trace("lane", "%s: abandoned the DRAWFRAME in progress", module_name_.c_str());
 }
 
+// Shutdown (Protocol16::close_suspended): the suspended call resumes, a
+// frame period of virtual time at a time (the frame clock stands still), for
+// at most kWindDownSteps resumptions, until it returns; nothing is presented.
+void Ne16Lane::wind_down() {
+  winding_down_ = true;
+  const uint64_t period = ctx_->clock.step_us();
+  int steps = 0;
+  for (; steps < kWindDownSteps && suspended_; steps++) {
+    rt_->set_deadline(rt_->peek_us() + period, [this] { on_deadline(); });
+    run_result_ = Run::none;
+    SwitchToFiber(guest_fiber_);
+    rt_->clear_deadline();
+    if (run_result_ == Run::error) {
+      std::exception_ptr e = fiber_error_;
+      fiber_error_ = nullptr;
+      try {
+        std::rethrow_exception(e);
+      } catch (const std::exception& x) {
+        log("%s: while closing: %s", module_name_.c_str(), x.what());
+      }
+      break;
+    }
+  }
+  winding_down_ = false;
+  trace("lane", "%s: closing took %d resumption(s)%s", module_name_.c_str(), steps,
+        suspended_ ? "; still running: abandoned" : "");
+}
+
 void Ne16Lane::free_fibers() {
   if (guest_fiber_) {
     DeleteFiber(guest_fiber_);
@@ -781,6 +837,10 @@ void Ne16Lane::shutdown() {
         module_name_.c_str(), draws_, frames_, long_frames_,
         carry_ ? (", " + std::to_string(idle_frames_) + " made none").c_str() : "");
   try {
+    // A suspended call the protocol ends as its host ended it (scr: the
+    // program closes, as on the input that woke a Windows 3.1 saver) runs on
+    // to that end first; what is still suspended after it is abandoned.
+    if (suspended_ && loaded_ && proto_ && proto_->close_suspended()) wind_down();
     abandon_long_call();
     if (loaded_ && proto_ && !suspended_) proto_->unload();
     loaded_ = false;

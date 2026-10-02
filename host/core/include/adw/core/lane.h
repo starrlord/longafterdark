@@ -125,11 +125,13 @@ class Lane {
   // is loaded to answer it).
   virtual bool can_configure() const { return false; }
   // The module ABIs this lane runs, for --capabilities (abis=): "afterdark"
-  // (After Dark's module protocols) and "intermission" (Delrina Intermission's
+  // (After Dark's module protocols), "intermission" (Delrina Intermission's
   // modules: .IMX modules, .ASA animations and .IMQ modules that are their
   // own readers; a catalog entry says "abi":"intermission", and no "abi"
-  // means "afterdark"). The pe32 lane runs {afterdark}, the ne16 lane
-  // {afterdark, intermission}.
+  // means "afterdark") and "scrnsave" (a Windows 3.1 screen saver: a .SCR
+  // program built on SCRNSAVE.LIB, run as Windows 3.1 ran it;
+  // "abi":"scrnsave"). The pe32 lane runs {afterdark}, the ne16 lane
+  // {afterdark, intermission, scrnsave}.
   virtual std::vector<std::string> abis() const { return {}; }
   // Run a module's button handler (§6.1). ctx.input holds ADCVSET, ADCAPS and ADNUMLOCK;
   // ctx.env.state_root is persistent in this mode. The lane may fill

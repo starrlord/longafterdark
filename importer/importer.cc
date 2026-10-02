@@ -248,6 +248,26 @@ bool delrina_fingerprint(const SourceFs& fs, const Package& p) {
   return true;
 }
 
+// is1: InstallShield 1's own files, on the install floppy of every release
+// it installs: the launcher, the compiled script and the installer it
+// expands (an "$" file).
+constexpr const char* kIs1Installer[] = {"SETUP.EXE", "INSTALL.INS", "INSTALL.EX$"};
+
+// is1: the installer's files and the release's first file (required_archives[0])
+// side by side at the source's root (the floppy, or a copy of its files).
+// Nothing is read: their names name the release (another InstallShield 1
+// floppy has other files of its own).
+bool is1_fingerprint(const SourceFs& fs, const Package& p) {
+  if (p.required_archives.empty()) return false;
+  const SourceNode root = fs.root();
+  for (const char* n : kIs1Installer) {
+    auto x = fs.child(root, n);
+    if (!x || x->is_dir) return false;
+  }
+  auto first = fs.child(root, p.required_archives[0]);
+  return first && !first->is_dir;
+}
+
 // Microsoft Setup's SETUP.LST is a small text file: the real one is 654 bytes.
 constexpr uint64_t kMaxSetupLst = 64 * 1024;
 
@@ -504,6 +524,8 @@ Identified identify(const SourceFs& fs, std::span<const Package> registry, const
       if (auto loc = tree_location(fs, p)) matches.push_back(std::move(*loc));
     } else if (p.recipe == Recipe::intermission && p.delrina_installer()) {
       if (delrina_fingerprint(fs, p)) matches.push_back(Identified{&p, fs.root(), ""});
+    } else if (p.recipe == Recipe::is1) {
+      if (is1_fingerprint(fs, p)) matches.push_back(Identified{&p, fs.root(), ""});
     } else if (p.recipe == Recipe::intermission) {
       // The script names the product; its first archive (disk 1's) must be
       // beside it.
@@ -1073,9 +1095,26 @@ class Importer {
     if (!skipped.empty()) log("skipped " + skipped + " (not in the recipe of " + p.title + ")");
   }
 
-  // The registry's loose files (intermission, ad2kwaj), under the names the
-  // installer gave them, expanded when compressed. One the source lacks is not
-  // planned: the manifest then reports it missing.
+  // ---- recipe "is1": InstallShield 1's script, flattened (PACKAGES.md) ----
+  // Every file the table reads must be there; then the registry's loose
+  // files, "$" files expanded, under their installed names. Only the table's
+  // files are ever opened (I5): the installer, its script and logos, and the
+  // floppy's placeholder for a file it expands are never read.
+  void plan_is1(const SourceFs& fs, const Identified& id) {
+    const Package& p = *pkg_;
+    std::string missing;
+    for (const char* a : p.required_archives) {
+      auto n = fs.child(id.dir, a);
+      if (!n || n->is_dir) missing += std::string(missing.empty() ? "" : ", ") + a;
+    }
+    if (!missing.empty())
+      invalid("the source is missing " + missing + ", which the install floppy of " + p.title + " holds");
+    plan_loose_files(fs, id);
+  }
+
+  // The registry's loose files (intermission, ad2kwaj, is1), under the names
+  // the installer gave them, expanded when compressed. One the source lacks is
+  // not planned: the manifest then reports it missing.
   void plan_loose_files(const SourceFs& fs, const Identified& id) {
     for (const LooseFile& lf : pkg_->loose_files) {
       auto n = fs.child(id.dir, lf.from);
@@ -1124,6 +1163,30 @@ class Importer {
           try {
             kwaj_expand(*bytes, what, size, sink);
           } catch (const KwajError& e) {
+            invalid(e.what());
+          }
+        };
+      } else if (lf.codec == Codec::is1) {
+        // An "$" file records no size either: expanding it once gives it,
+        // bounded as KWAJ's are; the copy expands no more than it. Its own
+        // date is the file's (the floppy's are the build's). The largest real
+        // one expands to 1.1 MB.
+        auto bytes = std::make_shared<const std::vector<uint8_t>>(fs.read_all(*n, 16ull << 20));
+        try {
+          const Is1Header h = is1_header(*bytes, what);
+          if (auto t = dos_filetime(uint16_t(h.dos_datetime >> 16), uint16_t(h.dos_datetime & 0xFFFF)))
+            pl.has_mtime = true, pl.mtime = *t;
+          pl.size = is1_expand(*bytes, what, budget_left(), [](const uint8_t*, size_t) {});
+        } catch (const IszTooLarge&) {
+          over_budget(pl.from);
+        } catch (const IszError& e) {
+          invalid(e.what());
+        }
+        const uint64_t size = pl.size;
+        pl.read = [bytes, what, size](const Sink& sink) {
+          try {
+            is1_expand(*bytes, what, size, sink);
+          } catch (const IszError& e) {
             invalid(e.what());
           }
         };
@@ -1333,12 +1396,14 @@ class Importer {
   // packages (ad2kwaj) AD.EXE out of the module folders in I1, their own I3,
   // the DLLs' and drivers' imports in I2, and the sound database in ST_RES\
   // in I4; for the InstallShield 2 packages (islib) AD.EXE out of the module
-  // folders in I1, the DLLs' and drivers' imports in I2, and their own I3.
+  // folders in I1, the DLLs' and drivers' imports in I2, and their own I3;
+  // for the InstallShield 1 package (is1, a screen-saver program) its own I3.
   void check_invariants(const fs::path& stage) const {
     const Package& p = *pkg_;
     const bool imx = p.recipe == Recipe::intermission;
     const bool ad2 = p.recipe == Recipe::ad2kwaj;
     const bool isl = p.recipe == Recipe::islib;
+    const bool is1 = p.recipe == Recipe::is1;
     std::set<std::string> have;  // upper case, relative to the package root
     for (const ImportedFile& f : r_.files) have.insert(ascii_upper(f.path.substr(root_.size() + 1)));
     std::vector<std::string> folders;
@@ -1421,6 +1486,14 @@ class Importer {
           fail("I3", std::string("ENGINE\\") + n + " belongs to After Dark 3.x and 4.x");
       for (const std::string& f : have)
         if (f.rfind("WINDOWS/", 0) == 0) fail("I3", f + ": an InstallShield 2 package has no WINDOWS folder");
+    } else if (is1) {
+      // A Windows 3.1 screen-saver program and its data, in its module
+      // folder alone: no ENGINE (nothing of After Dark's, which would make
+      // the 16-bit lane take the package for an After Dark one) and no
+      // WINDOWS folder (the program's SCRANTIC.INI is its own to write).
+      for (const std::string& f : have)
+        if (f.rfind("ENGINE/", 0) == 0 || f.rfind("WINDOWS/", 0) == 0)
+          fail("I3", f + ": an InstallShield 1 package has only its module folder");
     } else {
       if (!have.count("ENGINE/AD_SND.DLL")) fail("I3", "no ENGINE\\AD_SND.DLL");
       if (!(have.count("ENGINE/OLDMOD16.DLL") && have.count("ENGINE/AFTERDAR.SCR")) && !have.count("ENGINE/ADTASK.DLL"))
@@ -1572,7 +1645,12 @@ std::string render_import_json_v2(const Source& src, const Package& p, const Imp
   const bool image = !r.parts.empty();
   const bool floppy = r.format == "fat12" || r.format == "fat16";
   const bool download = src.kind == Source::Kind::download;
-  const char* kind = download ? "download" : !image ? "folder" : floppy ? "floppy" : r.format == "zip" ? "zip" : "iso";
+  const char* kind = download            ? "download"
+                     : !image            ? "folder"
+                     : floppy            ? "floppy"
+                     : r.format == "zip" ? "zip"
+                     : r.format == "7z"  ? "7z"
+                                         : "iso";
   uint64_t total = 0;
   for (auto& f : r.files) total += f.size;
   std::string j = "{\n";
@@ -1996,6 +2074,11 @@ ImportResult run_import(const Source& src, const ImportOptions& opts) {
     else if (r.format == "zip")
       imp.log("a ZIP of install files, not an image of the original disks" +
               std::string(opts.check_known ? ": checking every file against the release" : ""));
+    else if (r.format == "7z" && r.iso_md5_known)
+      imp.log("a 7z of install files, the known copy of " + std::string(pkg.title) + " (by its md5)");
+    else if (r.format == "7z")
+      imp.log("a 7z of install files, not an image of the original disks" +
+              std::string(opts.check_known ? ": checking every file against the release" : ""));
     else if (r.iso_md5_known && r.parts.size() > 1)
       imp.log("the images are the known install disks of " + std::string(pkg.title));
     else if (image.pkg == &pkg && !image.complete && image.every_disk) {
@@ -2015,6 +2098,7 @@ ImportResult run_import(const Source& src, const ImportOptions& opts) {
     else if (pkg.recipe == Recipe::ad3zip) imp.plan_ad3zip(*sfs, id);
     else if (pkg.recipe == Recipe::intermission) imp.plan_intermission(*sfs, id);
     else if (pkg.recipe == Recipe::islib) imp.plan_islib(*sfs, id);
+    else if (pkg.recipe == Recipe::is1) imp.plan_is1(*sfs, id);
     else imp.plan_ad2kwaj(*sfs, id);
     imp.check_required();
     imp.check_sizes();

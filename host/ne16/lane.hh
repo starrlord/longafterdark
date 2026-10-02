@@ -1,6 +1,6 @@
 // adw_lane_ne16 — the Classic lane: a 16-bit NE module (an After Dark
-// 2.x/3.x .AD, or an Intermission .IMX) run on the Win16 guest runtime
-// (host/win16). Where the engine files come from follows the package rule
+// 2.x/3.x .AD, an Intermission .IMX, or a Windows 3.1 screen saver's .SCR)
+// run on the Win16 guest runtime (host/win16). Where the engine files come from follows the package rule
 // (package.hh, PACKAGES.md §7.1/§7.3).
 //
 // Module protocols (protocol.hh): the lane (lane.cc) is the machinery every
@@ -11,13 +11,15 @@
 // of the protocol the module speaks: its choices and runtime options, the
 // guest's disk, load, one call of each frame's run, SET, unload, and a button
 // in configure mode. Below, "DRAWFRAME" in the lane's sections is that call.
-// Two protocols exist, After Dark's own and Delrina Intermission's, and the
-// module's exports choose (package.hh detect_kind; ADNE16KIND forces one):
-// MODULE is an After Dark module, SAVERINIT with SAVERDRAW an Intermission
-// one; an Intermission reader (SAVERMAIN alone), or an NE file with neither,
-// is refused (exit 1). Both kinds are NE, so both are this lane's (catalog
-// "lane":"ne16"; an Intermission entry adds "abi":"intermission"), and
-// --capabilities lists both ABIs (Lane::abis: afterdark, intermission).
+// Three protocols exist, After Dark's own, Delrina Intermission's and
+// Windows 3.1's screen-saver program, and the module's exports choose
+// (package.hh detect_kind; ADNE16KIND forces one): MODULE is an After Dark
+// module, SAVERINIT with SAVERDRAW an Intermission one, an application
+// exporting SCREENSAVERPROC a Windows 3.1 saver; an NE file that is none of
+// them is refused (exit 1). All are NE, so all are this lane's (catalog
+// "lane":"ne16"; an Intermission entry adds "abi":"intermission", a Windows
+// 3.1 saver's "abi":"scrnsave"), and --capabilities lists the three ABIs
+// (Lane::abis: afterdark, intermission, scrnsave).
 //
 // The AD3 protocol (ad3_protocol.cc): an After Dark 2.x/3.x module driven the
 // way AFTERDAR.SCR drove it through OLDMOD32's flat thunks (ABI.md §3.1–§3.3,
@@ -172,6 +174,48 @@
 // section named for the module (The Far Side's and Dilbert's: IMASAPLY's
 // "Animation Player Options" for an ASA animation, an IMQ module's own
 // dialog, such as PTERY's banner text).
+//
+// Windows 3.1 screen savers (scr_protocol.cc, ABI.md §3.15): Johnny
+// Castaway's SCRANTIC.SCR, a program built on Microsoft's SCRNSAVE.LIB, runs
+// as Windows 3.1 ran a saver — the program itself, unchanged, as the
+// runtime's task (win16/modules16.hh "Tasks"): its NE entry point (Borland's
+// C0W) on its own stack in its DGROUP, the PSP's command tail " /s", InitTask
+// answering as Windows 3.1's did (BX at "/s", which SCRNSAVE.LIB's WinMain
+// reads at lpCmdLine[0]). The program owns its message loop (WinMain:
+// RegisterClass, a full-screen WS_POPUP window of SM_CXSCREEN x SM_CYSCREEN,
+// GetMessage/TranslateMessage/DispatchMessage), so the protocol's one call
+// is the task, started on the guest fiber at the first step; it returns only
+// when the program has ended. Every frame ends inside it, at the first API
+// call past the frame's deadline (Long calls) or past the frame's work
+// budget — the DRAWFRAME budget of Pacing, ADDRAWMIPS of the period, so a
+// PeekMessage busy loop (SCRANTIC's WM_TIMER handler steps its engine until
+// a message is there) costs a 486's share of a frame, not the whole period
+// (streamed, about a sixth of a core with the frames' encoding) — or where
+// GetMessage or WaitMessage has nothing to deliver (win16
+// user16_set_app_task: the frame ends there, and the next one looks again,
+// virtual time moved on); the next step resumes it where it stopped. Long
+// calls are required (ADMIPS=0 or ADNE16LONGCALLS=0 refuse the module,
+// exit 1). In the task's windows USER does what Windows 3.1's did for an
+// application: CreateWindow's WM_SIZE and WM_MOVE, GetMessage's WM_PAINT for
+// a window to paint, BeginPaint's WM_ERASEBKGND, DefWindowProc's WM_CLOSE
+// (DestroyWindow) — SCRANTIC centres its 640x480 scene by its WM_SIZE, so a
+// larger screen shows it centred on black. Input: none reaches the program
+// (Protocol16::takes_key_messages and takes_mouse_messages: a Windows 3.1
+// saver closed itself on a key or a mouse move, and the host's saver ends
+// the run on input itself); its status never raises key-filter. If the
+// program ends anyway (its MessageBox for missing data files, WM_QUIT,
+// INT 21h AH=4Ch), the step reports the stop with the message box's text
+// (exit 1). At shutdown the program is closed as the waking input closed it
+// (Protocol16::close_suspended: WM_CLOSE to its window, then the task
+// resumes, at most kWindDownSteps times, until it exits): its WM_DESTROY
+// writes its story (SCRANTIC.INI's day, date and introduction) to C:\WINDOWS,
+// which persists with ADSTATE. Configure: button 0 runs the program with
+// " /c" on the host's thread — its SCREENSAVERCONFIGURE dialog real and
+// owned by --owner (Windows 3.1's Control Panel's Setup...); what it writes
+// lands in SCRANTIC.INI. The disk (protocol.hh mount_scr_disk): the module
+// dir at C:\SIERRA\SCRANTIC (its installer's default) as the current
+// directory, C:\WINDOWS with its installer's profile seeds (win16/dos16.hh
+// seed_scrnsave).
 //
 // Input and status (INTERACTION.md §5.2): AFTERDAR.SCR forwarded no key or
 // mouse message to a Classic module (ABI.md §3.1); modules poll
@@ -407,7 +451,7 @@
 // alone, and the Windows mixer's synth line did the rest.
 //
 // Lane knobs (env, all optional):
-//   ADNE16KIND=auto|ad3|imx  the module's protocol (default auto: its exports; see Module protocols)
+//   ADNE16KIND=auto|ad3|imx|scr  the module's protocol (default auto: its exports; see Module protocols)
 //   ADNE16READER=auto|imq|native  the IMX reader (default auto: IMIMXPLY.IMQ from the engine dir, else from the
 //                      module dir, else the native reader)
 //   ADNE16BRIDGE=auto|oldmod16|native  the AD3 bridge (default auto: OLDMOD16 when the engine dir has it;
@@ -496,7 +540,7 @@ class Ne16Lane : public Lane {
   static std::unique_ptr<Protocol16> choose_protocol(const Ne16Layout& layout, const Env& env, std::string* why);
 
   const char* name() const override { return "ne16"; }
-  std::vector<std::string> abis() const override { return {"afterdark", "intermission"}; }
+  std::vector<std::string> abis() const override { return {"afterdark", "intermission", "scrnsave"}; }
   bool init(const std::string& module_path, LaneContext& ctx) override;
   uint32_t frame_interval_us() const override { return 16667; }
   void on_command(const Command& c) override;
@@ -536,6 +580,7 @@ class Ne16Lane : public Lane {
   void on_deadline();
   bool suspend_frame();
   void abandon_long_call();
+  void wind_down();
   void free_fibers();
   void queue_input(const Command& c);
   void deliver_input();
@@ -576,7 +621,9 @@ class Ne16Lane : public Lane {
   void* host_fiber_ = nullptr;
   void* guest_fiber_ = nullptr;
   bool converted_thread_ = false;
-  bool mid_call_ = false, suspended_ = false, abandon_ = false, controls_pending_ = false;
+  bool mid_call_ = false, suspended_ = false, abandon_ = false, controls_pending_ = false, winding_down_ = false;
+  // Shutdown's resumptions of a call the protocol closes (wind_down), at most.
+  static constexpr int kWindDownSteps = 120;
   Run run_result_ = Run::none;
   std::exception_ptr fiber_error_;
   uint64_t frame_w0_ = 0, frame_budget_ = 0, frame_deadline_ = 0;

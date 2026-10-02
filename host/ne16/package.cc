@@ -105,7 +105,7 @@ bool after_dark3_host(const Ne16Layout& l, const FileExists& exists) {
 
 bool host_ad_snd(const Ne16Layout& l, const FileExists& exists) { return !exists(l.engine_dir + "\\" + kAdSndLibrary); }
 
-const char* kind_name(ModuleKind k) { return k == ModuleKind::ad3 ? "ad3" : "imx"; }
+const char* kind_name(ModuleKind k) { return k == ModuleKind::ad3 ? "ad3" : k == ModuleKind::imx ? "imx" : "scr"; }
 
 const char* form_name(ImxForm f) {
   switch (f) {
@@ -119,6 +119,16 @@ const char* form_name(ImxForm f) {
 KindProbe detect_kind(const loader::ne::Image& img, const std::string& file_name) {
   auto exports = [&](const char* name) { return img.find_ordinal(name).has_value(); };
   KindProbe p;
+  if (!img.header().is_dll()) {
+    // An application: a Windows 3.1 screen saver (SCRNSAVE.LIB's export), or nothing the lane runs.
+    if (exports("SCREENSAVERPROC")) {
+      p.ok = true;
+      p.kind = ModuleKind::scr;
+    } else {
+      p.why = "a Win16 application that is not a Windows 3.1 screen saver (no SCREENSAVERPROC export)";
+    }
+    return p;
+  }
   if (exports("MODULE")) {
     p.ok = true;
     p.kind = ModuleKind::ad3;
@@ -155,9 +165,9 @@ KindProbe detect_kind(const loader::ne::Image& img, const std::string& file_name
 bool parse_kind_choice(const std::string& v, bool* is_auto, ModuleKind* forced) {
   *is_auto = true;
   if (v.empty() || ieq(v, "auto")) return true;
-  if (ieq(v, "ad3") || ieq(v, "imx")) {
+  if (ieq(v, "ad3") || ieq(v, "imx") || ieq(v, "scr")) {
     *is_auto = false;
-    *forced = ieq(v, "ad3") ? ModuleKind::ad3 : ModuleKind::imx;
+    *forced = ieq(v, "ad3") ? ModuleKind::ad3 : ieq(v, "imx") ? ModuleKind::imx : ModuleKind::scr;
     return true;
   }
   return false;

@@ -1,7 +1,8 @@
 // The package registry (PACKAGES.md §2): every release the importer knows,
-// compiled in: the After Dark releases and three Delrina Intermission
-// products — Star Wars Screen Entertainment (LucasArts'), The Far Side Screen
-// Saver Collection and Scott Adams' Dilbert Screen Saver Collection.
+// compiled in: the After Dark releases, three Delrina Intermission products —
+// Star Wars Screen Entertainment (LucasArts'), The Far Side Screen Saver
+// Collection and Scott Adams' Dilbert Screen Saver Collection — and Sierra's
+// Screen Antics: Johnny Castaway, a Windows 3.1 screen-saver program.
 // Registry order is the catalog's module order and the precedence order for
 // display-name disambiguation (§6); the catalog's packages list goes by
 // `released` instead.
@@ -23,6 +24,7 @@
 //                                                 intermission  -> <win>\packages\dilbert\{SAVER,ENGINE}
 //   tng       Star Trek: The Next Generation Screen Saver
 //                                                 ad3zip        -> <win>\packages\tng\{ST-TNG,ENGINE}
+//   castaway  Screen Antics: Johnny Castaway      is1           -> <win>\packages\castaway\SCRANTIC
 //
 // Each entry carries what identifies the release (known image md5s — of one
 // image, or of every install disk of a set — and fingerprints), how to
@@ -34,7 +36,8 @@
 //
 // A package root holds its module folders and ENGINE (never a module
 // folder; snoopy has none: Snoopy's Screen Savers are modules for an After
-// Dark already installed, and ship no engine). An optional WINDOWS folder
+// Dark already installed, and ship no engine; nor has castaway, a program
+// that is its own engine). An optional WINDOWS folder
 // holds the files the original installer put in C:\WINDOWS (swse:
 // SWSE.INI); it is never a module folder either, and the 16-bit lane lays it
 // under the guest's C:\WINDOWS.
@@ -88,7 +91,8 @@ struct Fixup {
 // A catalog moduleName replacement (§6), keyed by the module's path relative
 // to the package root ("AD10TH/TOAST2K.AD"); for Intermission modules the
 // name itself ("SAVER/VADER.IMX": the one SAVERINIT returns, which no
-// resource holds).
+// resource holds); for Johnny Castaway's program the name it is known by
+// (its description names it Screen Antics).
 struct NameOverride {
   const char* module;
   const char* name;
@@ -108,23 +112,31 @@ struct NameOverride {
 // InstallShield 2 installs of compressed libraries (isz.h: a library, or one
 // split over two install floppies; the package list SETUP.PKG read only to
 // identify the release), the placement of each member baked in from the
+// installer's script (no IS-script interpreter). is1: the InstallShield 1
+// installs of single compressed files (isz.h: "$" files on one install
+// floppy, beside the installer's own INSTALL.INS, SETUP.EXE and INSTALL.EX$,
+// which name the release with its first file; nothing is read to identify
+// it), every file it installs a loose file, the placement baked in from the
 // installer's script (no IS-script interpreter).
-enum class Recipe { tree, ad3zip, intermission, ad2kwaj, islib };
-// "tree", "ad3zip", "intermission", "ad2kwaj" or "islib" (import.json's
+enum class Recipe { tree, ad3zip, intermission, ad2kwaj, islib, is1 };
+// "tree", "ad3zip", "intermission", "ad2kwaj", "islib" or "is1" (import.json's
 // package.recipe).
 const char* recipe_name(Recipe r);
 
 // How a loose file is stored on the install medium: as it is, compressed by
-// Microsoft COMPRESS 'A' (SZDD, szdd.h) or by the Microsoft Setup Toolkit's
-// COMPRESS (KWAJ method 3, kwaj.h); a compressed one is expanded on the way.
-enum class Codec { plain, szdd, kwaj };
+// Microsoft COMPRESS 'A' (SZDD, szdd.h), by the Microsoft Setup Toolkit's
+// COMPRESS (KWAJ method 3, kwaj.h) or as an InstallShield 1 "$" file (isz.h);
+// a compressed one is expanded on the way.
+enum class Codec { plain, szdd, kwaj, is1 };
 
-// A file the intermission and ad2kwaj recipes install from outside any
+// A file the intermission, ad2kwaj and is1 recipes install from outside any
 // archive, from the install dir: `from` as the source lists it, `to`
 // relative to the package root. Presage's and Microsoft's installers gave a
 // compressed file its installed name (INSTALL.DAT, or ST_NSTLL.INF), so it is
 // never installed under its own; Delrina's compressed its files under their
-// installed names.
+// installed names; InstallShield 1's script names each one's (the name an
+// "$" file records need not be it: SCRANTIC.SC$ holds SCRANTIC.EXE,
+// installed as SCRANTIC.SCR).
 struct LooseFile {
   const char* from;
   const char* to;
@@ -239,7 +251,8 @@ struct Package {
   // disk 1's is the fingerprint's), which must all be present. islib: the
   // module folder, and every volume of the libraries the recipe reads (every
   // install disk's; disk 1's first, the fingerprint's), which must all be
-  // present.
+  // present. is1: the module folder, and every file the recipe reads (the
+  // first, the fingerprint's), which must all be present.
   const char* module_dir;
   const char* engine_dll;
   const char* folder_afi;
@@ -259,8 +272,8 @@ struct Package {
   // (the fingerprint, with required_archives[0] beside INSTALL.DAT), and the
   // files taken from outside the archives, under their installed names;
   // nullptr for a release Delrina's installer installs (delrina_installer()),
-  // every file of which is a loose file. ad2kwaj: every file it installs is
-  // a loose file.
+  // every file of which is a loose file. ad2kwaj and is1: every file it
+  // installs is a loose file.
   const char* install_name = nullptr;
   std::span<const LooseFile> loose_files = {};
   // ad2kwaj: the SETUP.LST [Params] WndTitle that names the package (the

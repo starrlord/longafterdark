@@ -725,6 +725,43 @@ void test_catalog() {
     CHECK((m.screen == SizeI{640, 480}) && m.abi == kAfterDarkAbi && m.lane == "ne16");
   }
   CHECK_EQ(own, (size_t)8);   // Star Trek's 4, Marvel's 1, ScreamSavers' 3
+  // Johnny Castaway's program: its ABI and its screen as the catalog gives
+  // them (the ABI gives no screen of its own); a host without the ABI shows
+  // it "Coming soon", and the rotation leaves it out.
+  {
+    Catalog j;
+    CHECK(parse_catalog(R"({"version": 1, "modules": [
+        {"id": "ad40.alpha", "displayName": "Alpha", "lane": "pe32", "path": "FILES/AD40/ALPHA.AD"},
+        {"id": "castaway.scrantic", "displayName": "Johnny Castaway", "lane": "ne16",
+         "path": "packages/castaway/SCRANTIC/SCRANTIC.SCR", "package": "castaway",
+         "packageTitle": "Screen Antics: Johnny Castaway", "moduleName": "Johnny Castaway",
+         "controls": [{"index": 0, "name": "Setup...", "kind": "button", "type": "button"}],
+         "entry": "SCREENSAVERPROC", "abi": "scrnsave", "screen": "640x480"}]})",
+                        j, &err));
+    const Module* jc = j.find("castaway.scrantic");
+    CHECK(jc && jc->abi == kScrnsaveAbi && (jc->screen == SizeI{640, 480}) && jc->lane == "ne16");
+    CHECK(jc && jc->name == "Johnny Castaway" && jc->package_title == "Screen Antics: Johnny Castaway");
+    CHECK(jc && jc->controls.size() == 1 && jc->controls[0].type == ControlType::button);
+    CHECK((own_screen(kScrnsaveAbi) == SizeI{}) && (own_screen(kScrnsaveAbi, {640, 480}) == SizeI{640, 480}));
+    const HostCapabilities imx_only = parse_capabilities("lanes=pe32,ne16 abis=afterdark,intermission"),
+                           with_scr = parse_capabilities("lanes=pe32,ne16 abis=afterdark,intermission,scrnsave");
+    if (jc) {
+      CHECK(module_run(*jc, imx_only, false, false) == ModuleRun::coming_soon);
+      CHECK(module_run(*jc, with_scr, false, false) == ModuleRun::runs);
+    }
+    Settings s;
+    auto runs_on = [&j](const HostCapabilities& h) {
+      return [&j, h](const std::string& id) {
+        const Module* m = j.find(id);
+        return m && h.runs(m->lane, m->abi);
+      };
+    };
+    HostRotation hr = rotation_for_host(s, j, nullptr, runs_on(imx_only));
+    CHECK((hr.plan.ids == std::vector<std::string>{"ad40.alpha"}) && hr.left_out == 1);
+    hr = rotation_for_host(s, j, nullptr, runs_on(with_scr));
+    CHECK(hr.plan.ids.size() == 2 && hr.left_out == 0);
+    CHECK(rotation_needs_capabilities(s, j, nullptr) == s.rotates());
+  }
   CHECK(c.modules.size() == 46 && c.modules[36].id == "marvel.kilo" && c.modules[45].id == "disney.tango");
 
   CHECK(resolve_module_path(L"C:\\a\\win", "FILES/AD40/X.AD") == L"C:\\a\\win\\FILES\\AD40\\X.AD");
@@ -1733,12 +1770,12 @@ void test_ui() {
   }
 
   // Status text: no closing full stop (the releases' own line is checked in
-  // the releases suite). Not every release is After Dark's: the words fit all fifteen.
+  // the releases suite). Not every release is After Dark's: the words fit all sixteen.
   CHECK(assets_summary({}) == L"Nothing imported yet");
   // The not-imported welcome: what importing does.
   CHECK(welcome_text().find(L"The screen saver runs the original modules of After Dark and Star Wars Screen "
                             L"Entertainment from your own discs.\n\n"
-                            L"Import them from any of your discs (fifteen releases are supported), a disc image, or "
+                            L"Import them from any of your discs (sixteen releases are supported), a disc image, or "
                             L"the Internet Archive download.") == 0);
   CHECK(welcome_text().find(L"After Dark discs") == std::wstring::npos);
   Catalog c;
@@ -1846,15 +1883,16 @@ void test_ui() {
   // doesn't show, there was no room for it.
   {
     HDC dc = CreateCompatibleDC(nullptr);
-    // The fifteen releases' line, "327 modules from 15 releases", is as
-    // long as the fourteen's ("314 modules from 14 releases") and the
+    // The sixteen releases' line, "328 modules from 16 releases", is as
+    // long as the fifteen's ("327 modules from 15 releases"), the
+    // fourteen's ("314 modules from 14 releases") and the
     // twelve's ("284 modules from 12 releases"), a digit longer than the
     // seven's ("232 modules from 7 releases"), whose digits were
     // already wider in the caption face, Segoe UI Variable Small, than the
     // six's ("216 modules from 6 releases").
-    const wchar_t* texts[] = {L"Nothing imported yet", L"327 modules from 15 releases",
+    const wchar_t* texts[] = {L"Nothing imported yet", L"328 modules from 16 releases",
                               L"84 modules from After Dark 4.0 Deluxe",
-                              L"327 modules from 15 releases · 2 missing — import again to restore"};
+                              L"328 modules from 16 releases · 2 missing — import again to restore"};
     int shown = 0, hidden = 0, min_twelve = 0;
     std::string min_twelve_at;   // the scales it fits the narrowest window at
     for (int dpi = 96; dpi <= 240; dpi += 24) {
@@ -1911,7 +1949,7 @@ void test_ui() {
           // The status line it sits beside is never under it.
           CHECK(C.box.x > in.assets_right);
         }
-        // Where it matters: with fifteen releases it shows at the first-open
+        // Where it matters: with sixteen releases it shows at the first-open
         // size (with room to spare) at every scale; one release's long title
         // and the assets line at its longest (files missing) leave it no room
         // in the minimum window. (In the minimum window beside the releases'
@@ -1939,7 +1977,7 @@ void test_ui() {
         }
       }
     }
-    printf("ui: the credit fits beside \"327 modules from 15 releases\" in the narrowest window at %d of 7 scales (%s)\n",
+    printf("ui: the credit fits beside \"328 modules from 16 releases\" in the narrowest window at %d of 7 scales (%s)\n",
            min_twelve, min_twelve_at.c_str());
     CHECK(shown > 0 && hidden > 0);
     DeleteDC(dc);
@@ -2109,6 +2147,11 @@ void test_ui() {
     CHECK(imx.known && (imx.abis == std::vector<std::string>{"afterdark", "intermission"}));
     CHECK(imx.runs("ne16", "intermission") && imx.runs("pe32", "afterdark") && !imx.runs("pe32x", "intermission"));
     CHECK(!imx.runs("ne16", "someday"));
+    // Johnny Castaway's Windows 3.1 screen-saver program: only a host that
+    // lists its ABI runs it.
+    CHECK(!imx.runs("ne16", kScrnsaveAbi));
+    const HostCapabilities scr = parse_capabilities("lanes=pe32,ne16 abis=afterdark,intermission,scrnsave");
+    CHECK(scr.runs("ne16", kScrnsaveAbi) && scr.runs("ne16", kIntermissionAbi) && scr.runs("pe32", ""));
     // Listed as it stands: "abis=" alone runs no module ABI at all.
     HostCapabilities no_abi = parse_capabilities("lanes=pe32,ne16 abis=");
     CHECK(no_abi.known && no_abi.abis.empty() && !no_abi.runs("pe32", "afterdark"));
@@ -3018,6 +3061,7 @@ void test_strip_wrap() {
       {8, kDesignClientW, kDesignClientHStrip, StripMode::regular, true, 1},   // 8 regular covers fit one row
       {9, kDesignClientW, kDesignClientHStrip, StripMode::compact, true, 1},   // 9 need two: compact, on one
       {15, kDesignClientW, 952, StripMode::regular, true, 2},   // the first-open size: 8 and 7
+      {16, kDesignClientW, 952, StripMode::regular, true, 2},   // sixteen releases at the first-open size: 8 and 8
       {10, 1336, 952, StripMode::regular, true, 2},             // 8 and 2 where 9 would fit
       {7, kDesignClientW, kDesignClientHStrip, StripMode::regular, true, 1},
       {7, kMinClientW, kMinClientHStrip, StripMode::compact, true, 1},

@@ -1,12 +1,13 @@
 # adw_import + adimport.exe — the Windows asset importer (DESIGN.md §6,
-# PACKAGES.md) and the catalog generator (§6a), for the fifteen releases of its
+# PACKAGES.md) and the catalog generator (§6a), for the sixteen releases of its
 # registry (packages.h). The library depends on Win32 (WinHTTP, CNG, shell),
 # on adw_loader, whose PE/NE readers the catalog uses, and on zlib (raw
 # inflate for the AD 3.x installers' PKZIP archives, CRC-32 for them and for
-# Presage's ARJ archives); its own readers expand the ARJ, SZDD and KWAJ files
-# and the InstallShield 2 compressed libraries (PKWARE DCL implode) of the
-# floppy-based installers. phosg is used by the tests alone, to parse
-# import.json and the catalog independently of the code writing them.
+# Presage's ARJ archives, and for 7z archives); its own readers expand the ARJ,
+# SZDD and KWAJ files and the InstallShield 2 compressed libraries (PKWARE DCL
+# implode) of the floppy-based installers, and 7z archives (LZMA, LZMA2).
+# phosg is used by the tests alone, to parse import.json and the catalog
+# independently of the code writing them.
 enable_language(RC)
 
 # The catalog reads the modules with adw::loader. host/loader precedes the
@@ -25,6 +26,7 @@ add_library(adw_import STATIC
   iso9660.cc
   fat.cc
   zip.cc
+  sevenzip.cc
   arj.cc
   szdd.cc
   kwaj.cc
@@ -93,6 +95,7 @@ adw_import_test(cli)
 adw_import_test(e2e)
 adw_import_test(catalog)
 adw_import_test(zip)
+adw_import_test(sevenzip)
 adw_import_test(arj)
 adw_import_test(szdd)
 adw_import_test(kwaj)
@@ -113,6 +116,18 @@ add_test(NAME import.download COMMAND test_import_download ${_scratch}/download)
 add_test(NAME import.cli COMMAND test_import_cli $<TARGET_FILE:adimport> ${_scratch}/cli)
 add_test(NAME import.catalog COMMAND test_import_catalog unit ${_scratch}/catalog)
 add_test(NAME import.zip COMMAND test_import_zip ${_scratch}/zip)
+# 7z archives (PACKAGES.md §8.10): 7-Zip's own archives of made-up files
+# (LZMA, LZMA2, Copy; header packed and plain; solid and not), kept as bytes,
+# Copy archives written by the test, the refusals, every truncation and
+# every single-bit flip of the small ones, and 7z sources (install files,
+# DISK<n> folders, floppy images).
+add_test(NAME import.sevenzip COMMAND test_import_sevenzip ${_scratch}/sevenzip)
+# The user's 7z of Screen Antics: Johnny Castaway's floppy image (found by md5
+# in AD_SOURCE_ISO_DIR or <repo>/source_iso): skipped (77) unless
+# AD_E2E_PKG=1 and it is present.
+add_test(NAME import.sevenzip_real COMMAND test_import_sevenzip real ${_scratch}/sevenzip-real
+         ${AD_REPO_ROOT}/source_iso)
+set_tests_properties(import.sevenzip_real PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 # Presage's ARJ archives and COMPRESS's SZDD files (Star Wars Screen
 # Entertainment), and the Setup Toolkit's KWAJ files (Star Trek: The Screen
 # Saver), on synthetic archives, the research encoders' fixed vectors and

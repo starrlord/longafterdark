@@ -366,6 +366,11 @@ struct NeSpec {
   // Names listed after them (ordinals n+1..) with no entry-table entry: a
   // lookup by name finds them, GetProcAddress would not.
   std::vector<std::string> names_without_entries;
+  // A program (no library flag), as a Windows 3.1 screen saver is.
+  bool program = false;
+  // The module description, the non-resident name table's first name
+  // ("SCRNSAVE :Made Up"); "" for no table.
+  std::string description;
 };
 
 // A code-less NE library: header, resource table, name tables, module
@@ -464,7 +469,7 @@ inline std::string build_ne(const NeSpec& spec) {
   f.u8(ne + 2, 5);
   f.u16(ne + 0x04, uint16_t(entry));
   f.u16(ne + 0x06, uint16_t(std::max<size_t>(et.d.size(), 2)));
-  f.u16(ne + 0x0C, 0x8001);  // library, single data
+  f.u16(ne + 0x0C, spec.program ? 0x0002 : 0x8001);  // a program, multiple data; or a library, single data
   f.u16(ne + 0x1E, uint16_t(spec.module_refs.size()));
   f.u16(ne + 0x22, uint16_t(rsrc));
   f.u16(ne + 0x24, uint16_t(rsrc));
@@ -490,6 +495,19 @@ inline std::string build_ne(const NeSpec& spec) {
     rt.u16(slot + 2, uint16_t((r->data.size() + (1u << shift) - 1) >> shift));
   }
   f.put(ne + rsrc, rt.d);
+  if (!spec.description.empty()) {
+    // The non-resident name table, at the end of the file: the description
+    // (ordinal 0), then the terminating 0.
+    Bytes nr;
+    nr.u8(0, uint8_t(spec.description.size()));
+    nr.put(1, spec.description);
+    nr.u16(1 + spec.description.size(), 0);
+    nr.u8(nr.d.size(), 0);
+    const size_t at = f.d.size();
+    f.put(at, nr.d);
+    f.u16(ne + 0x20, uint16_t(nr.d.size()));
+    f.u32(ne + 0x2C, uint32_t(at));
+  }
   return f.d;
 }
 

@@ -251,7 +251,8 @@ struct NeRes {
 struct NeNames {
   std::vector<std::pair<std::string, uint16_t>> resident, nonresident;  // name, ordinal
 };
-std::string ne_image(const std::string& module, const std::vector<NeRes>& res, const NeNames& names = {}) {
+std::string ne_image(const std::string& module, const std::vector<NeRes>& res, const NeNames& names = {},
+                     uint16_t flags = 0x8001) {
   std::string f(0x40, '\0');
   f[0] = 'M';
   f[1] = 'Z';
@@ -321,7 +322,7 @@ std::string ne_image(const std::string& module, const std::vector<NeRes>& res, c
   }
   put16(h, 0x04, entry_off);
   put16(h, 0x06, uint16_t(entry.size()));
-  put16(h, 0x0C, 0x8001);
+  put16(h, 0x0C, flags);  // LIBRARY | SINGLEDATA unless the caller says otherwise
   put16(h, 0x22, 0x40);  // segment table (empty)
   put16(h, 0x24, rt_off);
   put16(h, 0x26, resident_off);
@@ -2674,6 +2675,35 @@ void test_kinds() {
   loader::ne::Image named(ne_image("MODULE", {}, {{}, {{"SAVERINIT", 2}}}));
   k = ne16::detect_kind(named, "MODULE.DLL");
   CHECK(!k.ok, "entry 0 of a name table (the module name, the description) is no export");
+  // A Windows 3.1 screen saver: an application (no LIBRARY bit) exporting SCREENSAVERPROC.
+  auto app_of = [](const NeNames& n) {
+    loader::ne::Image img(ne_image("SCRTEST", {}, n, 0x0002));
+    return ne16::detect_kind(img, "SCRTEST.SCR");
+  };
+  k = app_of({{}, {{"ScreenSaverProc", 2}, {"SCREENSAVERCONFIGUREDIALOG", 3}}});
+  CHECK(k.ok && k.kind == ModuleKind::scr, "an application exporting SCREENSAVERPROC (any case): a Windows 3.1 saver");
+  k = app_of({{{"MODULE", 1}}, {{"SAVERINIT", 2}, {"SAVERDRAW", 3}}});
+  CHECK(!k.ok && k.why.find("not a Windows 3.1 screen saver") != std::string::npos,
+        "any other application is refused, whatever it exports (%s)", k.why.c_str());
+  k = kind_of({{}, {{"SCREENSAVERPROC", 2}}});
+  CHECK(!k.ok, "a library exporting SCREENSAVERPROC is no saver program");
+  {
+    ne16::Ne16Layout l;
+    l.module_path = "C:\\A\\win\\packages\\castaway\\SCRANTIC\\scrantic.scr";
+    l.module_dir = "C:\\A\\win\\packages\\castaway\\SCRANTIC";
+    CHECK(ne16::scr_install_dir(l) == "C:\\SIERRA\\SCRANTIC", "SCRANTIC.SCR: its installer's directory (%s)",
+          ne16::scr_install_dir(l).c_str());
+    l.module_path = "C:\\A\\win\\packages\\other\\Savers\\OTHER.SCR";
+    l.module_dir = "C:\\A\\win\\packages\\other\\Savers";
+    CHECK(ne16::scr_install_dir(l) == "C:\\SAVERS", "another saver: C:\\ and its folder's name (%s)",
+          ne16::scr_install_dir(l).c_str());
+  }
+  {
+    ne16::Ne16Lane lane;
+    std::vector<std::string> abis = lane.abis();
+    CHECK(std::find(abis.begin(), abis.end(), "scrnsave") != abis.end() && abis.size() == 3,
+          "the lane's ABIs: afterdark, intermission, scrnsave");
+  }
   // ADNE16KIND, ADNE16READER.
   bool is_auto = false;
   ModuleKind mk = ModuleKind::ad3;
@@ -2681,8 +2711,10 @@ void test_kinds() {
   CHECK(ne16::parse_kind_choice("Auto", &is_auto, &mk) && is_auto, "ADNE16KIND auto");
   CHECK(ne16::parse_kind_choice("IMX", &is_auto, &mk) && !is_auto && mk == ModuleKind::imx, "ADNE16KIND imx");
   CHECK(ne16::parse_kind_choice("ad3", &is_auto, &mk) && !is_auto && mk == ModuleKind::ad3, "ADNE16KIND ad3");
+  CHECK(ne16::parse_kind_choice("SCR", &is_auto, &mk) && !is_auto && mk == ModuleKind::scr, "ADNE16KIND scr");
   CHECK(!ne16::parse_kind_choice("ad4", &is_auto, &mk), "ADNE16KIND: anything else is refused");
-  CHECK(std::string(ne16::kind_name(ModuleKind::imx)) == "imx" && std::string(ne16::kind_name(ModuleKind::ad3)) == "ad3",
+  CHECK(std::string(ne16::kind_name(ModuleKind::imx)) == "imx" && std::string(ne16::kind_name(ModuleKind::ad3)) == "ad3" &&
+            std::string(ne16::kind_name(ModuleKind::scr)) == "scr",
         "kind names");
   ne16::ReaderKind rk = ne16::ReaderKind::imq;
   CHECK(ne16::parse_reader_choice("", &is_auto, &rk) && is_auto, "ADNE16READER empty = auto");

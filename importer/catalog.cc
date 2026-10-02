@@ -467,8 +467,10 @@ std::string read_whole_file(const fs::path& p) {
 // IMQ module, its own reader, when that reader's QUERY says it is a saver;
 // without running anything, the catalog takes an .IMQ (the file type
 // Intermission gives readers) not named as Intermission's own readers are
-// for one (imq), and leaves every other reader out.
-enum class NeKind { after_dark, intermission, imq, none };
+// for one (imq), and leaves every other reader out. SCREENSAVERPROC, none of
+// those, makes a Windows 3.1 screen-saver program (scrnsave: SCRNSAVE.LIB's
+// convention, which a program, never a library, follows).
+enum class NeKind { after_dark, intermission, imq, scrnsave, none };
 
 NeKind ne_kind(const loader::ne::Image& img, const std::string& file_name, std::string* why) {
   auto exports = [&](const char* name) { return img.find_ordinal(name).has_value(); };
@@ -490,10 +492,26 @@ NeKind ne_kind(const loader::ne::Image& img, const std::string& file_name, std::
   } else if (init || draw) {
     *why = std::string("not an Intermission module: it exports ") + (init ? "SAVERINIT" : "SAVERDRAW") + " without " +
            (init ? "SAVERDRAW" : "SAVERINIT");
+  } else if (exports("SCREENSAVERPROC")) {
+    if (!img.header().is_dll()) return NeKind::scrnsave;
+    *why = "a library that exports SCREENSAVERPROC, not a screen-saver program";
   } else {
     *why = "not an After Dark or Intermission module (no MODULE, SAVERINIT or SAVERDRAW export)";
   }
   return NeKind::none;
+}
+
+// A Windows 3.1 screen-saver program's own name: its module description
+// after "SCRNSAVE" and a colon, as Windows 3.1's Control Panel read it
+// ("SCRNSAVE :Screen Antics" -> "Screen Antics"), as Windows-1252; "" when
+// the description is not of that form.
+std::string scrnsave_name(const loader::ne::Image& img) {
+  const std::string d = img.description();
+  if (d.size() < 8 || ascii_upper(d.substr(0, 8)) != "SCRNSAVE") return "";
+  size_t i = 8;
+  while (i < d.size() && d[i] == ' ') i++;
+  if (i == d.size() || d[i] != ':') return "";
+  return cp1252_to_utf8(d.substr(i + 1));
 }
 
 void split_dlls(std::set<std::string> dlls, CatalogModule& m) {
@@ -617,6 +635,27 @@ CatalogModule catalog_module(const fs::path& file, const std::string& rel_path, 
       split_dlls(std::move(dlls), m);
       return m;
     }
+    if (kind == NeKind::scrnsave) {
+      // A Windows 3.1 screen-saver program: named by its description (the
+      // registry's name overrides may say otherwise), no text resource; its
+      // settings are its own dialog, behind Control Panel's Setup... button
+      // (SCREENSAVERCONFIGUREDIALOG, which SCRNSAVE.LIB has every program
+      // export); run at its SCREENSAVERPROC.
+      m.abi = "scrnsave";
+      m.entry = "SCREENSAVERPROC";
+      m.display_name = trim_name(scrnsave_name(img));
+      if (m.display_name.empty()) m.display_name = base;
+      if (img.find_export("SCREENSAVERCONFIGUREDIALOG")) {
+        CatalogControl b;
+        b.index = 0;
+        b.name = kScrnsaveSetup;
+        b.kind = b.type = "button";
+        m.controls.push_back(std::move(b));
+      }
+      split_dlls(std::move(dlls), m);
+      m.module_name = m.display_name;
+      return m;
+    }
     if (auto nm = ne_find(img, uint16_t(2000), 20); nm && !nm->empty()) m.display_name = cp1252_to_utf8(c_string(*nm));
     auto about = ne_find(img, uint16_t(2000), 30);
     m.about = about && !about->empty() ? plain_text(*about) : std::string();
@@ -646,10 +685,10 @@ bool iequals_w(std::wstring_view a, std::wstring_view b) {
   return CompareStringOrdinal(a.data(), int(a.size()), b.data(), int(b.size()), TRUE) == CSTR_EQUAL;
 }
 
-// <dir>\*.AD (and, with `imx`, *.IMX; with `asa_imq`, *.ASA and *.IMQ too),
-// matched case-insensitively (as glob does on Windows) and sorted by name
-// together.
-std::vector<std::wstring> modules_in(const fs::path& dir, bool imx, bool asa_imq = false) {
+// <dir>\*.AD (and, with `imx`, *.IMX; with `asa_imq`, *.ASA and *.IMQ too;
+// with `scr`, *.SCR), matched case-insensitively (as glob does on Windows)
+// and sorted by name together.
+std::vector<std::wstring> modules_in(const fs::path& dir, bool imx, bool asa_imq = false, bool scr = false) {
   std::vector<std::wstring> names;
   std::error_code ec;
   auto ends_with = [](std::wstring_view n, std::wstring_view ext) {
@@ -660,7 +699,8 @@ std::vector<std::wstring> modules_in(const fs::path& dir, bool imx, bool asa_imq
     const bool four = n.size() > 4;  // a name before a four-character extension
     if (n.size() < 3 || n[0] == L'.' ||
         !(ends_with(n, L".AD") || (imx && four && ends_with(n, L".IMX")) ||
-          (asa_imq && four && (ends_with(n, L".ASA") || ends_with(n, L".IMQ")))))
+          (asa_imq && four && (ends_with(n, L".ASA") || ends_with(n, L".IMQ"))) ||
+          (scr && four && ends_with(n, L".SCR"))))
       continue;
     std::error_code fe;
     if (it->is_regular_file(fe)) names.push_back(n);
@@ -685,13 +725,16 @@ std::vector<ModuleFile> module_files(const Package& pkg, const fs::path& dir) {
   std::error_code ec;
   const std::string root = pkg.root;
   // Deluxe's three fixed places hold *.AD only, so its order and ids stay as
-  // they always were; the other packages' folders may hold IMX modules, and
-  // a Delrina release's module folders ASA animations and IMQ modules (never
-  // its ENGINE, where the ASA reader is).
+  // they always were; the other packages' folders may hold IMX modules, a
+  // Delrina release's module folders ASA animations and IMQ modules (never
+  // its ENGINE, where the ASA reader is), and an InstallShield 1 package's a
+  // screen-saver program (*.SCR: only there, never After Dark's
+  // ENGINE\AFTERDAR.SCR).
   const bool imx = !pkg.is_deluxe();
   auto add_dir = [&](const std::string& d) {
     const bool asa_imq = pkg.delrina_installer() && d != "ENGINE";
-    for (const auto& n : modules_in(dir / to_wide(d), imx, asa_imq))
+    const bool scr = pkg.recipe == Recipe::is1 && d != "ENGINE";
+    for (const auto& n : modules_in(dir / to_wide(d), imx, asa_imq, scr))
       order.push_back({dir / to_wide(d) / n, root + "/" + d + "/" + to_utf8(n), d + "/" + to_utf8(n)});
   };
   bool engine_listed = false;

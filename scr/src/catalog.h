@@ -5,7 +5,8 @@
 // (`package`, `packageTitle`, `moduleName`, `sameAs`, the top-level `packages`
 // with each release's `cover`) are all optional (COVERS.md §1.10), and so are
 // `abi`, the module ABI when it is not After Dark's ("intermission" for Star
-// Wars Screen Entertainment's IMX modules; absent = "afterdark"), and
+// Wars Screen Entertainment's IMX modules, "scrnsave" for Johnny Castaway's
+// Windows 3.1 screen-saver program; absent = "afterdark"), and
 // `screen`, the fixed screen of a module that composes a scene of that size
 // ("640x480" for Star Trek: The Screen Saver's, ScreamSavers' and Marvel's;
 // absent = none).
@@ -36,6 +37,11 @@ inline constexpr char kAfterDarkAbi[] = "afterdark";
 // engine, lane ne16). Their emulated screen is their own 640x480
 // (geometry.h: module_screen).
 inline constexpr char kIntermissionAbi[] = "intermission";
+// A Windows 3.1 screen-saver program (an .SCR built on SCRNSAVE.LIB, run as
+// Windows 3.1 ran it; lane ne16): Johnny Castaway's. Its screen is the one
+// its catalog entry gives ("screen"); a host that doesn't list the ABI shows
+// it "Coming soon", and the rotation leaves it out, as for Intermission's.
+inline constexpr char kScrnsaveAbi[] = "scrnsave";
 
 enum class ControlType { slider, checkbox, popup, button, unknown };
 
@@ -76,7 +82,8 @@ struct Module {
   std::string display_name;
   std::string lane;                // "pe32" | "ne16"
   // The module ABI, which a host must list (--capabilities abis=) to run it:
-  // "afterdark", or "intermission" (an IMX module; lane ne16). Never empty.
+  // "afterdark", "intermission" (an IMX module; lane ne16) or "scrnsave" (a
+  // Windows 3.1 screen-saver program; lane ne16). Never empty.
   std::string abi = kAfterDarkAbi;
   // The screen the catalog gives it ("screen": "WxH", PACKAGES.md §6): a
   // module shown at a fixed size (Star Trek: The Screen Saver's, ScreamSavers'

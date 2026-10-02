@@ -78,6 +78,7 @@
 #include <vector>
 
 #include "adw/core/log.h"
+#include "win16/dos16.hh"
 #include "win16/gdi16.hh"
 #include "win16/shim_families16.hh"
 
@@ -875,6 +876,25 @@ void register_gdi16(Runtime16& rt) {
   r.impl(G, "CreateFontIndirect", [](Call16& c) {
     LOGFONT16 f = read16<LOGFONT16>(c.rt, c.ptr());
     c.ret(make_font(gt(c), to_logfont(f)));
+  });
+  // AddFontResource(lpszFilename): the number of fonts added. A file the
+  // guest's disk does not hold adds none: 0, as Windows answered (Johnny
+  // Castaway asks for WILLY.FON, which its floppy never had, and its
+  // CreateFont of "Willy Beamish Dialog" then gets the font mapper's choice).
+  // A font file that is there is not loaded either (no module of the
+  // supported releases ships one): 0, logged. A handle (HIWORD 0) adds none.
+  r.impl(G, "AddFontResource", [](Call16& c) {
+    uint32_t p = c.ptr();
+    if (!(p >> 16)) return c.ret(0);
+    std::string name = c.rt.read_str(p);
+    const bool there = c.rt.state<DosFiles>().exists(name);
+    if (there) log("win16: AddFontResource(\"%s\"): font files are not loaded; 0 fonts added", name.c_str());
+    trace("gdi16", "AddFontResource(\"%s\") -> 0 (%s)", name.c_str(), there ? "not loaded" : "no such file");
+    c.ret(0);
+  });
+  r.impl(G, "RemoveFontResource", [](Call16& c) {
+    c.ptr();
+    c.ret(0);
   });
   r.impl(G, "CreateFont", [](Call16& c) {
     LOGFONT16 f{};

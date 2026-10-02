@@ -39,7 +39,7 @@ using namespace adw;
 namespace {
 
 void usage() {
-  log("usage: adhostwin.exe <module (.AD, .IMX) | --test-pattern> [KEY=VALUE ...]");
+  log("usage: adhostwin.exe <module (.AD, .IMX, .SCR) | --test-pattern> [KEY=VALUE ...]");
   log("       adhostwin.exe --capabilities");
   log("       adhostwin.exe --configure <module> --button <slot> [--owner <hwnd>] [KEY=VALUE ...]");
   log("  env/KEY: ADSTREAM=1 ADSCREENW/ADSCREENH ADFRAMES=<n> ADFBHASH=1 ADOUT=<dir>");
@@ -96,8 +96,8 @@ std::vector<LinkedLane> linked_lanes() {
   return v;
 }
 
-// "lanes=pe32,ne16 configure=pe32,ne16 abis=afterdark,intermission status=1
-// state=1 seed=1 audio=1 numlock=1" (§3.3; audio: AUDIO.md §4; numlock: the
+// "lanes=pe32,ne16 configure=pe32,ne16 abis=afterdark,intermission,scrnsave
+// status=1 state=1 seed=1 audio=1 numlock=1" (§3.3; audio: AUDIO.md §4; numlock: the
 // NUMLOCK line and ADNUMLOCK are understood): only what this build has.
 // abis= is the union of the linked lanes' Lane::abis(), in lane order.
 std::string capabilities_line() {

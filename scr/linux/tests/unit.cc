@@ -141,6 +141,9 @@ void test_status() {
       "lanes=pe32,ne16 configure=pe32,ne16 abis=afterdark,intermission status=1 state=1 seed=1 audio=1 numlock=1\r\n");
   CHECK(c.known && c.numlock && c.takes_numlock_lines() && c.takes_numlock_env());
   CHECK(c.runs("ne16", "intermission") && c.runs("pe32", "") && !c.runs("x86", "afterdark"));
+  // Johnny Castaway's program runs only on a host that lists its ABI.
+  CHECK(!c.runs("ne16", "scrnsave") &&
+        parse_capabilities("lanes=pe32,ne16 abis=afterdark,intermission,scrnsave").runs("ne16", "scrnsave"));
   HostCapabilities old = parse_capabilities("lanes=pe32,ne16 status=1");
   CHECK(old.known && !old.numlock && !old.takes_numlock_lines() && !old.takes_numlock_env());
   CHECK(old.runs("ne16", "afterdark") && !old.runs("ne16", "intermission"));
@@ -226,6 +229,8 @@ void test_geometry() {
   CHECK((own_screen("intermission") == SizeI{640, 480}));
   CHECK((own_screen("afterdark") == SizeI{}));
   CHECK((own_screen("afterdark", {640, 480}) == SizeI{640, 480}));
+  // A Windows 3.1 screen-saver program's screen is its catalog entry's.
+  CHECK((own_screen("scrnsave") == SizeI{}) && (own_screen("scrnsave", {640, 480}) == SizeI{640, 480}));
   CHECK(module_screen({640, 480}, 16.0 / 9.0, 1.0).fixed);
   CHECK((module_screen({}, 16.0 / 9.0, 1.0).emu == SizeI{856, 480}));
   // --lines 720 (the Windows Resolution setting's 1.5): After Dark's follow

@@ -22,6 +22,16 @@
 //        (imx_protocol.cc, make_imx_protocol; lane.hh "Intermission (IMX)").
 //        It takes no key messages, carries overruns, and has a pixel cost of
 //        its own.
+//   scr  Windows 3.1 screen savers (an application exporting SCREENSAVERPROC:
+//        a .SCR built on SCRNSAVE.LIB, Johnny Castaway's SCRANTIC.SCR), run
+//        as Windows 3.1 ran one: the program itself, unchanged, as the
+//        runtime's task (win16/modules16.hh "Tasks") with the command line
+//        "/s", its own message loop waiting in GetMessage (scr_protocol.cc,
+//        make_scr_protocol; lane.hh "Windows 3.1 screen savers"). Its one
+//        call is the task: it lasts the whole run, every frame ending inside
+//        it (long calls are required), and at shutdown it is closed as on
+//        the input that woke the saver. It takes no key or mouse messages;
+//        its button runs the program with "/c".
 // Ne16Lane's default factory picks one by the module's exports (package.hh
 // detect_kind, ADNE16KIND).
 //
@@ -113,6 +123,22 @@ class Protocol16 {
   // status"). False: they are left in the host's key state alone, which
   // GetAsyncKeyState/GetKeyState read (the lane queues nothing). AD3: true.
   virtual bool takes_key_messages() const { return true; }
+  // Whether MOUSE lines reach the guest as mouse messages in the saver
+  // window's queue. False: the host's mouse state alone (GetCursorPos).
+  // AD3, IMX: true; scr: false (a Windows 3.1 saver closed itself on a mouse
+  // move; the host's saver ends the run on input itself).
+  virtual bool takes_mouse_messages() const { return true; }
+  // Whether the protocol's calls can only run as long calls (lane.hh "Long
+  // calls"): scr, whose one call is the program's task. The lane refuses the
+  // module (exit 1) when they are off (ADMIPS=0, ADNE16LONGCALLS=0).
+  virtual bool runs_as_task() const { return false; }
+  // At shutdown with the call suspended: true when the protocol has asked
+  // the module to end as its host ended it, and the lane is to resume the
+  // call so that it can (Ne16Lane::wind_down: bounded; then abandoned if it
+  // still runs). scr: WM_CLOSE to the program's window, what SCRNSAVE.LIB's
+  // DefScreenSaverProc posted on the waking input (SCRANTIC saves its story
+  // in its WM_DESTROY). AD3, IMX: false (the call is abandoned).
+  virtual bool close_suspended() { return false; }
   // Whether the work a call completed within its frame did beyond the
   // frame's DRAWFRAME budget is carried into the next frames (lane.hh
   // "Pacing"): paid back from their budgets first, a frame whose whole budget
@@ -224,5 +250,22 @@ constexpr uint32_t kImxPixelCost = 4;
 // H:, with the Intermission profile seeds (win16/dos16.hh seed_intermission:
 // `volume` is ANTSW.INI's Volume, 0 = Off).
 void mount_imx_disk(win16::Runtime16& rt, const Env& env, const Ne16Layout& layout, int volume);
+
+// ---- the scr protocol (scr_protocol.cc) --------------------------------------------------------------------
+
+// The Windows 3.1 screen-saver protocol for the program at layout.module_path.
+std::unique_ptr<Protocol16> make_scr_protocol(const Ne16Layout& layout);
+
+// Where the program's installer put it on the guest's disk: C:\SIERRA\SCRANTIC
+// for SCRANTIC.SCR (Johnny Castaway's installer's default destination), else
+// C:\<module dir's name> — a rule by file name, never a package id.
+std::string scr_install_dir(const Ne16Layout& layout);
+
+// The guest's disk for a Windows 3.1 screen saver (scr_protocol.cc): the
+// module dir at its install dir and C:\WINDOWS (over the package's windows
+// dir when it has one) as copy-on-write overlays whose upper layers are
+// ADSTATE's package dir or memory, C:\WINDOWS\SYSTEM (the engine dir), H:,
+// with the profile seeds its installer left (win16/dos16.hh seed_scrnsave).
+void mount_scr_disk(win16::Runtime16& rt, const Env& env, const Ne16Layout& layout);
 
 }  // namespace adw::ne16

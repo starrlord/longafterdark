@@ -192,6 +192,34 @@ inline std::vector<uint8_t> dcl_write(const std::vector<DclToken>& tokens, int m
   return out;
 }
 
+// ---- InstallShield 1's "$" files (isz.h) ------------------------------------------------------
+
+// One "$" file: the header, `name` stored (as given: tests store bad ones
+// too), and `stream` (a DCL stream from dcl_write) as its data, with the
+// compressed size it has (`csize`, when set, records another). Dated
+// 1992-12-09 12:34:56 unless `date`/`time` say otherwise.
+inline std::vector<uint8_t> is1_file(const std::string& name, const std::vector<uint8_t>& stream,
+                                     std::optional<uint32_t> csize = std::nullopt, uint16_t date = 0x1989,
+                                     uint16_t time = 0x645C) {
+  std::vector<uint8_t> f = {0x65, 0x5D, 0x13, 0x8C, 0x08, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x12};
+  const uint32_t c = csize.value_or(uint32_t(stream.size()));
+  for (int i = 0; i < 4; i++) f.push_back(uint8_t(c >> (8 * i)));
+  f.insert(f.end(), {0, 0, 0, 0});
+  f.insert(f.end(), {uint8_t(date), uint8_t(date >> 8), uint8_t(time), uint8_t(time >> 8), 0, 0});
+  f.push_back(uint8_t(name.size()));
+  f.insert(f.end(), name.begin(), name.end());
+  f.push_back(0);
+  f.insert(f.end(), stream.begin(), stream.end());
+  return f;
+}
+
+// The same holding `data` as literals (nothing here compresses).
+inline std::vector<uint8_t> is1_literals(const std::string& name, const std::vector<uint8_t>& data) {
+  std::vector<DclToken> t = dcl_literals(data);
+  t.push_back(DclToken::end());
+  return is1_file(name, dcl_write(t));
+}
+
 // ---- libraries (tools/zwrite.py) --------------------------------------------------------------
 
 // The library header's fields: 0x0A u16 flags, 0x0C u16 files, 0x0E u16 date,

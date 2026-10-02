@@ -68,6 +68,10 @@ const KnownFile kTngKnown[] = {
 #include "known_files_tng.inc"
     {nullptr, 0, nullptr},
 };
+const KnownFile kCastawayKnown[] = {
+#include "known_files_castaway.inc"
+    {nullptr, 0, nullptr},
+};
 
 template <size_t N>
 std::span<const KnownFile> manifest(const KnownFile (&a)[N]) {
@@ -816,6 +820,61 @@ const char* const kTngArchives[] = {"DATA.ZIP",     "ENC.ZIP",     "NANITES.ZIP"
                                     "STARBASE.ZIP", "STATIONS.ZIP", "TACHYON.ZIP", "THEBORG.ZIP",  "TNGMESG.ZIP",
                                     "TROI.ZIP",     "WARPEFCT.ZIP", "WORF.ZIP",    "MUSIC.ZIP"};
 
+// ---- castaway ----------------------------------------------------------------------------
+//
+// Screen Antics: Johnny Castaway (Sierra On-Line, 1992; made by Dynamix, Jeff
+// Tunnell Productions): one Windows 3.1 screen-saver program built on
+// Microsoft's SCRNSAVE.LIB (SCRANTIC.SCR, a 16-bit NE program exporting
+// SCREENSAVERPROC, which the 16-bit lane runs as Windows 3.1 ran it) and its
+// story's data (RESOURCE.MAP and RESOURCE.001), on one 1.44 MB floppy
+// installed by InstallShield 1.02. The recipe is the installer's script
+// INSTALL.INS baked into a table: two InstallShield 1 "$" files expanded
+// (isz.h), one file copied (research/jc, gitignored).
+
+const char* const kCastawayModuleDirs[] = {"SCRANTIC"};
+// The floppy (the v1.01 international build of 1993-01-04), as the Internet
+// Archive's KryoFlux dump of it holds it, the same bytes as the copy in The
+// Good Old Days Floppy Collection; that dump's ZIP, its download; and that
+// collection's 7z of the image (the user's copy). An import of either
+// archive reads the image inside, known by its own md5.
+const KnownImage kCastawayImages[] = {
+    {"81087ea7cc6a304896e81c722b0a85ec", 1474560, "FAT12 1.44 MB floppy image", ""},
+    {"867e1e0574e7c117aa4a8b72c08b887c", 1359711, "ZIP of the FAT12 1.44 MB floppy image (a KryoFlux dump)", ""},
+    {"edf027407e258f73d8056ae8dc87215f", 1355520,
+     "7z of the FAT12 1.44 MB floppy image (The Good Old Days Floppy Collection)", ""},
+};
+// Its published name is a Windows file name as it is.
+const Download kCastawayDownloads[] = {
+    {"https://archive.org/download/screen-antics-johnny-castaway-16-color-v1.01-int.-1.4.93-win3.1-1.44m/"
+     "Screen%20Antics%20-%20Johnny%20Castaway%20%2816%20Color%29%20%28v1.01%2C%20Int.%201.4.93%29%20%28Win3.1%29%20"
+     "%281.44M%29.zip",
+     L"Screen Antics - Johnny Castaway (16 Color) (v1.01, Int. 1.4.93) (Win3.1) (1.44M).zip", 1359711,
+     "867e1e0574e7c117aa4a8b72c08b887c", "image"},
+};
+// The program, and the data it cannot run without (string 1001: "can not
+// locate the necessary data files").
+const char* const kCastawayRequired[] = {"SCRANTIC/SCRANTIC.SCR", "SCRANTIC/RESOURCE.MAP", "SCRANTIC/RESOURCE.001"};
+// Every file the recipe reads (the first, beside the installer's, is the
+// fingerprint's).
+const char* const kCastawayFiles[] = {"SCRANTIC.SC$", "RESOURCE.00$", "RESOURCE.MAP"};
+// INSTALL.INS, flattened: its target C:\SIERRA\SCRANTIC is the module folder.
+// Never installed: the floppy's RESOURCE.001 (a 35-byte placeholder, "Resource
+// #1 has been compressed."; the real one is RESOURCE.00$), the installer
+// (SETUP.EXE, INSTALL.EX$, INSTALL.INS) and its logos (LOGO.BMP, SLOGO.BMP).
+// What it wrote besides (SCRANTIC.INI's SourceDir, WIN.INI's and
+// SYSTEM.INI's screen-saver lines) is the lane's business.
+const LooseFile kCastawayLoose[] = {
+    {"SCRANTIC.SC$", "SCRANTIC/SCRANTIC.SCR", Codec::is1},
+    {"RESOURCE.00$", "SCRANTIC/RESOURCE.001", Codec::is1},
+    {"RESOURCE.MAP", "SCRANTIC/RESOURCE.MAP", Codec::plain},
+};
+// The program names itself Screen Antics (its description, "SCRNSAVE :Screen
+// Antics", the name Windows 3.1's Control Panel listed); it is known, and
+// listed, as Johnny Castaway.
+const NameOverride kCastawayNames[] = {
+    {"SCRANTIC/SCRANTIC.SCR", "Johnny Castaway"},
+};
+
 // ---- box covers (COVERS.md §2.3) ------------------------------------------------------------
 //
 // Only URLs, md5s, sizes, paths and crops: the pictures are fetched (md5- and
@@ -1050,6 +1109,16 @@ const CoverSource kTngCovers[] = {
                    "419a2ba9a3c762531365cef84d02ef45", 11258025,
                    L"star-trek-the-next-generation-screensaver_disc.jpg", Crop{1200, 270, 3600, 3600}),
 };
+// Screen Antics: Johnny Castaway: the box front, as the Internet Archive's
+// item of the release's art holds it (204x253). Sierra's and Dynamix's art:
+// fetched onto the user's machine only, never bundled. The floppy's two
+// pictures are the installer's logos, no cover; the one photo of the floppy
+// online shows its serial number.
+const CoverSource kCastawayCovers[] = {
+    cover_download("box", "Box front", "Internet Archive",
+                   "https://archive.org/download/johncast/johnny-castaway-pc-cover.png",
+                   "d07b6af1d5ffe9e0edaafa11fb9badac", 24904, L"johnny-castaway-pc-cover.png"),
+};
 
 const Package kPackages[] = {
     {"deluxe", "After Dark 4.0 Deluxe", "Deluxe", Recipe::tree, "FILES", kDeluxeModuleDirs, kDeluxeImages,
@@ -1147,6 +1216,15 @@ const Package kPackages[] = {
     {"tng", "Star Trek: The Next Generation Screen Saver", "Star Trek TNG", Recipe::ad3zip, "packages/tng",
      kTngModuleDirs, kTngImages, kTngRequired, {}, nullptr, {}, "ST-TNG", "ADXPL320.DLL", "ST-TNG.AFI", kTngArchives,
      {}, {}, manifest(kTngKnown), kTngDownloads, kTngCovers, "1994-10", nullptr, {}, nullptr, "640x480"},
+    // After the first fifteen, so they keep their places (and the GUI's
+    // command ids). The program is dated 1992-12-09 (the floppy's files,
+    // 1993-01-04, are the v1.01 international build's). It draws a fixed
+    // scene in the middle of the screen, as Windows 3.1 drew it on a 640x480
+    // VGA: the catalog gives it that screen.
+    {"castaway", "Screen Antics: Johnny Castaway", "Johnny Castaway", Recipe::is1, "packages/castaway",
+     kCastawayModuleDirs, kCastawayImages, kCastawayRequired, {}, nullptr, {}, "SCRANTIC", nullptr, nullptr,
+     kCastawayFiles, {}, kCastawayNames, manifest(kCastawayKnown), kCastawayDownloads, kCastawayCovers, "1992-12",
+     nullptr, kCastawayLoose, nullptr, "640x480"},
 };
 
 }  // namespace
@@ -1162,6 +1240,7 @@ const char* recipe_name(Recipe r) {
     case Recipe::intermission: return "intermission";
     case Recipe::ad2kwaj: return "ad2kwaj";
     case Recipe::islib: return "islib";
+    case Recipe::is1: return "is1";
   }
   return "?";
 }

@@ -117,6 +117,53 @@ IszHeader isz_header(std::span<const uint8_t> data, std::string_view volume_name
 // `first` has no numeric extension.
 std::optional<std::string> isz_volume_name(std::string_view first, unsigned n);
 
+// ---- InstallShield 1's compressed files ("$" files) ------------------------------------------
+//
+// What the InstallShield 1.0x installers (The Stirling Group, 1990-92)
+// expand on the way: Screen Antics: Johnny Castaway's SCRANTIC.SC$ and
+// RESOURCE.00$ (research/jc). One file, its extension's last character
+// replaced by "$", holding one PKWARE DCL implode stream (the decoder above,
+// as strict) after a header that names the file it came from. Little-endian:
+//   0x00  4  65 5D 13 8C                0x04  4  08 01 03 00
+//   0x08  4  1                          0x0C  2  00 12
+//   0x0E  4  the compressed size        0x12  4  0
+//   0x16  2  DOS date, 0x18 2 DOS time  0x1A  2  0
+//   0x1C  1  the stored name's length n, then the name (an 8.3 DOS name, code
+//            page 437; the installer may install the file under another),
+//            a NUL, and the compressed data: exactly the compressed size of
+//            it, to the end of the file.
+// No uncompressed size is recorded: the stream runs to its end code, which
+// must end the data, bounded by the caller's max_size. Nothing has a
+// checksum: a damaged file that still decodes is caught only by the
+// release's manifest (importer.cc), as with KWAJ. Every field is checked;
+// what the release does not have is refused, never guessed at.
+struct Is1Header {
+  std::string name;           // the stored name ("SCRANTIC.EXE"), code page 437 as UTF-8
+  uint32_t csize = 0;         // the compressed data's size: the rest of the file
+  uint32_t dos_datetime = 0;  // DOS date << 16 | time (local time)
+  size_t data_offset = 0;     // where the compressed data starts (0x1E + n)
+};
+
+// The output would pass the caller's max_size (the file may be sound: the
+// caller's bound says why it is refused).
+class IszTooLarge : public IszError {
+ public:
+  using IszError::IszError;
+};
+
+// The header. Throws IszError ("<where>: ...") for a file that is not one,
+// a field other than the format's, an invalid date, a name that is no 8.3
+// DOS name or not NUL-terminated, or a compressed size other than the rest
+// of the file.
+Is1Header is1_header(std::span<const uint8_t> file, std::string_view where);
+
+// Streams the expanded bytes to `sink` in chunks of at most 64 KiB and
+// returns how many there were. Throws IszError for a header is1_header
+// refuses or data the decoder refuses; IszTooLarge for output that would
+// pass `max_size` (no byte past it is ever produced).
+uint64_t is1_expand(std::span<const uint8_t> file, std::string_view where, uint64_t max_size,
+                    const std::function<void(const uint8_t*, size_t)>& sink);
+
 namespace isz_detail {  // exposed for tests/test_isz.cc
 
 // One PKWARE DCL implode stream (its 2-byte header included) to exactly

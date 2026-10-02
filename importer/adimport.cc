@@ -125,9 +125,9 @@ void usage(FILE* f) {
           "other release: packages\\<id>), verifies them, and rewrites the module catalog,\n"
           "<assets root>\\win\\catalog-win.json, over every imported release.\n"
           "  --image <path>      an image of a CD (.iso, or a raw 2352-byte-sector .bin) or of a\n"
-          "                      floppy disk (.img/.ima/.vfd/.flp, FAT12/16), or a ZIP of the\n"
-          "                      install files or of floppy images; repeat it for every disk of\n"
-          "                      a set. --iso is the same option\n"
+          "                      floppy disk (.img/.ima/.vfd/.flp, FAT12/16), or a ZIP or 7z of\n"
+          "                      the install files or of floppy images; repeat it for every disk\n"
+          "                      of a set. --iso is the same option\n"
           "  --from <dir>        a CD drive (E:\\) or any folder holding a copy of the disc or\n"
           "                      floppies\n"
           "  --download [<id>]   fetch the release's copy from the Internet Archive (After Dark\n"
@@ -513,9 +513,11 @@ void print_result(const ImportResult& r, bool quiet) {
       printf("  catalog %s\n", to_utf8(r.catalog.wstring()).c_str());
       if (!r.url.empty()) printf("  from    %s\n", r.url.c_str());
       if (!r.iso_md5.empty()) {
-        const bool zip = r.format == "zip";
-        printf("  %s md5 %s (%s)\n", zip ? "zip  " : "image", r.iso_md5.c_str(),
-               r.iso_md5_known           ? ((zip ? "the known ZIP of " : "the known image of ") + r.package_title).c_str()
+        const bool zip = r.format == "zip", seven = r.format == "7z";
+        printf("  %s md5 %s (%s)\n", zip ? "zip  " : seven ? "7z   " : "image", r.iso_md5.c_str(),
+               r.iso_md5_known           ? ((zip ? "the known ZIP of " : seven ? "the known 7z of " : "the known image of ") +
+                                                    r.package_title)
+                                                       .c_str()
                : r.download_md5_checked  ? "the expected md5 of the download"
                                          : "not a known image");
       }
@@ -591,10 +593,15 @@ int run_list_packages(const Args& a) {
       const Download& d = s.package->downloads.front();
       const bool zip = std::string_view(d.kind) == "zip";
       const std::string parts = std::to_string(1 + d.more_images.size());
+      // One floppy's image (Johnny Castaway's, in a ZIP): its known image says so.
+      bool floppy = false;
+      for (const KnownImage& k : s.package->images)
+        floppy = floppy || (std::string_view(k.md5) == d.md5 &&
+                            std::string_view(k.medium).find("floppy") != std::string_view::npos);
       dl = "download " + mb(download_size(d)) +
            (zip && d.more_images.empty() ? " (ZIP of the install files)"
             : zip                        ? " (" + parts + " ZIPs of the install disks' files)"
-            : d.more_images.empty()      ? " (disc image)"
+            : d.more_images.empty()      ? (floppy ? " (floppy image)" : " (disc image)")
                                          : " (" + parts + " floppy images)");
     }
     printf("  %-9s %-*s %s; %s\n", s.package->id, title_w, s.package->title, state.c_str(), dl.c_str());

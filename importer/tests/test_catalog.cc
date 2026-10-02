@@ -540,6 +540,85 @@ void test_imx(const fs::path& dir) {
 
 // A FILES tree with modules of both lanes, files that are not modules, a
 // damaged module, and an id collision.
+// A Windows 3.1 screen-saver program (SCRNSAVE.LIB's convention): an NE
+// program exporting SCREENSAVERPROC, named by its description; a library
+// exporting it is no program; MODULE still wins. Made-up bytes.
+std::string synth_scr(const std::string& description, const std::vector<std::string>& exports, bool program = true) {
+  test::NeSpec ne;
+  ne.module_name = "SYNTHSCR";
+  ne.program = program;
+  ne.description = description;
+  ne.module_refs = {"MMSYSTEM", "GDI", "KERNEL", "USER"};
+  ne.exports = exports;
+  return test::build_ne(ne);
+}
+
+void test_scrnsave(const fs::path& dir) {
+  fs::create_directories(dir);
+  auto write = [&](const std::string& name, const std::string& data) {
+    fs::path p = dir / to_wide(name);
+    test::write_bytes(p, std::vector<uint8_t>(data.begin(), data.end()));
+    return p;
+  };
+  const Package* cast = find_package("castaway");
+  CHECK(cast && cast->recipe == Recipe::is1);
+  const std::vector<std::string> both = {"SCREENSAVERPROC", "SCREENSAVERCONFIGUREDIALOG", "PASSWORDDIALOG"};
+  CatalogModule m = catalog_module(write("SCRANTIC.SCR", synth_scr("SCRNSAVE :Made Up Antics ", both)),
+                                   "packages/castaway/SCRANTIC/SCRANTIC.SCR", cast);
+  CHECK(m.id == "castaway.scrantic" && m.lane == "ne16" && m.abi == "scrnsave" && m.entry == "SCREENSAVERPROC");
+  // Its own name, as Windows 3.1's Control Panel read it (trimmed); the
+  // registry's override is the merge's business.
+  CHECK(m.module_name == "Made Up Antics" && m.display_name == "Made Up Antics" && m.about.empty() && !m.credits);
+  CHECK(m.controls.size() == 1 && m.controls[0].index == 0 && m.controls[0].name == "Setup..." &&
+        m.controls[0].type == "button" && m.controls[0].kind == "button");
+  CHECK(m.needs.empty() && (m.system == std::vector<std::string>{"GDI", "KERNEL", "MMSYSTEM", "USER"}));
+  CHECK(m.screen == "640x480");
+  // No dialog export, no button; "SCRNSAVE: Name" (no blank before the
+  // colon) and lower case read alike; any other description: the file stem.
+  CatalogModule plain =
+      catalog_module(write("PLAIN.SCR", synth_scr("scrnsave: Plain", {"SCREENSAVERPROC"})), "x", cast);
+  CHECK(plain.controls.empty() && plain.module_name == "Plain");
+  CHECK_EQ(catalog_module(write("OTHER.SCR", synth_scr("A screen saver", both)), "x", cast).module_name,
+           std::string("other"));
+  CHECK_EQ(catalog_module(write("NONE.SCR", synth_scr("", both)), "x", cast).module_name, std::string("none"));
+  // A library exporting SCREENSAVERPROC is no program: left out, by name.
+  try {
+    catalog_module(write("LIB.SCR", synth_scr("SCRNSAVE :Lib", both, false)), "x", cast);
+    CHECK(false);
+  } catch (const ImportError& e) {
+    CHECK(std::string(e.what()).find("a library that exports SCREENSAVERPROC") != std::string::npos);
+  }
+  // MODULE still wins (an After Dark module), whatever else it exports.
+  CHECK(
+      catalog_module(write("AD.SCR", synth_scr("SCRNSAVE :X", {"MODULE", "SCREENSAVERPROC"})), "x", cast).abi.empty());
+  // The JSON: "abi" then "screen", last.
+  m.md5 = std::string(32, 'c');
+  const std::string j = render_catalog_json({m});
+  CHECK(j.find("\"md5\": \"" + std::string(32, 'c') +
+               "\",\n   \"abi\": \"scrnsave\",\n   \"screen\": \"640x480\"\n  }") != std::string::npos);
+  // The merge: only an InstallShield 1 package's module folders list *.SCR
+  // (never ENGINE's, never another package's), and castaway's override
+  // names its program Johnny Castaway.
+  const fs::path root = dir / L"tree";
+  fs::create_directories(root / L"SCRANTIC");
+  fs::create_directories(root / L"ENGINE");
+  auto put = [](const fs::path& p, const std::string& data) {
+    test::write_bytes(p, std::vector<uint8_t>(data.begin(), data.end()));
+  };
+  put(root / L"SCRANTIC" / L"SCRANTIC.SCR", synth_scr("SCRNSAVE :Made Up Antics", both));
+  put(root / L"ENGINE" / L"SPARE.SCR", synth_scr("SCRNSAVE :Spare", both));
+  CatalogTree t;
+  t.package = cast;
+  t.dir = root;
+  const CatalogDoc doc = build_catalog({t});
+  CHECK(doc.modules.size() == 1 && doc.modules[0].id == "castaway.scrantic" &&
+        doc.modules[0].module_name == "Johnny Castaway" && doc.modules[0].display_name == "Johnny Castaway");
+  CatalogTree other;
+  other.package = find_package("tng");
+  other.dir = root;
+  CHECK(build_catalog({other}).modules.empty());
+}
+
 void write_tree(const fs::path& files) {
   auto put = [&](const std::wstring& rel, const std::string& data) {
     test::write_bytes(files / rel, std::vector<uint8_t>(data.begin(), data.end()));
@@ -932,6 +1011,7 @@ int main(int argc, char** argv) {
   test_records();
   test_modules(dir / L"modules");
   test_imx(dir / L"imx");
+  test_scrnsave(dir / L"scrnsave");
   test_scan(dir / L"scan");
   test_ad20(dir / L"ad20");
   test_json();

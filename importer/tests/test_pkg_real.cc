@@ -12,13 +12,16 @@
 // Screen Savers, the Looney Tunes, ScreamSavers and the Disney Collection are
 // the user's ZIPs of their install files, their known images; The Far Side
 // the five ZIPs of its disks' files (PNX-FSC1..5.ZIP), Dilbert the ZIPs of
-// its four disks' files or the flat ZIP of them all (DilbertS.zip).
+// its four disks' files or the flat ZIP of them all (DilbertS.zip); Johnny
+// Castaway its floppy's image, the KryoFlux dump's ZIP of it or the user's
+// 7z of it (000580_jonny_castaway.7z).
 //   1. Each package's image(s) into a fresh root through adimport.exe: exit
 //      0, verified "image", nothing missing, every file matches the package
 //      manifest, the installed files are exactly the manifest (the §4 layout
-//      and counts), the invariants hold (the intermission, ad2kwaj and islib
-//      recipes' own), and the catalog has 46 / 44 / 13 / 15 / 14 / 16 / 1 /
-//      8 / 12 / 15 / 16 / 14 / 16 modules in the right lanes (swse:
+//      and counts), the invariants hold (the intermission, ad2kwaj, islib
+//      and is1 recipes' own), and the catalog has 46 / 44 / 13 / 15 / 14 /
+//      16 / 1 / 8 / 12 / 15 / 16 / 14 / 16 / 13 / 1 modules in the right
+//      lanes (castaway: one Windows 3.1 screen-saver program; swse:
 //      Intermission IMX entries with their registry names and one button;
 //      farside, dilbert: Intermission ASA and IMQ entries, SAVERMAIN, the
 //      same; startrek: Classic
@@ -59,7 +62,7 @@
 //   2. Every package plus Deluxe (imported --from the installed assets, which
 //      are only read: AD_ASSETS_DIR picks them, e.g.
 //      <repo>/build/win-pkg-setup/assets, else the data folder's) in one root:
-//      327 modules (232 over the first seven), display names unique per lane,
+//      328 modules (232 over the first seven), display names unique per lane,
 //      sameAs consistent (73), and every Deluxe entry's existing fields equal
 //      to the installed catalog's.
 //   3. Re-importing each package into that root changes nothing else.
@@ -121,12 +124,14 @@ const std::map<std::string, Expect> kExpect = {
     {"farside", {20, {{"SAVER", 18}, {"ENGINE", 2}}, 14, 0}},
     {"dilbert", {23, {{"SAVER", 21}, {"ENGINE", 2}}, 16, 0}},
     {"tng", {31, {{"ST-TNG", 26}, {"ENGINE", 5}}, 13, 0}},
+    {"castaway", {3, {{"SCRANTIC", 3}}, 1, 0}},
 };
 // The catalog over every release with the Deluxe tree: 232 entries over the
 // first seven, 284 with Marvel Comics Screen Posters, Snoopy's Screen Savers,
 // the Looney Tunes, ScreamSavers and the Disney Collection, 314 with The Far
-// Side and Dilbert, 327 with Star Trek: The Next Generation Screen Saver;
-// still 73 of them the same bytes as an earlier entry.
+// Side and Dilbert, 327 with Star Trek: The Next Generation Screen Saver,
+// 328 with Johnny Castaway; still 73 of them the same bytes as an earlier
+// entry.
 size_t combined_modules() {
   size_t n = 84;
   for (const auto& [id, e] : kExpect) n += e.modules;
@@ -187,7 +192,7 @@ void check_package_root(const fs::path& win, const Package& p) {
   // re-check), the intermission, ad2kwaj and islib recipes' own for their
   // packages.
   const bool imx = p.recipe == Recipe::intermission, ad2 = p.recipe == Recipe::ad2kwaj,
-             isl = p.recipe == Recipe::islib, delrina = p.delrina_installer();
+             isl = p.recipe == Recipe::islib, is1 = p.recipe == Recipe::is1, delrina = p.delrina_installer();
   for (const char* dir : p.module_dirs) {
     if (std::string_view(dir) == "ENGINE") continue;
     for (const char* never : {"AD_SND.DLL", "OLDMOD16.DLL", "OLDMOD32.DLL", "ADTASK.DLL", "ADW30.EXE"})
@@ -235,6 +240,9 @@ void check_package_root(const fs::path& win, const Package& p) {
       CHECK(!fs::exists(root / L"ENGINE"));
     }
     CHECK(!fs::exists(root / L"WINDOWS"));
+  } else if (is1) {
+    // The program and its data in its folder alone: no ENGINE, no WINDOWS.
+    CHECK(!fs::exists(root / L"ENGINE") && !fs::exists(root / L"WINDOWS"));
   } else {
     CHECK(fs::exists(root / L"ENGINE" / L"AD_SND.DLL"));
     CHECK((fs::exists(root / L"ENGINE" / L"OLDMOD16.DLL") && fs::exists(root / L"ENGINE" / L"AFTERDAR.SCR")) ||
@@ -253,6 +261,13 @@ void check_package_root(const fs::path& win, const Package& p) {
                             "SETUP.INS", "WINSYS", "~INS0762", "CMOS.RAM", "DREAM.ON", "TXTSCR", "AD_CHANGES",
                             "AD_MODS.LIS"})
     CHECK(upper.find(never) == std::string::npos);
+  // What InstallShield 1's floppy holds that the recipe never reads: the
+  // installer, its logos, and the placeholder RESOURCE.001 (the installed
+  // one comes from RESOURCE.00$).
+  if (is1) {
+    for (const char* never : {"SETUP.EXE", "INSTALL.EX$", "LOGO.BMP"}) CHECK(upper.find(never) == std::string::npos);
+    CHECK(text.find("\"from\": \"RESOURCE.001\"") == std::string::npos);
+  }
   if (ad2)  // what After Dark 2.0's installer copied that the recipe never reads
     for (const char* never : {"AD_PREFS", "AD_MPT", "SPALETTE", "AD_LIB", "AD_SB", "ST_NSTLL", "AD_MESG", "SETUP.EXE"})
       CHECK(text.find(never) == std::string::npos);
@@ -267,7 +282,7 @@ void check_package_root(const fs::path& win, const Package& p) {
 void check_catalog_of(const phosg::JSON& cat, const Package& p) {
   const Expect& e = kExpect.at(p.id);
   const bool imx = p.recipe == Recipe::intermission, ad2 = p.recipe == Recipe::ad2kwaj,
-             isl = p.recipe == Recipe::islib;
+             isl = p.recipe == Recipe::islib, is1 = p.recipe == Recipe::is1;
   size_t n = 0, pe = 0, controls = 0;
   for (auto& m : cat.at("modules").as_list()) {
     if (m->get_string("package") != p.id) continue;
@@ -275,7 +290,23 @@ void check_catalog_of(const phosg::JSON& cat, const Package& p) {
     pe += m->get_string("lane") == "pe32";
     CHECK(m->get_string("id").rfind(std::string(p.id) + ".", 0) == 0);
     CHECK(m->get_string("path").rfind(std::string(p.root) + "/", 0) == 0);
-    CHECK_EQ(m->contains("abi"), imx);
+    CHECK_EQ(m->contains("abi"), imx || is1);
+    if (is1) {
+      // Johnny Castaway: a Windows 3.1 screen-saver program (its
+      // description names it Screen Antics; the registry, Johnny
+      // Castaway), with Control Panel's Setup... (its own dialog).
+      CHECK_EQ(m->get_string("abi"), std::string("scrnsave"));
+      CHECK_EQ(m->get_string("lane"), std::string("ne16"));
+      CHECK_EQ(m->get_string("entry"), std::string("SCREENSAVERPROC"));
+      CHECK_EQ(m->get_string("id"), std::string("castaway.scrantic"));
+      CHECK_EQ(m->get_string("moduleName"), std::string("Johnny Castaway"));
+      CHECK_EQ(m->get_string("displayName"), std::string("Johnny Castaway"));
+      CHECK(m->at("needs").as_list().empty() && !m->contains("sameAs"));
+      const auto& ctl = m->at("controls").as_list();
+      controls += ctl.size();
+      CHECK(ctl.size() == 1 && ctl[0]->get_string("name") == "Setup..." && ctl[0]->get_string("type") == "button");
+      continue;
+    }
     CHECK_EQ(m->contains("screen"), p.screen != nullptr);  // startrek and screams
     if (p.screen) CHECK_EQ(m->get_string("screen"), std::string(p.screen));
     if (p.recipe == Recipe::ad3zip && std::string_view(p.id) != "ad32" && std::string_view(p.id) != "tt" &&
@@ -1137,8 +1168,9 @@ int main(int argc, char** argv) {
       check_catalog_of(cat, p);
     }
   // The packages list: oldest release first (Star Trek: The Screen Saver,
-  // 1992-11, then Marvel Comics Screen Posters, 1993-12, then The Far Side,
-  // 1994-06); swse ties with the Simpsons (1994-08) and follows it, as in the
+  // 1992-11, then Johnny Castaway, 1992-12, then Marvel Comics Screen
+  // Posters, 1993-12, then The Far Side, 1994-06); swse ties with the
+  // Simpsons (1994-08) and follows it, as in the
   // registry, and Snoopy's Screen Savers, Dilbert and Star Trek: The Next
   // Generation Screen Saver (1994-10) follow them, in registry order too;
   // ScreamSavers ties with the Looney Tunes (1995-04) the same way; the
@@ -1146,8 +1178,9 @@ int main(int argc, char** argv) {
   {
     std::vector<std::string> order;
     for (auto& pk : cat.at("packages").as_list()) order.push_back(pk->get_string("id"));
-    CHECK((order == std::vector<std::string>{"startrek", "marvel", "farside", "simpsons", "swse", "snoopy", "dilbert",
-                                             "tng", "looney", "screams", "ad32", "tt", "disney", "deluxe", "ad10"}));
+    CHECK((order == std::vector<std::string>{"startrek", "castaway", "marvel", "farside", "simpsons", "swse", "snoopy",
+                                             "dilbert", "tng", "looney", "screams", "ad32", "tt", "disney", "deluxe",
+                                             "ad10"}));
   }
   // The Looney Tunes' Messages comes after 3.2's: it is told apart by its
   // short title.

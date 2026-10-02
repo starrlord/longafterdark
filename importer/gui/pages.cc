@@ -151,9 +151,9 @@ std::vector<fs::path> pick_source(HWND owner, bool folder) {
                           nullptr, 0);
   } else {
     COMDLG_FILTERSPEC types[] = {
-        {L"Disc and floppy images, and ZIPs of them or of install files (*.iso; *.bin; *.img; *.ima; *.vfd; *.flp; "
-         L"*.zip)",
-         L"*.iso;*.bin;*.img;*.ima;*.vfd;*.flp;*.zip"},
+        {L"Disc and floppy images, and ZIPs or 7z archives of them or of install files (*.iso; *.bin; *.img; *.ima; "
+         L"*.vfd; *.flp; *.zip; *.7z)",
+         L"*.iso;*.bin;*.img;*.ima;*.vfd;*.flp;*.zip;*.7z"},
         {L"All files", L"*.*"}};
     out = run_open_dialog(owner, false, true, L"Choose an image of a CD or floppy disk (every disk of a set)",
                           types, 2);
@@ -244,8 +244,8 @@ void SourcesPage::build() {
   }
   from_label_ = add_text(L"Import from", Face::body_strong, Ink::text, body, true);
   card_image_ = add_button(kIdImage,
-                           L"A disc image…\nAn ISO image of a CD or floppy images (.img), or a ZIP of them or of the "
-                           L"install files; select every disk of a set.",
+                           L"A disc image…\nAn ISO image of a CD or floppy images (.img), or a ZIP or 7z of them or "
+                           L"of the install files; select every disk of a set.",
                            ui::ButtonRole::card, L'', body);
   card_folder_ = add_button(kIdFolder, L"A drive or folder…\nThe CD drive, or a folder holding a copy of the disc or floppies.",
                             ui::ButtonRole::card, L'', body);
@@ -345,8 +345,8 @@ int SourcesPage::layout(int w, int max_h) {
     }
     return y + px(16);
   };
-  // Too tall for the work area (on a short screen; three rows of covers hold
-  // fifteen releases): the grid scrolls in its card, showing as many whole
+  // Too tall for the work area (on a short screen; three rows of six covers
+  // hold sixteen releases): the grid scrolls in its card, showing as many whole
   // rows as fit (two at the least) when that makes the page fit, else as
   // many as fit down to one (the part of a row that shows says there are
   // more); when even one row does not fit, the whole body scrolls instead,

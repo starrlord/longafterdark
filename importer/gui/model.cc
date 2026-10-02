@@ -28,13 +28,17 @@ std::wstring count(size_t n, const wchar_t* one, const wchar_t* many) {
   return std::to_wstring(n) + L" " + (n == 1 ? one : many);
 }
 
-std::wstring download_kind(const Download& d) {
+std::wstring download_kind(const Package& p, const Download& d) {
   // One ZIP of the install files, or one of each install disk's.
   if (std::string_view(d.kind) == "zip")
     return d.more_images.empty() ? L"Install files (ZIP)"
                                  : L"Install files (" + std::to_wstring(1 + d.more_images.size()) + L" ZIPs)";
   // A release on several install floppies: an image of each.
   if (!d.more_images.empty()) return std::to_wstring(1 + d.more_images.size()) + L" floppy disk images";
+  // A release on one floppy (Johnny Castaway's, in a ZIP): its known image says so.
+  for (const KnownImage& k : p.images)
+    if (std::string_view(k.md5) == d.md5 && std::string_view(k.medium).find("floppy") != std::string_view::npos)
+      return L"Floppy disk image";
   return L"CD image";
 }
 
@@ -85,6 +89,9 @@ std::wstring verified_words(const std::string& verified, const std::string& pack
     const KnownImage* k = known_image_of(package, image_md5);
     if (is_zip_image(k)) return L"verified against the known ZIP";
     const bool floppy = k && std::string_view(k->medium).find("floppy") != std::string_view::npos;
+    // Johnny Castaway came on one floppy: not a disk of a set, nor both disks in one image.
+    const bool one = floppy && !k->disk && std::string_view(k->medium).find("both") == std::string_view::npos;
+    if (one) return L"verified against the original disk";
     return floppy ? L"verified against the original disks" : L"verified against the original disc";
   }
   if (verified == "files") return L"every file verified";
@@ -255,7 +262,7 @@ std::vector<DownloadRow> download_rows(const fs::path& assets, const std::string
                                                            : L" · " + verified_words(st.verified, p.id, st.image_md5))
                                       : L"Not imported yet";
     if (already_downloaded(p, download_dir)) state += L" · already downloaded";
-    r.text = r.title + L"\n" + download_kind(d) + L" · " + to_wide(mb(r.size)) + L"\n" + state;
+    r.text = r.title + L"\n" + download_kind(p, d) + L" · " + to_wide(mb(r.size)) + L"\n" + state;
     r.cover = cover_info(r.id, root, registry);
     rows.push_back(std::move(r));
   }
