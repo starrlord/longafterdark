@@ -12,6 +12,8 @@ The five releases of the twelve-release registry (Marvel Comics Screen Posters, 
 
 The two Delrina Intermission releases of the fourteen-release registry (The Far Side Screen Saver Collection, Scott Adams' Dilbert Screen Saver Collection) are not counted here either: their surveys checked the system imports of Intermission's ASA reader `IMASAPLY.IMQ`, the five IMQ modules and `DIBDLL.DLL` against the Win16 runtime's shims, and every one of the 30 modules was then run for 900 frames with the census on (`research/win/pkg/{farside,dilbert}/`, gitignored). No row below changes: the one function the runtime added for them, **GDI** `GDI.22 IntersectClipRect`, is imported by no binary of the Deluxe disc. `IMASAPLY.IMQ` calls it throughout every animation (96 to 274 times in 900 frames of each of Dilbert's; `host/win16/README.md`, "Intermission modules"). With it the 30 modules make no call the runtime lacks, `DIBDLL.DLL`'s `KERNEL.__AHSHIFT` resolves as Star Wars Screen Entertainment's DLLs' does, and the Configure dialogs (IMASAPLY's and the IMQ modules' own) use calls configure mode already had. What their options lacked was not a call: configure mode did not ask the guest's window procedures `WM_NCHITTEST`, so the frames above the options (ANTSW's `ANT3DBOX` and kin, which answer `HTTRANSPARENT`) took every click, there and in 13 of Star Wars Screen Entertainment's 14 dialogs (`INTERACTION.md` §6.2); and `USER.17 GetCursorPos` there now reads the real cursor, which ANTSW's sliders follow while dragged.
 
+Screen Antics: Johnny Castaway, the sixteenth release, is not counted here either: it is no module but a Windows 3.1 screen-saver program (`SCRANTIC.SCR`, built on Microsoft's `SCRNSAVE.LIB`; the `scrnsave` ABI, `ABI.md` §3.15), which the ne16 lane runs unchanged as the Win16 runtime's first application task. Its imports (MMSYSTEM 2, GDI 34, KERNEL 27, USER 52) were checked against the shims and the program run for 900 and 6,000 frames with the census on: 64 to 67 functions called, none missing. What the runtime added for it: **KERNEL** `KERNEL.91 InitTask` with Windows 3.1's register contract for an application's start (until then a stub no DLL reached), `KERNEL.30 WaitEvent`; **USER** `USER.5 InitApp`, `USER.16 ClipCursor` and `USER.309 GetClipCursor` (emulated state only, never the host's cursor), `USER.69 SetCursor` returning the cursor before it (and, not imported by it, `USER.71 ShowCursor` and `USER.112 WaitMessage`); **GDI** `GDI.119 AddFontResource` (0 for a file the disk does not hold: the `WILLY.FON` it asks for was never on its floppy) and `GDI.136 RemoveFontResource`; **MMSYSTEM** `MMSYSTEM.701 mciSendCommand` (`MCI_CLOSE` of an open device; `MCIERR_INVALID_DEVICE_ID` for an ID that is not open, which is all its one call site could ever send). `KERNEL.__AHSHIFT` resolves as an equate, as before. Its message loop made `GetMessage` and `WaitMessage` wait in an application task (the frame ends there), and its windows get the messages Windows 3.1's USER sent an application's (`host/win16/README.md`, "Tasks").
+
 Sound is the largest change since that plan. With sound on (`ADSOUND=1` or `ADAUDIOOUT`; the saver turns it on for the primary monitor's host), DirectSound, MSACM32, the WINMM MCI sequencer, `waveOut` and aux calls, and MMSYSTEM's `sndPlaySound`, `waveOut*`, `midiOut*`, `aux*` and `mciSendString` are **emulated** over the host audio engine (`AUDIO.md` §7, §8); those rows are classed `emulate` below, and their notes say what the sound-off host answers, which is exactly what the silent host of before answered. `waveIn*`, the mixer and CD audio stay without a device either way.
 
 Lanes (what runs as emulated code):
@@ -363,7 +365,7 @@ Ordinals are resolved to names with the Wine `.spec` files in `research/win/spec
 | 23 | `LockSegment` | 35 | stub | arg (segments never move) |
 | 3 | `GetVersion` | 32 | emulate | Windows 3.95 / DOS 7 (Win95 as seen by Win16) |
 | 48 | `GetModuleUsage` | 31 | emulate | modules |
-| 91 | `InitTask` | 31 | stub | imported by MSVC DLL startup code but not reached for DLLs |
+| 91 | `InitTask` | 31 | stub | imported by MSVC DLL startup code but not reached for DLLs; an application's start (Johnny Castaway's `SCRANTIC.SCR`): Windows 3.1's register contract (`host/win16/README.md`, "Tasks") |
 | 102 | `DOS3Call` | 31 | emulate | INT 21h subset: 2A/2C date/time, 30 version, 3D-42 file I/O, 44 IOCTL(is-device), 4E/4F find, 1A/2F DTA, 19/0E/47/3B the current drive and a current directory per drive (DOS's 66-character limit), 25/35 vectors (record only) |
 | 178 | `__WINFLAGS` | 31 | emulate | absolute export = GetWinFlags value |
 | 115 | `OutputDebugString` | 27 | stub | log |
@@ -428,6 +430,7 @@ Ordinals are resolved to names with the Wine `.spec` files in `research/win/spec
 | 192 | `GlobalPageUnlock` | 1 | stub | 0 — only: ADXPL300 |
 | 320 | `IsTask` | 1 | emulate | only: NONSENSE |
 | 349 | `_hread` | 1 | emulate | files — only: AD_SND |
+| 30 | `WaitEvent` | 0 | emulate | the task's start event: FALSE at once — only: SCRANTIC (Johnny Castaway; not in the Deluxe census) |
 | 651 | `ThunkConnect16` | 1 | stub | return 1 -- our host replaces the flat-thunk plumbing; it is the return value of OLDMOD16 DLLENTRYPOINT, which our NE loader must call itself (ABI.md §3.2) — only: OLDMOD16 |
 
 ### USER (158 imports)
@@ -485,7 +488,7 @@ Ordinals are resolved to names with the Wine `.spec` files in `research/win/spec
 | 33 | `GetClientRect` | 3 | emulate | windows: OLDMOD16 sizes AD_MODULE.ptRgnSize from the host window — only: LUNATIC, WMORPH, OLDMOD16 |
 | 53 | `DestroyWindow` | 3 | emulate | windows — only: MESSAGE3, WMORPH, ADXPL300 |
 | 55 | `EnumChildWindows` | 3 | emulate | no children — only: ARTIST, MESSAGE3, NONSENSE |
-| 69 | `SetCursor` | 3 | stub | NULL — only: ARTIST, SLIDE, WMORPH |
+| 69 | `SetCursor` | 3 | emulate | the cursor before it (state only, never the host's cursor) — only: ARTIST, SLIDE, WMORPH |
 | 83 | `FrameRect` | 3 | passthrough | only: MEADOW, STAINED, WMORPH |
 | 109 | `PeekMessage` | 3 | emulate | message queue: mostly empty; WM_TIMER synthesis — only: LUNATIC, SLIDE, WMORPH |
 | 221 | `ScrollDC` | 3 | passthrough | only: DOSSHELL, PUZZLE, SLIDE |
@@ -533,7 +536,7 @@ Ordinals are resolved to names with the Wine `.spec` files in `research/win/spec
 | 93 | `GetDlgItemText` | 1 | stub | configuration UI (BUTTON messages) -- never shown by the saver; DialogBox returns IDCANCEL — only: GLOBE |
 | 99 | `DlgDirSelect` | 1 | stub | configuration UI (BUTTON messages) -- never shown by the saver; DialogBox returns IDCANCEL — only: GLOBE |
 | 102 | `AdjustWindowRect` | 1 | passthrough | pure — only: WMORPH |
-| 108 | `GetMessage` | 1 | emulate | message queue — only: WMORPH |
+| 108 | `GetMessage` | 1 | emulate | message queue; in an application task (Johnny Castaway) it waits for a message, ending the frame — only: WMORPH |
 | 113 | `TranslateMessage` | 1 | stub | only: WMORPH |
 | 114 | `DispatchMessage` | 1 | emulate | call emulated wndproc — only: WMORPH |
 | 116 | `PostAppMessage` | 1 | stub | only: WMORPH |
@@ -592,6 +595,11 @@ Ordinals are resolved to names with the Wine `.spec` files in `research/win/spec
 | 466 | `DrawFocusRect` | 1 | passthrough | only: SLIDE |
 | 473 | `AnsiPrev` | 1 | passthrough | pure — only: WMORPH |
 | 512 | `WNetGetConnection` | 1 | stub | WN_NOT_SUPPORTED — only: SLIDE |
+| 5 | `InitApp` | 0 | emulate | the task's queue: 1 — only: SCRANTIC (Johnny Castaway; not in the Deluxe census) |
+| 16 | `ClipCursor` | 0 | emulate | state only (`GetClipCursor` reports it), never the host's — only: SCRANTIC |
+| 71 | `ShowCursor` | 0 | emulate | the display count, state only (an application's companion of SetCursor; not imported by SCRANTIC) |
+| 112 | `WaitMessage` | 0 | emulate | an application task waits for a message (the frame ends); otherwise returns at once — not called by SCRANTIC |
+| 309 | `GetClipCursor` | 0 | emulate | ClipCursor's rectangle, else the screen |
 
 ### GDI (97 imports)
 
@@ -694,6 +702,8 @@ Ordinals are resolved to names with the Wine `.spec` files in `research/win/spec
 | 377 | `StartDoc` | 1 | stub | SP_ERROR — only: WMORPH |
 | 440 | `SetDIBits` | 1 | passthrough | marshal — only: ADXPL300 |
 | 444 | `CreateRoundRectRgn` | 1 | passthrough | only: TUNNEL |
+| 119 | `AddFontResource` | 0 | emulate | 0 for a file the guest's disk does not hold (WILLY.FON); a font file that is there is not loaded either: 0, logged — only: SCRANTIC (Johnny Castaway; not in the Deluxe census) |
+| 136 | `RemoveFontResource` | 0 | emulate | 0 |
 
 ### MMSYSTEM (17 imports)
 
@@ -715,6 +725,7 @@ Ordinals are resolved to names with the Wine `.spec` files in `research/win/spec
 | 415 | `waveOutGetVolume` | 1 | emulate | sound on: the engine's wave bus — only: AD_SND |
 | 416 | `waveOutSetVolume` | 1 | emulate | sound on: the engine's wave bus (never the real system volume) — only: AD_SND |
 | 607 | `timeGetTime` | 1 | emulate | time: PHOTON busy-waits on it — only: PHOTON |
+| 701 | `mciSendCommand` | 0 | emulate | MCI_CLOSE of a device mciSendString opened (MCI_ALL_DEVICE_ID: all), with MCI_NOTIFY; an ID that is not open: MCIERR_INVALID_DEVICE_ID — only: SCRANTIC (one call site, never reached) |
 | 702 | `mciSendString` | 1 | emulate | sound on: the MCI sequencer strings (open/play/stop/close/status…, `notify` → MM_MCINOTIFY to the engines' adwMidiCall window; AUDIO.md §8.4); sound off: MCIERR_DEVICE_NOT_INSTALLED — only: ADXPL300 |
 
 ### WIN87EM (1 imports)

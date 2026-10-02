@@ -179,9 +179,9 @@ Long After Dark for Linux
 =========================
 
 Long After Dark is a screen saver that runs the original modules of After
-Dark, of LucasArts' Star Wars Screen Entertainment and of Delrina's The Far
-Side and Dilbert collections, unchanged, under x86 emulation. It knows
-fifteen releases, 327 modules:
+Dark, of LucasArts' Star Wars Screen Entertainment, of Delrina's The Far
+Side and Dilbert collections and of Sierra's Johnny Castaway, unchanged,
+under x86 emulation. It knows sixteen releases, 328 modules:
 
 id        Release                                      Internet Archive download
 deluxe    After Dark 4.0 Deluxe (1996)                 CD image, 381.7 MB
@@ -201,6 +201,7 @@ dilbert   Scott Adams' Dilbert Screen Saver            install files (ZIP), 4.3 
             Collection (1994)
 tng       Star Trek: The Next Generation Screen        CD image, 5.8 MB
             Saver (1994)
+castaway  Screen Antics: Johnny Castaway (1992)        floppy image (ZIP), 1.3 MB
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
 Trek modules, and Star Trek: The Next Generation Screen Saver After Dark
@@ -211,7 +212,9 @@ own The Far Side Screen Saver Collection and Scott Adams' Dilbert Screen
 Saver Collection. ScreamSavers (Binary Software) and Snoopy's Screen Savers
 (Image Smith) are other companies' modules for After Dark; Snoopy's were
 made to run in an After Dark already installed, so Long After Dark supplies
-the sound library they found there.
+the sound library they found there. Screen Antics: Johnny Castaway (Sierra
+On-Line) is no module of either: it is a Windows 3.1 screen saver program
+of its own, which runs unchanged, as Windows 3.1 ran it.
 
 No file of any of these releases is included: you import them from your
 own copies (and are responsible for sourcing them legally).
@@ -264,16 +267,16 @@ What you need
    that follow ("--import --help" lists them), and gives it your paths in
    the form a Windows program needs. It takes:
      - --image: a disc or floppy image (.iso, .bin, .img, .ima, .vfd or
-       .flp), or a .zip of the install files or of the floppy images. For a
-       release on several floppies, give every image (the Simpsons' two,
-       Star Trek's two), each with its own --image, or the ZIP they came
-       in. A .zip that keeps each disk's files in a folder of its own
-       (DISK1, DISK2, ...) is read as all its disks together.
+       .flp), or a .zip or .7z of the install files or of the floppy
+       images. For a release on several floppies, give every image (the
+       Simpsons' two, Star Trek's two), each with its own --image, or the
+       ZIP they came in. A .zip that keeps each disk's files in a folder of
+       its own (DISK1, DISK2, ...) is read as all its disks together.
      - --from: a folder, such as a mounted CD or a copy of one (for
        floppies, one folder of every disk's files, or one holding nothing
        but DISK1, DISK2, ... folders).
      - --download: a release's Internet Archive copy, by its id; "all"
-       imports all fifteen, one after another (663 MB, those imported
+       imports all sixteen, one after another (664 MB, those imported
        already too). Downloads resume if interrupted, and each one is
        checked against its published MD5 before it is used.
    The importer works out which release it was given, checks every file
@@ -370,7 +373,7 @@ Updating
 
 Status
 
-   The 327 modules of the fifteen releases, with their sound, their Caps
+   The 328 modules of the sixteen releases, with their sound, their Caps
    Lock games and Final Exam's Num Lock exam. Still being finished, as on
    Windows:
      - Speed: each module's pace follows a model of a mid-1990s PC; not
@@ -401,9 +404,9 @@ Long After Dark
 ===============
 
 Long After Dark is a screen saver for Windows that runs the original modules
-of After Dark, of LucasArts' Star Wars Screen Entertainment and of Delrina's
-The Far Side and Dilbert collections, unchanged, under x86 emulation. It
-knows fifteen releases, 327 modules:
+of After Dark, of LucasArts' Star Wars Screen Entertainment, of Delrina's
+The Far Side and Dilbert collections and of Sierra's Johnny Castaway,
+unchanged, under x86 emulation. It knows sixteen releases, 328 modules:
 
 id        Release                                      Internet Archive download
 deluxe    After Dark 4.0 Deluxe (1996)                 CD image, 381.7 MB
@@ -423,6 +426,7 @@ dilbert   Scott Adams' Dilbert Screen Saver            install files (ZIP), 4.3 
             Collection (1994)
 tng       Star Trek: The Next Generation Screen        CD image, 5.8 MB
             Saver (1994)
+castaway  Screen Antics: Johnny Castaway (1992)        floppy image (ZIP), 1.3 MB
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
 Trek modules, and Star Trek: The Next Generation Screen Saver After Dark
@@ -433,7 +437,9 @@ own The Far Side Screen Saver Collection and Scott Adams' Dilbert Screen
 Saver Collection. ScreamSavers (Binary Software) and Snoopy's Screen Savers
 (Image Smith) are other companies' modules for After Dark; Snoopy's were
 made to run in an After Dark already installed, so Long After Dark supplies
-the sound library they found there.
+the sound library they found there. Screen Antics: Johnny Castaway (Sierra
+On-Line) is no module of either: it is a Windows 3.1 screen saver program
+of its own, which runs unchanged, as Windows 3.1 ran it.
 
 No file of any of these releases is included: you import them from your
 own copies (and are responsible for sourcing them legally). Requires 64-bit
@@ -452,15 +458,15 @@ for the other two next to itself.
    Double-click adimport.exe, or click Import... in the screen saver's
    settings. Then pick a source:
      - A disc or floppy image: .iso, .bin, .img, .ima, .vfd or .flp, or a
-       .zip of the install files or of the floppy images. For a release on
-       several floppies, select every image (the Simpsons' two, Star Trek's
-       two), or the ZIP they came in. A .zip that keeps each disk's files
-       in a folder of its own (DISK1, DISK2, ...) is read as all its disks
-       together.
+       .zip or .7z of the install files or of the floppy images. For a
+       release on several floppies, select every image (the Simpsons' two,
+       Star Trek's two), or the ZIP they came in. A .zip that keeps each
+       disk's files in a folder of its own (DISK1, DISK2, ...) is read as
+       all its disks together.
      - A drive or folder: the CD itself, or a folder copied from it (for
        floppies, one folder of every disk's files, or one holding nothing
        but DISK1, DISK2, ... folders).
-     - A download from the Internet Archive: the fifteen releases with their
+     - A download from the Internet Archive: the sixteen releases with their
        sizes, plus one entry that fetches every release not imported yet.
        Downloads resume if interrupted, and each one is checked against its
        published MD5 before it is used.
@@ -507,7 +513,7 @@ for the other two next to itself.
      adimport --download all
      adimport --list-packages
      adimport --remove tt
-   "adimport --download all" imports all fifteen, one after another (those
+   "adimport --download all" imports all sixteen, one after another (those
    imported already too). adimport --help lists every option.
 
 2. Covers
@@ -540,9 +546,9 @@ for the other two next to itself.
    Configure) picks one module or Random, the modules it rotates through,
    how often it changes, the resolution, the monitors to use and the sound,
    with a live preview of the selected module. Some modules have buttons of
-   their own, such as Fish World's "Select Fish..." or each Star Wars, Far
-   Side and Dilbert module's "Configure...", which open the module's own
-   settings window;
+   their own, such as Fish World's "Select Fish...", each Star Wars, Far
+   Side and Dilbert module's "Configure..." or Johnny Castaway's
+   "Setup...", which open the module's own settings window;
    what you set there is saved at once (Star Trek's Sounder finds your own
    drives under [-h-] in its "Sounds.." window, as After Dark's Globe does
    in its "Map..." window; pick a folder near a drive's root: as in DOS, its
@@ -550,9 +556,10 @@ for the other two next to itself.
    choose its posters and "Posters..." to make one a wallpaper, which stays
    inside the emulated PC: your own desktop never changes. The resolution
    applies to the other modules: the Star Wars, Far Side, Dilbert, both
-   Star Trek releases', ScreamSavers and Marvel modules always get
-   640x480, scaled up to fit the screen, with bars at the sides on a
-   widescreen monitor unless "Stretch to fit the screen" is checked.
+   Star Trek releases', ScreamSavers and Marvel modules, and Johnny
+   Castaway, always get 640x480, scaled up to fit the screen, with bars at
+   the sides on a widescreen monitor unless "Stretch to fit the screen" is
+   checked.
 
    Sound is on by default. Only the primary monitor's screen saver plays
    it, at the default volume (50): the modules' wave effects, their MIDI
@@ -587,7 +594,7 @@ Updating
 
 Status
 
-   327 modules from the fifteen releases, with their sound, their Caps Lock
+   328 modules from the sixteen releases, with their sound, their Caps Lock
    games, Final Exam's Num Lock exam and their own option buttons. Still
    being finished:
      - Speed: each module's pace follows a model of a mid-1990s PC; not

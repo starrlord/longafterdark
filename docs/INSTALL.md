@@ -2,8 +2,9 @@
 
 **Long After Dark** is a screen saver for Windows that runs the original
 modules of After Dark, of LucasArts' Star Wars Screen Entertainment and of
-Delrina's The Far Side and Dilbert collections, unchanged, under x86
-emulation. It knows fifteen releases, 327 modules:
+Delrina's The Far Side and Dilbert collections, and Sierra's Johnny
+Castaway, unchanged, under x86 emulation. It knows sixteen releases, 328
+modules:
 
 | id | Release | Internet Archive download |
 |---|---|---|
@@ -22,6 +23,7 @@ emulation. It knows fifteen releases, 327 modules:
 | `farside` | The Far Side Screen Saver Collection (1994) | install files (5 ZIPs, one per disk), 5.5 MB |
 | `dilbert` | Scott Adams' Dilbert Screen Saver Collection (1994) | install files (ZIP), 4.3 MB |
 | `tng` | Star Trek: The Next Generation Screen Saver (1994) | CD image, 5.8 MB |
+| `castaway` | Screen Antics: Johnny Castaway (1992) | floppy image (ZIP), 1.3 MB |
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
 Trek modules, on two floppies. Marvel Comics Screen Posters (After Dark
@@ -39,6 +41,13 @@ Dark 3.0's installer: Data Dances, Encounters, Nanites, Officer's Review,
 Personnel Files, Starbase, Science Stations, Tachyon Particle Field, The
 Borg, Starfleet Messages, Counselor Troi, Warp Effect and Worf's Weapons,
 with their music.
+
+Screen Antics: Johnny Castaway (1992) is Sierra On-Line's, made by Dynamix
+(Jeff Tunnell Productions), on one floppy, and was sold as "the world's
+first storytelling screen saver": the days of Johnny, a castaway on a tiny
+desert island with one palm tree. It is no After Dark or Intermission
+module but a Windows 3.1 screen saver program of its own, `SCRANTIC.SCR`,
+which Long After Dark runs unchanged, the way Windows 3.1 ran it.
 
 Star Wars Screen Entertainment is not an After Dark release, though it is
 sometimes listed as "After Dark Star Wars": its 14 modules were made for
@@ -81,8 +90,8 @@ Double-click `adimport.exe`, or open the screen saver's settings and click
 **Import…**. Then pick a source:
 
 - **A disc or floppy image:** `.iso`, `.bin`, `.img`, `.ima`, `.vfd` or
-  `.flp`, or a `.zip` of the install files, or of a release's floppy
-  images. If you have a release's floppies as separate images, select them
+  `.flp`, or a `.zip` or `.7z` of the install files, or of a release's
+  floppy images. If you have a release's floppies as separate images, select them
   all, such as the Simpsons' two or Star Trek's two, or the ZIP they came
   in. A `.zip` that keeps each disk's files in a folder of its own
   (`DISK1`, `DISK2`, …, as the Internet Archive's copies of ScreamSavers,
@@ -90,7 +99,7 @@ Double-click `adimport.exe`, or open the screen saver's settings and click
 - **A drive or folder:** the CD itself, or a folder copied from it (for
   floppies, one folder holding the files of every disk, or one holding
   nothing but a `DISK1`, `DISK2`, … folder per disk).
-- **A download from the Internet Archive:** a list of the fifteen releases
+- **A download from the Internet Archive:** a list of the sixteen releases
   with their sizes, plus one entry that fetches every release not imported
   yet. An interrupted download resumes, and each file is checked against its
   published MD5 before it is used.
@@ -144,6 +153,14 @@ needed: disk 1 alone is refused ("needs every install disk"), and another
 disk alone is not a known release. The notes those bulletin-board copies
 carry beside the release's files are never opened.
 
+Johnny Castaway came on one floppy. Import its image (`.img` or `.ima`),
+the ZIP or `.7z` it came in, or a folder holding the floppy's files: the
+Internet Archive's copy, which `adimport --download castaway` fetches, is a
+ZIP of the image, and The Good Old Days Floppy Collection's is a `.7z` of
+it. The importer never runs the floppy's installer: it expands the program
+and its data from the floppy's compressed files, as the installer did, and
+checks them against the release.
+
 From a command prompt, with the ids from the table above:
 
 ```
@@ -152,6 +169,7 @@ adimport --image disk1.img --image disk2.img
 adimport --image afterdark-20b_startrek.zip
 adimport --image "C:\Downloads\After Dark - Scream Savers.zip"
 adimport --image PNX-FSC1.ZIP --image PNX-FSC2.ZIP --image PNX-FSC3.ZIP --image PNX-FSC4.ZIP --image PNX-FSC5.ZIP
+adimport --image 000580_jonny_castaway.7z
 adimport --from E:\
 adimport --from C:\Copies\Snoopy
 adimport --download ad10
@@ -274,6 +292,17 @@ Messages has one button, **Edit Custom...**, which edits your own message
 press Caps Lock to start the exam, type the number of each answer, and
 press Caps Lock again to stop.
 
+Johnny Castaway always gets 640×480 too, scaled to fit: the program paints
+its scene in the middle of the screen, as it did on a 640×480 screen of
+1992. It has one button, **Setup...** (Windows 3.1's Control Panel's name
+for it), which opens the program's own settings window: **Sounds**,
+**Load Background**, **Start of day** and **Password**. It keeps those
+settings, and how far its story has gone, in its `SCRANTIC.INI`, under
+`state\castaway\WINDOWS\` in your data folder, as a real install kept
+them, so the story goes on from one run to the next; deleting
+`state\castaway` starts it over. Keys and the mouse never reach it: they
+end the screen saver as they do any module's.
+
 Several ScreamSavers modules and Marvel's poster module compose their
 pictures for 640×480 too, so all the ScreamSavers modules and Marvel's
 always get 640×480, scaled to fit. Marvel's
@@ -335,7 +364,7 @@ address bar):
 | `assets\win\` | the imported modules, one folder per release, the module list `catalog-win.json`, and the releases' box covers (`covers\`) |
 | `downloads\` | Internet Archive downloads, reused if you import the same release again |
 | `settings.ini` | the screen saver's settings |
-| `state\` | what the modules save themselves (message texts, chosen pictures, high scores, the Star Wars, Far Side and Dilbert modules' settings, Sounder's folder, Marvel's poster choices), per release |
+| `state\` | what the modules save themselves (message texts, chosen pictures, high scores, the Star Wars, Far Side and Dilbert modules' settings, Sounder's folder, Marvel's poster choices, Johnny Castaway's settings and story), per release |
 | `thumbs\` | the settings window's module pictures |
 | `logs\saver-last.log` | how the last screen saver run went and why it ended |
 
@@ -357,4 +386,6 @@ program's Properties → Details in Explorer.
 - **Chameleon** (Totally Twisted and 10th Anniversary): after about half a
   minute a stray icon covers the "Accessories" label, a known difference
   not fixed yet.
+- **Johnny Castaway's Password** (in its **Setup...**) has no effect:
+  input ends it at once, without asking for the password.
 - No installer or code signing yet.

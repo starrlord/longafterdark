@@ -8,15 +8,16 @@ The screen saver presents the frames. It runs the modules of LucasArts'
 Star Wars Screen Entertainment the same way: they were made for Delrina's
 Intermission, whose reader, library and modules run as real code too.
 
-It supports fifteen releases: After Dark 4.0 Deluxe, After Dark 10th
+It supports sixteen releases: After Dark 4.0 Deluxe, After Dark 10th
 Anniversary, After Dark 3.2, Totally Twisted After Dark, The Simpsons
 Screen Saver, Star Trek: The Screen Saver (After Dark 2.0b), Marvel Comics
 Screen Posters, The Looney Tunes Screen Saver, The Disney Collection Screen
 Saver, Star Trek: The Next Generation Screen Saver (After Dark 3.0), two other companies' modules for After Dark (Binary Software's
-ScreamSavers and Image Smith's Snoopy's Screen Savers), and three for
+ScreamSavers and Image Smith's Snoopy's Screen Savers), three for
 Delrina's Intermission (Star Wars Screen Entertainment, The Far Side Screen
-Saver Collection and Scott Adams' Dilbert Screen Saver Collection), 327
-catalog entries in all
+Saver Collection and Scott Adams' Dilbert Screen Saver Collection), and
+Sierra On-Line's Screen Antics: Johnny Castaway, a Windows 3.1
+screen-saver program, 328 catalog entries in all
 (`docs/PACKAGES.md`). Installing
 and using it is covered in [INSTALL.md](INSTALL.md). This page is for
 working on it: the architecture, the components, building, testing,
@@ -71,7 +72,11 @@ LongAfterDark.scr ──spawns──► adhostwin.exe  one process per monitor, 
   Entertainment's modules are NE DLLs too: the ne16 lane tells them apart
   by their exports and drives them through Intermission's own reader,
   `IMIMXPLY.IMQ`, a second module protocol beside the After Dark one
-  (`docs/PACKAGES.md` §7.5, `docs/ABI.md` §3.8).
+  (`docs/PACKAGES.md` §7.5, `docs/ABI.md` §3.8). Johnny Castaway is no
+  module but a whole Windows 3.1 program, an NE application built on
+  Microsoft's `SCRNSAVE.LIB`: the ne16 lane knows it by its export
+  `SCREENSAVERPROC` and runs it from its own entry point, as Windows 3.1
+  ran a screen saver, a third protocol (`docs/PACKAGES.md` §7.6).
 * **Run the original code, replace only the OS and the host.** The engines,
   helper DLLs and modules all run as emulated code. The host stands in for
   Windows 95 underneath them, and for the original `AFTERDAR.SCR`,
@@ -406,7 +411,7 @@ imports all fourteen releases from made-up sources.
   | `AD_E2E=1` | `import.e2e` (the Deluxe image, ~400 MB, imported and compared), `import.download_real` (every release from its Internet Archive copies; `AD_E2E_LOCAL_DIRS`, default the image folders below and the installed downloads, supplies verified local copies instead; `AD_E2E_PACKAGES=<id>[,<id>…]` limits it to those releases), `import.covers_real` (every registry cover) | disk space | **yes** |
   | `AD_E2E=1` + `AD_E2E_ASSETS=<assets root>` | the screen saver's real-module runs `scr_smoke_e2e-rodger` and `scr_smoke_e2e-dosshell` (real windows, label `gui`); note that `AD_E2E=1` also turns on the importer's downloads above | imported releases | no (the importer's: yes) |
   | … + `AD_SCR_SOUND_E2E=1` | `scr_smoke_e2e-sound`: the saver's sound on two staged monitors, captured to a WAV, never played | as above, and a host whose `--capabilities` says `audio=1` | no |
-  | `AD_E2E_PKG=1` | `import.pkg_real` (the five real package images, Star Trek's two disk images, loose or in the ZIP they came in, and the known ZIPs of Marvel Comics Screen Posters, Snoopy's Screen Savers, the Looney Tunes, ScreamSavers and the Disney Collection, with the Looney Tunes' `LOONEY_T` CD when present, all found by MD5 in `AD_SOURCE_ISO_DIR`, a `;`-separated list of folders, default `source_iso/`, and in the folders directly in each; it also checks the Star Trek recipe against the disks' own `ST_NSTLL.INF`, Marvel's and Snoopy's tables against their disks, and every form of those two; The Far Side's and Dilbert's archive.org sources too; and imports all fourteen into one root: 314 modules), `import.isz_real` (every member of the Marvel and Snoopy ZIPs' libraries against the InstallShield survey's md5s); with `AD_E2E=1`, `import.covers_real` also takes their disc art | the images | no |
+  | `AD_E2E_PKG=1` | `import.pkg_real` (the five real package images, Star Trek's two disk images, loose or in the ZIP they came in, and the known ZIPs of Marvel Comics Screen Posters, Snoopy's Screen Savers, the Looney Tunes, ScreamSavers and the Disney Collection, with the Looney Tunes' `LOONEY_T` CD when present, all found by MD5 in `AD_SOURCE_ISO_DIR`, a `;`-separated list of folders, default `source_iso/`, and in the folders directly in each; it also checks the Star Trek recipe against the disks' own `ST_NSTLL.INF`, Marvel's and Snoopy's tables against their disks, and every form of those two; The Far Side's and Dilbert's archive.org sources too, and Johnny Castaway's floppy image or the KryoFlux dump's ZIP of it; and imports all sixteen into one root: 328 modules), `import.isz_real` (every member of the Marvel and Snoopy ZIPs' libraries against the InstallShield survey's md5s); with `AD_E2E=1`, `import.covers_real` also takes their disc art | the images | no |
   | `AD_AUDIO_ASSETS=1` (or a comma list of cases) | `core.audio_assets`: real modules' sound, captured and measured | imported releases (`AD_E2E_ASSETS`, else `AD_ASSETS_DIR`, else the installed ones) | no |
   | `AD_NE16_PKGROOTS=<dir>` | `ne16.pkg`: one module each of `ad10`, `ad32`, `tt` and `simpsons`, run standalone from one root per release (`<dir>\<id>\win\packages\<id>\…`, PACKAGES.md §4.4) | those roots | no |
   | `AD_GUI_TESTS=1` | `import.cli`'s runs of the importer's real windows | an interactive desktop | no |
@@ -504,7 +509,7 @@ Everything the programs keep is under **`%LOCALAPPDATA%\LongAfterDark`**
 
 Package ids are `deluxe` (its files stay in `FILES\`), `ad10`, `ad32`, `tt`,
 `simpsons`, `swse`, `startrek`, `marvel`, `snoopy`, `looney`, `screams`,
-`disney`, `farside`, `dilbert` and `tng`. `ADSTATE` is unset in headless runs, so
+`disney`, `farside`, `dilbert`, `tng` and `castaway`. `ADSTATE` is unset in headless runs, so
 the state overlay lives in memory and no user state is read or written.
 Build trees go to `build/` (gitignored); on Linux the player goes to
 `build/linux/`.

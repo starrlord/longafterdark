@@ -2,30 +2,32 @@
 
 The original After Dark screen savers, Flying Toasters and all, running on
 today's Windows (and on Linux, through Wine), along with LucasArts' Star
-Wars Screen Entertainment and Delrina's The Far Side and Dilbert screen
-saver collections.
+Wars Screen Entertainment, Delrina's The Far Side and Dilbert screen saver
+collections, and Sierra's Johnny Castaway.
 
 ![The Long After Dark settings window in dark mode: box covers of four After Dark releases across the top, the module list on the left, and Flying Toasters! in the live preview](docs/images/settings.png)
 
 ## What it is
 
 Long After Dark brings back Berkeley Systems' After Dark screen savers from
-the 1990s, and three of their contemporaries that ran on Delrina's
-Intermission: LucasArts' Star Wars Screen Entertainment, and Delrina's own
+the 1990s, and four of their contemporaries: three that ran on Delrina's
+Intermission, LucasArts' Star Wars Screen Entertainment and Delrina's own
 The Far Side Screen Saver Collection and Scott Adams' Dilbert Screen Saver
-Collection (all from 1994). It doesn't remake them. It runs the original
-modules, unchanged, on an emulated PC of the time: the x86 processor and
-the parts of Windows 95 they talk to. So they look, move and sound the way
-they did.
+Collection (all from 1994), and Sierra On-Line's Screen Antics: Johnny
+Castaway (1992), a screen saver program of its own. It doesn't remake
+them. It runs the original modules, unchanged, on an emulated PC of the
+time: the x86 processor and the parts of Windows 95 they talk to. So they
+look, move and sound the way they did.
 
-It works with fifteen releases for Windows, 327 modules in all: ten of
+It works with sixteen releases for Windows, 328 modules in all: ten of
 Berkeley Systems' After Dark, two of other companies' modules for After
-Dark, and the three Intermission releases. Import one or all of them; each
-works on its own.
+Dark, the three Intermission releases, and Johnny Castaway. Import one or
+all of them; each works on its own.
 
 | Release | Year | Modules |
 |---|---|---|
 | Star Trek: The Screen Saver | 1992 | 16 |
+| Screen Antics: Johnny Castaway (Sierra On-Line) | 1992 | 1 |
 | Marvel Comics Screen Posters | 1993 | 1 |
 | The Far Side Screen Saver Collection (Delrina) | 1994 | 14 |
 | The Simpsons Screen Saver | 1994 | 15 |
@@ -83,6 +85,16 @@ Image Smith's eight Peanuts modules, made to run in an After Dark already
 installed; for Snoopy, Long After Dark supplies the sound library After
 Dark would have.
 
+Screen Antics: Johnny Castaway (1992) is Sierra On-Line's, made by Dynamix
+(Jeff Tunnell Productions), and was sold as "the world's first storytelling
+screen saver": Johnny, a castaway on a tiny desert island with one palm
+tree, fishes, watches planes fly past through his telescope and much more,
+day after day, and the program remembers how far his story has gone. It is
+neither an After Dark nor an Intermission module but a Windows 3.1 screen
+saver program of its own, which Long After Dark runs unchanged, the way
+Windows 3.1 ran it, with its **Setup...** button for its sounds, background
+and start of day.
+
 - **Every monitor.** It runs on all your monitors, or only the main one.
 - **Sound.** The modules' sound effects and music, and the Simpsons'
   voices, with one volume setting for all of it (or off).
@@ -90,9 +102,9 @@ Dark would have.
   Rodger Dodger, You Bet Your Head and Pinocchio, and Num Lock Star Trek's
   Final Exam, without closing the screen saver.
 - **The modules' own options.** Each module's sliders and choices, and
-  buttons such as Fish World's **Select Fish…**, Marvel's **Posters...** or
-  the **Configure...** of a Star Wars, Far Side or Dilbert module that open
-  the module's original settings windows.
+  buttons such as Fish World's **Select Fish…**, Marvel's **Posters...**,
+  the **Configure...** of a Star Wars, Far Side or Dilbert module or Johnny
+  Castaway's **Setup...** that open the module's original settings windows.
 - **A modern settings window.** It follows Windows' light or dark mode,
   shows each release's box cover, and has a live preview.
 
@@ -112,9 +124,9 @@ settings window or the modules' own options (see [On Linux](#on-linux)).
   any of these:
   - your CD, or a folder copied from it or from its floppies;
   - a disc or floppy image (`.iso`, `.bin`, `.img`, `.ima`, `.vfd` or
-    `.flp`), or a `.zip` of the install files or of the floppy images. For
-    a release on several floppies, choose every image, such as the
-    Simpsons' two or Star Trek's two, or the ZIP they came in, and for a
+    `.flp`), or a `.zip` or `.7z` of the install files or of the floppy
+    images. For a release on several floppies, choose every image, such as
+    the Simpsons' two or Star Trek's two, or the ZIP they came in, and for a
     copy made of one ZIP per disk, such as The Far Side's five, every ZIP;
   - a `.zip` whose install files sit in one folder per disk (`Disk1`,
     `Disk2`, …), as the Internet Archive's copies of ScreamSavers, Marvel
@@ -123,7 +135,8 @@ settings window or the modules' own options (see [On Linux](#on-linux)).
     a CD image of 381.7 MB (4.0 Deluxe), 143.3 MB (10th Anniversary),
     58.8 MB (3.2), 37.9 MB (Totally Twisted), 6.9 MB (Star Wars Screen
     Entertainment) or 5.8 MB (Star Trek: The Next Generation), Star Trek's
-    two floppy images (2.8 MB), or a ZIP of the
+    two floppy images (2.8 MB), Johnny Castaway's floppy image in a ZIP
+    (1.3 MB), or a ZIP of the
     install files: the Simpsons' (2.6 MB), Marvel's (1.9 MB), Snoopy's
     (1.9 MB), the Looney Tunes' (2.8 MB), ScreamSavers' (3.3 MB), the
     Disney Collection's (3.4 MB) or Dilbert's (4.3 MB), or for The Far
@@ -195,9 +208,9 @@ carry beside the release's files are never opened.
 - **Num Lock never closes it either.** In Star Trek's Final Exam it starts
   the exam: type the number of your answer. Moving the mouse ends the exam
   and the screen saver.
-- **Module buttons** such as **Select Fish…**, or **Configure...** for a
-  Star Wars, Far Side or Dilbert module, open the module's original options
-  window. What you
+- **Module buttons** such as **Select Fish…**, **Configure...** for a
+  Star Wars, Far Side or Dilbert module, or Johnny Castaway's **Setup...**,
+  open the module's original options window. What you
   choose there is saved straight away, and **Cancel** in the settings window
   doesn't undo it. Marvel's wallpaper features (**Posters...** → Install,
   and Create Poster On Wakeup) make their picture inside the emulated PC
@@ -209,7 +222,8 @@ carry beside the release's files are never opened.
   **A different module on each monitor** under **Change module every** (it
   shows only when two or more monitors are connected).
 - **Star Wars, Far Side, Dilbert, Star Trek (both releases), ScreamSavers
-  and Marvel modules** always get 640×480, scaled up to fit the screen in its 4:3 shape (with bars at the
+  and Marvel modules, and Johnny Castaway,** always get 640×480, scaled up
+  to fit the screen in its 4:3 shape (with bars at the
   sides on a widescreen monitor). The Resolution setting applies to the
   rest. To have them fill the screen instead, stretched, with no bars,
   check **Stretch to fit the screen** under Resolution and Monitors.
@@ -261,7 +275,9 @@ second, and in Chameleon (Totally Twisted and 10th Anniversary) a stray
 icon covers the "Accessories" label after about half a minute. Three
 modules that took the mouse and keyboard under Intermission instead of
 ending (The Far Side's Pterodactyl, Dilbert's Best of Dilbert and Budget
-Woes) run as ordinary screen savers here: input ends them. The Linux
+Woes) run as ordinary screen savers here: input ends them. Johnny
+Castaway's own Password option has no effect: input ends it at once,
+without asking for the password. The Linux
 player is newer still: [docs/LINUX.md](docs/LINUX.md#status) says what
 hasn't been tried on it yet.
 
@@ -302,7 +318,7 @@ screen saver.
 - [docs/BUILDING.md](docs/BUILDING.md): building, testing and the source
   tree.
 - [docs/DESIGN.md](docs/DESIGN.md): how the emulation works.
-- [docs/PACKAGES.md](docs/PACKAGES.md): the fifteen releases and how each one
+- [docs/PACKAGES.md](docs/PACKAGES.md): the sixteen releases and how each one
   is imported.
 
 ## License
@@ -322,7 +338,7 @@ Posters), United Feature Syndicate / Peanuts Worldwide and Image Smith
 (Snoopy's Screen Savers), Binary Software and Stephen Blickenstaff /
 IMPart (ScreamSavers), Delrina (The Far Side and Dilbert collections, and
 Intermission), Gary Larson, FarWorks and Universal Press Syndicate (The Far
-Side), and Scott Adams and United Feature Syndicate / United Media
-(Dilbert).
+Side), Scott Adams and United Feature Syndicate / United Media (Dilbert),
+and Sierra On-Line and Dynamix (Johnny Castaway).
 None of their files are in this repository or in the programs it builds:
 you import your own copies.

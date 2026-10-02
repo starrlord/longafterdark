@@ -6,17 +6,22 @@ Windows 11 by executing their x86 code under emulation: it loads the *real*
 engine and the module into one emulated address space, traps every call
 they make into the operating system, and supplies that OS surface from the
 host. A Windows screen saver (`LongAfterDark.scr`) presents the frames.
-Fifteen releases are supported (§7): After Dark 4.0 Deluxe, After Dark 10th
+Sixteen releases are supported (§7): After Dark 4.0 Deluxe, After Dark 10th
 Anniversary, After Dark 3.2, Totally Twisted After Dark, The Simpsons
 Screen Saver, Star Trek: The Screen Saver (After Dark 2.0b), Star Trek: The
 Next Generation Screen Saver, Marvel Comics Screen Posters, The Looney Tunes
 Screen Saver, The Disney Collection Screen Saver, two other companies'
 modules for After Dark (Binary Software's ScreamSavers and Image Smith's
 Snoopy's Screen Savers), Star Wars Screen Entertainment, The Far Side Screen
-Saver Collection and Scott Adams' Dilbert Screen Saver Collection, 327
-modules in all. The last three are not
-After Dark releases: their modules were written for Delrina's Intermission
-screen saver engine, and speak its own protocol (ABI.md §3.8).
+Saver Collection, Scott Adams' Dilbert Screen Saver Collection and Sierra
+On-Line's Screen Antics: Johnny Castaway, 328 modules in all. Star Wars
+Screen Entertainment, The Far Side and Dilbert are not After Dark
+releases: their modules were written for Delrina's Intermission screen
+saver engine, and speak its own protocol (ABI.md §3.8). Johnny Castaway is
+no module of any engine: it is a Windows 3.1 screen-saver program, a `.SCR`
+built on Microsoft's `SCRNSAVE.LIB` with its own message loop, which the
+host runs whole, as Windows 3.1 ran it, through a third protocol
+(`PACKAGES.md` §7.6).
 
 Nothing here is a reimplementation of After Dark. The engine DLLs
 (`ADXPL510.DLL`, `ADXPL300.DLL`) and Berkeley's own classic-module bridge
@@ -35,7 +40,7 @@ engine application, `INTERMIS.EXE`, as it stands in for After Dark's
 
 ## The corpus
 
-The work started from one release; the other eleven came later (§7,
+The work started from one release; the other fifteen came later (§7,
 `PACKAGES.md`), and the same host runs them all. The first corpus, the PC
 side of a hybrid Mac/PC CD,
 `After Dark 4.0 Deluxe (1996)(Berkeley Systems)[Mac-PC].iso`
@@ -72,6 +77,7 @@ LongAfterDark.scr (x64)     ── spawns ──►  adhostwin.exe (x64)   one p
                                     module.AD + ADXPL300.DLL + OLDMOD16.DLL + helpers (16-bit lane)
                                     module.AD + AD_MOD.DLL + AD_RSRC.DLL + AD_SND.DLL 1.0 (16-bit lane, After Dark 2.0)
                                     module.IMX + SWSE.DLL + INTRMLIB.DLL + IMIMXPLY.IMQ + helpers (16-bit lane, Intermission)
+                                    SCRANTIC.SCR, a whole program (16-bit lane, a Windows 3.1 screen saver)
 ```
 
 * **One CPU core for both lanes.** `adw::cpu` is resource_dasm's `X86Emulator`
@@ -103,7 +109,7 @@ LongAfterDark.scr (x64)     ── spawns ──►  adhostwin.exe (x64)   one p
   docs/DESIGN.md          this file
   docs/ABI.md             module/engine ABI as we verify it (our own findings)
   docs/API_SURFACE.md     every function the Deluxe disc's binaries import, counted and classified
-  docs/PACKAGES.md        the fifteen releases: registry, import, catalog merge, lane rules (§7)
+  docs/PACKAGES.md        the sixteen releases: registry, import, catalog merge, lane rules (§7)
   docs/INTERACTION.md     input, module buttons, per-user state, desktop seed (§8)
   docs/COVERS.md          the box-cover strip, the cover pipeline, the shared UI library (§9)
   docs/AUDIO.md           sound: census, engine, lane mappings, saver settings (§10)
@@ -284,7 +290,7 @@ drives the whole protocol with a synthetic animated, palette-cycling image
 (with `ADTESTAUDIO=1`, sound too), so front-ends can be built and tested
 without a module. `adhostwin.exe --capabilities` prints one line naming
 what the build has (`lanes=pe32,ne16 configure=pe32,ne16
-abis=afterdark,intermission status=1 state=1 seed=1 audio=1 numlock=1`,
+abis=afterdark,intermission,scrnsave status=1 state=1 seed=1 audio=1 numlock=1`,
 where `abis` lists the module ABIs its lanes run and `numlock=1` says it
 takes the `NUMLOCK` line and `ADNUMLOCK`), which the settings dialog reads
 instead of probing a module.
@@ -463,7 +469,11 @@ An Intermission entry is `ne16` (the file is NE) with `entry` `SAVERDRAW`,
 an empty `about`, and one control, `{"index": 0, "name": "Configure...",
 "kind": "button", "type": "button"}`: the module's own settings dialog.
 Its `moduleName` comes from the importer's registry, since no resource in
-the file holds it (PACKAGES.md §6).
+the file holds it (PACKAGES.md §6). Since the seventh round `abi` may also
+be `"scrnsave"`: a Windows 3.1 screen-saver program (Johnny Castaway's
+`SCRANTIC.SCR`), lane `ne16`, `entry` `SCREENSAVERPROC` (the export that
+makes it one), `screen` `"640x480"`, and one button, **Setup...**, the
+program's own settings dialog (PACKAGES.md §6).
 
 `screen` (optional, since the seventh release, under the same `adimport
 1.3`) is a fixed screen, `"WxH"`, that the module gets whatever the display:
@@ -515,7 +525,7 @@ Each `packages[]` entry also carries `cover` (COVERS.md §2.7):
 chosen, `-` = nothing checked; the saver ignores it), `DurationMin=<n>|0` (0 = forever),
 `Scale=1.0|1.5` (the Resolution setting, 480 or 720 lines, for the other
 modules; an Intermission module, and one whose catalog entry gives a
-`screen` — Star Trek, ScreamSavers, Marvel —, always gets 640×480, scaled
+`screen` — Star Trek, ScreamSavers, Marvel, Johnny Castaway —, always gets 640×480, scaled
 to fit the monitor in its 4:3 shape: `scr/README.md`), `Monitors=all|primary`,
 `DifferentPerMonitor=1|0` (default 0: a rotation plays the same module on
 every monitor and switches them together; 1: each monitor has a rotation of
@@ -618,11 +628,12 @@ is, and for every user the three programs are copied together to
 
 ### 7. Packages
 
-The host runs modules from fifteen releases: ten of Berkeley Systems'
+The host runs modules from sixteen releases: ten of Berkeley Systems'
 After Dark, two of other companies' modules for After Dark (ScreamSavers,
-Snoopy's Screen Savers), and three for Delrina's Intermission (LucasArts'
+Snoopy's Screen Savers), three for Delrina's Intermission (LucasArts'
 Star Wars Screen Entertainment, The Far Side Screen Saver Collection and
-Scott Adams' Dilbert Screen Saver Collection).
+Scott Adams' Dilbert Screen Saver Collection), and Sierra On-Line's Screen
+Antics: Johnny Castaway, a Windows 3.1 screen-saver program.
 The full specification is `docs/PACKAGES.md`: registry,
 identification, extraction formats, per-package layouts, the catalog merge,
 the lane contract, and the three work packages that implement it. The
@@ -740,13 +751,26 @@ contract in brief:
   from Berkeley's files, handed over at the first palette request (Snoopy's
   Collage asks for one). A package that ships its own files runs exactly as
   before. (`PACKAGES.md` §3, §4.3, §7.3, §7.4.)
-* **Status: implemented.** All fifteen releases import (from a disc, an
-  image, a ZIP, a folder or the Internet Archive) into self-contained
-  package roots (327 catalog modules, 73 of them `sameAs` an earlier one).
-  The 283 modules of the twelve After Dark releases run headless and
-  deterministically, each release on its own; Star Wars Screen
+* **A Windows 3.1 screen-saver program (Johnny Castaway).** Sierra
+  On-Line's Screen Antics: Johnny Castaway came on one floppy, its program
+  and data compressed file by file by InstallShield 1, which the importer
+  expands with a strict reader of its own (the `is1` recipe). The program,
+  `SCRANTIC.SCR`, is no module: it is an NE application built on
+  Microsoft's `SCRNSAVE.LIB`, with its own `WinMain`, window and message
+  loop. The ne16 lane tells it apart by its export `SCREENSAVERPROC` and
+  runs it whole, from its own entry point with `/s`, as Windows 3.1 did,
+  through a third protocol beside After Dark's and Intermission's; its
+  **Setup...** button starts it with `/c`, its own settings dialog. It
+  paints a fixed 640×480 scene, so its catalog entry carries that `screen`.
+  (`PACKAGES.md` §3, §4.3, §7.6, §8.11.)
+* **Status: implemented.** All sixteen releases import (from a disc, an
+  image, a ZIP or a 7z, a folder or the Internet Archive) into
+  self-contained package roots (328 catalog modules, 73 of them `sameAs` an
+  earlier one). The 283 modules of the twelve After Dark releases run
+  headless and deterministically, each release on its own; Star Wars Screen
   Entertainment's, The Far Side's and Dilbert's run through the
-  Intermission protocol above. The
+  Intermission protocol above, and Johnny Castaway through the
+  screen-saver protocol. The
   survey-time numbers (before this work, with every AD 3.x module leaning on
   Deluxe's `ENGINE` files, and before each later release) are in
   `PACKAGES.md` §1.
@@ -815,7 +839,7 @@ modules in our host. In brief:
   module whose screen got none starts on black): the whole monitor for an After Dark module,
   the part its 640×480 frame covers for one with a screen of its own, an
   Intermission module or one whose catalog entry gives a screen (Star
-  Trek, ScreamSavers, Marvel) (INTERACTION.md §8). Respawns,
+  Trek, ScreamSavers, Marvel, Johnny Castaway) (INTERACTION.md §8). Respawns,
   rotations, `/p` and headless runs start black.
 * **Also.** DOS Shell's early end does not reproduce on the current build;
   the saver has an always-on last-exit log (`logs\saver-last.log`) and a

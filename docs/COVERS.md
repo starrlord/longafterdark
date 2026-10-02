@@ -45,8 +45,10 @@ twelfth, `marvel`, `snoopy`, `looney`, `screams` and `disney` (Marvel
 Comics Screen Posters, Snoopy's Screen Savers, The Looney Tunes Screen
 Saver, ScreamSavers, The Disney Collection Screen Saver), and as the
 thirteenth and fourteenth, Delrina's `farside` and `dilbert` (The Far Side
-Screen Saver Collection, Scott Adams' Dilbert Screen Saver Collection), and
-as the fifteenth `tng` (Star Trek: The Next Generation Screen Saver). The UI calls a release by
+Screen Saver Collection, Scott Adams' Dilbert Screen Saver Collection), as
+the fifteenth `tng` (Star Trek: The Next Generation Screen Saver), and as
+the sixteenth Sierra On-Line's `castaway` (Screen Antics: Johnny
+Castaway). The UI calls a release by
 its `title`, or by its `shortTitle` where space is tight. A **cover** is the
 art that stands for a release. A **tile** is the cover rendered as a 4:5
 portrait PNG for display. The **filter** is the set of releases whose tiles
@@ -118,7 +120,8 @@ control and the details card) moves down by the band's height.
   With all fourteen, Far Side (1994-06) comes third, after Marvel, and
   Dilbert (1994-10) seventh, after Snoopy. With all fifteen, the Next
   Generation (1994-10) comes eighth, after Dilbert (the same month, so
-  registry order). A release without a date comes
+  registry order). With all sixteen, Johnny Castaway (1992-12) comes
+  second, after Star Trek. A release without a date comes
   last. (As built for twelve: a row that
   scrolls starts after the left chevron's place, §1.3.)
 * **Status box.** A status box 200 DIP wide sits at the column's right
@@ -209,9 +212,11 @@ so every cover now shows, on as many rows as they need
 
 * **Rows.** As few as hold every cover. Regular covers fill each row left
   to right, up to what a row holds and at most eight (`kStripMaxCols`): ten
-  are 8 and 2 even where a row holds nine, fifteen 8 and 7. Compact covers,
+  are 8 and 2 even where a row holds nine, fifteen 8 and 7, sixteen 8 and
+  8. Compact covers,
   which only a short window gets, are as even as can be, so a cap never
-  costs it a row: fourteen where a row holds ten are 7 and 7. The rows are left-aligned on the
+  costs it a row: fourteen where a row holds ten are 7 and 7, sixteen 8
+  and 8. The rows are left-aligned on the
   column and `kStripRowGap` (8 DIP) apart, the gap between two covers of a
   row; only the last row may be shorter. The band is the rows of cells and
   the 12-DIP gap under them: 236 DIP for two regular rows, 156 for two
@@ -673,6 +678,7 @@ photos are those two releases' covers of choice, through `--set-cover`).
 | `farside` (added with the two Delrina releases) | download `https://archive.org/download/the-far-side-screen-saver-collection-1-of-5/far-side-software-v0-z46qj0d0a2fc1.webp` (a photo of two boxes on a couch, 1080×813 WebP, in the item of the release's damaged floppy images), md5 `4e7ebc4e9dbced47a3fc37e55054486f`, 270222 B, **crop 546,122,408,508** (the release's box, on the right), art `box` ("Box front", Internet Archive) | — | — | — |
 | `dilbert` (the same) | download `https://archive.org/download/dilbert_screensaver_collection/box.jpg` (a photo of the box front, 1200×1600, in the item of the flat ZIP), md5 `aa8fe2600200685504ea9f15feaf4352`, 167593 B, **crop 100,215,965,1315** (the box), art `box` ("Box front", Internet Archive) | disc `INSTALL.BMP` (the picture beside the installer's pages on disk 1: Dogbert, 63×123), md5 `47199572d43fb457b952dcba197a19c5`, art `panel` ("Setup art", your disks) | — | — |
 | `tng` (added as the fifteenth release) | download `https://web.archive.org/web/19970720113647id_/http://www.berksys.com:80/products/afterdark/box.stngL.jpg` (the box front from Berkeley Systems' 1997 product page, 126×160, like the Looney Tunes' and the Disney Collection's; the same bytes in the `/lite/` captures), md5 `d7286d0d288c5f8c9982c2a97470a2f8`, 23278 B, art `box` ("Box front", Wayback Machine) | disc `SETUP.BMP` (the installer splash, 387×228), md5 `b54082b26b50a8bf44653fa079f36320`, **crop 0,0,387,168** (above the warning text), art `splash` ("Installer art", your disc) | download `https://archive.org/download/star-trek-the-next-generation-screensaver/Star%20Trek%3A%20The%20Next%20Generation%20-%20screensaver_disc.jpg` (the Internet Archive's photo of the disc, 6000×4000, in the ISO's own item), md5 `419a2ba9a3c762531365cef84d02ef45`, 11258025 B, **crop 1200,270,3600,3600** (the disc, normalized to 2048×2048), art `disc` ("Disc label", Internet Archive) | — |
+| `castaway` (added as the sixteenth release) | download `https://archive.org/download/johncast/johnny-castaway-pc-cover.png` (the box front, 204×253, in the Internet Archive's item of the release's art), md5 `d07b6af1d5ffe9e0edaafa11fb9badac`, 24904 B, art `box` ("Box front", Internet Archive) | — | — | — |
 
 Notes:
 * **ad32** starts with its disc art because the user chose it: no box scan
@@ -760,6 +766,14 @@ Notes:
   cropped to the disc; fetched onto the user's machine at import time, or
   read from the user's own disc, and never bundled, committed or
   redistributed.
+* **castaway.** Screen Antics: Johnny Castaway's art belongs to Sierra
+  On-Line and Dynamix, and is handled like the others': the box front from
+  the Internet Archive, fetched onto the user's machine at import time and
+  never bundled, committed or redistributed. The floppy has no cover to
+  offer (its `LOGO.BMP` and `SLOGO.BMP` are the installer's logos), and the
+  one photo of the floppy online, in the item of its KryoFlux dump, is not
+  used: its label shows the disk's serial number. An import made offline
+  shows the generated cover until `--refresh-covers` fetches the box.
 
 ### 2.4 Capture during an import
 
@@ -1387,7 +1401,8 @@ the importer), but may **not** change anything listed above.
      copies the full message and the mismatched files to the clipboard.
 5. **Cover**: §2.11.
 
-The layout uses the §3.3 spacing, a client width of 640 DIP (minimum 560),
+The layout uses the §3.3 spacing, a client width of 640 DIP (minimum 560;
+720 since the sixteen releases, §9.3),
 and a height fitted to the page, clamped to the work area. Lists longer
 than the window scroll inside a card, using `attach_overlay_scrollbar` on a
 child container.
@@ -1714,6 +1729,15 @@ sections above stay the contract; this records the differences.
   with only Close. Exit codes: 0 when it was removed, else the failure,
   else 5. Screenshot keys: `page=remove` with `package=` and
   `status=error|running`, and `notice=1` on Sources.
+* **As built for sixteen releases: six covers to a row.** With every
+  release installed, a fourth row of five made Sources too tall for a
+  1080-line screen at 100% (`import.gui_shots`: three of the four rows
+  shown, the grid scrolling). The window is now 720 DIP wide (560 at the
+  least, as before; less only when the work area is narrower), where the
+  grid's rule fits six cells, so sixteen releases take three rows of six
+  and Sources is about 920 DIP tall. A narrower work area (the tests'
+  640-DIP ones) keeps five to a row, four rows, with the short-screen
+  fallback as before.
 * The Downloads page reads "already downloaded" from the default downloads
   folder (`gui::Request` has no download folder).
 * PACKAGES.md §5.2's "GUI restyle out of scope" is superseded by §4.

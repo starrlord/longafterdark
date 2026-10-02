@@ -1,7 +1,8 @@
 # host/win16 — the Win16 guest runtime and API shims
 
 `adw_win16` is one emulated Win16 "task" for Long After Dark's Classic lane
-(`host/ne16`). That lane runs the 16-bit modules of all fifteen releases:
+(`host/ne16`). That lane runs the 16-bit modules of fifteen of the sixteen
+releases, and the sixteenth's program (Johnny Castaway, below "Tasks"):
 the After Dark 2.x/3.x modules in After Dark 4.0 Deluxe's `FILES\CLASSIC`,
 After Dark 3.2, Totally Twisted, The Simpsons Screen Saver, the 16-bit
 modules of After Dark 10th Anniversary, Star Trek: The Screen Saver's After
@@ -12,7 +13,9 @@ ScreamSavers and The Disney Collection Screen Saver (below), Star Trek: The
 Next Generation Screen Saver's (an After Dark 3.0 release, which runs as
 the other AD 3.x releases do, with no addition to the runtime), and the
 Intermission modules of The Far Side Screen Saver Collection and Scott
-Adams' Dilbert Screen Saver Collection (below). The module,
+Adams' Dilbert Screen Saver Collection (below); and, as the runtime's
+first real task, Screen Antics: Johnny Castaway's Windows 3.1 screen-saver
+program `SCRANTIC.SCR`, an application run unchanged (below). The module,
 its package's engine when it uses one (`ADXPL300.DLL`, `ADXPL320.DLL`,
 `ADXPL40.DLL`, `ADXPL310.DLL`, `ADXPL41.DLL` or `ADXPL100.DLL`; After Dark 2.0's module
 library `AD_MOD.DLL` with `AD_RSRC.DLL`; Marvel's decoder `DECO.DLL`),
@@ -39,7 +42,7 @@ supplied from here, and, for a package that ships no `AD_SND.DLL`
 | `shims16.hh/.cc` | Far thunks (`int 0xFE; dw id`), `Shim16Registry` keyed `MODULE.ordinal`, `Call16` (Pascal/cdecl argument readers, AX / DX:AX results), the unimplemented census. |
 | `signatures16.cc` | **Generated** (`research/win/gen_sig16.py`): name, convention, return width and argument bytes of every entry of the emulated system DLLs, from the Win16 interface facts in `research/win/spec`. |
 | `runtime16.hh/.cc` | `Runtime16`: the CPU in segmented mode, `call_far` (nested host→guest calls to a sentinel), thunk dispatch, faults (→ `GuestError16`), the freed-selector rule (`null_freed_segments`, below), VGA ports (0x3DA retrace from the clock, DAC 0x3C7–0x3C9 on the display palette), virtual time, debug knobs. |
-| `modules16.hh/.cc` | `ModuleTable16`: NE loading via `adw::loader::ne` (place → selectors → dependencies → `load_segments` → prolog patching → LibEntry → DLLENTRYPOINT), LoadLibrary/FreeLibrary/GetModuleHandle/GetProcAddress (names case-insensitive, constant exports), resources incl. Win 3.0 `NAMETABLE`s, pseudo modules for the system DLLs. |
+| `modules16.hh/.cc` | `ModuleTable16`: NE loading via `adw::loader::ne` (place → selectors → dependencies → `load_segments` → prolog patching → LibEntry → DLLENTRYPOINT), LoadLibrary/FreeLibrary/GetModuleHandle/GetProcAddress (names case-insensitive, constant exports), resources incl. Win 3.0 `NAMETABLE`s, pseudo modules for the system DLLs; the one application the runtime runs as its task (`load_task`, `run_task`; below, "Tasks"). |
 | `dos16.hh/.cc` | INT 21h (DOS 7.00: files as a handle table over `win32::Vfs::open`/`VfsFile`, directories, rename, FindFirst/FindNext on the merged listing, the current drive and each drive's current directory, `dos_chdir`), INT 1Ah/2Fh/25h/26h/10h/16h/31h, the guest disk's seeds (below: `C:\WINDOWS` and its `TEMP` as in-memory overlays until the lane mounts its own, `MODULES.INI`/`AD_PREFS.INI`/`AFTERDRK.INI` as empty virtual files with their settings as profile seeds, `seed_program_manager`'s `PROGMAN.INI` and `.GRP` files as virtual files, `seed_intermission`'s profile seeds for an Intermission module, `seed_after_dark2`'s for an After Dark 2.0 one, `seed_after_dark3`'s for an After Dark 3.x one), and `profiles16()`, the runtime's `win32::IniStore`. |
 | `input16.hh`, `keyboard16.cc` | Saver-window input (below): the WH_KEYBOARD chain, input messages tagged with their input line, the per-step report (consumed, queue reads, wake); the fixed US keyboard (scan codes, `TranslateMessage`'s characters, `key_lparam`). |
 | `dialogs16.hh/.cc` | Configure mode (below): the Win16 → Win32 dialog template converter, the message translation table, and the shims that make a module's dialogs, message boxes and file dialogs real. |
@@ -464,6 +467,69 @@ Tests, all on made-up data: win16.unit's `test_map_mode`, `test_flood_fill`,
 `test_after_dark3_seeds`; ne16.unit's `test_host_ad_snd`, its After Dark
 3.x seeds check and `test_ad2_palettes` (After Dark 2.0's palettes computed
 in code, `ne16/package.hh` `palettes_after_dark2`).
+
+## Tasks: Windows 3.1 screen-saver programs (Johnny Castaway)
+
+Until Johnny Castaway the runtime ran libraries only, under a host that
+stood in for the engine's executable. `SCRANTIC.SCR` is itself the
+executable — a Windows 3.1 application built on `SCRNSAVE.LIB` (Borland C++,
+MULTIPLEDATA; `docs/ABI.md` §3.15) — so the runtime runs one application as
+its task (`modules16.hh` "Tasks"; the ne16 lane's scr protocol,
+`ne16/lane.hh` "Windows 3.1 screen savers"):
+
+* **Loading** (`ModuleTable16::load_task`): an NE file that is no library,
+  loaded as a DLL would be but with no LibEntry, its exported entries'
+  prologs patched as a SINGLEDATA DLL's (one instance), DGROUP laid out as
+  Windows did — static data, the stack, the local heap — and SS:SP the
+  header's (SP 0: the stack area's top). One task per runtime;
+  `LoadLibrary` of an application still fails (error 11).
+* **Starting** (`ModuleTable16::run_task`): `call_far` on the task's own
+  stack (`Regs16In::ss`/`sp`) with the loader's registers (BX stack size,
+  CX heap size, DI hInstance, SI 0, BP 0, DS DGROUP, ES the PSP), and the
+  **task budget** on (`Runtime16::set_task_budget`): the one call lasts the
+  run, so a call at any level hangs only after `call_budget` instructions
+  without an API call.
+* **The PSP** (`dos16_psp`, `dos16_set_command_tail`): the system segment's,
+  with the command tail DOS style (`" /s"`) and the environment at 2Ch; INT
+  21h AH=51h/62h answer the same selector.
+* **KERNEL**: `InitTask` (KERNEL.91, until then a stub no DLL reached) with
+  Windows 3.1's contract — the instance data's pStackTop/pStackMin/
+  pStackBottom (DS:0Ah/0Ch/0Eh), `LocalInit` above the stack, AX 1, BX the
+  command line past its leading blanks (80h for an empty one), CX
+  pStackTop, DX nCmdShow, SI 0, DI hInstance, ES the PSP; `WaitEvent`
+  (KERNEL.30): FALSE at once.
+* **USER's application-task mode** (`user16_set_app_task`, off for every
+  module protocol): `GetMessage` and `WaitMessage` with nothing to deliver
+  wait — `Runtime16::yield_frame` ends the presented frame there and the
+  next frame looks again; with no frame to end, virtual time moves on to
+  the next timer or audio event; nothing that could come is a `GuestError16`,
+  never a hang. The task's windows get `CreateWindow`'s `WM_SIZE` and
+  `WM_MOVE`, `GetMessage`'s `WM_PAINT` (after the posted and input
+  messages, before the timers) until validated, `BeginPaint`'s
+  `WM_ERASEBKGND`, `DefWindowProc`'s `WM_CLOSE` (DestroyWindow) and
+  `WM_PAINT` (validate); a destroyed window's timers die with it.
+  Outside the mode nothing changed: `GetMessage` still returns a `WM_NULL`
+  at once.
+* **USER, GDI, MMSYSTEM additions**: `InitApp` (USER.5, 1), the cursor as
+  state only — `SetCursor` returns the cursor before it, `ShowCursor` counts,
+  `ClipCursor`/`GetClipCursor` keep a rectangle; the host's real cursor is
+  never touched —, `AddFontResource` (GDI.119: 0 for a file the disk does
+  not hold, and a font file that is there is not loaded: 0, logged),
+  `RemoveFontResource`, `mciSendCommand` (MMSYSTEM.701: `MCI_CLOSE` of a
+  device `mciSendString` opened, `MCIERR_INVALID_DEVICE_ID` for an ID that
+  is not open), and helpers for the lane: `user16_post_message`,
+  `user16_main_window`, `user16_last_message_box`, `user16_app_waits`,
+  `Runtime16::set_work_deadline` (the frame budget as a deadline),
+  `Runtime16::deliver_due_audio`.
+* **Seeds** (`seed_scrnsave`): `WIN.INI [Windows] ScreenSaveActive`/
+  `ScreenSaveTimeOut`, `SYSTEM.INI [boot] SCRNSAVE.EXE`, and for
+  `SCRANTIC.SCR` `SCRANTIC.INI [ScreenSaver.ScreenAntics] SourceDir`, as its
+  installer left them.
+
+Measured on `SCRANTIC.SCR`: 900 and 6,000 frames twice identical, exit 0,
+0 unimplemented calls, 0 faults; the census 64–67 functions; the frozen
+baselines (202 After Dark modules × A/C/S, Star Wars 28/28, Star Trek
+32/32) at 0 differences with these changes.
 
 ## Sound (AUDIO.md §8)
 

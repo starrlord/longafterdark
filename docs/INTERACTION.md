@@ -218,6 +218,7 @@ read neither the keyboard nor the mouse (none imports `GetKeyState`,
 | the 30 `farside` and `dilbert` modules (ne16, Intermission: 25 ASA animations, 5 IMQ modules; with the two Delrina releases) | Configure... | `SAVERMAIN(8)`: for an ASA animation, `IMASAPLY.IMQ`'s "Animation Player Options" (sound effects and MIDI on or off, colour options); for an IMQ module, its own dialog (Pterodactyl's: the banner text) | `WritePrivateProfileString` into `ANTSW.INI` in the Windows directory, in a section named for the module (`[FS-Pterodactyl]`); the next load reads it (Out to Lunch with its sound effects off plays none) |
 | `startrek` COMMS, SOUNDER (ne16, After Dark 2.0) | Edit Custom... (Communications, MODULE 10), Sounds.. (Sounder, MODULE 9) | `DialogBox`: "Edit Message" (a multi-line edit, id 103); "Select Directory", whose folder list is `DlgDirList(…, DDL_EXCLUSIVE \| DDL_DRIVES \| DDL_DIRECTORY)` beside the folder's `*.WAV` (§6.2) | `WritePrivateProfileString` into `AD_PREFS.INI`: `[Communications] MessageText`, `[Sounder] SoundPath` (nothing for a folder without a `.WAV`) |
 | `marvel` MARVEL (ne16, After Dark 2.0d; with the twelve releases) | Saver.. (index 0, MODULE 7), Posters... (index 1, MODULE 8) | `DialogBox`: Saver.. is the image selection, with the module's own "Images" window of nine owner-drawn thumbnails, All/None, Display In Order/Random, Show Captions and Create Poster On Wakeup; Posters... has Install, Uninstall, Info... (the poster's description) and Done | Saver.. OK rewrites the image catalog `C:\AFTERDRK\MRVLIMAG\MRVLIMAG.ADC` (the whole file is copied up into the state overlay; the display flags and each poster's selection word are written from the dialog, ABI.md §3.11). Posters... → Install decodes the poster into `C:\AFTERDRK\MRVLIMAG\MARVEL.BMP` and writes `WIN.INI [Desktop] TileWallPaper`; Create Poster On Wakeup writes `MARVEL.BMP` at every wake. Both land in the state overlay: `SystemParametersInfo` changes nothing in the runtime, so **the wallpaper features have no effect outside the emulator** |
+| `castaway` SCRANTIC (ne16, a Windows 3.1 screen-saver program; with the sixteen releases) | Setup... (index 0: Windows 3.1's Control Panel button) | the program started with `/c`: `SCRNSAVE.LIB`'s `WinMain` shows `DialogBox` of `SCREENSAVERCONFIGURE` (named through its `NAMETABLE`): "&Load Background", "&Sounds", "Start of day" with its spin buttons, "&Password" | `WritePrivateProfileString` into `SCRANTIC.INI` in the Windows directory, `[ScreenSaver.ScreenAntics]` |
 | `looney` LTMESSGS (ne16, the Looney Tunes' Messages; with the twelve releases) | Edit Custom... (index 3, MODULE 10) | `DialogBox`: "Enter your custom message:" (an edit, id 101, "Your Message Here"; OK, Cancel) | `WritePrivateProfileString` into `MODULES.INI`: `[Looney Messages] CustomA`, which Foghorn, Elmer or Speedy then says when the message control picks the custom one |
 
 The merged catalog of the six releases (216 modules) has 58 button
@@ -234,7 +235,9 @@ of them exits 1, "control 0 is not a button"). With the two Delrina releases
 Side's 14 modules and Dilbert's 16 has one, and all 30 showed their dialog
 on a hidden desktop. With The Next Generation (327 modules) it has 94 on
 88 modules, from 70 binaries: Starfleet Messages' Edit Custom... is the
-release's one button. Marvel's thumbnails (ids 1007–1015) are children of
+release's one button. With Johnny Castaway (328 modules) it has 95 on 89
+modules, from 71 binaries: the program's **Setup...**. Marvel's
+thumbnails (ids 1007–1015) are children of
 the Images window (1006), so a configure script's `CLICK`, which goes to
 the dialog, can't reach them, but `PRESS 1006 <x> <y>` clicks the thumbnail
 under that point (§6.6). Saver..'s All (1000) and None (1001) are the
@@ -350,8 +353,9 @@ adhostwin.exe --configure <module> --button <slot> [--owner <hwnd>] [NAME=VALUE 
   probe. Later additions: `audio=1` (AUDIO.md), and
   `abis=afterdark,intermission`, the module ABIs the build's lanes run
   (PACKAGES.md §7.5), and, since the seventh release, `numlock=1`: the host
-  takes the `NUMLOCK` line and `ADNUMLOCK` (§3.1, §3.2). Today's line
-  reads `lanes=pe32,ne16 configure=pe32,ne16 abis=afterdark,intermission
+  takes the `NUMLOCK` line and `ADNUMLOCK` (§3.1, §3.2); with Johnny
+  Castaway, `scrnsave` in `abis` (PACKAGES.md §7.6). Today's line reads
+  `lanes=pe32,ne16 configure=pe32,ne16 abis=afterdark,intermission,scrnsave
   status=1 state=1 seed=1 audio=1 numlock=1`. The saver takes `numlock=1`
   exactly: `numlock=0`, another spelling or nothing means no Num Lock
   toggle.
@@ -738,6 +742,15 @@ to a host whose `--capabilities` answer (asked for in the background) says
   desk scene, a small figure walking on black). Honouring the flag would
   mean reporting them interactive, which leaves only Alt or the Windows
   key as the way out; that was not done.
+* **A Windows 3.1 screen-saver program** (Johnny Castaway, `PACKAGES.md`
+  §7.6) is never interactive, and keys and the mouse never reach it: the
+  lane posts no key or mouse message to its window (a `MOUSE` line moves
+  only the host's cursor state, which `GetCursorPos` reads). Under Windows
+  3.1 the first key or mouse move went to the program's window, and
+  `SCRNSAVE.LIB`'s `DefScreenSaverProc` closed it; here the saver's rules
+  (§4) end the run, on the same input as any other module's, and the lane
+  then closes the program the way `DefScreenSaverProc` did, `WM_CLOSE` to
+  its window, so that it saves its story as it ends.
 
 ---
 
@@ -1107,8 +1120,8 @@ at a scratch folder gets scratch state with it.
 ```
 <state>\                                 ADSTATE
   <package>\                             deluxe (the FILES\… tree), ad10, ad32, tt, simpsons, swse, startrek,
-                                         marvel, snoopy, looney, screams, disney, farside, dilbert,
-                                         or legacy-<fnv32 of the module dir, 8 hex> for anything else
+                                         marvel, snoopy, looney, screams, disney, farside, dilbert, tng,
+                                         castaway, or legacy-<fnv32 of the module dir, 8 hex> for anything else
     WINDOWS\                             upper layer of the guest's C:\WINDOWS (both lanes of a package share it)
     <MODDIR>\                            upper layer of the guest's C:\AFTERDRK = the module dir
                                          (AD40, CLASSIC, AD10TH, AD32, TWISTED, SIMPSONS, …);
@@ -1128,6 +1141,15 @@ module, written by their **Configure...** dialogs. Those packages have no
 `WINDOWS` folder (their installer put no defaults there), so deleting
 `<state>\farside` or `<state>\dilbert` brings back the modules' own
 defaults.
+
+Johnny Castaway keeps what it writes in `castaway\WINDOWS\SCRANTIC.INI`,
+section `[ScreenSaver.ScreenAntics]`: its options (`Background`,
+`Sounds`, `Password` and the start of its day, written by its
+**Setup...** dialog) and how far its story has gone (`NumDays`,
+`Introduction`, `CurrentYear`, `CurrentMonth`, `CurrentDay`), as a real
+install kept them, so the story goes on from one run to the next. The
+package has no `WINDOWS` folder; deleting `<state>\castaway` starts the
+story over with the program's defaults.
 
 Star Trek: The Screen Saver's modules keep what they write in
 `startrek\WINDOWS\AD_PREFS.INI`: Communications' `[Communications]

@@ -21,7 +21,7 @@ files together in either of these places:
 Screen Saver Settings lists it as "Long After Dark": the `.scr`'s string
 resource 1 (`IDS_DESCRIPTION`), which Windows shows instead of the file name.
 
-The modules come from your own discs: any of the fifteen releases (twelve of
+The modules come from your own discs: any of the sixteen releases (twelve of
 After Dark modules: After Dark 4.0 Deluxe, After Dark 3.2, Totally Twisted
 After Dark, After Dark 10th Anniversary, The Simpsons Screen Saver, Star Trek:
 The Screen Saver, which is After Dark 2.0b on two floppies, Marvel Comics
@@ -30,7 +30,8 @@ ScreamSavers, The Disney Collection Screen Saver and Star Trek: The Next
 Generation Screen Saver; and three whose modules
 run on Delrina's Intermission engine: LucasArts' Star Wars Screen
 Entertainment, and Delrina's The Far Side Screen Saver Collection and Scott
-Adams' Dilbert Screen Saver Collection), from
+Adams' Dilbert Screen Saver Collection; and Sierra On-Line's Screen Antics:
+Johnny Castaway, a Windows 3.1 screen saver program of its own), from
 the disc (or the floppies), an image of it, a copy of its files, or the
 Internet Archive download. Click **Import…** in the settings dialog (or run `adimport.exe`) to
 copy them to `%LOCALAPPDATA%\LongAfterDark\assets\win`. Until then the saver
@@ -59,7 +60,7 @@ and `/p` windows), `LongAfterDarkLivePreview` and
 with a module that follows the display (an After Dark module) and
 `…-<window>-640x480.ppm` for one that may start with a module that has a
 640×480 screen of its own (an Intermission, Star Trek, ScreamSavers or
-Marvel module; the first
+Marvel module, or Johnny Castaway; the first
 file serves both where the two pictures are the same: **Starting from the
 desktop**).
 
@@ -162,9 +163,9 @@ column at most 1240 DIP wide, centred.
 
 * **The box-cover strip** (`docs/COVERS.md` §1), when two or more
   releases (packages) are imported: one 4:5 box cover per release across the
-  top, oldest release first (Star Trek, Marvel, Far Side, Simpsons, Star
-  Wars, Snoopy, Dilbert, Star Trek TNG, Looney Tunes, ScreamSavers, 3.2,
-  Totally Twisted, Disney, Deluxe, 10th Anniversary), each with its short title under it (64×80 DIP covers; 48×60
+  top, oldest release first (Star Trek, Johnny Castaway, Marvel, Far Side,
+  Simpsons, Star Wars, Snoopy, Dilbert, Star Trek TNG, Looney Tunes,
+  ScreamSavers, 3.2, Totally Twisted, Disney, Deluxe, 10th Anniversary), each with its short title under it (64×80 DIP covers; 48×60
   without captions when the window is under 760 DIP tall). Seven fit the
   first-open window side by side, and eight compact ones the smallest. The
   twelve's regular covers never all fit side by side (they need 1240 DIP;
@@ -205,7 +206,8 @@ column at most 1240 DIP wide, centred.
   it is open; exit 0 reloads the catalog without it, anything else changes
   nothing and the preview carries on). Every cover shows: covers that don't
   fit on one row wrap onto more, as few rows as hold them: regular covers
-  fill each row, at most eight (ten: 8 and 2; fifteen: 8 and 7), compact
+  fill each row, at most eight (ten: 8 and 2; fifteen: 8 and 7; sixteen: 8
+  and 8), compact
   ones as even as can be (fourteen: 7 and 7), regular
   while the window has the height for their rows, else compact (`ui_model.h`: `strip_grid`, `strip_band`). Only a
   window too short even for the compact rows (the smallest, with eight
@@ -297,7 +299,8 @@ column at most 1240 DIP wide, centred.
   480 lines at the preview box's own 16:9 aspect — 856x480, or 848x480
   where the box's whole pixels come out a little taller — whatever the
   Resolution setting; a module with a screen of its own, an Intermission,
-  Star Trek, ScreamSavers or Marvel module, at its 640x480, pillarboxed in
+  Star Trek, ScreamSavers or Marvel module or Johnny Castaway, at its
+  640x480, pillarboxed in
   the wide preview as on
   a widescreen monitor: see **Emulated screen**),
   shown scaled down, with the dialog's current,
@@ -326,7 +329,7 @@ column at most 1240 DIP wide, centred.
 * **Resolution** and **Monitors**, each at the start of its half of the card
   (dropdowns at most 280 DIP wide; Resolution, 480 or 720 lines, is for the
   modules that follow the display alone: an Intermission, Star Trek,
-  ScreamSavers or Marvel module always runs at its own 640×480, see
+  ScreamSavers or Marvel module, or Johnny Castaway, always runs at its own 640×480, see
   **Emulated screen**), then across the card **Stretch to fit the screen
   (no black bars)** (`StretchToFit`: those 640×480 modules fill each monitor,
   stretched, in `/s` and the settings window's live preview, never in `/p`;
@@ -338,8 +341,8 @@ column at most 1240 DIP wide, centred.
   screen saver." (`docs/AUDIO.md` §9; see **Sound** below). The
   slider is adw_ui's `init_slider`: Right and Up raise it by 1, Left and
   Down lower it, Page Up / Page Down by 10, Home / End to 0 / 100.
-* The footer: **Import…** with a line saying what is imported ("327
-  modules from 15 releases", or "84 modules from After Dark 4.0 Deluxe"),
+* The footer: **Import…** with a line saying what is imported ("328
+  modules from 16 releases", or "84 modules from After Dark 4.0 Deluxe"),
   then the credit, then **Preview** (full screen, of the module the details show; greyed for
   a module this host can't run yet, or whose file is missing, and while the
   details show none), **OK** and **Cancel**. The credit, "Made With Love by
@@ -352,7 +355,7 @@ column at most 1240 DIP wide, centred.
   hover cue high contrast keeps, whose hover fill is the window colour). It
   sits in the free space between the assets line's text and Preview, centred
   there and on the buttons, and shows only when its whole box fits with
-  24 DIP clear of both: beside "327 modules from 15 releases" (as long as
+  24 DIP clear of both: beside "328 modules from 16 releases" (as long as
   the twelve releases' "284 modules from 12 releases") it fits the
   first-open window at every scale, and the narrowest one at 100% only (at
   the other scales it gives way there: the line is a digit longer than the
@@ -375,16 +378,17 @@ column at most 1240 DIP wide, centred.
 Until the modules are imported the details card is one welcome: a picture
 across its top (the night sky, the moon and two flying toasters), "Welcome to
 Long After Dark", what importing does (the original modules of After Dark and
-Star Wars Screen Entertainment, from any of the fifteen releases' discs, an image,
+Star Wars Screen Entertainment, from any of the sixteen releases' discs, an image,
 or the Internet Archive; `welcome_text` in `ui_model.h`) and an **Import a
 release…** button (the importer's window is "Import a release"). The
 footer's Import is hidden meanwhile (it is the same command), its line reads
 "Nothing imported yet" (the credit beside it as ever), Single/Random are greyed, and the list shows a few
 faint placeholder rows and "Your modules appear here after import". "Long
-After Dark" stays the product's name; the words for the releases fit all fifteen
+After Dark" stays the product's name; the words for the releases fit all sixteen
 (not every one is After Dark's, and Star Trek, the Simpsons, Marvel, Snoopy's
 Screen Savers, the Looney Tunes (also on a CD), ScreamSavers, the Disney
-Collection, The Far Side and Dilbert came on floppies, which "discs" covers).
+Collection, The Far Side, Dilbert and Johnny Castaway came on floppies,
+which "discs" covers).
 
 **Thumbnails.** A module with no icon of its own is shown by a square of one
 of its own frames: a third of the screen's height around the busiest part of
@@ -532,7 +536,7 @@ Module=random            ; a catalog id, or random
 Randomize=ad40.toasters,ad40.fish   ; Random's subset (empty = every module)
 RandomizeSaved=ad40.fish ; the dialog's Random checklist kept while Module names one module ("-" = none checked)
 DurationMin=5            ; Random switches module this often; 0 = never
-Scale=1.0                ; 1.0 = 480-line emulated screen, 1.5 = 720-line (modules that follow the display; Intermission, Star Trek, ScreamSavers and Marvel modules: always 640x480)
+Scale=1.0                ; 1.0 = 480-line emulated screen, 1.5 = 720-line (modules that follow the display; Intermission, Star Trek, ScreamSavers and Marvel modules and Johnny Castaway: always 640x480)
 Monitors=all             ; or primary (the other monitors stay black)
 DifferentPerMonitor=0    ; 1: in a rotation each monitor follows its own order; 0 or missing: the same module on all, switching together
 StretchToFit=0           ; 1: 640x480 modules (Intermission, catalog screen) fill each monitor instead of keeping 4:3 with bars; not in /p
@@ -711,7 +715,7 @@ running. Only files named that way are ever deleted.
   monitor changed mode or position but kept its aspect ratio (so the host's
   emulated screen size is the same) is moved, and its host carries on; so is
   one whose host runs a module with a screen of its own (an Intermission,
-  Star Trek, ScreamSavers or Marvel module), whose 640×480 is the same on
+  Star Trek, ScreamSavers or Marvel module, or Johnny Castaway), whose 640×480 is the same on
   every monitor (such
   windows go last, after the ones whose size matches a monitor, so neither
   kind restarts for the other). A
@@ -765,7 +769,7 @@ running. Only files named that way are ever deleted.
   Dark module (one that follows the display) it is the whole monitor at its
   After Dark size, in `LongAfterDark-seed-<pid>-<window>.ppm`, as ever; for a
   module with a screen of its own (an Intermission, Star Trek, ScreamSavers
-  or Marvel module), the part of the monitor its 640×480 frame will cover, shrunk to 640×480,
+  or Marvel module, or Johnny Castaway), the part of the monitor its 640×480 frame will cover, shrunk to 640×480,
   in `…-<window>-640x480.ppm`, one picture for both (a screen of another size
   would have its own, `…-<window>-<W>x<H>.ppm`). A window that can only
   start with such a module (it chosen alone, or the only releases imported

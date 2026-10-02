@@ -2137,6 +2137,25 @@ longer ones; gitignored under `research/win/pkg/`):
   (PACKAGES.md §7.4).
 * Not exercised: live output (`ADAUDIOLIVE=1`, §12).
 
+### 10.9 Johnny Castaway's sound (2026-10-02)
+
+Screen Antics: Johnny Castaway's `SCRANTIC.SCR`, a Windows 3.1 screen-saver
+program (ABI.md §3.15), plays its own 23 `WAVE` resources (`WAVESFX1`..`25`)
+with MMSYSTEM's `sndPlaySound(lpRes, SND_MEMORY|SND_ASYNC|SND_NODEFAULT)`;
+no AD_SND, no MIDI. Captured from the package its import made with
+`ADAUDIOOUT` and `ADAUDIOLIVE=0` for 3,600 frames (60 s), three times:
+
+* 13 sounds in the first minute, the first loud one at 22.3 s, peaking at
+  −3.9 dBFS at volume 50; the program's story decides what plays, and when.
+* The three captures are byte-identical, and the frames equal those of a
+  run with sound off.
+* Its one `mciSendCommand` call (`MCI_CLOSE` of a device ID nothing sets) is
+  never reached.
+* Its own **Setup...** has a "&Sounds" box (`Sounds=` in `SCRANTIC.INI`);
+  the saver's own sound setting still applies on top of it.
+* Not exercised: live output (`ADAUDIOLIVE=1`, §12), and a run with the
+  program's Sounds box cleared.
+
 ---
 
 ## 11. Work split

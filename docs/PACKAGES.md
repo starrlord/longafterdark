@@ -1,6 +1,6 @@
 # Long After Dark — packages
 
-How the host imports and runs modules from fifteen releases, not just the
+How the host imports and runs modules from sixteen releases, not just the
 After Dark 4.0 Deluxe CD: ten of Berkeley Systems' After Dark, the oldest
 being Star Trek: The Screen Saver (1992, After Dark 2.0b) and the latest
 added Star Trek: The Next Generation Screen Saver (1994, After Dark 3.0);
@@ -8,19 +8,23 @@ two of other
 publishers' modules for After Dark, Binary Software's ScreamSavers (1995,
 on the After Dark 3.0.6 engine it licensed from Berkeley) and Image Smith's
 Snoopy's Screen Savers (1994, modules for an After Dark already installed);
-and three whose modules run on Delrina's Intermission screen saver engine,
+three whose modules run on Delrina's Intermission screen saver engine,
 not on After Dark's: LucasArts' Star Wars Screen Entertainment (1994), and
 Delrina's own The Far Side Screen Saver Collection and Scott Adams' Dilbert
-Screen Saver Collection (both 1994). DESIGN.md
+Screen Saver Collection (both 1994); and Sierra On-Line's Screen Antics:
+Johnny Castaway (1992, made by Dynamix), which is no module of any engine
+but a Windows 3.1 screen-saver program of its own, a `.SCR` built on
+Microsoft's `SCRNSAVE.LIB`. DESIGN.md
 §6, §6a and §7 give the contract in brief; this file is the full
 specification and the plan that implements it.
 
-**Status: implemented.** The importer reads all fifteen releases (327
+**Status: implemented.** The importer reads all sixteen releases (328
 catalog modules, 73 of them `sameAs` an earlier entry). The 283 modules of
 the twelve After Dark releases run headless, deterministically, and each
 release also runs on its own; the 44 of the three Intermission releases
 (Star Wars Screen Entertainment's 14, The Far Side's 14, Dilbert's 16) are
-driven by the Intermission protocol of §7.5. This file keeps the
+driven by the Intermission protocol of §7.5, and Johnny Castaway's one
+program by the screen-saver protocol of §7.6. This file keeps the
 specification and the plan as they were written, so tables that say
 "today" or "current" describe the host before this work. Star Wars Screen
 Entertainment was added in a second round, after the rest was built (the
@@ -41,6 +45,14 @@ added in a fifth round (the `farside` and `dilbert` rows and paragraphs,
 the `intermission` recipe's second installer in §3 and §4.3, the ASA
 animations and IMQ modules of §6 and §7.5, and SZDD's version stamps in
 §8.7); there, "before this release" means the twelve-release host (1.2.1).
+Star Trek: The Next Generation Screen Saver came in a sixth round, on the
+`ad3zip` recipe as it was (the `tng` rows and paragraphs). Sierra
+On-Line's Screen Antics: Johnny Castaway, on one floppy installed by
+InstallShield 1, was added in a seventh round (the `castaway` rows and
+paragraphs, the `is1` recipe of §3 and §4.3, the `.7z` sources of §8.10,
+InstallShield 1's compressed files of §8.11, and the Windows 3.1
+screen-saver programs of §6 and §7.6); there, "before this release" means
+the fifteen-release host (1.4.3).
 Where the implementation went further, the component
 READMEs are authoritative: `importer/README.md` (every release can also be
 downloaded from the Internet Archive, and a ZIP of install files, or of a
@@ -59,14 +71,18 @@ and one of the InstallShield 2 format that two of them share (Sept 2026;
 survey's folder being `scream`, and `research/win/pkg/installshield/`),
 and about the fifth round's two from a survey of each (Sept 2026: the
 online copies, the installer and layout, the modules and their runs;
-`research/win/pkg/{farside,dilbert}/`).
-Their artifacts are in `research/win/pkg/<id>/`, which is gitignored:
-extraction scripts, inventories, trial runs, contact sheets and
-disassembly. **No After Dark (Berkeley Systems), LucasArts, Paramount,
-Disney, Warner Bros., Marvel, Image Smith, United Feature Syndicate
-(Peanuts, Dilbert), Binary Software, IMPart, Delrina, Gary Larson, FarWorks,
-Universal Press Syndicate, Scott Adams or United Media bytes, extracted
-files or disassembly are ever committed.** Manifests hold only path, size
+`research/win/pkg/{farside,dilbert}/`), and about the seventh round's
+Johnny Castaway from a survey of its floppy (Oct 2026: the online copies, the
+installer and its compressed files, the program and its runs;
+`research/jc/`).
+Their artifacts are in `research/win/pkg/<id>/` and `research/jc/`, which
+are gitignored: extraction scripts, inventories, trial runs, contact
+sheets and disassembly. **No After Dark (Berkeley Systems), LucasArts,
+Paramount, Disney, Warner Bros., Marvel, Image Smith, United Feature
+Syndicate (Peanuts, Dilbert), Binary Software, IMPart, Delrina, Gary
+Larson, FarWorks, Universal Press Syndicate, Scott Adams, United Media,
+Sierra On-Line or Dynamix bytes, extracted files or disassembly are ever
+committed.** Manifests hold only path, size
 and md5. The ZIP password is derived at import time, never stored (§8.4).
 The previous owners' notes some copies carry (serial numbers, registration
 files) are never opened, copied, hashed or listed, and the notes of the
@@ -90,10 +106,12 @@ online are never opened (§4.2 I5).
 | Intermission modules (`swse`) | A second module protocol inside the ne16 lane, chosen by the module's exports. Intermission's own IMX reader, `IMIMXPLY.IMQ`, runs as real code, as OLDMOD16 does; a native C++ reader is the oracle and the fallback. The host replaces `INTERMIS.EXE`, an NE application, as it replaces `AFTERDAR.SCR` (§7.5; the protocol is ABI.md §3.8). Since the fifth round (`farside`, `dilbert`) a module's form picks its reader: an IMX module `IMIMXPLY.IMQ`, an ASA animation (data that starts `AniN` or `AniM`) Intermission's ASA reader `IMASAPLY.IMQ`, run as real code with no native fallback, and an IMQ module, which exports `SAVERMAIN`, itself (ABI.md §3.8.9) |
 | Known images | An image md5 names a release, or since the seventh release one install disk of a release on several floppies: every disk exactly once, from any known copy of each, is that release's known image (`verified: image`, §3). Since the fourth round a ZIP of the install files is a known image too where no image of the original disks exists online, or none can be listed: the Internet Archive's stored file, the user's copy byte for byte (`marvel`, `snoopy`, `looney`, `screams`, `disney`). Since the fifth round a disk of a set may be a ZIP of that disk's files (`farside`'s five, `dilbert`'s four: 1994 bulletin-board copies) |
 | Install-time fix-ups | A baked table per package: file copies under the names the modules open (§4.3). No INF, IS-script, Presage-script or MS-Test interpreter: `intermission`, `ad2kwaj` and `islib` are baked too |
-| Formats to implement | FAT12/16 image reader; PKZIP with traditional PKWARE (ZipCrypto) decryption and raw inflate (zlib). The existing ISO-9660/Joliet reader already handles all three hybrid CDs (§8). For `swse`: multi-volume ARJ 2.x (§8.6) and SZDD (§8.7). For `startrek`: KWAJ method 3 (§8.8), and a ZIP of floppy images read as those images (§5.2). For `marvel` and `snoopy`: InstallShield 2's compressed libraries, single or split over two floppies, with PKWARE DCL implode (§8.9) |
+| Formats to implement | FAT12/16 image reader; PKZIP with traditional PKWARE (ZipCrypto) decryption and raw inflate (zlib). The existing ISO-9660/Joliet reader already handles all three hybrid CDs (§8). For `swse`: multi-volume ARJ 2.x (§8.6) and SZDD (§8.7). For `startrek`: KWAJ method 3 (§8.8), and a ZIP of floppy images read as those images (§5.2). For `marvel` and `snoopy`: InstallShield 2's compressed libraries, single or split over two floppies, with PKWARE DCL implode (§8.9). For `castaway`: InstallShield 1's compressed files, PKWARE DCL implode again (§8.11), and 7z archives as sources (§8.10) |
 | Disk sets (fourth round) | A ZIP or a folder whose root holds nothing but `DISK<n>` folders is the union of those folders, as several floppy images are (§5.2): the Internet Archive's copies of ScreamSavers, Marvel Comics Screen Posters and Snoopy's Screen Savers keep their disks so |
 | InstallShield 2 installs (`marvel`, `snoopy`; fourth round) | A new recipe, `islib`: the libraries read with a strict reader of our own and each member placed by a table baked from the installer's script; the package list `SETUP.PKG` is read only to identify the release (§3, §4.3) |
 | Delrina's Intermission Installer (`farside`, `dilbert`; fifth round) | The `intermission` recipe's second installer (`Package::delrina_installer`: no `INSTALL.DAT` name): the release is named by file names alone (disk 1's tag `DISK1`, the installer `IMINST2.EXE` and a file of its own), every disk's tag must be there, and every installed file is a loose file under its own name, most SZDD-compressed; no archive, nothing read to identify (§3, §4.3) |
+| InstallShield 1 (`castaway`; seventh round) | A new recipe, `is1`: InstallShield 1.02's compressed files (a `$` in the extension), each one file imploded with PKWARE DCL, expanded by a strict reader of our own and placed by a table baked from the installer's script, which is never run (§3, §4.3, §8.11). A `.7z` is a source wherever a ZIP is (§8.10) |
+| A Windows 3.1 screen-saver program (`castaway`; seventh round) | Not a module of any engine: a `.SCR`, an NE application built on Microsoft's `SCRNSAVE.LIB`, which saves the screen when started with `/s` and shows its settings dialog (Control Panel's **Setup...**) with `/c`. The ne16 lane runs the program itself, from its own entry point, as Windows 3.1 ran it, and the host stands in for Windows 3.1 around it; a third module protocol beside After Dark's and Intermission's, chosen by the program's export `SCREENSAVERPROC`; catalog `abi` `"scrnsave"` (§6, §7.6) |
 | Work split | A: importer (`importer/**`). B: pe32 lane + core. C: ne16 lane + win16 + cpu. File ownership is disjoint (§10) |
 
 ## 1. Scope and starting point
@@ -118,13 +136,15 @@ hybrid discs hold is noted in §12; the importer skips them.
 | `farside` | 14 ne16, Intermission: 12 ASA animations, data that Intermission's ASA reader `IMASAPLY.IMQ` plays, and two IMQ modules, `PTERY` and `NERDCLOK`, NE DLLs that export `SAVERMAIN` (surveyed with `dilbert`, against the twelve-release host, 1.2.1) | none: every ASA exited 2 ("not a module this host can run (not an MZ executable)"), both IMQs 1 at lane init ("an Intermission reader (it exports SAVERMAIN), not a module") | the importer refused every form ("not a known release": no `INSTALL.DAT`, no ARJ; Delrina's own installer); the floppy images in the item named for the release are damaged (disk 1's sectors shifted, disk 3's image 1 KB short, bad sectors in disks 2 and 4); no ASA or IMQ form in the lane; `GDI.22 IntersectClipRect`; SZDD libraries ending in Delrina's version stamps |
 | `dilbert` | 16 ne16, Intermission: 13 ASA animations and three IMQ modules, `DB-BEST`, `DB-CLOCK`, `DIL-WHAK` | none, as `farside`'s; with staging tricks (each IMQ copied over `IMIMXPLY.IMQ`; an ASA behind a stub, IMASAPLY as the reader) all 16 ran 900 frames, the ASAs with one unimplemented call, `IntersectClipRect` | the same as `farside`'s; QUERY returns an empty name for every module; two IMQ modules set the input flag `0x2000` |
 | `tng` | 13 ne16 on their own library `ADXPL320.DLL`, with an art and a sound library, `TNG_ART.DLL` and `TNG_SND.DLL` (surveyed alone, against the fourteen-release host) | all 13 exit 0, 900 frames, 0 faults, 0 unimplemented calls, two runs identical, from a staged root | the importer refused every form ("not a known release": no registry entry) |
+| `castaway` | 1 ne16: `SCRANTIC.SCR`, a Windows 3.1 screen-saver program (an NE application, Borland C++, on Microsoft's `SCRNSAVE.LIB`) that plays Dynamix's animations from its own data files, `RESOURCE.MAP` and `RESOURCE.001` (surveyed alone, against the fifteen-release host, 1.4.3) | none: exit 1 at lane init, "not an After Dark or Intermission module (no MODULE, SAVERINIT or SAVERDRAW export)" | the importer refused the floppy image and its ZIP ("not a known release": no registry entry, no InstallShield 1 reader) and the `.7z` ("neither an ISO-9660 disc image, a FAT floppy image nor a ZIP of install files"); no protocol for a program that runs its own message loop; `mciSendCommand`, `AddFontResource`, `WaitEvent`, `InitApp`, `ClipCursor` and the `__AHSHIFT` equate unimplemented |
 
-In total, 327 catalog entries over the fifteen packages: 232 over the first
+In total, 328 catalog entries over the sixteen packages: 232 over the first
 seven (218 over their six After Dark releases, and Star Wars Screen
 Entertainment's 14), 52 over the fourth round's five (1 + 8 + 12 + 15 +
-16), 30 over the fifth round's two (14 + 16) and 13 over the sixth
-round's `tng`, so 283 over the twelve After Dark ones and 44 over the
-three Intermission ones.
+16), 30 over the fifth round's two (14 + 16), 13 over the sixth round's
+`tng` and 1 over the seventh round's `castaway`, so 283 over the twelve
+After Dark ones, 44 over the three Intermission ones and Johnny
+Castaway's one program.
 
 ## 2. The package registry
 
@@ -148,6 +168,7 @@ the catalog order and the precedence order for name disambiguation:
 | `farside` | The Far Side Screen Saver Collection | Far Side | `intermission` (Delrina's installer) | `packages/farside` | `SAVER` |
 | `dilbert` | Scott Adams' Dilbert Screen Saver Collection | Dilbert | `intermission` (Delrina's installer) | `packages/dilbert` | `SAVER` |
 | `tng` | Star Trek: The Next Generation Screen Saver | Star Trek TNG | `ad3zip` | `packages/tng` | `ST-TNG` |
+| `castaway` | Screen Antics: Johnny Castaway | Johnny Castaway | `is1` | `packages/castaway` | `SCRANTIC` |
 
 Ids match `[a-z0-9]+`. `ad40` and `classic` are reserved: they are Deluxe's
 legacy id prefixes. `swse` is the product's own short name (its installer's
@@ -178,7 +199,12 @@ them, last, so the first fourteen keep their places and command ids; its
 id is the release's usual short name (not `PREVIOUS.INF`'s `STTNG`), its
 module dir the installer's folder (`C:\AFTERDRK\ST-TNG`, `ST-TNG.AFI`)
 and its short title "Star Trek TNG", next to Star Trek: The Screen Saver's
-"Star Trek".
+"Star Trek". The seventh round's `castaway` follows them, last, so the
+first fifteen keep their places and command ids. Its id comes from the
+release's name, as the fifth round's do, its module dir is the installer's
+folder (`\SIERRA\SCRANTIC`, the program `SCRANTIC.SCR`), its title the disk
+label's, "Screen Antics: Johnny Castaway" (Screen Antics is the series, and
+what the program calls itself), and its short title "Johnny Castaway".
 
 Known images (identification + `verified: image`):
 
@@ -213,6 +239,8 @@ Known images (identification + `verified: image`):
 | `dilbert` | `0f5408c77ed018db8b99b6b70f2a6a29` | 1,193,935 | ZIP of install disk 3's files (`DILBERT3.ZIP`) | — |
 | `dilbert` | `9064065cfb1edd12cc659823b5ca88ad` | 1,155,239 | ZIP of install disk 4's files (`DILBERT4.ZIP`) | — |
 | `tng` | `0b95b9271c75b9ff1d89b57a0e15ee7b` | 6,133,760 | ISO-9660 CD of the install files (every file dated 1995-04-09; the Internet Archive item `star-trek-the-next-generation-screensaver`, a clean read) | `STAR_TRE` |
+| `castaway` | `81087ea7cc6a304896e81c722b0a85ec` | 1,474,560 | FAT12, 1.44 MB: the install floppy, version 1.01, international build 1.4.93 (every file dated 1993-01-04; the Internet Archive's KryoFlux dump, item `screen-antics-johnny-castaway-16-color-v1.01-int.-1.4.93-win3.1-1.44m`, in a ZIP, and byte for byte the `disk1.img` in the `.7z` of item `000580-ScreenAnticsJohnnyCastaway`, The Good Old Days Floppy Collection) | — |
+| `castaway` | `867e1e0574e7c117aa4a8b72c08b887c` | 1,359,711 | ZIP of that floppy image (the KryoFlux dump's, its one member the `.ima`): the download, read as the image inside (§5.2) | — |
 
 A known image is the whole release, or, since the seventh release, one
 install disk of a release on several (`KnownImage::disk` n of N):
@@ -249,14 +277,16 @@ Other registry fields:
   * `farside`: `SAVER/INTRMLIB.DLL`, `SAVER/ANTSW.DLL`, `SAVER/DIBDLL.DLL`, `SAVER/MEMMIDI.DLL` (what the modules load: INTRMLIB → ANTSW, PTERY also DIBDLL, the ASA reader MEMMIDI by name), `ENGINE/IMASAPLY.IMQ` (the ASA reader), plus every install disk's tag file (`DISK1`–`DISK5`)
   * `dilbert`: the same and `SAVER/IM4_EXP.DLL` (DB-BEST's picture decoder), plus `DISK1`–`DISK4`
   * `tng`: `ST-TNG/ADXPL320.DLL` (the library the modules import), `ST-TNG/TNG_ART.DLL`, `ST-TNG/TNG_SND.DLL`, `ENGINE/AD_SND.DLL`, `ENGINE/ADTASK.DLL`, plus the 13 module ZIPs and `MUSIC.ZIP`
+  * `castaway`: `SCRANTIC/SCRANTIC.SCR` (the program), `SCRANTIC/RESOURCE.MAP` and `SCRANTIC/RESOURCE.001` (the data it cannot run without: its string 1001, "Screen Antics can not continue because it can not locate the necessary data files!"), plus every file the recipe reads (`SCRANTIC.SC$`, `RESOURCE.00$`, `RESOURCE.MAP`)
 * `ad3zip` parameters: `moduleDir` (`AD32` / `TWISTED` / `SIMPSONS` / `LNYTUNES` / `SCREAMS` / `DISNEY` / `ST-TNG`); `engineDll`, the member of `MODMISC.ZIP` that identifies the package (`ADXPL300.DLL` / `ADXPL40.DLL` / `ADXPL310.DLL` / `ADXPL41.DLL` / `ADXPL300.DLL` / `ADXPL100.DLL` / `ADXPL320.DLL`); `folderAfi`, the `AFI.ZIP` member that becomes `FOLDER.AFI` and identifies the package too (`AD3.AFI` / `PHLEM.AFI` / `SAX.AFI` / `LNYTUNES.AFI` / `SCREAMS.AFI` / `DISNEY.AFI` / `ST-TNG.AFI`); since the fourth round `marker`, a second `MODMISC.ZIP` member the fingerprint wants (`ad32`: `AD30RSDB.DLL`, §3), and `never_opened`, archives of the install dir the recipe skips by name, unread (`disney`: `BEAUTYOL.ZIP`, §4.3).
 * `islib` parameters (`marvel`, `snoopy`; fourth round): `moduleDir` (`AFTERDRK` for both); the library volumes the recipe reads, every install disk's, disk 1's first (`required_archives`, above); the tag, `SETUP.PKG`'s logical library name and the member it must list there (`tag_library` `modules.lib` and `tag_member` `MARVEL.AD`; `AD_MODS.z` and `IS_FLY.AD`); and the placement table (`LibraryMember`: a library, by its file or a split set's first volume, a member, and where it goes: 64 rows for `marvel`, 8 for `snoopy`).
 * `intermission` parameters (`swse`): `moduleDir` (`SAVER`); `installName`, the `[data] shortname` of the installer's `INSTALL.DAT` that identifies the package (`SWSE`); the archives (`SWSE1.ARJ`, `SWSE2.ARJ`, `SWSE2.A01`, `SWSE2.A02`, `SWSE2.A03`: disk 1, then one archive over disks 2–5); `looseFiles`, what the recipe takes from outside the archives, with the name the installer gave it and whether it is SZDD (§4.3).
 * `intermission` parameters with Delrina's installer (`farside`, `dilbert`; fifth round; `Package::delrina_installer()`, true when `installName` is null): `moduleDir` (`SAVER`); every install disk's tag file in place of the archives (`DISK1`–`DISK5`, `DISK1`–`DISK4`: two-byte files the installer checks for; disk 1's is the fingerprint's); `marker`, a file of the release's own on disk 1 that the fingerprint wants beside the tag and the installer (`PTERY.IMQ`, `DB-CLOCK.IMQ`); `looseFiles`, every file the recipe installs, under its own name, plain or SZDD (20 rows for `farside`, 23 for `dilbert`, §4.3).
+* `is1` parameters (`castaway`; seventh round): `moduleDir` (`SCRANTIC`); every file the recipe reads (`required_archives`: `SCRANTIC.SC$` first, the fingerprint's, then `RESOURCE.00$` and `RESOURCE.MAP`); `looseFiles`, each file it installs with the name `INSTALL.INS` gave it and its codec (`SCRANTIC.SC$` → `SCRANTIC/SCRANTIC.SCR` and `RESOURCE.00$` → `SCRANTIC/RESOURCE.001`, InstallShield 1 "$" files, §8.11; `RESOURCE.MAP` plain); one name override (§6) and `screen` (`640x480`).
 * `ad2kwaj` parameters (`startrek`): `moduleDir` (`AFTERDRK`); `setupTitle`, the `[Params] WndTitle` of Microsoft Setup's `SETUP.LST` that identifies the package (`Star Trek\xAE: The Screen Saver`, 0xAE being Windows-1252's ®); the install disks' tag files, from `ST_NSTLL.INF [Source Media Descriptions]` (`MISSION.AD_` on disk 1, which the fingerprint wants beside `SETUP.LST`, and `ST_SND.DL_` on disk 2); `looseFiles`, every file the recipe installs, each KWAJ-compressed (§4.3); `screen` (`640x480`) and the About rules (`ad20`), for the catalog (§6).
-* `fixups` (§4.3), `nameOverrides` (§6), `manifest` (`known_files_<id>.inc`, generated like today's `known_files.inc`; `swse` 29 files, `startrek` 27, `marvel` 64, `snoopy` 8, `looney` 34, `screams` 23, `disney` 31, `farside` 20, `dilbert` 23, `tng` 31), `downloadUrl` (Deluxe only, as planned; the importer now lists Internet Archive copies for every package, `importer/README.md` "Downloads"; `swse` has three: the ISO, the Redump BIN and a flat ZIP of the disc's 40 files, 6.9, 8.6 and 6.7 MB; `startrek` two, each the images of both disks, 2.8 MB: a copy is used only when both of its images are fetched and verify, §5.2; `marvel` two, the flat ZIP of item `afterdarkmarvelscreenposters` first, then the `after-dark-collection` ZIP, 1.9 and 2.0 MB; `snoopy`, `looney`, `screams` and `disney` the `after-dark-collection` ZIPs, 1.9, 2.8, 3.3 and 3.4 MB; each of the six is a known image, so a download verifies `image`; neither the items' serial-number files nor any URL that carries a serial is ever fetched; `farside` one, the five ZIPs `PNX-FSC1.ZIP`–`PNX-FSC5.ZIP` fetched from inside item `prog47_55`'s ZIP, 5.5 MB; `dilbert` two, the flat `DilbertS.zip` of item `dilbert_screensaver_collection`, 4.3 MB, then `DILBERT1.ZIP`–`DILBERT4.ZIP` from inside item `prog70_75`'s ZIP, 4.4 MB; every one of these files is a known image, so these downloads verify `image` too; `tng` one, the CD image of item `star-trek-the-next-generation-screensaver`, 5.8 MB, a known image, saved as `Star Trek - The Next Generation - screensaver.iso` because no Windows file name can hold the published name's colon).
-* `released` (`YYYY-MM[-DD]`, §6): `swse` is `1994-08`. Every Windows build of it found dates from 1994-08-20 at the earliest (`INTERMIS.EXE`), LucasArts announced it for July 1994 on both platforms, and this CD is a later build (its files are from October 1994). It ties with the Simpsons (`1994-08`) and sorts after it by registry order. `startrek` is `1992-11`: its newest files are dated 1992-11-16 (15 of the 16 modules, all but Sounder, with `AD_MOD.DL_`, `ST_NSTLL.IN_`, `AD_NSTLL.DL_` and `AD_NSTLL.MS_`), so it is the oldest release and comes first in the catalog's `packages` list. Of the fourth round: `marvel` is `1993-12` (the libraries and `MARVEL.AD` are dated 1993-12-13, its readme December 15, 1993); `snoopy` `1994-10` (its library is dated 1994-10-19, the newest modules 1994-10-13); `looney` `1995-04` (every file of the April build is dated 1995-04-11/12; Berkeley announced it on 1995-04-25); `screams` `1995-04` (the newest file on its disks is `ENGINE.ZIP`, 1995-04-11); `disney` `1995-09` (its script, package list and `AFI.ZIP` are dated 1995-09-13). `looney` and `screams` tie and sort by registry order, so the catalog's `packages` list reads `startrek`, `marvel`, `simpsons`, `swse`, `snoopy`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the fifth round: `farside` is `1994-06` (every file of its disks is dated 1994-06-19, the bulletin-board copy 1994-06-30); `dilbert` `1994-10` (its files are dated 1994-10-06; its readme names The Far Side's collection as an earlier release). `dilbert` ties with `snoopy` and follows it, so the list reads `startrek`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the sixth round: `tng` is `1994-10` (its modules are dated 1994-10-06/07 and `ST-TNG.AFI` 1994-10-13; every file on the CD is dated 1995-04-09, the CD's own build), so it ties with `snoopy` and `dilbert` and follows them: `startrek`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `tng`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
-* `screen` (§6): `"640x480"` on `startrek`, `marvel` (each poster is a fixed 640×480 picture, drawn in the middle of a larger screen with its caption at the bottom of the whole screen) and `screams` (four modules paint a 640×480 scene and Belcho composes one 640 wide, drawn small in the middle of a larger screen); none elsewhere: the Disney, Looney Tunes and Snoopy modules lay out for any screen, and `farside`'s and `dilbert`'s are Intermission modules, which the front-ends give 640×480 by their ABI. Since the sixth round also on `tng`: several of its modules compose a fixed 640×480 scene (Science Stations' panel in the top-left corner of a larger screen; Encounters, Personnel Files, Officer's Review and Starfleet Messages small in the middle; Counselor Troi and Data Dances pinned top-left), while Warp Effect, Tachyon Particle Field, Nanites, The Borg, Worf's Weapons and Starbase fill any screen.
+* `fixups` (§4.3), `nameOverrides` (§6), `manifest` (`known_files_<id>.inc`, generated like today's `known_files.inc`; `swse` 29 files, `startrek` 27, `marvel` 64, `snoopy` 8, `looney` 34, `screams` 23, `disney` 31, `farside` 20, `dilbert` 23, `tng` 31, `castaway` 3), `downloadUrl` (Deluxe only, as planned; the importer now lists Internet Archive copies for every package, `importer/README.md` "Downloads"; `swse` has three: the ISO, the Redump BIN and a flat ZIP of the disc's 40 files, 6.9, 8.6 and 6.7 MB; `startrek` two, each the images of both disks, 2.8 MB: a copy is used only when both of its images are fetched and verify, §5.2; `marvel` two, the flat ZIP of item `afterdarkmarvelscreenposters` first, then the `after-dark-collection` ZIP, 1.9 and 2.0 MB; `snoopy`, `looney`, `screams` and `disney` the `after-dark-collection` ZIPs, 1.9, 2.8, 3.3 and 3.4 MB; each of the six is a known image, so a download verifies `image`; neither the items' serial-number files nor any URL that carries a serial is ever fetched; `farside` one, the five ZIPs `PNX-FSC1.ZIP`–`PNX-FSC5.ZIP` fetched from inside item `prog47_55`'s ZIP, 5.5 MB; `dilbert` two, the flat `DilbertS.zip` of item `dilbert_screensaver_collection`, 4.3 MB, then `DILBERT1.ZIP`–`DILBERT4.ZIP` from inside item `prog70_75`'s ZIP, 4.4 MB; every one of these files is a known image, so these downloads verify `image` too; `tng` one, the CD image of item `star-trek-the-next-generation-screensaver`, 5.8 MB, a known image, saved as `Star Trek - The Next Generation - screensaver.iso` because no Windows file name can hold the published name's colon; `castaway` one, the ZIP of the Internet Archive's KryoFlux dump of the floppy, item `screen-antics-johnny-castaway-16-color-v1.01-int.-1.4.93-win3.1-1.44m`, 1.3 MB, saved under its published name, a known image read as the floppy image it holds, so it verifies `image`).
+* `released` (`YYYY-MM[-DD]`, §6): `swse` is `1994-08`. Every Windows build of it found dates from 1994-08-20 at the earliest (`INTERMIS.EXE`), LucasArts announced it for July 1994 on both platforms, and this CD is a later build (its files are from October 1994). It ties with the Simpsons (`1994-08`) and sorts after it by registry order. `startrek` is `1992-11`: its newest files are dated 1992-11-16 (15 of the 16 modules, all but Sounder, with `AD_MOD.DL_`, `ST_NSTLL.IN_`, `AD_NSTLL.DL_` and `AD_NSTLL.MS_`), so it is the oldest release and comes first in the catalog's `packages` list. Of the fourth round: `marvel` is `1993-12` (the libraries and `MARVEL.AD` are dated 1993-12-13, its readme December 15, 1993); `snoopy` `1994-10` (its library is dated 1994-10-19, the newest modules 1994-10-13); `looney` `1995-04` (every file of the April build is dated 1995-04-11/12; Berkeley announced it on 1995-04-25); `screams` `1995-04` (the newest file on its disks is `ENGINE.ZIP`, 1995-04-11); `disney` `1995-09` (its script, package list and `AFI.ZIP` are dated 1995-09-13). `looney` and `screams` tie and sort by registry order, so the catalog's `packages` list reads `startrek`, `marvel`, `simpsons`, `swse`, `snoopy`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the fifth round: `farside` is `1994-06` (every file of its disks is dated 1994-06-19, the bulletin-board copy 1994-06-30); `dilbert` `1994-10` (its files are dated 1994-10-06; its readme names The Far Side's collection as an earlier release). `dilbert` ties with `snoopy` and follows it, so the list reads `startrek`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the sixth round: `tng` is `1994-10` (its modules are dated 1994-10-06/07 and `ST-TNG.AFI` 1994-10-13; every file on the CD is dated 1995-04-09, the CD's own build), so it ties with `snoopy` and `dilbert` and follows them: `startrek`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `tng`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the seventh round: `castaway` is `1992-12` (the program in `SCRANTIC.SC$` is dated 1992-12-09, its data `RESOURCE.001` the same day; every file on the floppy is dated 1993-01-04, the version 1.01 international build), so it comes second, after `startrek`: `startrek`, `castaway`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `tng`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
+* `screen` (§6): `"640x480"` on `startrek`, `marvel` (each poster is a fixed 640×480 picture, drawn in the middle of a larger screen with its caption at the bottom of the whole screen) and `screams` (four modules paint a 640×480 scene and Belcho composes one 640 wide, drawn small in the middle of a larger screen); none elsewhere: the Disney, Looney Tunes and Snoopy modules lay out for any screen, and `farside`'s and `dilbert`'s are Intermission modules, which the front-ends give 640×480 by their ABI. Since the sixth round also on `tng`: several of its modules compose a fixed 640×480 scene (Science Stations' panel in the top-left corner of a larger screen; Encounters, Personnel Files, Officer's Review and Starfleet Messages small in the middle; Counselor Troi and Data Dances pinned top-left), while Warp Effect, Tachyon Particle Field, Nanites, The Borg, Worf's Weapons and Starbase fill any screen. Since the seventh round also on `castaway`: the program paints a fixed 640×480 scene, centred on whatever screen it gets (on a 1024×768 one, in the middle of black; at 640×480 it fills the screen, as on the VGA it was made for; §7.6).
 
 ## 3. Identification
 
@@ -306,6 +336,7 @@ union of those folders (§5.2), so the steps below see one install folder.
    * `intermission` (`swse`): Presage's installer script `INSTALL.DAT` at the source's root (the CD, disk 1, a flat ZIP, or a folder copy of the disks), a plain file of at most 64 KiB (a larger one is simply no match), whose `[data] shortname` is the package's `installName` (`SWSE`; sections and keys compared without case, values trimmed), with the first archive, `SWSE1.ARJ`, beside it. The script is read for nothing else. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); disks 2–5 without it match nothing.
    * `intermission` with Delrina's installer (`farside`, `dilbert`; fifth round): disk 1's tag file `DISK1`, the installer `IMINST2.EXE` and the release's `marker` (`PTERY.IMQ`, `DB-CLOCK.IMQ`), side by side at the source's root (disk 1, the disks together, or a flat folder or ZIP of their files). Nothing is read: the names alone name the release, as an AD 3.x install's archive members do; the installer has no script (it copies by wildcard), and `PACKING.LST`, Dilbert's list of its modules, is not needed. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); any other disk alone, or disk 1 without the installer or the marker, matches nothing. Star Wars Screen Entertainment is never taken for either release, nor either for it, and a folder holding both releases' files matches both (ambiguous: `--package` chooses).
    * `ad2kwaj` (`startrek`): Microsoft Setup's file list `SETUP.LST` at the source's root (disk 1, the disks together, or a flat folder, ZIP or ISO of their files), a plain file of at most 64 KiB (the real one is 654 bytes), whose `[Params] WndTitle` is the package's `setupTitle` ("Star Trek®: The Screen Saver", compared in Windows-1252 as the file holds it, without ASCII case, values trimmed), with disk 1's tag file, `MISSION.AD_`, beside it. `CmdLine` is not used: it is the same for every Berkeley After Dark 2.0 setup. The file is read for nothing else. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); disk 2 alone matches no fingerprint (its md5 names it, step 1). An installed `C:\AFTERDRK` is no source: it has no `SETUP.LST`, and the installer wrote the owner's name, company and serial number into its `AD.EXE` (resource type 3000, ids 1–3), so that file never matches the manifest.
+   * `is1` (`castaway`; seventh round): InstallShield 1's own files, the launcher `SETUP.EXE`, the compiled script `INSTALL.INS` and the installer it expands, `INSTALL.EX$`, side by side at the source's root (the floppy, or a folder, ZIP or 7z of its files) with the release's first file (`required_archives[0]`: `SCRANTIC.SC$`). Nothing is read: the names alone name the release, as Delrina's floppies' do (another InstallShield 1 floppy has other files of its own). An AD 3.x install, whose `INSTALL.INS` belongs to InstallShield 2 or 3, has no `INSTALL.EX$` and no `SCRANTIC.SC$`, so it never matches, nor does this floppy match the `ad3zip` family (no `SETUP.PKG` or `ENGINE.ZIP`). An installed `\SIERRA\SCRANTIC` is no source: it has none of the installer's files.
 3. `--package <id>` restricts step 2 to one package. It is an error if the
    source is not that package.
 
@@ -356,6 +387,8 @@ This is the contract between the importer (A) and the lanes (B, C).
 <win>\packages\dilbert\ENGINE\…               IMASAPLY.IMQ, INTERMIS.EXE (as The Far Side's)
 <win>\packages\tng\ST-TNG\…                   13 modules, ADXPL320, TNG_ART, TNG_SND, AD_RSRC, FOLDER.AFI, MUSIC\ (8 MIDI) (26 files)
 <win>\packages\tng\ENGINE\…                   AD_SND, ADTASK, ADW30.EXE, ADW30.INI, ECOLOGIC.DLL (After Dark 3.0's, March 1995)
+<win>\packages\castaway\SCRANTIC\…            SCRANTIC.SCR (the program), RESOURCE.MAP, RESOURCE.001 (its data)
+                                                (3 files; the guest's C:\SIERRA\SCRANTIC, §7.6); no ENGINE folder
 <win>\packages\<id>\import.json               record (v2, §5.3)
 <win>\catalog-win.json                        merged catalog (§6)
 ```
@@ -383,7 +416,8 @@ file; their modules write `ANTSW.INI`, whose engine keys the lane seeds
 **No `ENGINE`.** `snoopy`'s package root holds only its module folder: the
 release is eight modules its installer copied into the user's own After
 Dark folder, and the importer never creates an empty folder. The ne16 lane
-treats a missing engine dir as an empty one (§7.4).
+treats a missing engine dir as an empty one (§7.4). `castaway`'s holds
+only its module folder too: the program is its own host.
 
 ### 4.2 Invariants
 
@@ -845,6 +879,45 @@ volumes are.
   (`AD_Changes.txt`, the Disney Collection's `Changes.txt`; `CMOS.RAM`;
   `DREAM.ON`, on both disks with the same bytes; `TXTSCR.DAT`).
 
+**`is1`** (`castaway`; seventh round): the release came on one 1.44 MB
+floppy installed by InstallShield 1.02 (The Stirling Group, 1990–91):
+`SETUP.EXE` expands the installer, `INSTALL.EX$`, and runs its compiled
+script, `INSTALL.INS`. The script (its strings, read in `research/jc/`)
+offers `\SIERRA\SCRANTIC` as the folder, expands `SCRANTIC.SC$` to
+`SCRANTIC.SCR` and `RESOURCE.00$` to `RESOURCE.001` there, copies
+`RESOURCE.MAP`, writes `SCRANTIC.INI` (`[ScreenSaver.ScreenAntics]
+SourceDir`, the folder), makes the program Windows' screen saver
+(`WIN.INI [Windows] ScreenSaveActive=1` and `ScreenSaveTimeOut=120`,
+`SYSTEM.INI [boot] SCRNSAVE.EXE`) and opens Control Panel's Desktop. The
+recipe is the file part of that, flattened into a table of loose files, as
+`ad2kwaj`'s is, the script's folder being the module folder `M` =
+`SCRANTIC`:
+
+| Source | Becomes | How |
+|---|---|---|
+| `SCRANTIC.SC$` | `M\SCRANTIC.SCR` | expanded (§8.11; the file records the name `SCRANTIC.EXE`) |
+| `RESOURCE.00$` | `M\RESOURCE.001` | expanded (§8.11) |
+| `RESOURCE.MAP` | `M\RESOURCE.MAP` | copied |
+
+Every file of the table must be there, else 2 ("the source is missing
+RESOURCE.00$, which the install floppy of Screen Antics: Johnny Castaway
+holds"). A "$" file records no expanded size, so each is expanded once to
+learn it, bounded by the staging budget (the larger expands to 1.1 MB),
+and the copy expands no more than that; its time is the DOS time it
+records (the floppy's own dates are the build's). The rest of what the
+installer did is not the importer's: `SCRANTIC.INI` is the program's own
+to write (§7.6), and making it the screen saver is Long After Dark's. The
+package has its module folder alone: I3 refuses an `ENGINE` folder in it
+(After Dark's files there would make the lane take it for an After Dark
+package) and a `WINDOWS` folder. Result: 3 files, 1,473,058 bytes, the
+manifest's.
+
+**Never opened** (I5) by the `is1` import: the installer (`SETUP.EXE`,
+`INSTALL.EX$`, `INSTALL.INS`: their presence names the release), its logos
+`LOGO.BMP` and `SLOGO.BMP`, and the floppy's own `RESOURCE.001`, a 35-byte
+placeholder saying that the resource is compressed (the real one is
+`RESOURCE.00$`), whose name the installed file takes.
+
 ### 4.4 Interim test roots (for B and C before A lands)
 
 The lanes are built in parallel with the importer. Until A's `adimport` can
@@ -998,6 +1071,14 @@ adimport --remove <id> [--dest <root>]          (should)
   release came on that many disks"): a bound, which the plan did not have,
   against a crafted ZIP. A ZIP with no floppy image is a ZIP of install
   files, as before.
+* **A 7z** (seventh round; §8.10) is taken wherever a ZIP is, sniffed by
+  its signature at byte 0: its floppy images when it holds any (in any
+  folder: the user's Johnny Castaway, `000580_jonny_castaway.7z`, holds
+  `000580_jonny_castaway/disk1.img`, a part
+  `<7z path>!000580_jonny_castaway/disk1.img` identified by the image's
+  md5), else a 7z of install files under the ZIP's rule (bare names, or
+  only flat `DISK<n>` folders), logged "a 7z of install files, not an
+  image of the original disks".
 * `--download` was planned to stay Deluxe-only, since no other package had
   a known URL when this was written. The Internet Archive search that
   followed found copies of every package, so `--download <id>|all` now
@@ -1031,7 +1112,9 @@ adimport --remove <id> [--dest <root>]          (should)
   release: the filter reads "Disc and floppy images, and ZIPs of them or of
   install files"; since the twelve releases the disc-image card reads "An
   ISO image of a CD or floppy images (.img), or a ZIP of them or of the
-  install files; select every disk of a set.")
+  install files; select every disk of a set." Since the seventh round both
+  name 7z too: "… and ZIPs or 7z archives of them …" with `*.7z`, and
+  "… or a ZIP or 7z of them …".)
 * `win_assets_dir(root)`, in both the importer and the host: `<root>\win`
   if it holds `FILES`, `packages` or `catalog-win.json`; else `<root>` if
   it holds one of those; else `<root>\win`.
@@ -1051,11 +1134,12 @@ adimport --remove <id> [--dest <root>]          (should)
 
 * `package.recipe` is `tree`, `ad3zip`, `intermission`, `ad2kwaj` or,
   since the fourth round, `islib`.
-* `kind` is `iso`, `floppy`, `folder` or `download` (and `zip`, as built).
+* `kind` is `iso`, `floppy`, `folder` or `download` (and `zip`, as built;
+  `7z` for a 7z of install files since the seventh round).
 * `format` is `iso9660`, `iso9660+joliet`, `fat12`, `fat16` or `folder`
-  (and `zip`).
+  (and `zip`; and `7z`).
 * `parts` lists every image of a multi-image source (path, size, md5); an
-  image from a ZIP is `<zip path>!<member>`. For a known disk set (§3)
+  image from a ZIP or 7z is `<zip path>!<member>`. For a known disk set (§3)
   `imageMd5Known` is true, with no `imageMd5`.
 * A download of a copy made of several images records its first image's
   `url` and `finalUrl`, and `--md5` replaces only that image's md5 and
@@ -1092,7 +1176,10 @@ releases before it is byte for byte what it was; the fourth round added
 five packages and the `islib` recipe under it too, and the 232 entries of
 the first seven are field for field what 1.1.0 wrote. The fifth round
 added two packages and their ASA and IMQ entries under it as well; every
-entry of the twelve releases before them is as 1.2.1 wrote it.
+entry of the twelve releases before them is as 1.2.1 wrote it. The
+seventh round added its package, the `is1` recipe and the first
+`"scrnsave"` entry under it too; every entry of the fifteen releases
+before it is as 1.4.3 wrote it.
 
 * **Order.** Installed packages in registry order. Within a package, its
   module dirs in registry order. Within a dir, `*.AD` sorted as today.
@@ -1104,6 +1191,10 @@ entry of the twelve releases before them is as 1.2.1 wrote it.
   the module folders of a release Delrina's installer installed
   (`Package::delrina_installer`) also list `*.ASA` and `*.IMQ`, sorted with
   the rest; no other package's folders, and never `ENGINE`, list them.
+  Since the seventh round the module folders of an InstallShield 1
+  package (`is1`) list `*.SCR` too, for a Windows 3.1 screen-saver program
+  (below); no other package's folders, and never `ENGINE` (where After
+  Dark's own `AFTERDAR.SCR` is), list them.
 * **Lane** comes from the header (PE32 → `pe32`, NE → `ne16`), never the
   folder. `AD10TH` mixes 16 pe32 and 29 ne16 modules. An Intermission module
   is NE too, so `ne16`; its `abi` field (below) tells it apart. An ASA
@@ -1126,7 +1217,7 @@ entry of the twelve releases before them is as 1.2.1 wrote it.
   fourth round `disney` five, and since the fifth `farside` fourteen and
   `dilbert` sixteen; the sixth round's `tng` needs none: its names come
   from the modules' own resources, Science Stations' trailing space
-  trimmed.)
+  trimmed; the seventh round's `castaway` has one, below.)
 * **displayName**: unique within a lane, case-insensitively. Walk the
   catalog in order. The first module with a given `(lane, moduleName)`
   keeps `moduleName`. Every later one gets `moduleName + " (" + shortTitle +
@@ -1303,6 +1394,44 @@ entry of the twelve releases before them is as 1.2.1 wrote it.
   entries (`tng`'s 13 too), and the `packages` list reads `startrek`,
   `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `tng`,
   `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
+* **Windows 3.1 screen-saver programs** (`castaway`, since the seventh
+  round). An NE program (not a library: the NE flags' `0x8000` bit clear)
+  that exports `SCREENSAVERPROC` (by name, without case), and none of the
+  exports that make an After Dark or Intermission module (`MODULE`,
+  `SAVERINIT` with `SAVERDRAW`, `SAVERMAIN`: those win, as before), is a
+  `.SCR` built on Microsoft's `SCRNSAVE.LIB`, the way Windows 3.1's own
+  screen savers were; a library that exports `SCREENSAVERPROC` is left
+  out, its reason logged ("a library that exports SCREENSAVERPROC, not a
+  screen-saver program"). The program is NE, so `ne16`, and differs from
+  an After Dark entry in these fields:
+  * `moduleName`: the module description after `SCRNSAVE` and its colon,
+    trimmed, which is the name Windows 3.1's Control Panel listed (the
+    description `SCRNSAVE :Screen Antics` gives "Screen Antics"), else the
+    file stem; then the registry's overrides, of which `castaway` has one,
+    `SCRANTIC/SCRANTIC.SCR` → Johnny Castaway: "Screen Antics" is the
+    series, and the release's one entry would read so under its cover.
+  * `about` is `""`.
+  * `controls`: one button, `{"index": 0, "name": "Setup...", "kind":
+    "button", "type": "button"}`, when the program exports
+    `SCREENSAVERCONFIGUREDIALOG` (`SCRNSAVE.LIB` has every program export
+    it): the program's own settings dialog, as `/c` showed it. The name is
+    that of the button of Windows 3.1's Control Panel (its Desktop dialog's
+    "S&etup...", without the mnemonic) (INTERACTION.md §1.6).
+  * `entry` is `"SCREENSAVERPROC"`, the program's window procedure, and
+    `needs` is empty: it imports only Windows' own `GDI`, `KERNEL`,
+    `MMSYSTEM` and `USER` (its `system`).
+  * `abi` is `"scrnsave"`, and `screen` `"640x480"` (§2): the program
+    paints a fixed 640×480 scene.
+
+  The id is `castaway.scrantic`, the path
+  `packages/castaway/SCRANTIC/SCRANTIC.SCR`; it is byte-identical to no
+  other release's module, so no `sameAs`. With the seventh round's
+  `castaway`, all sixteen releases installed, the catalog lists 328
+  modules, still 73 of them `sameAs`, no display name repeated within a
+  lane, `screen` on 46 entries, and the `packages` list reads `startrek`,
+  `castaway`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`,
+  `dilbert`, `tng`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`,
+  `ad10`.
 * **New per-module fields**, on every entry, Deluxe's too, appended after
   the existing ones:
   * `package`, `packageTitle`, `moduleName`
@@ -1853,6 +1982,63 @@ Dark path of §7.3 and §7.4 (OLDMOD16 or the native AD3 bridge), and `imx`.
   the build's lanes run (pe32: `afterdark`; ne16: `afterdark` and
   `intermission`).
 
+### 7.6 Windows 3.1 screen-saver programs (ne16, `castaway`; seventh round)
+
+Johnny Castaway is no module: `SCRANTIC.SCR` is a whole Windows 3.1
+program, built with Borland C++ on Microsoft's `SCRNSAVE.LIB`, which
+Windows 3.1 started itself when the screen saver was due (its
+`SYSTEM.INI [boot] SCRNSAVE.EXE`). It runs in the ne16 lane like the
+modules, with the same Win16 runtime, frame loop, input and status,
+desktop seed, audio pump and configure scaffolding, through a third
+protocol beside `ad3` and `imx`: `scr` (`host/ne16/scr_protocol.cc`; its
+catalog ABI is `"scrnsave"`, and ABI.md has the program's side of it).
+
+* **The kind comes from the exports**, as for the other two: an NE program
+  (not a library) that exports `SCREENSAVERPROC` and none of `MODULE`,
+  `SAVERINIT` with `SAVERDRAW`, or `SAVERMAIN` is `scr`, the rule by
+  which the importer gives its entry `abi` `"scrnsave"` (§6); any other
+  NE application is refused.
+* **What runs.** The program itself, unchanged, as the Win16 runtime's
+  task, from its own entry point, as Windows 3.1 started a screen saver:
+  Borland's start-up (`InitTask`, `WaitEvent`, `InitApp`) and then
+  `SCRNSAVE.LIB`'s `WinMain`, given the command line `/s`. That registers
+  the window class, creates a popup window as large as the screen, and
+  runs the program's own message loop; `SCREENSAVERPROC`, its window
+  procedure, sets a 50 ms timer, loads its data once (from `RESOURCE.MAP`
+  and `RESOURCE.001`, or ends with its string 1001 when it cannot find
+  them, 1002 when memory is short) and steps its animation on each timer
+  tick, painting a fixed 640×480 scene in the middle of the screen; hence
+  the catalog's `screen` (§2). The protocol's one call is that task, which
+  lasts the whole run, every frame ending inside it, so it needs the
+  lane's long calls (with `ADMIPS=0` or `ADNE16LONGCALLS=0` the lane
+  refuses it, exit 1). At the end of a run the lane closes the program as
+  the waking input did under Windows 3.1: `WM_CLOSE` to its window, which
+  `DefScreenSaverProc` posted, so that it saves its story. The host stands
+  in for Windows 3.1 around it, as it stands in for `AFTERDAR.SCR` and
+  `INTERMIS.EXE`. `ADNE16KIND=scr` forces the kind. Headless it runs 900
+  frames twice alike, exit 0, with no fault and no unimplemented call: the
+  island, its palm tree, Johnny with his telescope, the clouds, the ocean
+  and a passing plane.
+* **Its disk.** The module dir is the guest's `C:\SIERRA\SCRANTIC`, where
+  its installer put it (a rule by file name, never the package id), and
+  `C:\WINDOWS` a copy-on-write overlay over the per-user state, as for any
+  ne16 module; the profile seeds stand in for what the installer wrote
+  (`SCRANTIC.INI`'s `SourceDir`, the data's folder). No engine dir: the
+  package root holds only `SCRANTIC` (§4.1), the program being its own
+  host. The program keeps its settings and its story's progress in its own
+  `SCRANTIC.INI` in the Windows directory, which so lands in the state
+  overlay (INTERACTION.md §7).
+* **Input.** It takes no key or mouse messages (INTERACTION.md §5.2): a
+  Windows 3.1 screen saver closed itself on the first one, and the saver
+  ends the run on input itself.
+* **Buttons.** `--configure <program> --button 0` is Control Panel's
+  **Setup...**: the program started with `/c`, which shows its own
+  settings dialog, `SCREENSAVERCONFIGURE` (Load Background, Sounds, Start
+  of day, Password), and writes `SCRANTIC.INI` on OK.
+* **`--capabilities`** names the ABI in `abis=` (`scrnsave`), and a front
+  end leaves out an entry whose ABI the host does not name, as it does an
+  Intermission one.
+
 ## 8. Extraction formats (importer)
 
 ### 8.1 ISO-9660 / Joliet: already implemented
@@ -2171,6 +2357,124 @@ libraries by their logical names, such as `images.lib` and `AD_MODS.z`,
 each pointing at its group). It lists the same names, sizes and order as
 each library's own file table (checked on all six libraries of the two
 releases). It serves only to identify the release (§3).
+
+### 8.10 7z archives (new with the seventh round: `sevenzip.h/.cc`)
+
+The user's copy of Screen Antics: Johnny Castaway is a 7z
+(`000580_jonny_castaway.7z`, 1355520 bytes, md5
+`edf027407e258f73d8056ae8dc87215f`, the Internet Archive's
+`000580-ScreenAnticsJohnnyCastaway`, the same file): one LZMA block holding
+its floppy image, `000580_jonny_castaway/disk1.img` (1474560 bytes, md5
+`81087ea7cc6a304896e81c722b0a85ec`), beside the folder's own entry. So the
+importer reads 7z wherever it reads ZIP (§5.2): a 7z of floppy images is
+those images (`floppy_images_in_zip`, the same bounds: floppy-sized members
+only, the boot-sector check after the first 64 KiB, 64 MB of images held
+together; a 7z's images may sit in a folder, a ZIP's may not), and any
+other 7z is a 7z of install files under the ZIP source's rule (`kind` and
+`format` `7z`).
+
+The reader was written from the format's public descriptions, which their
+author, Igor Pavlov, placed in the public domain: `7zFormat.txt` (the
+container) and `Methods.txt` (the method ids) in 7-Zip's `DOC` folder, and
+`lzma-specification.txt` (the LZMA decoder) in the LZMA SDK, with LZMA2's
+chunk framing as the SDK describes it. It holds no third-party code.
+
+* **Container.** The signature header (`37 7A BC AF 27 1C`, major version
+  0) and its CRC-32; the header at the offset it gives, ending the file,
+  and its CRC-32 (a header past the end: "the archive is truncated, or is
+  the first volume of a split archive (.7z.001; join the volumes into one
+  file first)"; bytes after it: "data after the end of the archive"). The
+  header plain or packed (`kEncodedHeader`, one LZMA block, 7-Zip's
+  default); pack info, blocks (7z's "folders"), substreams (the files of a
+  solid block, their sizes and CRCs), files info: empty streams, empty
+  files, UTF-16LE names (to UTF-8; an unpaired surrogate is damage; `\`
+  read as `/`), `MTime` (the file's time), attributes; creation and access
+  times, padding and newer properties skipped by their sizes. 7-Zip's
+  empty archive (the signature header alone) has no members.
+* **Methods.** One coder per block: LZMA (`03 01 01`, five property bytes),
+  LZMA2 (`21`, one) or Copy (`00`). Refused by name: an encrypted block or
+  header, 7zAES ("it is encrypted (7zAES); password-protected archives
+  are not supported"); a filter or any chain of coders ("a block packed
+  with BCJ (x86) + LZMA2 is not supported: only LZMA, LZMA2 or Copy, alone
+  (7-Zip puts Windows programs through the BCJ filter unless it is given
+  -mf=off)"); BCJ2 or any coder of several streams; any other method
+  ("the method PPMd is not supported: only LZMA, LZMA2 or Copy"; Deflate,
+  BZip2, Delta, ARM64, … by name, others by their id). Also refused: anti
+  items, external header data, a header packed twice.
+* **Bounds.** The archive is held in memory (`source.cc` reads at most
+  256 MB). At most 65536 entries, blocks and packed streams, a 16 MB
+  header (packed or not) and a 256 MB block (`kMaxBlockBytes`: "a block
+  of 257 MB is more than this reader holds (256 MB)"); every count is
+  checked against the header bytes left before anything is allocated, and
+  a block's buffer grows as its data really decodes, never from its
+  recorded size alone. Packed streams lie between the signature header
+  and the header; a stored block's sizes agree.
+* **Decoding.** Each block is decoded into memory as far as the reads
+  need, one block at a time (the last one read stays until another is):
+  the files of a solid block are slices of it, read in any order without
+  decoding it twice, and a read the sink stops (the boot-sector check)
+  goes on from there next time. Files are streamed in 64 KiB copies, so a
+  sink may read the archive again. LZMA is decoded as the specification
+  describes, strictly: the range coder's first byte is zero; no distance
+  reaches before the first byte (or LZMA2's last dictionary reset) or past
+  the dictionary; no match runs past the block's size; the stream ends at
+  exactly that size, with or without the end marker, the range coder
+  flushed (`code` 0) and every packed byte consumed. LZMA2: the first chunk
+  resets the dictionary, an LZMA chunk after an uncompressed one with a
+  dictionary reset sets new properties (`lc + lp <= 4`), each LZMA chunk
+  ends exactly at its packed and unpacked sizes, flushed, and the end byte
+  ends the stream.
+* **Checks.** Every file's CRC-32 and every block's, whenever recorded
+  (7-Zip always records them); a damaged block is "<7z>!<file>: damaged
+  LZMA data (…)" or a CRC-32 mismatch, and the source is invalid (2). In
+  the tests every truncation of an archive and every single-bit flip of
+  an LZMA and an LZMA2 archive is refused, or (the minor version byte)
+  harmless.
+
+*Not supported, by choice*: the BCJ filter and the other filters. 7-Zip
+(26.03, by default) puts a 32-bit Windows program (a PE file) through BCJ,
+not a 16-bit one (NE: these releases' installers and modules are), so a 7z
+of install files made with its defaults is plain LZMA2 unless it holds a
+32-bit program; one that does is refused, with that advice, and a ZIP, or
+a 7z made with `-mf=off`, of the same files imports. A 7z of floppy
+images is unaffected.
+
+### 8.11 InstallShield 1 compressed files (new with the seventh round: `isz.h/.cc`)
+
+InstallShield 1.0x (The Stirling Group, 1990–92) keeps each file it
+installs compressed on its own, under its name with the extension's last
+character replaced by `$`: Johnny Castaway's floppy holds `SCRANTIC.SC$`,
+`RESOURCE.00$` and the installer's own `INSTALL.EX$`. A `.7z` source is
+§8.10's; this is the form inside. The reader (`is1_header`, `is1_expand`)
+was written from the three files as decoded in `research/jc/` and the same
+DCL decoder as §8.9's, as strict, and accepts only what they hold:
+
+| Offset | Size | Value |
+|---|---|---|
+| 0 | 4 | `65 5D 13 8C` |
+| 4 | 4 | `08 01 03 00` |
+| 8 | 4 | 1 |
+| 12 | 2 | `00 12` |
+| 14 | 4 | the compressed size: the rest of the file after the name |
+| 18 | 4 | 0 |
+| 22 | 2 + 2 | the original file's DOS date and time (`SCRANTIC.EXE` 1992-12-09 17:08:52, `RESOURCE.001` 16:35:52 the same day, `INSTALL.EXE` 1992-03-10) |
+| 26 | 2 | 0 |
+| 28 | 1 | the stored name's length n |
+| 29 | n + 1 | the stored name, an 8.3 DOS name (code page 437), and a NUL |
+| 30 + n | the compressed size | one PKWARE DCL implode stream (header `00 06`: binary literals, a 4096-byte window), to the end of the file |
+
+Little-endian throughout. Every field is checked: a file that is not one,
+a field other than these, an invalid date, a name that is no 8.3 name or
+lacks its NUL, or a compressed size other than the rest of the file is
+refused, a corrupt source (2). No expanded size is recorded, so the stream
+runs to its end code, which must be the last thing in the data, and the
+output may never pass the bound the recipe gives (`IszTooLarge`: no byte
+past it is produced).
+The stored name is the file's name before the installer renamed it
+(`SCRANTIC.EXE`, which `INSTALL.INS` installs as `SCRANTIC.SCR`); the
+recipe places by its own table (§4.3). As with §8.9, nothing has a
+checksum: a damaged file that still decodes is caught only by the
+manifest (3), and not at all under `--no-verify`.
 
 ## 9. Test strategy
 
@@ -2812,7 +3116,7 @@ Acceptance:
    the settings dialog shows, and the saver needs no change for it.
 5. Documentation to update afterwards (outside these packages):
    * the project's status notes;
-   * `tools/package.sh`'s dist README ("Deluxe only" wording; since rewritten for the releases it knows, fifteen today);
+   * `tools/package.sh`'s dist README ("Deluxe only" wording; since rewritten for the releases it knows, sixteen today);
    * the scr status strings that count "After Dark 4 / Classic" (the scr
      workflow owns them). These are part of the user-requested wording
      pass.

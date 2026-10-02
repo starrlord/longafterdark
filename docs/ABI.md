@@ -1696,6 +1696,139 @@ unchanged.
 
 ---
 
+### 3.15 Windows 3.1 screen savers (`SCRNSAVE.LIB` programs) — VERIFIED
+
+Screen Antics: Johnny Castaway (Sierra On-Line, 1992; made by Dynamix and Jeff
+Tunnell Productions) is no module: `SCRANTIC.SCR` is a Windows 3.1
+**application** — NE, not a library, module `SCRNATIC`, description
+`SCRNSAVE :Screen Antics` (what Control Panel listed), Borland C++ 1991,
+Windows 3.0, MULTIPLEDATA, 13 code segments and DGROUP (segment 14, 0x47C0
+bytes), heap 0x8000, stack 0x1400, CS:IP 1:0000, SS:SP 14:0000 — built on
+Microsoft's `SCRNSAVE.LIB` (exports `SCREENSAVERPROC`,
+`SCREENSAVERCONFIGUREDIALOG`, `PASSWORDDIALOG`). Windows 3.1 ran it: its
+installer wrote `SYSTEM.INI [boot] SCRNSAVE.EXE=…\SCRANTIC.SCR`, and Control
+Panel's Desktop ran `SCRANTIC.SCR /s` to blank the screen and `SCRANTIC.SCR
+/c` for its **Setup...** button. The host does the same (ABI `scrnsave`, the
+ne16 lane's scr protocol, `host/ne16/lane.hh` "Windows 3.1 screen savers"):
+an NE application exporting `SCREENSAVERPROC` is run unchanged as the Win16
+runtime's task; any other application is refused.
+
+**The task's start** (`host/win16/modules16.hh` "Tasks"), as Windows 3.1's
+loader and KERNEL started an application:
+
+| | |
+|---|---|
+| segments, imports | as a DLL's; no LibEntry; the exported entries' prologs (`mov ax,ds; nop`) patched to `mov ax, DGROUP` (one instance: what `MakeProcInstance`'s thunk loaded) |
+| DGROUP | the static data, then the stack (the header's 0x1400), then the local heap (0x8000), which `InitTask` makes |
+| SS:SP | 14:5BC0 — SP 0 in the header is the stack area's top (0x47C0 + 0x1400) |
+| registers at CS:IP | BX the stack size, CX the heap size, DI hInstance (the DGROUP selector), SI hPrevInstance (0), BP 0, DS DGROUP, ES the PSP |
+| PSP | the command tail `" /s"` (or `" /c"`): length at 80h, text at 81h, CR after it; the environment's selector at 2Ch |
+| `InitTask` | DS:0Ah pStackTop (the top less the stack size, plus 150), 0Ch pStackMin and 0Eh pStackBottom (the start's SP); `LocalInit` above the stack; then AX 1, **BX the command line's offset past its leading blanks** (82h), CX pStackTop, DX nCmdShow (1), SI 0, DI hInstance, ES the PSP |
+| `WaitEvent(0)` | FALSE at once (the start event); `InitApp(hInst)`: 1 |
+
+Borland's C0W start (1:0000): `InitTask`, `LockSegment(-1)`, the BSS zeroed,
+`WaitEvent(0)`, `InitApp`, INT 1Ah AH=0, INT 21h AH=30h, `GetWinFlags`, the
+initializer table, `WinMain(hInst, hPrev, PSP:BX, nCmdShow)`, the exit
+routine, INT 21h AH=4Ch. `SCRNSAVE.LIB`'s `WinMain` (2:0000) returns 1 with
+a previous instance, skips one `-` or `/` at `lpCmdLine[0]` — **no blank
+skipping**: given `" /s"` it would show a dialog and then blank — and takes
+`c`/`C` (the configure dialog, then return) or `s`/`S` (the saver):
+`RegisterClass("ScreenSaver.ScreenAntics", style 3, ScreenSaverProc, black
+brush)`, `CreateWindow(WS_POPUP|WS_VISIBLE, 0, 0, SM_CXSCREEN, SM_CYSCREEN)`,
+`PostMessage(hwnd, WM_USER)`, then
+`GetMessage`/`TranslateMessage`/`DispatchMessage` until `WM_QUIT`.
+
+**Its window procedure** (`SCREENSAVERPROC`, 2:0FD9): `WM_CREATE` reads
+`SCRANTIC.INI` and `SetTimer(hwnd, 1, 50)`; `WM_USER` loads once (free
+memory below 2.5 MB: string 1002 and `DestroyWindow`; below 3.25 MB a
+low-memory mode; the data files missing: string 1001 — run without
+`RESOURCE.MAP`/`RESOURCE.001` it shows the `MessageBox` "Screen Antics can
+not continue because it can not locate the necessary data files!" and exits
+at frame 9); `WM_SIZE` keeps the client size, by which `WM_PAINT` and
+`WM_ERASEBKGND` centre the 640x480 scene (at 1024x768 the scene sits
+centred on black); `WM_TIMER` steps the animation engine (Dynamix's ADS/TTM
+scripts in `RESOURCE.001`) **in a loop until `PeekMessage(PM_NOREMOVE)` sees
+a message** — the next tick, 50 ms on; `WM_DESTROY` kills the timer, frees
+the engine and writes `SCRANTIC.INI`; `WM_SYSCOMMAND SC_SCREENSAVE` returns
+1; everything else goes to `SCRNSAVE.LIB`'s `DefScreenSaverProc` (2:0221):
+`WM_SETCURSOR` → `SetCursor(NULL)`; `WM_ACTIVATE`/`WM_ACTIVATEAPP` with
+wParam 0, a key, a button, or the mouse moved more than 3 pixels from where
+it first saw it → its close routine (5:019C: the password dialog when one is
+set, then `SendMessage(hwnd, WM_CLOSE)` and `exit()`); `WM_DESTROY` →
+`PostQuitMessage(0)`.
+
+**Frames.** The program owns its loop, so the protocol's one call is the
+task, started on the lane's guest fiber; it returns only when the program
+ends. Every frame ends inside it: at the first API call past the frame's
+deadline, or past the frame's work budget (`ADDRAWMIPS`, the DRAWFRAME
+budget: the `WM_TIMER` loop is a busy loop, and on a budget a streamed run
+costs about a sixth of a core with the frames' encoding, instead of the
+whole period), or in `GetMessage`/`WaitMessage` with nothing to deliver
+(USER's application-task mode: the frame ends there and the next one looks
+again with virtual time moved on; with no frame to end, time moves on to the
+next timer; nothing that could ever come is an error, never a hang). In
+practice the `WM_TIMER` loop is always busy: 0 waits in 6,000 frames; the
+picture changes every 3rd frame (the 50 ms tick at 60 fps). A call hangs
+only after `ADCALLBUDGET` instructions without an API call (the task budget:
+the run is one call). In the task's windows USER does what Windows 3.1's
+did for an application: `CreateWindow` sends `WM_SIZE` and `WM_MOVE` after
+`WM_CREATE`, `GetMessage` brings `WM_PAINT` (after posted messages and
+input, before timers) until the window is validated, `BeginPaint` sends
+`WM_ERASEBKGND`, `DefWindowProc` destroys on `WM_CLOSE` and validates on
+`WM_PAINT`, and a destroyed window's timers die with it. Two headless runs
+give identical FBHASH streams (900 frames: 217 distinct; 6,000: about a
+thousand).
+
+**Input.** None reaches the program: a Windows 3.1 saver closed itself on
+input (above), and the host's saver ends the run on input itself. No key or
+mouse message is queued; `GetAsyncKeyState`/`GetCursorPos` read the host's
+state; the status never raises key-filter. The cursor calls (`SetCursor`,
+`ClipCursor` — three call sites in segment 7) are emulated state only.
+
+**The end.** At shutdown the program is closed as the waking input closed it:
+`WM_CLOSE` is posted to its window and the task resumes until it exits
+(measured: one resumption; `DestroyWindow`, its `WM_DESTROY` writes
+`SCRANTIC.INI`, `PostQuitMessage`, `WinMain` returns, INT 21h AH=4Ch with
+code 0). A program that ends during the run (its data-files message box,
+`WM_QUIT`) stops the run with the message box's text (exit 1).
+
+**The disk and its INI.** The package folder is `C:\SIERRA\SCRANTIC`, its
+installer's default (`INSTALL.INS`), and the current directory; `C:\WINDOWS`
+holds the installer's lines as profile seeds — `WIN.INI [Windows]
+ScreenSaveActive=1, ScreenSaveTimeOut=120`, `SYSTEM.INI [boot]
+SCRNSAVE.EXE=C:\SIERRA\SCRANTIC\SCRANTIC.SCR`, `SCRANTIC.INI
+[ScreenSaver.ScreenAntics] SourceDir=C:\SIERRA\SCRANTIC` (its default is the
+current directory). `GetModuleFileName` answers
+`C:\SIERRA\SCRANTIC\SCRANTIC.SCR`. The program's keys —
+`Background`, `Clouds`, `Waves`, `Sounds`, `Password`, `NumDays`,
+`Introduction`, `CurrentYear`, `CurrentMonth`, `CurrentDay`, `StartTime` —
+are written whole at `WM_DESTROY` and by Setup...'s OK, into C:\WINDOWS's
+upper layer: with `ADSTATE` they persist like a real install's (a headless
+run leaves `NumDays=1`, `Introduction=1` and the headless epoch's date,
+1997-07-13; the next run reads them), without it they are memory.
+
+**Setup...** (button 0): the program runs with `" /c"` on the host's thread:
+`WinMain` calls `DialogBox(hInst, "ScreenSaverConfigure", NULL,
+ScreenSaverConfigureDialog)` (a name the Windows 3.0 NAMETABLE resolves), a
+real dialog owned by `--owner`: "Screen Antics" — OK 125, Cancel 126, the
+owner-drawn spin buttons 120 and 121 (their `WM_DRAWITEM` reaches the dialog
+procedure, which draws them with `MoveTo`/`LineTo`, `Polygon`, `Rectangle`
+and system-colour pens and brushes), "&Load Background" 105, "&Sounds" 112,
+"&Password" 109, the icon 108, "Start of day" and its value 110 (" 9:00
+am"); then `WinMain` returns and the program exits. Scripted (Sounds off,
+OK), it wrote `SCRANTIC.INI` with `Sounds=0`.
+
+**Sound.** At load it finds its 23 `WAVE` resources `WAVESFX1`..`25` (no 11,
+13) and keeps them locked; it plays them with `sndPlaySound(lpRes,
+SND_MEMORY|SND_ASYNC|SND_NODEFAULT)`. Captured (`ADSOUND=1`, 3,600 frames,
+60 s): 13 sounds, the first loud one at 22.3 s, peak −3.9 dBFS at volume
+50, three runs byte-identical, and the same frames as with sound off. Its
+one `mciSendCommand` (5:00AB, `MCI_CLOSE` of a device ID nothing ever sets)
+is never reached; the runtime answers `MCIERR_INVALID_DEVICE_ID` for an ID
+that is not open. `AddFontResource("WILLY.FON")` — a font its floppy never
+had — returns 0, as Windows did, and its `CreateFont("Willy Beamish
+Dialog")` gets the font mapper's choice.
+
 ## 4. Surprises (all VERIFIED unless marked)
 
 * **Two clocks, no pacing.** The 1996 host hammers DRAWFRAME at idle
