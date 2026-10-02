@@ -2872,7 +2872,8 @@ void test_releases_layout() {
 }
 
 // The strip wrapped onto rows (StripInput::wrap): every tile whole, on its
-// row and column, the rows as even as can be, nothing scrolling.
+// row and column, the regular rows full but the last and the compact ones
+// as even as can be, nothing scrolling.
 void check_strip_wrapped(const StripInput& in, const char* what) {
   const StripLayout S = layout_strip(in);
   const StripMetrics m = strip_metrics(in.compact);
@@ -2887,11 +2888,15 @@ void check_strip_wrapped(const StripInput& in, const char* what) {
   if (S.overflow || S.first != 0 || S.max_first != 0 || S.slots != n) fail("scrolls");
   if (!S.chevron_left.empty() || !S.chevron_right.empty()) fail("a chevron");
   if (S.rows != g.rows || S.cols != g.cols || g.rows < 1 || g.cols < 1) fail("rows");
-  // As few rows as hold every tile; as even as can be: no row past the
-  // first is fuller than it, and the last is the only short one.
-  const int per_row = std::max(1, (int)std::floor((in.w + (m.pitch - m.cell_w) + 0.001) / m.pitch));
+  // As few rows as hold every tile (regular: at most kStripMaxCols a row);
+  // the last is the only short one; regular rows are full, compact ones as
+  // even as can be.
+  int per_row = std::max(1, (int)std::floor((in.w + (m.pitch - m.cell_w) + 0.001) / m.pitch));
+  if (!in.compact) per_row = std::min(per_row, kStripMaxCols);
   if (g.rows != (n + per_row - 1) / per_row || g.cols > per_row || (g.rows - 1) * g.cols >= n || g.rows * g.cols < n)
-    fail("not the fewest, evenest rows");
+    fail("not the fewest rows");
+  if (!in.compact && g.cols != std::min(n, per_row)) fail("a regular row not full");
+  if (in.compact && g.cols != (n + g.rows - 1) / g.rows) fail("compact rows not the evenest");
   if (S.view != S.area) fail("view");
   const int row_h = dip(m.cell_h + kStripRowGap, d);
   for (int i = 0; i < n; ++i) {
@@ -2924,31 +2929,40 @@ void check_strip_wrapped(const StripInput& in, const char* what) {
 }
 
 void test_strip_wrap() {
-  // Rows: the fewest that hold them, as even as can be.
+  // Rows: the fewest that hold them. Regular: full rows of what a row holds,
+  // at most kStripMaxCols, the last short; compact: as even as can be.
+  const double design_area = kDesignClientW - 48 - kStripStatusW - kStripStatusGap;   // 840
+  CHECK(kStripMaxCols == 8 && design_area == 840);
   CHECK((strip_grid(0, false, 776) == StripGrid{0, 0}));
   CHECK((strip_grid(1, false, 776) == StripGrid{1, 1}));
   CHECK((strip_grid(7, false, 776) == StripGrid{1, 7}));
-  CHECK((strip_grid(8, false, 776) == StripGrid{2, 4}));    // 4 and 4, not 7 and 1
-  CHECK((strip_grid(12, false, 776) == StripGrid{2, 6}));
+  CHECK((strip_grid(8, false, 776) == StripGrid{2, 7}));    // 7 and 1: the rows fill left to right
+  CHECK((strip_grid(12, false, 776) == StripGrid{2, 7}));
   CHECK((strip_grid(14, false, 776) == StripGrid{2, 7}));
   CHECK((strip_grid(14, true, 776) == StripGrid{2, 7}));    // 10 to a row: 7 and 7, not 10 and 4
   CHECK((strip_grid(10, true, 776) == StripGrid{1, 10}));
+  // The first-open width holds eight; a wider one still eight (10 where a
+  // row holds 9: 8 and 2, not 5 and 5); compact ones are not capped.
+  CHECK((strip_grid(8, false, design_area) == StripGrid{1, 8}) && (strip_grid(9, false, design_area) == StripGrid{2, 8}));
+  CHECK((strip_grid(15, false, design_area) == StripGrid{2, 8}) && (strip_grid(16, false, design_area) == StripGrid{2, 8}));
+  CHECK((strip_grid(10, false, 1024) == StripGrid{2, 8}) && (strip_grid(15, false, 1024) == StripGrid{2, 8}));
+  CHECK((strip_grid(14, true, 1024) == StripGrid{1, 14}));
   const double min_area = kMinClientW - 48 - kStripStatusW - kStripStatusGap;   // 636
-  CHECK((strip_grid(14, false, min_area) == StripGrid{3, 5}));
+  CHECK((strip_grid(14, false, min_area) == StripGrid{3, 6}));   // 6, 6 and 2
   CHECK((strip_grid(14, true, min_area) == StripGrid{2, 7}));
   CHECK((strip_grid(6, false, min_area) == StripGrid{1, 6}) && (strip_grid(8, true, min_area) == StripGrid{1, 8}));
   CHECK((strip_grid(3, false, 10) == StripGrid{3, 1}));      // narrower than a tile: one a row
   CHECK(strip_band(false, 1) == 120 && strip_band(true, 1) == 80);
   CHECK(strip_band(false, 2) == 236 && strip_band(true, 2) == 156 && strip_band(false, 3) == 352);
-  // The first-open height: one row of regular covers (836) up to seven
-  // releases, two (952) for eight to fourteen, three (1068) for fifteen to
-  // twenty-one (five a row: the window then opens as tall as the work area
-  // allows, and the strip goes compact where three rows don't fit).
+  // The first-open height: one row of regular covers (836) up to eight
+  // releases, two (952) for nine to sixteen, three (1068) for seventeen to
+  // twenty-four (the window then opens as tall as the work area allows, and
+  // the strip goes compact where three rows don't fit).
   CHECK(design_client_h(0) == kDesignClientH && design_client_h(1) == kDesignClientH);
-  for (int n = 2; n <= 7; ++n) CHECK(design_client_h(n) == kDesignClientHStrip);
-  for (int n = 8; n <= 14; ++n) CHECK(design_client_h(n) == 952);
-  CHECK(design_client_h(15) == 1068 && design_client_h(21) == 1068);
-  CHECK((strip_grid(15, false, 776) == StripGrid{3, 5}) && (strip_grid(15, true, 776) == StripGrid{2, 8}));
+  for (int n = 2; n <= 8; ++n) CHECK(design_client_h(n) == kDesignClientHStrip);
+  for (int n = 9; n <= 16; ++n) CHECK(design_client_h(n) == 952);
+  CHECK(design_client_h(17) == 1068 && design_client_h(24) == 1068);
+  CHECK((strip_grid(15, false, 776) == StripGrid{3, 7}) && (strip_grid(15, true, 776) == StripGrid{2, 8}));
   // Every scale, 1 to 15 releases, both forms, several widths.
   for (int dpi = 96; dpi <= 240; dpi += 24) {
     for (int n = 1; n <= 15; ++n) {
@@ -3001,7 +3015,10 @@ void test_strip_wrap() {
       {14, kMinClientW, 991, StripMode::compact, true, 2},
       {14, 1600, 1000, StripMode::regular, true, 2},
       {12, kDesignClientW, 952, StripMode::regular, true, 2},
-      {8, kDesignClientW, kDesignClientHStrip, StripMode::compact, true, 1},   // 8 compact covers fit one row
+      {8, kDesignClientW, kDesignClientHStrip, StripMode::regular, true, 1},   // 8 regular covers fit one row
+      {9, kDesignClientW, kDesignClientHStrip, StripMode::compact, true, 1},   // 9 need two: compact, on one
+      {15, kDesignClientW, 952, StripMode::regular, true, 2},   // the first-open size: 8 and 7
+      {10, 1336, 952, StripMode::regular, true, 2},             // 8 and 2 where 9 would fit
       {7, kDesignClientW, kDesignClientHStrip, StripMode::regular, true, 1},
       {7, kMinClientW, kMinClientHStrip, StripMode::compact, true, 1},
   };
@@ -3364,8 +3381,8 @@ void test_releases_seven() {
   // fit the first-open window on one row of regular covers, and the smallest
   // one on a row of compact ones, at every scale; a window as narrow (where
   // a regular row holds six) but 836 DIP tall has room for one compact row
-  // only, and one 876 DIP tall puts the regular ones on two rows, four and
-  // three.
+  // only, and one 876 DIP tall puts the regular ones on two rows, six and
+  // one.
   auto shown = [](const StripLayout& t) {
     return (int)std::count_if(t.arts.begin(), t.arts.end(), [&](const Rc& a) { return t.view.contains(a); });
   };
@@ -3386,7 +3403,7 @@ void test_releases_seven() {
     CHECK(first.strip_mode == StripMode::regular && first.tiles.rows == 1);
     CHECK(small.strip_mode == StripMode::compact && small.tiles.rows == 1);
     CHECK(tall.strip_mode == StripMode::compact && tall.tiles.rows == 1);
-    CHECK(taller.strip_mode == StripMode::regular && taller.tiles.rows == 2 && taller.tiles.cols == 4);
+    CHECK(taller.strip_mode == StripMode::regular && taller.tiles.rows == 2 && taller.tiles.cols == 6);
   }
 }
 
@@ -3513,14 +3530,14 @@ void test_releases_twelve() {
                              Want{kDesignClientW, kDesignClientHStrip, StripMode::compact, 2, 12},
                              Want{kDesignClientW, 759, StripMode::compact, 2, 12},
                              Want{kDesignClientW, 756, StripMode::compact, 2, 12},
-                             Want{kDesignClientW, 755, StripMode::compact, 0, 10},
+                             Want{kDesignClientW, 755, StripMode::compact, 0, 11},
                              Want{kMinClientW, kMinClientHStrip, StripMode::compact, 0, 8},
                              Want{kMinClientW, kDesignClientHStrip, StripMode::compact, 2, 12},
                              Want{kMinClientW, 876, StripMode::regular, 2, 12},
                              Want{1600, 1000, StripMode::regular, 2, 12},
                              Want{959, 700, StripMode::compact, 0, 8},
                              Want{960, 700, StripMode::compact, 0, 9},
-                             Want{kDesignClientW, kMinClientHStrip, StripMode::compact, 0, 10},
+                             Want{kDesignClientW, kMinClientHStrip, StripMode::compact, 0, 11},
                              Want{1103, 700, StripMode::compact, 0, 10},
                              Want{1104, 700, StripMode::compact, 0, 11},
                              Want{1119, 740, StripMode::compact, 0, 11},

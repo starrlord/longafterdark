@@ -204,8 +204,9 @@ column at most 1240 DIP wide, centred.
   preview stops while it shows one of the release's modules, so nothing of
   it is open; exit 0 reloads the catalog without it, anything else changes
   nothing and the preview carries on). Every cover shows: covers that don't
-  fit on one row wrap onto more, as few rows as hold them and as even as can
-  be (fourteen: 7 and 7; fifteen: 5, 5 and 5, or 8 and 7 compact), regular
+  fit on one row wrap onto more, as few rows as hold them: regular covers
+  fill each row, at most eight (ten: 8 and 2; fifteen: 8 and 7), compact
+  ones as even as can be (fourteen: 7 and 7), regular
   while the window has the height for their rows, else compact (`ui_model.h`: `strip_grid`, `strip_band`). Only a
   window too short even for the compact rows (the smallest, with eight
   releases and more) gets one compact row that scrolls by whole
@@ -224,8 +225,9 @@ column at most 1240 DIP wide, centred.
   Space toggles while the chevrons have scrolled it away, comes into view,
   and with a filter saved (or kept through a reload) the row opens scrolled
   to the first selected cover. The
-  window opens at 1040×836 DIP with the strip (1040×952 with eight releases
-  and more: two rows of regular covers; `design_client_h`), clamped to the
+  window opens at 1104×836 DIP with the strip, a row of eight covers
+  (1104×952 with nine releases and more: two rows of regular covers;
+  `design_client_h`), clamped to the
   work area (at least 680 tall; 716 without it).
 * **Single module / Random** at the top left chooses what the saver plays.
   Below it, the **module list**, grouped by release (the release's title and
@@ -989,7 +991,8 @@ only reads it.
   stop), every step one pitch, the 4-DIP grid
   and 200% = 100% doubled; the wrapped strip at every scale with 1 to 14
   releases, both forms, eight widths: every tile whole on its row and
-  column, the fewest and evenest rows (`strip_grid`), nothing scrolling,
+  column, the fewest rows, regular ones full but the last (at most eight)
+  and compact ones the evenest (`strip_grid`), nothing scrolling,
   no two tiles' focus rings touching, a row that fits laid out as before;
   the bands (`strip_band`) and first-open heights (`design_client_h`: 836,
   952); `layout_window` with the strip: regular rows while the client has

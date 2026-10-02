@@ -156,8 +156,10 @@ struct Rc {
 
 // Design sizes, DIPs.
 // The first-open heights carry the options card's "Stretch to fit" row (36
-// DIPs over 680 and 800), so the preview keeps its size.
-inline constexpr int kDesignClientW = 1040, kDesignClientH = 716;   // first-open client size
+// DIPs over 680 and 800), so the preview keeps its size. 1104 wide: a row of
+// the strip holds kStripMaxCols regular covers (8 * 104 - 8 = 824 DIP of
+// tiles, from 1088), and the edges stay on the 4-DIP grid.
+inline constexpr int kDesignClientW = 1104, kDesignClientH = 716;   // first-open client size
 inline constexpr int kMinClientW = 900, kMinClientH = 600;          // the window can't shrink past this
 // With the box-cover strip (two or more releases, COVERS.md §1.2): the
 // regular band on top of those (one row of covers: 836), and a compact band
@@ -208,10 +210,15 @@ struct StripLayout {
   std::vector<bool> whole;          // the cell lies wholly inside `view`: the tile shows (the others don't, at all)
   Rc chevron_left, chevron_right;   // 24-DIP buttons at an end with more beyond it (empty otherwise)
 };
-// Wrapped, the rows `tiles` take in a tiles area `w` DIPs wide: as few as
-// hold them all, and as even as can be (14 tiles where a row holds 10 are 7
-// and 7, not 10 and 4); `cols` is the most on a row, and only the last row
-// may have fewer. {0, 0} for no tiles.
+// Wrapped, the rows `tiles` take in a tiles area `w` DIPs wide. Regular
+// covers fill each row left to right, up to what the row holds and at most
+// kStripMaxCols (10 where a row holds 9 are 8 and 2, not 5 and 5: no wide
+// gap beside a half-empty row); compact ones, which only a short window
+// gets, take as few rows as hold them, as even as can be (14 where a row
+// holds 10 are 7 and 7, not 10 and 4): a cap there would cost a short
+// window a row. `cols` is the most on a row, and only the last row may have
+// fewer. {0, 0} for no tiles.
+inline constexpr int kStripMaxCols = 8;
 struct StripGrid {
   int rows = 0, cols = 0;
   bool operator==(const StripGrid&) const = default;
@@ -334,7 +341,8 @@ WindowLayout layout_window(const LayoutInput& in);
 // The client height the window first opens at (DIPs): kDesignClientH, and
 // with the strip (two or more releases) the band of its regular covers'
 // rows at the first-open width over it, so the columns have their design
-// heights: 836 (kDesignClientHStrip) for one row of covers, 952 for two.
+// heights: 836 (kDesignClientHStrip) for one row of covers (up to eight
+// releases), 952 for two (up to sixteen).
 int design_client_h(int strip_tiles);
 
 // ---- the footer's credit ---------------------------------------------------------------

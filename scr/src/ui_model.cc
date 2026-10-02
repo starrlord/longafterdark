@@ -434,9 +434,11 @@ StripGrid strip_grid(int tiles, bool compact, double w) {
   if (tiles <= 0) return {};
   const StripMetrics m = strip_metrics(compact);
   // A row holds n tiles when n * pitch - gap <= w (layout_strip's overflow test).
-  const int per_row = std::max(1, (int)std::floor((w + (m.pitch - m.cell_w) + 0.001) / m.pitch));
+  int per_row = std::max(1, (int)std::floor((w + (m.pitch - m.cell_w) + 0.001) / m.pitch));
+  if (!compact) per_row = std::min(per_row, kStripMaxCols);
   const int rows = (tiles + per_row - 1) / per_row;
-  return StripGrid{rows, (tiles + rows - 1) / rows};
+  // Regular: full rows, the last one short; compact: the evenest rows.
+  return StripGrid{rows, compact ? (tiles + rows - 1) / rows : std::min(tiles, per_row)};
 }
 
 int strip_band(bool compact, int rows) {
@@ -649,8 +651,9 @@ WindowLayout layout_window(const LayoutInput& in) {
   double pw = std::floor(inner_w * 0.52 / 16) * 16;
   if (inner_w - pw - 24 > kControlsMaxW) pw = std::floor((inner_w - 24 - kControlsMaxW) / 16) * 16;
   pw = std::clamp(pw, 256.0, (double)kPreviewMaxW);
-  // Leave the About text at least ~5 lines under the preview.
-  pw = std::min(pw, std::max(160.0, std::floor((inner_h - 16 - 100) * 16 / 9 / 16) * 16));
+  // Leave the About text at least ~5 lines under the preview: a width of 64
+  // DIPs' steps there, so its 16:9 height stays on the 4-DIP grid too.
+  pw = std::min(pw, std::max(160.0, std::floor((inner_h - 16 - 100) * 16 / 9 / 64) * 64));
   const double ph = pw * 9 / 16;
   L.preview = s.rc(inner_x, inner_y, pw, ph);
   const double credits_h = 36;

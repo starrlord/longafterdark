@@ -207,10 +207,11 @@ chevron to find the releases past the seventh was the strip's weak point,
 so every cover now shows, on as many rows as they need
 (`StripInput::wrap`, `strip_grid`, `strip_band` in `ui_model.h`):
 
-* **Rows.** As few as hold every cover, and as even as can be: fourteen
-  where a row holds seven are 7 and 7, where it holds ten (compact) still 7
-  and 7, eight are 4 and 4, never 7 and 1; fifteen are 5, 5 and 5 regular,
-  8 and 7 compact. The rows are left-aligned on the
+* **Rows.** As few as hold every cover. Regular covers fill each row left
+  to right, up to what a row holds and at most eight (`kStripMaxCols`): ten
+  are 8 and 2 even where a row holds nine, fifteen 8 and 7. Compact covers,
+  which only a short window gets, are as even as can be, so a cap never
+  costs it a row: fourteen where a row holds ten are 7 and 7. The rows are left-aligned on the
   column and `kStripRowGap` (8 DIP) apart, the gap between two covers of a
   row; only the last row may be shorter. The band is the rows of cells and
   the 12-DIP gap under them: 236 DIP for two regular rows, 156 for two
@@ -220,16 +221,17 @@ so every cover now shows, on as many rows as they need
   at 760 DIP: client height − band ≥ 640), else the compact covers while
   the columns keep at least their 600-DIP minimum, so the two columns never
   get less height than they have without the strip. Fourteen (or twelve)
-  releases at 1040 DIP wide: two regular rows from 876 DIP tall, two compact
+  releases at 1104 DIP wide: two regular rows from 876 DIP tall, two compact
   rows from 756. Only a client too short even for the compact rows (the
   minimum 680 DIP, for eight releases and more) falls back to the one
   compact row that scrolls between its chevrons, exactly as above, 8 to 11
   covers at a time; the minimum window size is unchanged.
 * **First-open size.** The design height plus the band of the regular rows
-  at the first-open width (`design_client_h`): 1040 × 836 DIP for two to
-  seven releases, as before, 1040 × 952 for eight to fourteen (two rows
-  of regular covers, the columns at their design heights), and 1040 × 1068
-  for fifteen to twenty-one (three regular rows, 352 DIP), clamped to the
+  at the first-open width, 1104 DIP, where a row holds eight
+  (`design_client_h`): 1104 × 836 DIP for two to eight releases, 1104 × 952
+  for nine to sixteen (two rows of regular covers, the columns at their
+  design heights), and 1104 × 1068 for seventeen to twenty-four (three
+  regular rows, 352 DIP), clamped to the
   work area as before (a clamped height then gets the compact rows, or the
   scrolling row).
 * **The status box** stays at the column's right edge, as tall as a cover,
