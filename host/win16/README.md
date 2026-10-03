@@ -1,8 +1,8 @@
 # host/win16 — the Win16 guest runtime and API shims
 
 `adw_win16` is one emulated Win16 "task" for Long After Dark's Classic lane
-(`host/ne16`). That lane runs the 16-bit modules of fifteen of the sixteen
-releases, and the sixteenth's program (Johnny Castaway, below "Tasks"):
+(`host/ne16`). That lane runs the 16-bit modules of nineteen of the twenty
+releases, and Johnny Castaway's program (below "Tasks"):
 the After Dark 2.x/3.x modules in After Dark 4.0 Deluxe's `FILES\CLASSIC`,
 After Dark 3.2, Totally Twisted, The Simpsons Screen Saver, the 16-bit
 modules of After Dark 10th Anniversary, Star Trek: The Screen Saver's After
@@ -12,8 +12,9 @@ Posters, Snoopy's Screen Savers, The Looney Tunes Screen Saver,
 ScreamSavers and The Disney Collection Screen Saver (below), Star Trek: The
 Next Generation Screen Saver's (an After Dark 3.0 release, which runs as
 the other AD 3.x releases do, with no addition to the runtime), and the
-Intermission modules of The Far Side Screen Saver Collection and Scott
-Adams' Dilbert Screen Saver Collection (below); and, as the runtime's
+Intermission modules of The Far Side Screen Saver Collection, Scott
+Adams' Dilbert Screen Saver Collection, the two Opus 'n Bill releases, The
+Flintstones Screen Saver Collection and Intermission 4.0 itself (below); and, as the runtime's
 first real task, Screen Antics: Johnny Castaway's Windows 3.1 screen-saver
 program `SCRANTIC.SCR`, an application run unchanged (below). The module,
 its package's engine when it uses one (`ADXPL300.DLL`, `ADXPL320.DLL`,
@@ -23,7 +24,8 @@ library `AD_MOD.DLL` with `AD_RSRC.DLL`; Marvel's decoder `DECO.DLL`),
 DLLs and, where the package ships it (Deluxe, 10th Anniversary), the real
 `OLDMOD16.DLL` — for an Intermission module, its helper DLLs and
 Intermission's own reader, `IMIMXPLY.IMQ` (the ASA reader `IMASAPLY.IMQ` for
-an ASA animation; an IMQ module is its own) — run as 16-bit protected-mode code
+an ASA animation; an IMQ module is its own; the FLI, Morph or MultiSaver
+reader for Intermission 4.0's data files) — run as 16-bit protected-mode code
 on `adw::cpu`, over a host-owned LDT, with KERNEL/USER/GDI/MMSYSTEM/…
 supplied from here, and, for a package that ships no `AD_SND.DLL`
 (Snoopy's), AD_SND too (`adsnd16.cc`, below). The packages without
@@ -235,6 +237,60 @@ guest pump. What the runtime added for them:
   resolve as SWSE's do (`ADTRACE=mod16`: 339 relocations, LibEntry 1). The
   Configure dialogs (IMASAPLY's "Animation Player Options" and the IMQ
   modules' own) use calls configure mode already had.
+
+**Opus 'n Bill, On the Road Again, the Flintstones and Intermission 4.0**
+(Delrina, 1993–1994; the lane's forms `asa`, `imq` and `imx`, and for
+Intermission 4.0's own data files `fli`, `flc`, `mrf` and `msv`:
+`ne16/package.hh` "Form", `ABI.md` §3.8.10–§3.8.11). Their cartoons are ASA
+animations, their clocks and games IMQ modules, Intermission 4.0's effects
+IMX modules, its two FLIC animations, its morph and its MultiSaver group
+files that the FLI, Morph and MultiSaver readers play, all through
+Intermission's readers as above. What the runtime added for them:
+
+* **USER**: a window's own DC, `user16_own_dc(rt, hwnd)`
+  (`shim_families16.hh`). INTERMIS registered its saver window's class with
+  `CS_OWNDC` (`ABI.md` §3.8.4), and the lane's Intermission protocol gives
+  the saver window that: `GetDC` and `BeginPaint` hand out one DC, made at
+  the first call, with whatever was left selected into it; `ReleaseDC` and
+  `EndPaint` keep it; `DestroyWindow` frees it. The FLI reader, which works
+  in DC mode `0x10` (no `SaveDC`/`RestoreDC` around its calls), selects its
+  palette into it once and draws every later frame through it — with a fresh
+  DC per pass every frame after the first came out through the default
+  palette, a few pixels on black. A mode-0 module's pass still ends in
+  `RestoreDC`, but its own `GetDC` of the saver window inside the pass now
+  gets the pass's DC, as on Windows: Star Wars' HYPERSPC, whose SWSE selects
+  the cockpit picture's palette into that DC, draws its stars' palette-relative
+  colours with that palette's grays (8 to 30 pixels a frame differ from the
+  streams frozen before this). Created windows keep fresh DCs whatever their
+  class says (no other module was found to need it).
+  `GetDialogBaseUnits` (USER.243): 8 × 16, a VGA's System font.
+* **GDI**: `LineDDA` (GDI.100): the points of the line, the end excluded,
+  Bresenham's steps along the longer axis (a tie keeps the shorter one),
+  each handed to the callback (`FAR PASCAL (x, y, lpData)`) through
+  `call_far`; nothing drawn by GDI itself.
+* **DISPLAY**: the display driver's `SetPalette` (22) and `GetPalette` (23),
+  `(nStartIndex, nNumEntries, lpPalette)` with 4-byte red, green, blue, unused
+  entries, declared with `Shim16Registry::add` (the generated table has no
+  argument list for driver entries): `SetPalette` loads the emulated hardware
+  palette (`Display::set_system_entries`; the statics too; GDI's
+  `PC_RESERVED` marks kept), which the screen shows at once; `GetPalette`
+  copies it out, the fourth byte 0; nothing past entry 255. Fade Out finds
+  them with `GetModuleHandle("DISPLAY")` and `GetProcAddress`.
+* **MMSYSTEM**: `mciSendCommand`'s `MCI_OPEN` (0x0803), which MMSYSTEM
+  sent whatever `wDeviceID` said: the device `MCI_OPEN_PARMS` names (type
+  by name or number, element, alias, shareable, notify), opened as the
+  command string's `open` opens it, its ID written to `wDeviceID`; the
+  machine's one MCI device is the sequencer, so any other type is
+  `MCIERR_DEVICE_NOT_INSTALLED` — the June 1994 Flintstones' DictaBird asks
+  for `waveaudio`, to record a microphone, and then shows its own "Sound
+  Support Not Available For FM-DictaBird". Without a sound engine it keeps
+  the silent device's `MCIERR_INVALID_DEVICE_ID`. `mciGetErrorString`
+  (MMSYSTEM.706): TRUE and a text, in the host's own words, for the MCI
+  errors the machine answers; FALSE and "" for any other code.
+* Nothing else: every module of the four releases' builds runs 900 frames
+  twice with no call missing. One file faults, as it did on Windows 3.1: the
+  May 1994 Flintstones build's `CARS.ASA`, damaged in every known copy
+  (`ABI.md` §3.8.11).
 
 ## After Dark 2.0 (Star Trek: The Screen Saver)
 
@@ -517,7 +573,7 @@ its task (`modules16.hh` "Tasks"; the ne16 lane's scr protocol,
   not hold, and a font file that is there is not loaded: 0, logged),
   `RemoveFontResource`, `mciSendCommand` (MMSYSTEM.701: `MCI_CLOSE` of a
   device `mciSendString` opened, `MCIERR_INVALID_DEVICE_ID` for an ID that
-  is not open), and helpers for the lane: `user16_post_message`,
+  is not open; `MCI_OPEN` came later, below "Opus 'n Bill …"), and helpers for the lane: `user16_post_message`,
   `user16_main_window`, `user16_last_message_box`, `user16_app_waits`,
   `Runtime16::set_work_deadline` (the frame budget as a deadline),
   `Runtime16::deliver_due_audio`.

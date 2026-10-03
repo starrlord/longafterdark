@@ -1,23 +1,27 @@
 # Long After Dark — design
 
 **Long After Dark** runs the **original Windows After Dark modules**, and
-the Intermission modules of LucasArts' Star Wars Screen Entertainment, on
-Windows 11 by executing their x86 code under emulation: it loads the *real*
+the modules of Delrina's Intermission screen saver engine, LucasArts' Star
+Wars Screen Entertainment's among them, on Windows 11 by executing their
+x86 code under emulation: it loads the *real*
 engine and the module into one emulated address space, traps every call
 they make into the operating system, and supplies that OS surface from the
 host. A Windows screen saver (`LongAfterDark.scr`) presents the frames.
-Sixteen releases are supported (§7): After Dark 4.0 Deluxe, After Dark 10th
+Twenty releases are supported (§7): After Dark 4.0 Deluxe, After Dark 10th
 Anniversary, After Dark 3.2, Totally Twisted After Dark, The Simpsons
 Screen Saver, Star Trek: The Screen Saver (After Dark 2.0b), Star Trek: The
 Next Generation Screen Saver, Marvel Comics Screen Posters, The Looney Tunes
 Screen Saver, The Disney Collection Screen Saver, two other companies'
 modules for After Dark (Binary Software's ScreamSavers and Image Smith's
-Snoopy's Screen Savers), Star Wars Screen Entertainment, The Far Side Screen
-Saver Collection, Scott Adams' Dilbert Screen Saver Collection and Sierra
-On-Line's Screen Antics: Johnny Castaway, 328 modules in all. Star Wars
-Screen Entertainment, The Far Side and Dilbert are not After Dark
-releases: their modules were written for Delrina's Intermission screen
-saver engine, and speak its own protocol (ABI.md §3.8). Johnny Castaway is
+Snoopy's Screen Savers), Star Wars Screen Entertainment, Intermission 4.0,
+the Opus 'n Bill Screen Saver, Opus 'n Bill: On the Road Again!, The
+Flintstones Screen Saver Collection, The Far Side Screen Saver Collection,
+Scott Adams' Dilbert Screen Saver Collection and Sierra On-Line's Screen
+Antics: Johnny Castaway, 429 modules in all. The seven from Star Wars
+Screen Entertainment to Dilbert are not After Dark releases: their modules
+were written for Delrina's Intermission screen saver engine (Intermission
+4.0 is the engine's own release), and speak its own protocol (ABI.md
+§3.8). Johnny Castaway is
 no module of any engine: it is a Windows 3.1 screen-saver program, a `.SCR`
 built on Microsoft's `SCRNSAVE.LIB` with its own message loop, which the
 host runs whole, as Windows 3.1 ran it, through a third protocol
@@ -40,7 +44,7 @@ engine application, `INTERMIS.EXE`, as it stands in for After Dark's
 
 ## The corpus
 
-The work started from one release; the other fifteen came later (§7,
+The work started from one release; the other nineteen came later (§7,
 `PACKAGES.md`), and the same host runs them all. The first corpus, the PC
 side of a hybrid Mac/PC CD,
 `After Dark 4.0 Deluxe (1996)(Berkeley Systems)[Mac-PC].iso`
@@ -109,7 +113,7 @@ LongAfterDark.scr (x64)     ── spawns ──►  adhostwin.exe (x64)   one p
   docs/DESIGN.md          this file
   docs/ABI.md             module/engine ABI as we verify it (our own findings)
   docs/API_SURFACE.md     every function the Deluxe disc's binaries import, counted and classified
-  docs/PACKAGES.md        the sixteen releases: registry, import, catalog merge, lane rules (§7)
+  docs/PACKAGES.md        the twenty releases: registry, import, catalog merge, lane rules (§7)
   docs/INTERACTION.md     input, module buttons, per-user state, desktop seed (§8)
   docs/COVERS.md          the box-cover strip, the cover pipeline, the shared UI library (§9)
   docs/AUDIO.md           sound: census, engine, lane mappings, saver settings (§10)
@@ -459,7 +463,10 @@ Flying Toasters! of the Deluxe disc):
 `kind` refines it (`numslider` or `stringslider` for a slider). A string
 slider's value is the chosen stop's entry in `values`, and `defaultStop` is
 the stop of `default`. Buttons carry no value: they run the module's own
-dialog (§8).
+dialog (§8). A control with `host` (since the twenty releases, Intermission
+4.0's **Speed:**) is the front-end's, not the module's: its value goes to
+the host in that environment variable (`ADNE16IMXSPEED`, the emulated PC's
+pace in percent), never as `SET` or `ADCVSET` (INTERACTION.md §6.7).
 
 `abi` (optional, since `adimport 1.3`) names a module ABI other than After
 Dark's: `"intermission"` for Star Wars Screen Entertainment's IMX modules,
@@ -469,7 +476,13 @@ An Intermission entry is `ne16` (the file is NE) with `entry` `SAVERDRAW`,
 an empty `about`, and one control, `{"index": 0, "name": "Configure...",
 "kind": "button", "type": "button"}`: the module's own settings dialog.
 Its `moduleName` comes from the importer's registry, since no resource in
-the file holds it (PACKAGES.md §6). Since the seventh round `abi` may also
+the file holds it (PACKAGES.md §6). An ASA animation and an IMQ module
+(The Far Side's, Dilbert's and the other Delrina releases'), and since the
+twenty releases an FLI animation, a morph (`.MRF`) and a MultiSaver group
+(`.MSV`), Intermission 4.0's, are Intermission entries too, lane `ne16`
+(the probe sends them there by their header or extension), with `entry`
+`SAVERMAIN`, their reader's, and the same one button, which opens their
+reader's dialog or the IMQ module's own. Since the seventh round `abi` may also
 be `"scrnsave"`: a Windows 3.1 screen-saver program (Johnny Castaway's
 `SCRANTIC.SCR`), lane `ne16`, `entry` `SCREENSAVERPROC` (the export that
 makes it one), `screen` `"640x480"`, and one button, **Setup...**, the
@@ -628,12 +641,14 @@ is, and for every user the three programs are copied together to
 
 ### 7. Packages
 
-The host runs modules from sixteen releases: ten of Berkeley Systems'
+The host runs modules from twenty releases: ten of Berkeley Systems'
 After Dark, two of other companies' modules for After Dark (ScreamSavers,
-Snoopy's Screen Savers), three for Delrina's Intermission (LucasArts'
-Star Wars Screen Entertainment, The Far Side Screen Saver Collection and
-Scott Adams' Dilbert Screen Saver Collection), and Sierra On-Line's Screen
-Antics: Johnny Castaway, a Windows 3.1 screen-saver program.
+Snoopy's Screen Savers), seven for Delrina's Intermission (Intermission
+4.0 itself, LucasArts' Star Wars Screen Entertainment, and Delrina's own
+Opus 'n Bill Screen Saver, Opus 'n Bill: On the Road Again!, The
+Flintstones Screen Saver Collection, The Far Side Screen Saver Collection
+and Scott Adams' Dilbert Screen Saver Collection), and Sierra On-Line's
+Screen Antics: Johnny Castaway, a Windows 3.1 screen-saver program.
 The full specification is `docs/PACKAGES.md`: registry,
 identification, extraction formats, per-package layouts, the catalog merge,
 the lane contract, and the three work packages that implement it. The
@@ -751,6 +766,22 @@ contract in brief:
   from Berkeley's files, handed over at the first palette request (Snoopy's
   Collage asks for one). A package that ships its own files runs exactly as
   before. (`PACKAGES.md` §3, §4.3, §7.3, §7.4.)
+* **Delrina's own releases (The Far Side, Dilbert, the two Opus 'n Bill
+  releases, the Flintstones, Intermission 4.0).** Their floppies were
+  installed by Delrina's own installer, which copied files by name, most
+  of them SZDD-compressed; the importer does the same from a baked table
+  (the `intermission` recipe's second installer), naming each release by
+  file names alone. Their modules come in more forms than Star Wars': ASA
+  animations (data, played by Intermission's ASA reader, `IMASAPLY.IMQ`),
+  IMQ modules (each its own reader) and IMX modules, and Intermission
+  4.0's FLI animations, morph and MultiSaver group, each played by its own
+  Intermission reader. Every reader runs as real code from the package's
+  `ENGINE`, the lane picking it by the module's form. Two releases came in
+  two builds (the Opus 'n Bill Screen Saver's of September and November
+  1993, the Flintstones' of June and May 1994), each with its own known
+  images, table and manifest; the Flintstones' June build is online only
+  inside a tar, from which the download takes the three ZIPs of its disks.
+  (`PACKAGES.md` §2, §3, §4.3, §5.2, §6, §7.5.)
 * **A Windows 3.1 screen-saver program (Johnny Castaway).** Sierra
   On-Line's Screen Antics: Johnny Castaway came on one floppy, its program
   and data compressed file by file by InstallShield 1, which the importer
@@ -763,14 +794,13 @@ contract in brief:
   **Setup...** button starts it with `/c`, its own settings dialog. It
   paints a fixed 640×480 scene, so its catalog entry carries that `screen`.
   (`PACKAGES.md` §3, §4.3, §7.6, §8.11.)
-* **Status: implemented.** All sixteen releases import (from a disc, an
+* **Status: implemented.** All twenty releases import (from a disc, an
   image, a ZIP or a 7z, a folder or the Internet Archive) into
-  self-contained package roots (328 catalog modules, 73 of them `sameAs` an
+  self-contained package roots (429 catalog modules, 73 of them `sameAs` an
   earlier one). The 283 modules of the twelve After Dark releases run
-  headless and deterministically, each release on its own; Star Wars Screen
-  Entertainment's, The Far Side's and Dilbert's run through the
-  Intermission protocol above, and Johnny Castaway through the
-  screen-saver protocol. The
+  headless and deterministically, each release on its own; the 145 of the
+  seven Intermission releases run through the Intermission protocol above,
+  and Johnny Castaway through the screen-saver protocol. The
   survey-time numbers (before this work, with every AD 3.x module leaning on
   Deluxe's `ENGINE` files, and before each later release) are in
   `PACKAGES.md` §1.

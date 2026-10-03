@@ -34,7 +34,8 @@ into `research/win/dis`.
 | Exit gestures | Not playing: any key except Shift/Ctrl/Caps Lock/Num Lock, any click or wheel, a move past 10 px, switching away. Playing: Caps Lock toggles the game off (then any input exits), **Alt or F10 exits at once**, switching away exits. |
 | Multi-monitor | One **input owner**: the primary monitor's window. Only its host gets `KEY`/`CAPS`/`NUMLOCK`/`MOUSE`; only its status is read. The cursor is confined to it while playing. |
 | Module buttons | `adhostwin --configure <module> --button <slot> --owner <hwnd>` runs the module's own button handler; its `DialogBox*`/`MessageBox`/`GetOpenFileName` become **real** dialogs owned by the settings window, forwarding to the guest dialog procedure (§6). |
-| Module state | A per-user, per-package **writable overlay** over the guest's `C:\WINDOWS` and `C:\AFTERDRK` (`C:\SAVER` for the Intermission modules: Star Wars Screen Entertainment's, The Far Side's and Dilbert's) in `ADSTATE`, which the `.scr` always passes (`state\` next to `settings.ini`); without it a host keeps the overlay in memory, so headless runs stay deterministic and write nothing (§7). |
+| Host controls | Since the twenty releases a catalog control may carry `host`, the name of an environment variable of the host's: every host started for that module gets it, set to the control's value, and the value never goes out as `ADCVSET` or `SET`. The one there is: Intermission 4.0's **Speed** slider, `ADNE16IMXSPEED`, the pace of the emulated PC for a module whose speed was the PC's (§6.7). |
+| Module state | A per-user, per-package **writable overlay** over the guest's `C:\WINDOWS` and `C:\AFTERDRK` (`C:\SAVER` for the Intermission modules: Star Wars Screen Entertainment's and those of Delrina's own six releases) in `ADSTATE`, which the `.scr` always passes (`state\` next to `settings.ini`); without it a host keeps the overlay in memory, so headless runs stay deterministic and write nothing (§7). |
 | Desktop seed | The `.scr` captures each monitor before its windows appear, writes a delete-on-close P6 at the emulated size and passes `ADSEEDIMG` to that window's first host only (§8). |
 | DOS Shell | Not reproducible on the current build (§9.1); ships with exit-reason logging and a 5-minute regression. |
 
@@ -197,10 +198,12 @@ read neither the keyboard nor the mouse (none imports `GetKeyState`,
   SAVERDLGPROC)`, the module's own modal dialog (the reader answers 0 for a
   module without a `SAVERDLGPROC`) — and frees it (`SAVERMAIN(11)`); no
   QUERY, no START (`INTERMIS 2:1cb2..2:1d7d`). The dialog's OK writes the
-  module's keys to `SWSE.INI` itself. The Far Side's and Dilbert's modules
-  go the same way through their own readers (`ABI.md` §3.8.9): an ASA
-  animation's `SAVERMAIN(8)` is the ASA reader's dialog, an IMQ module's
-  its own, and their OK writes `ANTSW.INI`.
+  module's keys to `SWSE.INI` itself. The modules of Delrina's own
+  releases (The Far Side, Dilbert, the two Opus 'n Bill releases, the
+  Flintstones, Intermission 4.0) go the same way through their own readers
+  (`ABI.md` §3.8.9): an ASA animation's `SAVERMAIN(8)` is the ASA reader's
+  dialog, an IMQ module's its own, an IMX module's its own through
+  `IMIMXPLY.IMQ`, and their OK writes `ANTSW.INI`.
 * What the buttons call and where they persist (static imports and
   strings):
 
@@ -216,6 +219,7 @@ read neither the keyboard nor the mouse (none imports `GetKeyState`,
 | `tng` TNGMESG, Starfleet Messages (ne16) | Edit Custom... | `DialogBox` (+ engine prefs) | as above |
 | the 14 `swse` modules (ne16, Intermission) | Configure... | `SAVERMAIN(8)` → `DialogBox` of `"DIALOGBOX"` (named through the module's `NAMETABLE`), with INTRMLIB's `ANT3DBOX`/`ANT3DCHECK`/`ANT3DSCROLL`/`ANT3DTEXT`/`ANT3DONEORMORE` controls and SWSE's animated credits box; Scrolling Text adds `GetOpenFileName`, `GetSaveFileName` and `ChooseFont` | `WritePrivateProfileString` into `SWSE.INI` in the Windows directory, one section per module (Scrolling Text also writes its edit box to `SWTXEDBX.TXT` there) |
 | the 30 `farside` and `dilbert` modules (ne16, Intermission: 25 ASA animations, 5 IMQ modules; with the two Delrina releases) | Configure... | `SAVERMAIN(8)`: for an ASA animation, `IMASAPLY.IMQ`'s "Animation Player Options" (sound effects and MIDI on or off, colour options); for an IMQ module, its own dialog (Pterodactyl's: the banner text) | `WritePrivateProfileString` into `ANTSW.INI` in the Windows directory, in a section named for the module (`[FS-Pterodactyl]`); the next load reads it (Out to Lunch with its sound effects off plays none) |
+| the 101 `opus`, `opusroad`, `flintstones` and `intermission` modules (ne16, Intermission: 36 ASA animations, 13 IMQ modules, 48 IMX modules, two FLI animations, a morph and a MultiSaver group; with the twenty releases) | Configure... | `SAVERMAIN(8)` through the module's reader: an ASA animation's is `IMASAPLY.IMQ`'s "Animation Player Options"; an IMQ module's its own dialog; an IMX module's its own `SAVERDLGPROC`, through `IMIMXPLY.IMQ`; an FLI animation's `IMFLIPLY.IMQ`'s "FLI Play" (the animation's position, and whether to erase the screen), made of INTRMLIB's `ANT3D*` controls, for which the lane loads INTRMLIB around the button; the morph's and the group's are Intermission's Morph and MultiSaver editors | `WritePrivateProfileString` into `ANTSW.INI` in the Windows directory, a section per module (`[OB-Opus's Moment]`); the Morph and MultiSaver editors also save the `.MRF` or `.MSV` file itself, which lands in the state overlay's `C:\SAVER` |
 | `startrek` COMMS, SOUNDER (ne16, After Dark 2.0) | Edit Custom... (Communications, MODULE 10), Sounds.. (Sounder, MODULE 9) | `DialogBox`: "Edit Message" (a multi-line edit, id 103); "Select Directory", whose folder list is `DlgDirList(…, DDL_EXCLUSIVE \| DDL_DRIVES \| DDL_DIRECTORY)` beside the folder's `*.WAV` (§6.2) | `WritePrivateProfileString` into `AD_PREFS.INI`: `[Communications] MessageText`, `[Sounder] SoundPath` (nothing for a folder without a `.WAV`) |
 | `marvel` MARVEL (ne16, After Dark 2.0d; with the twelve releases) | Saver.. (index 0, MODULE 7), Posters... (index 1, MODULE 8) | `DialogBox`: Saver.. is the image selection, with the module's own "Images" window of nine owner-drawn thumbnails, All/None, Display In Order/Random, Show Captions and Create Poster On Wakeup; Posters... has Install, Uninstall, Info... (the poster's description) and Done | Saver.. OK rewrites the image catalog `C:\AFTERDRK\MRVLIMAG\MRVLIMAG.ADC` (the whole file is copied up into the state overlay; the display flags and each poster's selection word are written from the dialog, ABI.md §3.11). Posters... → Install decodes the poster into `C:\AFTERDRK\MRVLIMAG\MARVEL.BMP` and writes `WIN.INI [Desktop] TileWallPaper`; Create Poster On Wakeup writes `MARVEL.BMP` at every wake. Both land in the state overlay: `SystemParametersInfo` changes nothing in the runtime, so **the wallpaper features have no effect outside the emulator** |
 | `castaway` SCRANTIC (ne16, a Windows 3.1 screen-saver program; with the sixteen releases) | Setup... (index 0: Windows 3.1's Control Panel button) | the program started with `/c`: `SCRNSAVE.LIB`'s `WinMain` shows `DialogBox` of `SCREENSAVERCONFIGURE` (named through its `NAMETABLE`): "&Load Background", "&Sounds", "Start of day" with its spin buttons, "&Password" | `WritePrivateProfileString` into `SCRANTIC.INI` in the Windows directory, `[ScreenSaver.ScreenAntics]` |
@@ -236,7 +240,11 @@ Side's 14 modules and Dilbert's 16 has one, and all 30 showed their dialog
 on a hidden desktop. With The Next Generation (327 modules) it has 94 on
 88 modules, from 70 binaries: Starfleet Messages' Edit Custom... is the
 release's one button. With Johnny Castaway (328 modules) it has 95 on 89
-modules, from 71 binaries: the program's **Setup...**. Marvel's
+modules, from 71 binaries: the program's **Setup...**. With Delrina's four
+more releases, twenty in all (429 modules, each release in its first
+build), it has 196 on 190 modules, from 172 binaries: each of the 101
+modules of the Opus 'n Bill Screen Saver, On the Road Again, the
+Flintstones and Intermission 4.0 has one, **Configure...**. Marvel's
 thumbnails (ids 1007–1015) are children of
 the Images window (1006), so a configure script's `CLICK`, which goes to
 the dialog, can't reach them, but `PRESS 1006 <x> <y>` clicks the thumbnail
@@ -312,6 +320,7 @@ Added with the seventh release (`ABI.md` §3.9; listings in
 | `ADSTATE=<dir>\|:memory:` | The per-user state root (§7). Unset or `:memory:`: the overlay lives in memory for the process (headless runs, censuses, `FBHASH` never see or write user state). Exception: `--configure` with `ADSTATE` unset uses `%LOCALAPPDATA%\LongAfterDark\state`. The `.scr` passes it on every spawn (§7.1). | in memory |
 | `ADSEEDIMG=<spec>` | Already implemented in both lanes (`win32/display.hh`, "desktop seed"). The `.scr` now passes it (§8). | unset = black |
 | `ADCONFIG*` | Configure-mode test hooks (§6.6). | off |
+| `ADNE16IMXSPEED=<1..100>` | Since the twenty releases: the pace of the machine the ne16 lane emulates for an Intermission module, in percent of its model (`PACKAGES.md` §7.5, "Pacing"). The front ends pass the module's **Speed** control (§6.7). | 100 |
 
 ### 3.2 Command changes
 
@@ -615,7 +624,11 @@ to a host whose `--capabilities` answer (asked for in the background) says
   `BELOW_NORMAL_PRIORITY_CLASS`.
 * **No buttons, seed or control values**: no `--configure` runs, and hosts
   get no `ADSEEDIMG` (a black desktop) and no `ADCVSET` (each module's
-  defaults). `ADSTATE` is `$XDG_DATA_HOME/longafterdark/state`
+  defaults). A host control (§6.7) goes out at its catalog default, the
+  player having no settings of its own per module, under the same rules
+  as on Windows: an Intermission 4.0 module gets its Speed's starting
+  value, `ADNE16IMXSPEED=25` (Normal) for most, in place of any the player
+  inherited. `ADSTATE` is `$XDG_DATA_HOME/longafterdark/state`
   (`AD_SCR_STATE` overrides), handed to the host in Windows form through
   the Wine prefix's drives, as the module's path and `AD_ASSETS_DIR` are.
 * **The display's power**: while DPMS says the monitor is off, no `GO` goes
@@ -741,7 +754,12 @@ to a host whose `--capabilities` answer (asked for in the background) says
   them, and they show what they draw without it (Budget Woes, after its
   desk scene, a small figure walking on black). Honouring the flag would
   mean reporting them interactive, which leaves only Alt or the Windows
-  key as the way out; that was not done.
+  key as the way out; that was not done. Delrina's later releases have
+  nine more IMQ modules that set it, run the same way: On the Road Again's
+  The Butt Boys and Skating, and the Flintstones' DictaBird, Drive-In,
+  Fred & The Pterodactyls, Bowling, Bronto Crane, The Flintmobile and
+  Paper Boy (their May build's four of those too); none of the other
+  modules of the twenty releases does.
 * **A Windows 3.1 screen-saver program** (Johnny Castaway, `PACKAGES.md`
   §7.6) is never interactive, and keys and the mouse never reach it: the
   lane posts no key or mouse message to its window (a `MOUSE` line moves
@@ -797,13 +815,14 @@ adhostwin.exe --configure <module> --button <slot> [--owner <hwnd>] [NAME=VALUE 
     refused ("control N is not a button", exit 1). The module
     writes its settings to `C:\WINDOWS\SWSE.INI`, which lands in
     `<state>\swse\WINDOWS\SWSE.INI` (§7); the profile seeds of §7.2 are
-    never written out. The Far Side's and Dilbert's modules take the same
+    never written out. The modules of Delrina's own releases take the same
     sequence through their own readers: an ASA animation's is
-    `IMASAPLY.IMQ`, whose "Animation Player Options" opens, and an IMQ
-    module is its own, loaded and queried with no path (`ABI.md` §3.8.9).
-    Their dialogs write `C:\WINDOWS\ANTSW.INI`, which lands in
-    `<state>\farside\WINDOWS\ANTSW.INI` or `<state>\dilbert\WINDOWS\ANTSW.INI`,
-    and the next run reads it.
+    `IMASAPLY.IMQ`, whose "Animation Player Options" opens, an IMQ module
+    is its own, loaded and queried with no path (`ABI.md` §3.8.9), and an
+    IMX module's is `IMIMXPLY.IMQ`, as for Star Wars. Their dialogs write
+    `C:\WINDOWS\ANTSW.INI`, which lands in
+    `<state>\<package>\WINDOWS\ANTSW.INI` (`<state>\farside\WINDOWS\ANTSW.INI`,
+    `<state>\opus\WINDOWS\ANTSW.INI`, …), and the next run reads it.
 * stdout (not streaming in this mode) gets one JSON line:
   `{"result":"ok"|"nothing"|"error","dialogs":<n>,"message":"…","written":["<guest path>",…]}`.
 * Exit codes: **0** the button ran and showed at least one dialog or message
@@ -967,7 +986,7 @@ Windows 95; emulated windows start at `0x00010010`.
     procedure answered `HTCLIENT` for them, and the frames took every click:
     no option under a frame in The Far Side's, Dilbert's or 13 of Star
     Wars' 14 Configure dialogs could be clicked (the keyboard still reached
-    them).
+    them). The eighth round's Configure dialogs are of the same kinds.
   * `WM_GETTEXT`/`WM_SETTEXT`, `WM_INITDIALOG` (`lParam` = the guest's init
     param), `WM_CLOSE`, `WM_DESTROY`, `WM_TIMER`, `WM_PAINT`, `WM_SETFONT`
     (to a guest's control `hfont16`, the dialog's font as a guest font
@@ -1105,6 +1124,112 @@ it (frames differ from a run without, PNG checked by eye once).
 * `ADCONFIGDUMP=1`: logs each dialog's controls (id, class, style, text) on
   stderr, to write scripts.
 
+### 6.7 Host controls: Intermission 4.0's Speed
+
+Added with the twenty releases. Every other control is the module's: its
+value reaches the module (`ADCVSET` at the start, or a `SET` line), or,
+for a button, the module's own dialog runs. A control whose catalog entry
+has `host` (`PACKAGES.md` §6) is the host's instead: `host` names an
+environment variable, and the front end sets it to the control's value
+when it starts a host for that module. The module never sees it.
+
+* **Why.** Intermission paced nothing. Its loop made a pass, one
+  `SAVERMAIN` call, whenever the message queue was empty (`ABI.md`
+  §3.8.4), and Delrina's guide for module writers (its SDK's `MODULE.WRI`)
+  asked for as little time as possible in each call, Windows being locked
+  up until it returned; the SDK's example module, `STICKS.C`, draws one
+  line a call and reads no clock. Most of Intermission 4.0's own modules
+  work that way, so how fast they moved was how fast the buyer's PC was:
+  the speed options a few of them have (Ping's ball speeds, Snow Flakes'
+  maximum speed) can only set a distance per call. The ne16 lane runs as
+  many passes a frame as its 25-MIPS model allows (`PACKAGES.md` §7.5,
+  "Pacing"), and the model charges a drawing call 500
+  instruction-equivalents, so a light pass costs it little: at that full
+  pace Dragon Kites made 915 passes a second (of 60 presented frames) and
+  Ant Mine over 2,200, about four times what we estimate a PC of 1993
+  made.
+* **The control.** Each of the 36 modules of `intermission` whose motion
+  follows its passes has, after its **Configure...** (index 0), this
+  control, here as it reads for a module that starts at Normal:
+
+  ```json
+  {"index": 1, "name": "Speed:", "kind": "stringslider", "type": "slider",
+   "items": ["Slowest","Slow","Normal","Fast","Fastest"], "values": [6,12,25,50,100],
+   "default": 25, "defaultStop": 2, "host": "ADNE16IMXSPEED"}
+  ```
+
+  Its value is the pace of the emulated machine, in percent of the lane's
+  model. **Normal** (25) is an estimate of a typical buyer's PC of 1993, a
+  486DX-33 with an ISA SVGA card under Windows 3.1: at a quarter of the
+  model's budget a drawing call costs what 80 µs of its time would, within
+  the 50 to 100 µs we estimate one took there (not a measurement).
+  **Fastest** (100) is the model's full pace, the host's own default, at
+  which every stream is what it was before the control; **Slowest** (6),
+  **Slow** (12) and **Fast** (50) are about a quarter, half and twice
+  Normal's.
+* **Where it starts.** The stops are the same for every module, but the
+  slider's starting place, the control's `default` and `defaultStop`, is the
+  module's own, chosen so that its motion is calm: Slowest (6, stop 0) for
+  Dragon Kites, Ping and Bricks, whose kite and ball cross the screen in
+  about a quarter of a second at Normal (Bricks' ball once it speeds up,
+  in a third to half a second); Slow (12, stop 1) for Wriggly and Snow
+  Flakes, whose worms and flakes take about a second there; Fast (50, stop
+  3) for Space Shark, whose heavy passes make it a step of 9 a second at
+  Normal; and Normal (25, stop 2, as above) for the other 30.
+* **Which modules** (`ABI.md` §3.8.12). Measured: each of the 54 ran 900
+  frames at 25 and at 100. A module has the control when its motion
+  follows its passes: for 26 of the 36 the run at 25 shows the run at
+  100's pictures four times as late, byte for byte (its frame 4i + 3 is
+  the other's frame i, for 10 to 222 frames); seven draw random content
+  that differs from run to run, and a frame changes a fifth to two thirds
+  as much at 25; Palette Animator steps its palette once every 16 passes;
+  and Picture Show has it for its fades, which follow its passes (a fade
+  out and in takes 39 frames at 25, 11 at 100), though the time it holds
+  a picture is the clock's; Bricks' ball keeps the clock's pace for about
+  its first 45 seconds (150 pixels a second at any speed), then, from its
+  first wall on, follows its passes (250 to 510 pixels a second at 6,
+  1,230 to 1,960 at 25, 4,200 to 6,700 at 100). The other 18 show the
+  same pictures at the same pace at both speeds, only later at 25, where
+  their START is paid back more slowly: they pace themselves by the clock,
+  also over five-minute runs. They are the six ASA animations and the two
+  FLI animations, the morph (Paradise), and Bigfoot, Communique,
+  Conundrum, Fade Out, Flex, Maze, Orbs, Photo Shoot (a new photo every
+  minute at both) and Timepiece. No other release's modules have the
+  control.
+* **The settings window** (`scr/README.md`) shows a host control as its
+  kind and type say, here a string slider, **Speed**, with the chosen
+  stop's name beside it, under the module's **Configure...**. Its value is
+  kept with the module's other control values, `[Module.<id>] 1=<value>`
+  in `settings.ini` (`[Module.intermission.dragon] 1=100`), and **Restore
+  defaults** clears it with the rest, which puts the slider back where
+  the module starts. A host reads the variable once, as it starts, so
+  letting go of the slider restarts the live preview with the new value.
+* **Every start.** The value never goes into `ADCVSET` or a `SET` line.
+  Every host started for the module gets `<host>=<value>` instead, the
+  control's default when none is saved: the `/s` windows on every monitor
+  and each step of their rotations, **Preview**, `/p`, the live preview,
+  the thumbnails and a button's `--configure` run. The front end's own
+  variables always win over it, and a value of the same variable in the
+  saver's own environment is replaced. The Linux player has no settings
+  per module and passes the default (§4.5).
+* **Names.** A front end takes `host` only as `AD`, then a capital letter
+  or digit, then capitals, digits and underscores, never a variable it
+  sets itself at every start (`ADSTREAM`, `ADSCREENW`, `ADSCREENH`,
+  `ADCVSET`, `ADCAPS`, `ADNUMLOCK`, `ADSTATE`, `ADSEEDIMG`, `ADSOUND`,
+  `ADVOLUME`, `ADAUDIOOUT`, `ADSTATUSHANDLE`, `ADSTATUSLOG`) and never one
+  an earlier control of the module names. A control that breaks the rule,
+  or has no value to give (a button), is left out of the module's
+  controls.
+* **The host** (`PACKAGES.md` §7.5, `ABI.md` §3.8.12): `ADNE16IMXSPEED`
+  scales the machine of the `imx` protocol, which runs every Intermission
+  form: each frame's DRAWFRAME budget, `ADMAXDRAWS` and the bound on
+  carried overruns. It changes no clock, so a module paced by the clock
+  keeps its pace. It is a whole number from 1 to 100 (unset or empty,
+  100); a number outside that range is taken as the nearer end, anything
+  else as 100, either logged, and a set value is logged at the start. The
+  protocols of After Dark's modules and of Johnny Castaway have no such
+  knob and log it as ignored.
+
 ---
 
 ## 7. The per-user state overlay
@@ -1121,11 +1246,13 @@ at a scratch folder gets scratch state with it.
 <state>\                                 ADSTATE
   <package>\                             deluxe (the FILES\… tree), ad10, ad32, tt, simpsons, swse, startrek,
                                          marvel, snoopy, looney, screams, disney, farside, dilbert, tng,
-                                         castaway, or legacy-<fnv32 of the module dir, 8 hex> for anything else
+                                         castaway, opus, opusroad, flintstones, intermission,
+                                         or legacy-<fnv32 of the module dir, 8 hex> for anything else
     WINDOWS\                             upper layer of the guest's C:\WINDOWS (both lanes of a package share it)
     <MODDIR>\                            upper layer of the guest's C:\AFTERDRK = the module dir
                                          (AD40, CLASSIC, AD10TH, AD32, TWISTED, SIMPSONS, …);
-                                         for swse, farside and dilbert, SAVER: the upper layer of C:\SAVER
+                                         for swse and Delrina's six (farside, dilbert, opus, opusroad,
+                                         flintstones, intermission), SAVER: the upper layer of C:\SAVER
 ```
 
 Star Wars Screen Entertainment's modules keep their settings in
@@ -1135,12 +1262,13 @@ stopped), and Scrolling Text its edit box in `swse\WINDOWS\SWTXEDBX.TXT`.
 Deleting `<state>\swse` restores the disc's defaults, which stay in the
 package's `WINDOWS\SWSE.INI` (§7.3).
 
-The Far Side's and Dilbert's modules keep theirs in `ANTSW.INI`
-(`farside\WINDOWS\ANTSW.INI`, `dilbert\WINDOWS\ANTSW.INI`), one section per
-module, written by their **Configure...** dialogs. Those packages have no
-`WINDOWS` folder (their installer put no defaults there), so deleting
-`<state>\farside` or `<state>\dilbert` brings back the modules' own
-defaults.
+The modules of Delrina's own releases keep theirs in `ANTSW.INI`
+(`farside\WINDOWS\ANTSW.INI`, `dilbert\WINDOWS\ANTSW.INI`, and since the
+eighth round `opus\`, `opusroad\`, `flintstones\` and
+`intermission\WINDOWS\ANTSW.INI`), one section per module, written by their
+**Configure...** dialogs. Those packages have no `WINDOWS` folder (their
+installer put no defaults there), so deleting `<state>\<package>`
+(`<state>\farside`, …) brings back the modules' own defaults.
 
 Johnny Castaway keeps what it writes in `castaway\WINDOWS\SCRANTIC.INI`,
 section `[ScreenSaver.ScreenAntics]`: its options (`Background`,
@@ -1184,7 +1312,7 @@ install, while each package's modules never see another package's state
 | `C:\WINDOWS` | the lane's synthetic files (WIN.INI `[Berkeley Systems]`, the ne16 `MODULES.INI` seeds, PROGMAN.INI and `.GRP` files; ne16 also `LunData.dat`, the module dir's `LUNDATA.DAT`, which the installers copied to WINDOWS: without it Lunatic Fringe says "Configuration File Not Accessible"); ne16, when the package has one, its `WINDOWS` folder (`swse`: `SWSE.INI`), and for an Intermission module the profile seeds of `SYSTEM.INI`, `SWSE.INI` and `ANTSW.INI` (`PACKAGES.md` §7.5), for an After Dark 2.0 module those of `AD_PREFS.INI` (`PACKAGES.md` §7.3) | `<state>\<pkg>\WINDOWS` |
 | `C:\WINDOWS\SYSTEM` (ne16) | the engine dir | none (read-only, as today) |
 | `C:\AFTERDRK`, `C:\AFTERD~1` (ne16) | the module dir | `<state>\<pkg>\<MODDIR>` (one upper for both names) |
-| `C:\SAVER` (ne16, an Intermission module, instead of `C:\AFTERDRK`) | the module dir | `<state>\<pkg>\SAVER` (`swse`, `farside`, `dilbert`) |
+| `C:\SAVER` (ne16, an Intermission module, instead of `C:\AFTERDRK`) | the module dir | `<state>\<pkg>\SAVER` (`swse`, `farside`, `dilbert`, `opus`, `opusroad`, `flintstones`, `intermission`) |
 | `C:\PICTURES` (pe32) | module dir `PICTURES` | none |
 | `H:\<L>\…` | the host's `<L>:\…`, read-only | none |
 

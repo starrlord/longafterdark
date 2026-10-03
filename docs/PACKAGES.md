@@ -1,6 +1,6 @@
 # Long After Dark — packages
 
-How the host imports and runs modules from sixteen releases, not just the
+How the host imports and runs modules from twenty releases, not just the
 After Dark 4.0 Deluxe CD: ten of Berkeley Systems' After Dark, the oldest
 being Star Trek: The Screen Saver (1992, After Dark 2.0b) and the latest
 added Star Trek: The Next Generation Screen Saver (1994, After Dark 3.0);
@@ -8,23 +8,28 @@ two of other
 publishers' modules for After Dark, Binary Software's ScreamSavers (1995,
 on the After Dark 3.0.6 engine it licensed from Berkeley) and Image Smith's
 Snoopy's Screen Savers (1994, modules for an After Dark already installed);
-three whose modules run on Delrina's Intermission screen saver engine,
-not on After Dark's: LucasArts' Star Wars Screen Entertainment (1994), and
-Delrina's own The Far Side Screen Saver Collection and Scott Adams' Dilbert
-Screen Saver Collection (both 1994); and Sierra On-Line's Screen Antics:
+seven whose modules run on Delrina's Intermission screen saver engine,
+not on After Dark's: LucasArts' Star Wars Screen Entertainment (1994),
+Delrina's Intermission 4.0 itself (1993), and Delrina's own collections
+for it, the Opus 'n Bill Screen Saver (1993), Opus 'n Bill: On the Road
+Again! (1994), The Flintstones Screen Saver Collection, The Far Side Screen
+Saver Collection and Scott Adams' Dilbert Screen Saver Collection (all
+three 1994); and Sierra On-Line's Screen Antics:
 Johnny Castaway (1992, made by Dynamix), which is no module of any engine
 but a Windows 3.1 screen-saver program of its own, a `.SCR` built on
 Microsoft's `SCRNSAVE.LIB`. DESIGN.md
 §6, §6a and §7 give the contract in brief; this file is the full
 specification and the plan that implements it.
 
-**Status: implemented.** The importer reads all sixteen releases (328
+**Status: implemented.** The importer reads all twenty releases (429
 catalog modules, 73 of them `sameAs` an earlier entry). The 283 modules of
 the twelve After Dark releases run headless, deterministically, and each
-release also runs on its own; the 44 of the three Intermission releases
-(Star Wars Screen Entertainment's 14, The Far Side's 14, Dilbert's 16) are
-driven by the Intermission protocol of §7.5, and Johnny Castaway's one
-program by the screen-saver protocol of §7.6. This file keeps the
+release also runs on its own; the 145 of the seven Intermission releases
+(Star Wars Screen Entertainment's 14, The Far Side's 14, Dilbert's 16, the
+Opus 'n Bill Screen Saver's 16, On the Road Again's 16, the Flintstones'
+15, Intermission 4.0's 54) are driven by the Intermission protocol of §7.5,
+and Johnny Castaway's one program by the screen-saver protocol of §7.6.
+This file keeps the
 specification and the plan as they were written, so tables that say
 "today" or "current" describe the host before this work. Star Wars Screen
 Entertainment was added in a second round, after the rest was built (the
@@ -52,7 +57,16 @@ InstallShield 1, was added in a seventh round (the `castaway` rows and
 paragraphs, the `is1` recipe of §3 and §4.3, the `.7z` sources of §8.10,
 InstallShield 1's compressed files of §8.11, and the Windows 3.1
 screen-saver programs of §6 and §7.6); there, "before this release" means
-the fifteen-release host (1.4.3).
+the fifteen-release host (1.4.3). Delrina's four other Intermission
+releases, the Opus 'n Bill Screen Saver, Opus 'n Bill: On the Road Again!,
+The Flintstones Screen Saver Collection and Intermission 4.0 itself, all
+on floppies installed by Delrina's Intermission Installer, were added in an
+eighth round (the `opus`, `opusroad`, `flintstones` and `intermission` rows
+and paragraphs, the builds of §2, §3 and §4.3, the one-folder sources,
+the disk sets' notes and the tar download of §5.2 and §8.12, and
+Intermission 4.0's FLI, MRF and MSV forms and its **Speed** control of §6
+and §7.5); there, "before this release" means the sixteen-release host
+(1.4.4).
 Where the implementation went further, the component
 READMEs are authoritative: `importer/README.md` (every release can also be
 downloaded from the Internet Archive, and a ZIP of install files, or of a
@@ -74,20 +88,27 @@ online copies, the installer and layout, the modules and their runs;
 `research/win/pkg/{farside,dilbert}/`), and about the seventh round's
 Johnny Castaway from a survey of its floppy (Oct 2026: the online copies, the
 installer and its compressed files, the program and its runs;
-`research/jc/`).
-Their artifacts are in `research/win/pkg/<id>/` and `research/jc/`, which
+`research/jc/`), and about the eighth round's four from one survey of them
+together (Oct 2026: the online copies, among them DiscMaster's index of old
+CDs, the disks and their builds, the modules and their runs, the importer;
+`research/five/`).
+Their artifacts are in `research/win/pkg/<id>/`, `research/jc/` and
+`research/five/`, which
 are gitignored: extraction scripts, inventories, trial runs, contact
 sheets and disassembly. **No After Dark (Berkeley Systems), LucasArts,
 Paramount, Disney, Warner Bros., Marvel, Image Smith, United Feature
 Syndicate (Peanuts, Dilbert), Binary Software, IMPart, Delrina, Gary
 Larson, FarWorks, Universal Press Syndicate, Scott Adams, United Media,
-Sierra On-Line or Dynamix bytes, extracted files or disassembly are ever
-committed.** Manifests hold only path, size
+Sierra On-Line, Dynamix, Berkeley Breathed or Hanna-Barbera bytes,
+pictures, extracted files or disassembly are ever committed.** Manifests
+hold only path, size
 and md5. The ZIP password is derived at import time, never stored (§8.4).
 The previous owners' notes some copies carry (serial numbers, registration
 files) are never opened, copied, hashed or listed, and the notes of the
-bulletin boards whose copies of the fifth round's floppies are the ones
-online are never opened (§4.2 I5).
+bulletin boards whose copies of the fifth and eighth rounds' floppies are
+the ones online are never opened (§4.2 I5), nor the two programs one of
+those boards put beside the files of the revised Opus 'n Bill build ever
+run.
 
 ## 0. Decisions at a glance
 
@@ -106,12 +127,17 @@ online are never opened (§4.2 I5).
 | Intermission modules (`swse`) | A second module protocol inside the ne16 lane, chosen by the module's exports. Intermission's own IMX reader, `IMIMXPLY.IMQ`, runs as real code, as OLDMOD16 does; a native C++ reader is the oracle and the fallback. The host replaces `INTERMIS.EXE`, an NE application, as it replaces `AFTERDAR.SCR` (§7.5; the protocol is ABI.md §3.8). Since the fifth round (`farside`, `dilbert`) a module's form picks its reader: an IMX module `IMIMXPLY.IMQ`, an ASA animation (data that starts `AniN` or `AniM`) Intermission's ASA reader `IMASAPLY.IMQ`, run as real code with no native fallback, and an IMQ module, which exports `SAVERMAIN`, itself (ABI.md §3.8.9) |
 | Known images | An image md5 names a release, or since the seventh release one install disk of a release on several floppies: every disk exactly once, from any known copy of each, is that release's known image (`verified: image`, §3). Since the fourth round a ZIP of the install files is a known image too where no image of the original disks exists online, or none can be listed: the Internet Archive's stored file, the user's copy byte for byte (`marvel`, `snoopy`, `looney`, `screams`, `disney`). Since the fifth round a disk of a set may be a ZIP of that disk's files (`farside`'s five, `dilbert`'s four: 1994 bulletin-board copies) |
 | Install-time fix-ups | A baked table per package: file copies under the names the modules open (§4.3). No INF, IS-script, Presage-script or MS-Test interpreter: `intermission`, `ad2kwaj` and `islib` are baked too |
-| Formats to implement | FAT12/16 image reader; PKZIP with traditional PKWARE (ZipCrypto) decryption and raw inflate (zlib). The existing ISO-9660/Joliet reader already handles all three hybrid CDs (§8). For `swse`: multi-volume ARJ 2.x (§8.6) and SZDD (§8.7). For `startrek`: KWAJ method 3 (§8.8), and a ZIP of floppy images read as those images (§5.2). For `marvel` and `snoopy`: InstallShield 2's compressed libraries, single or split over two floppies, with PKWARE DCL implode (§8.9). For `castaway`: InstallShield 1's compressed files, PKWARE DCL implode again (§8.11), and 7z archives as sources (§8.10) |
+| Formats to implement | FAT12/16 image reader; PKZIP with traditional PKWARE (ZipCrypto) decryption and raw inflate (zlib). The existing ISO-9660/Joliet reader already handles all three hybrid CDs (§8). For `swse`: multi-volume ARJ 2.x (§8.6) and SZDD (§8.7). For `startrek`: KWAJ method 3 (§8.8), and a ZIP of floppy images read as those images (§5.2). For `marvel` and `snoopy`: InstallShield 2's compressed libraries, single or split over two floppies, with PKWARE DCL implode (§8.9). For `castaway`: InstallShield 1's compressed files, PKWARE DCL implode again (§8.11), and 7z archives as sources (§8.10). For `flintstones`' download: a tar reader, for the three members it takes out of one (§8.12) |
 | Disk sets (fourth round) | A ZIP or a folder whose root holds nothing but `DISK<n>` folders is the union of those folders, as several floppy images are (§5.2): the Internet Archive's copies of ScreamSavers, Marvel Comics Screen Posters and Snoopy's Screen Savers keep their disks so |
 | InstallShield 2 installs (`marvel`, `snoopy`; fourth round) | A new recipe, `islib`: the libraries read with a strict reader of our own and each member placed by a table baked from the installer's script; the package list `SETUP.PKG` is read only to identify the release (§3, §4.3) |
 | Delrina's Intermission Installer (`farside`, `dilbert`; fifth round) | The `intermission` recipe's second installer (`Package::delrina_installer`: no `INSTALL.DAT` name): the release is named by file names alone (disk 1's tag `DISK1`, the installer `IMINST2.EXE` and a file of its own), every disk's tag must be there, and every installed file is a loose file under its own name, most SZDD-compressed; no archive, nothing read to identify (§3, §4.3) |
 | InstallShield 1 (`castaway`; seventh round) | A new recipe, `is1`: InstallShield 1.02's compressed files (a `$` in the extension), each one file imploded with PKWARE DCL, expanded by a strict reader of our own and placed by a table baked from the installer's script, which is never run (§3, §4.3, §8.11). A `.7z` is a source wherever a ZIP is (§8.10) |
 | A Windows 3.1 screen-saver program (`castaway`; seventh round) | Not a module of any engine: a `.SCR`, an NE application built on Microsoft's `SCRNSAVE.LIB`, which saves the screen when started with `/s` and shows its settings dialog (Control Panel's **Setup...**) with `/c`. The ne16 lane runs the program itself, from its own entry point, as Windows 3.1 ran it, and the host stands in for Windows 3.1 around it; a third module protocol beside After Dark's and Intermission's, chosen by the program's export `SCREENSAVERPROC`; catalog `abi` `"scrnsave"` (§6, §7.6) |
+| Delrina's other releases (`opus`, `opusroad`, `flintstones`, `intermission`; eighth round) | The `intermission` recipe with Delrina's installer, as `farside`'s and `dilbert`'s: each release named by file names alone, every disk's tag required, every installed file a loose file under its own name, plain or SZDD (§3, §4.3). Intermission 4.0's own modules take three more forms, data files each played by an Intermission reader of its own, run as real code as the ASA reader is: FLI animations (`IMFLIPLY.IMQ`), a morph (`IMMRFPLY.IMQ`) and a MultiSaver group (`IMMSVPLY.IMQ`) (§6, §7.5) |
+| Builds (eighth round) | A release may have more than one build (`Package::builds`): the Opus 'n Bill Screen Saver's November 1993 disks, and The Flintstones' May 1994 disks, are further builds of their releases, each with its own known images, its own file on disk 1 that tells it apart, its own loose files and manifest, and its id in `import.json` (§2, §3, §5.3) |
+| Sources in one folder; disk sets with notes (eighth round) | A ZIP or 7z may hold its install files, or only its `DISK<n>` folders, in one folder that holds everything, which is then read as its root, and a ZIP's floppy images may sit in any folder, as a 7z's could: the Internet Archive's copies of On the Road Again and Intermission 4.0 are so (§5.2). A name on two disks of a set must be one file when it is read, never when it is only listed, so the bulletin boards' notes, other on every disk, no longer refuse a set no recipe reads them from |
+| A download from inside a tar (eighth round) | The Flintstones' June 1994 disks are online only as three ZIPs in a shareware collection's tar, which the Internet Archive serves whole: the download fetches the tar and takes out those three members by name, size and md5; nothing else in it is ever read (§5.2, §8.12) |
+| Speed (`intermission`; eighth round) | Intermission ran its modules as fast as the PC allowed, and 36 of Intermission 4.0's own move one step per call, so their speed was the machine's. Those 36 entries get a catalog control of the host's, **Speed:**, whose `host` field names `ADNE16IMXSPEED`: the front end starts the host with it, and the lane runs its model of the machine at that percent for the module: Normal (25) is an estimate of a 1993 486, Fastest (100) the model's full pace and the host's own default. Each module's slider starts where its motion is calm: most at Normal, Dragon Kites, Ping and Bricks at Slowest (6), Wriggly and Snow Flakes at Slow (12), Space Shark at Fast (50). The other 18 pace themselves by the clock and have none (§6, §7.5) |
 | Work split | A: importer (`importer/**`). B: pe32 lane + core. C: ne16 lane + win16 + cpu. File ownership is disjoint (§10) |
 
 ## 1. Scope and starting point
@@ -137,14 +163,18 @@ hybrid discs hold is noted in §12; the importer skips them.
 | `dilbert` | 16 ne16, Intermission: 13 ASA animations and three IMQ modules, `DB-BEST`, `DB-CLOCK`, `DIL-WHAK` | none, as `farside`'s; with staging tricks (each IMQ copied over `IMIMXPLY.IMQ`; an ASA behind a stub, IMASAPLY as the reader) all 16 ran 900 frames, the ASAs with one unimplemented call, `IntersectClipRect` | the same as `farside`'s; QUERY returns an empty name for every module; two IMQ modules set the input flag `0x2000` |
 | `tng` | 13 ne16 on their own library `ADXPL320.DLL`, with an art and a sound library, `TNG_ART.DLL` and `TNG_SND.DLL` (surveyed alone, against the fourteen-release host) | all 13 exit 0, 900 frames, 0 faults, 0 unimplemented calls, two runs identical, from a staged root | the importer refused every form ("not a known release": no registry entry) |
 | `castaway` | 1 ne16: `SCRANTIC.SCR`, a Windows 3.1 screen-saver program (an NE application, Borland C++, on Microsoft's `SCRNSAVE.LIB`) that plays Dynamix's animations from its own data files, `RESOURCE.MAP` and `RESOURCE.001` (surveyed alone, against the fifteen-release host, 1.4.3) | none: exit 1 at lane init, "not an After Dark or Intermission module (no MODULE, SAVERINIT or SAVERDRAW export)" | the importer refused the floppy image and its ZIP ("not a known release": no registry entry, no InstallShield 1 reader) and the `.7z` ("neither an ISO-9660 disc image, a FAT floppy image nor a ZIP of install files"); no protocol for a program that runs its own message loop; `mciSendCommand`, `AddFontResource`, `WaitEvent`, `InitApp`, `ClipCursor` and the `__AHSHIFT` equate unimplemented |
+| `opus` | 16 ne16, Intermission: 15 ASA animations and one IMQ module, `OPUSCLOK`, on three floppies (surveyed with the eighth round's other three, against the sixteen-release host, 1.4.4); a revised build of the same release (every file dated 1993-11-03) has 16 too, five of them other animations | all 16 of each build exit 0 from a staged root, 300 frames, 0 unimplemented calls, 0 faults, the picture changing | the importer refused every copy ("not a known release": no registry entry) |
+| `opusroad` | 16 ne16, on Intermission 5.0's engine: 12 ASA animations, three IMQ modules (`BUTTWIPE`, `OB-SKATE`, `OB-SPACE`) and one IMX module (`OPUSTREK`), on four floppies | all 16, as `opus`'s | the importer refused the Internet Archive's ZIP, whose files sit in one folder: `member "Opus n Bill - On the Road Again/" is not a bare file name or a file in a DISK<n> folder` |
+| `flintstones` | 15 ne16 in the release's June 1994 build (every product file dated 1994-06-16): three ASA animations (`CARS`, `DINORDS`, `LOGO`), eight IMQ modules (`DICTABRD`, `DRIVEIN`, `PAPERBOY`, `FM-BIRDY`, `FM-BOWL`, `FM-CLOCK`, `FM-CRANE`, `FM-MOBIL`) and four IMX modules (`FM-BOULD`, `FM-CRITT`, `FM-FEET`, `FMPADROK`), on three floppies. Most copies online are of a May 1994 build (`FLINT1`–`FLINT3`): 10 modules, `THEME.ASA` and `FM-PHOTO.IMX` among them, with older `INTRMLIB.DLL`, `ANTSW.DLL` and `IMASAPLY.IMQ`, and the same damaged `CARS.ASA` in every copy | the May build: 9 of 10; `CARS` stopped at frame 13, a #GP in `ANTSW.DLL` (`5:03D1`, `mov es:[bx],al` past its block). The file is damaged, not the host: its SZDD stream decodes to 443,231 bytes where its header declares 477,345 (Windows' own `EXPAND.EXE`: "Error in compressed input file format"), so ANTSW's frame decoder reads garbage from the 13th frame and runs 1,700 bytes past the block it allocated, as it would have under Windows 3.1. The June build's `CARS.ASA` expands whole and runs (900 frames, 142 pictures, no fault) | the importer refused the May build's three bulletin-board ZIPs: "H3LLO2U.NFO differs between the images (size); they are not the disks of one release" (the board's notes, other bytes on each disk, broke the disk-set check) |
+| `intermission` | 54 candidates on three floppies: 43 IMX modules, 6 ASA animations, one IMQ module (`IMSHARK`), and four files of other forms, each played by an Intermission reader of its own: two FLI animations (`EINSTEIN`, `FLYING`), `PARADISE.MRF` and `MACHINE.MSV` | 43 exit 0 with a changing picture; the four of other forms exit 2 ("not a module this host can run (not an MZ executable)"); `FADE` calls the display driver's palette entries, `DISPLAY.22` and `DISPLAY.23`, and `PLANT` `GDI.100 LineDDA` (12,636 calls), unimplemented; `CONUND`, `DISSOLVE`, `FLASH`, `MELT` and `IM_PICTU` show one picture over 300 frames (effects on the desktop's picture, which a headless run gives black, and a picture show) | the importer refused the Internet Archive's ZIP of the three floppy images, which sit in one folder: `member "Intermission 4.0/" is not a bare file name or a file in a DISK<n> folder` |
 
-In total, 328 catalog entries over the sixteen packages: 232 over the first
+In total, 429 catalog entries over the twenty packages: 232 over the first
 seven (218 over their six After Dark releases, and Star Wars Screen
 Entertainment's 14), 52 over the fourth round's five (1 + 8 + 12 + 15 +
 16), 30 over the fifth round's two (14 + 16), 13 over the sixth round's
-`tng` and 1 over the seventh round's `castaway`, so 283 over the twelve
-After Dark ones, 44 over the three Intermission ones and Johnny
-Castaway's one program.
+`tng`, 1 over the seventh round's `castaway` and 101 over the eighth
+round's four (16 + 16 + 15 + 54), so 283 over the twelve After Dark ones,
+145 over the seven Intermission ones and Johnny Castaway's one program.
 
 ## 2. The package registry
 
@@ -169,6 +199,10 @@ the catalog order and the precedence order for name disambiguation:
 | `dilbert` | Scott Adams' Dilbert Screen Saver Collection | Dilbert | `intermission` (Delrina's installer) | `packages/dilbert` | `SAVER` |
 | `tng` | Star Trek: The Next Generation Screen Saver | Star Trek TNG | `ad3zip` | `packages/tng` | `ST-TNG` |
 | `castaway` | Screen Antics: Johnny Castaway | Johnny Castaway | `is1` | `packages/castaway` | `SCRANTIC` |
+| `opus` | Opus 'n Bill Screen Saver | Opus 'n Bill | `intermission` (Delrina's installer) | `packages/opus` | `SAVER` |
+| `opusroad` | Opus 'n Bill: On the Road Again! | On the Road Again | `intermission` (Delrina's installer) | `packages/opusroad` | `SAVER` |
+| `flintstones` | The Flintstones Screen Saver Collection | Flintstones | `intermission` (Delrina's installer) | `packages/flintstones` | `SAVER` |
+| `intermission` | Intermission 4.0 | Intermission | `intermission` (Delrina's installer) | `packages/intermission` | `SAVER` |
 
 Ids match `[a-z0-9]+`. `ad40` and `classic` are reserved: they are Deluxe's
 legacy id prefixes. `swse` is the product's own short name (its installer's
@@ -204,7 +238,18 @@ first fifteen keep their places and command ids. Its id comes from the
 release's name, as the fifth round's do, its module dir is the installer's
 folder (`\SIERRA\SCRANTIC`, the program `SCRANTIC.SCR`), its title the disk
 label's, "Screen Antics: Johnny Castaway" (Screen Antics is the series, and
-what the program calls itself), and its short title "Johnny Castaway".
+what the program calls itself), and its short title "Johnny Castaway". The
+eighth round's four follow it, last, in the order `opus`, `opusroad`,
+`flintstones`, `intermission`, so the first sixteen keep their places and
+command ids. Their ids come from the releases' names, as the fifth round's
+do: `opusroad` is the second Opus 'n Bill, On the Road Again, and
+`intermission` the engine's own release. Their titles are what Delrina
+called them: "Opus 'n Bill Screen Saver", as the later releases' readmes
+list it (its own readme heads itself "Opus 'n Bill"); "Opus 'n Bill: On the
+Road Again!", the box's (its readme: "Opus 'n Bill On The Road Again"); and
+"The Flintstones Screen Saver Collection" and "Intermission 4.0", the first
+lines of their readmes. The short titles are "Opus 'n Bill", "On the Road
+Again", "Flintstones" and "Intermission".
 
 Known images (identification + `verified: image`):
 
@@ -241,6 +286,29 @@ Known images (identification + `verified: image`):
 | `tng` | `0b95b9271c75b9ff1d89b57a0e15ee7b` | 6,133,760 | ISO-9660 CD of the install files (every file dated 1995-04-09; the Internet Archive item `star-trek-the-next-generation-screensaver`, a clean read) | `STAR_TRE` |
 | `castaway` | `81087ea7cc6a304896e81c722b0a85ec` | 1,474,560 | FAT12, 1.44 MB: the install floppy, version 1.01, international build 1.4.93 (every file dated 1993-01-04; the Internet Archive's KryoFlux dump, item `screen-antics-johnny-castaway-16-color-v1.01-int.-1.4.93-win3.1-1.44m`, in a ZIP, and byte for byte the `disk1.img` in the `.7z` of item `000580-ScreenAnticsJohnnyCastaway`, The Good Old Days Floppy Collection) | — |
 | `castaway` | `867e1e0574e7c117aa4a8b72c08b887c` | 1,359,711 | ZIP of that floppy image (the KryoFlux dump's, its one member the `.ima`): the download, read as the image inside (§5.2) | — |
+| `opus` | `2aed4db32e141babe6a4336aac674cd2` | 969,014 | ZIP of install disk 1's files (of 3): `OPUS1NTA.ZIP`, a 1993 bulletin-board copy of the three floppies, inside the Internet Archive item `prog21-29`'s ZIP (`PROG_23/`); the download | — |
+| `opus` | `10cdbe9634bf25292ad331dbbe5f7905` | 960,813 | ZIP of install disk 2's files (`OPUS2NTA.ZIP`, the same) | — |
+| `opus` | `54b35b007c9ed7155441eb79de49d580` | 963,893 | ZIP of install disk 3's files (`OPUS3NTA.ZIP`) | — |
+| `opus` | `30c17d0fc45cb8b286d80e79e68bb42e` | 966,605 | ZIP of install disk 1's files: `ONBSBS-1.ZIP`, another bulletin board's copy, in the same ZIP (`PROG_24/`); every file of the release the same, byte for byte | — |
+| `opus` | `d5face113998cc8dc00db29877dcfd97` | 958,487 | ZIP of install disk 2's files (`ONBSBS-2.ZIP`) | — |
+| `opus` | `3e8946d995b84c0bd1d643fb0f018cc0` | 961,753 | ZIP of install disk 3's files (`ONBSBS-3.ZIP`) | — |
+| `opus` | `ec56dca1d8d324e5fea121ad1f69b51f` | 968,167 | ZIP of install disk 1's files: `OPUS-1.ZIP`, a third copy, inside item `prog39_46`'s ZIP (`PROG_44/`) | — |
+| `opus` | `f3eaa8e4f8c80a9c41526211336e7a04` | 960,049 | ZIP of install disk 2's files (`OPUS-2.ZIP`) | — |
+| `opus` | `6441ea716809414208ee1b45ee13836a` | 963,315 | ZIP of install disk 3's files (`OPUS-3.ZIP`) | — |
+| `opus` (build `1993-11`) | `a90d7e7545afb1020a1781f006dcbc0f` | 1,033,811 | ZIP of install disk 1's files of the November 1993 build: `WC!OPUS1.ZIP`, a 1993 bulletin-board copy inside item `prog70_75`'s ZIP (`PROG_72/`), with the board's notes and two of its programs beside the files | — |
+| `opus` (build `1993-11`) | `95dc225cd0aeb5e2976253af2ffbe05e` | 1,193,892 | ZIP of install disk 2's files (`WC!OPUS2.ZIP`) | — |
+| `opus` (build `1993-11`) | `a2f001b54cd03059d154eead871ee87c` | 1,005,230 | ZIP of install disk 3's files (`WC!OPUS3.ZIP`) | — |
+| `opusroad` | `ad6023bae1deb7c55c8239d55d1a81cf` | 4,621,603 | ZIP of the four install floppies' files, all in one folder, `Opus n Bill - On the Road Again/` (item `OpusNBill_OnTheRoadAgain`, `Opus n Bill - On the Road Again.zip`): the download, the user's copy byte for byte | — |
+| `flintstones` | `a53599e3a8c1fbfed7147ef769c67d53` | 1,253,065 | ZIP of install disk 1's files (of 3) of the June 1994 build: `FLINTST1.ZIP`, a 1994 bulletin-board copy, a member of the tar `wgam0219.tar` inside item `ibm-wgam-wbiz-collection`'s ZIP `wgam0210-0219.zip`; the only intact copy online | — |
+| `flintstones` | `71a588d1f54f85f3a58326b16f0ad33b` | 1,218,632 | ZIP of install disk 2's files (`FLINTST2.ZIP`, the same) | — |
+| `flintstones` | `d43fa04cda64a0f158eb84b0d96f6f24` | 949,191 | ZIP of install disk 3's files (`FLINTST3.ZIP`) | — |
+| `flintstones` (build `1994-05`) | `68cf70016ec2438f2773678d2864e48c` | 655,873 | ZIP of install disk 1's files of the May 1994 build: `FLINT1.ZIP`, a 1994 bulletin-board copy inside item `prog47_55`'s ZIP (`PROG_49/`), whose `CARS.ASA` is damaged | — |
+| `flintstones` (build `1994-05`) | `9b5faa07d55bbdb9a848645a6157ae05` | 1,238,122 | ZIP of install disk 2's files (`FLINT2.ZIP`) | — |
+| `flintstones` (build `1994-05`) | `f6f94599e24d639fbdc5e2408a9c5c79` | 1,554,138 | ZIP of install disk 3's files (`FLINT3.ZIP`) | — |
+| `intermission` | `fc1305b7f178adf862bebde610f51020` | 1,474,560 | FAT12, 1.44 MB: install disk 1 of 3 (`ITM4W-D1.IMA`, item `intermission4.0`, in its ZIP) | — |
+| `intermission` | `f1fedb8dbd9fdde088b617cc2e543740` | 1,474,560 | FAT12, 1.44 MB: install disk 2 of 3 (`ITM4W-D2.IMA`) | — |
+| `intermission` | `a56edc671fe824830c4b6aa08ad5c57d` | 1,474,560 | FAT12, 1.44 MB: install disk 3 of 3 (`ITM4W-D3.IMA`) | — |
+| `intermission` | `983b8d35861eccfcd683205670a1fb89` | 3,419,502 | ZIP of the three images, all in one folder, `Intermission 4.0/` (`Intermission 4.0.zip`): the download, read as the images inside (§5.2) | — |
 
 A known image is the whole release, or, since the seventh release, one
 install disk of a release on several (`KnownImage::disk` n of N):
@@ -258,7 +326,15 @@ release and as a ZIP per disk. The md5s of these per-disk ZIPs are ours:
 the Internet Archive publishes none for a file inside another ZIP. The
 floppy images of the item named for The Far Side
 (`the-far-side-screen-saver-collection-1-of-5`) are damaged in four of
-the five disks and are no known images.
+the five disks and are no known images. The eighth round's per-disk ZIPs
+are bulletin-board copies too, with md5s of our own: the Opus 'n Bill
+Screen Saver is known in three copies of its September 1993 build and one
+of its November 1993 build, and the Flintstones in one copy of each of
+their two builds, the June 1994 one served only from inside a tar (§5.2).
+A further build's known images are the build's own (`Build::images`): they
+name the release and that build. Intermission 4.0 is known as its three
+floppy images, loose or in the Internet Archive's ZIP of them, which is a
+known image too, as Johnny Castaway's ZIP is.
 
 Other registry fields:
 
@@ -278,15 +354,21 @@ Other registry fields:
   * `dilbert`: the same and `SAVER/IM4_EXP.DLL` (DB-BEST's picture decoder), plus `DISK1`–`DISK4`
   * `tng`: `ST-TNG/ADXPL320.DLL` (the library the modules import), `ST-TNG/TNG_ART.DLL`, `ST-TNG/TNG_SND.DLL`, `ENGINE/AD_SND.DLL`, `ENGINE/ADTASK.DLL`, plus the 13 module ZIPs and `MUSIC.ZIP`
   * `castaway`: `SCRANTIC/SCRANTIC.SCR` (the program), `SCRANTIC/RESOURCE.MAP` and `SCRANTIC/RESOURCE.001` (the data it cannot run without: its string 1001, "Screen Antics can not continue because it can not locate the necessary data files!"), plus every file the recipe reads (`SCRANTIC.SC$`, `RESOURCE.00$`, `RESOURCE.MAP`)
+  * `opus` (eighth round): `SAVER/INTRMLIB.DLL`, `SAVER/ANTSW.DLL`, `SAVER/MEMMIDI.DLL` (what the modules load: INTRMLIB → ANTSW, the ASA reader MEMMIDI by name), `ENGINE/IMASAPLY.IMQ` (the ASA reader), plus every install disk's tag file (`DISK1`–`DISK3`), in either build
+  * `opusroad`: the same and `SAVER/DIBDLL.DLL` (the IMQ modules') and `ENGINE/IMIMXPLY.IMQ` (Opus Trek's reader), plus `DISK1`–`DISK4`
+  * `flintstones`: as `opusroad`, plus `DISK1`–`DISK3`; its May 1994 build's only copy has no tag file on disks 2 and 3, so there `DISK1`, `DRIVEIN.IMQ` and `THEME.ASA` stand for its three disks (`Build::disk_files`)
+  * `intermission`: `SAVER/INTRMLIB.DLL`, `SAVER/ANTSW.DLL`, `SAVER/DECO.DLL` (Photo Shoot's picture decoder), `SAVER/MEMMIDI.DLL`, and the readers of its modules' forms, `ENGINE/IMASAPLY.IMQ`, `IMIMXPLY.IMQ`, `IMFLIPLY.IMQ`, `IMMRFPLY.IMQ` and `IMMSVPLY.IMQ`, plus `DISK1`–`DISK3`
 * `ad3zip` parameters: `moduleDir` (`AD32` / `TWISTED` / `SIMPSONS` / `LNYTUNES` / `SCREAMS` / `DISNEY` / `ST-TNG`); `engineDll`, the member of `MODMISC.ZIP` that identifies the package (`ADXPL300.DLL` / `ADXPL40.DLL` / `ADXPL310.DLL` / `ADXPL41.DLL` / `ADXPL300.DLL` / `ADXPL100.DLL` / `ADXPL320.DLL`); `folderAfi`, the `AFI.ZIP` member that becomes `FOLDER.AFI` and identifies the package too (`AD3.AFI` / `PHLEM.AFI` / `SAX.AFI` / `LNYTUNES.AFI` / `SCREAMS.AFI` / `DISNEY.AFI` / `ST-TNG.AFI`); since the fourth round `marker`, a second `MODMISC.ZIP` member the fingerprint wants (`ad32`: `AD30RSDB.DLL`, §3), and `never_opened`, archives of the install dir the recipe skips by name, unread (`disney`: `BEAUTYOL.ZIP`, §4.3).
 * `islib` parameters (`marvel`, `snoopy`; fourth round): `moduleDir` (`AFTERDRK` for both); the library volumes the recipe reads, every install disk's, disk 1's first (`required_archives`, above); the tag, `SETUP.PKG`'s logical library name and the member it must list there (`tag_library` `modules.lib` and `tag_member` `MARVEL.AD`; `AD_MODS.z` and `IS_FLY.AD`); and the placement table (`LibraryMember`: a library, by its file or a split set's first volume, a member, and where it goes: 64 rows for `marvel`, 8 for `snoopy`).
 * `intermission` parameters (`swse`): `moduleDir` (`SAVER`); `installName`, the `[data] shortname` of the installer's `INSTALL.DAT` that identifies the package (`SWSE`); the archives (`SWSE1.ARJ`, `SWSE2.ARJ`, `SWSE2.A01`, `SWSE2.A02`, `SWSE2.A03`: disk 1, then one archive over disks 2–5); `looseFiles`, what the recipe takes from outside the archives, with the name the installer gave it and whether it is SZDD (§4.3).
-* `intermission` parameters with Delrina's installer (`farside`, `dilbert`; fifth round; `Package::delrina_installer()`, true when `installName` is null): `moduleDir` (`SAVER`); every install disk's tag file in place of the archives (`DISK1`–`DISK5`, `DISK1`–`DISK4`: two-byte files the installer checks for; disk 1's is the fingerprint's); `marker`, a file of the release's own on disk 1 that the fingerprint wants beside the tag and the installer (`PTERY.IMQ`, `DB-CLOCK.IMQ`); `looseFiles`, every file the recipe installs, under its own name, plain or SZDD (20 rows for `farside`, 23 for `dilbert`, §4.3).
+* `intermission` parameters with Delrina's installer (`farside`, `dilbert`; fifth round; `Package::delrina_installer()`, true when `installName` is null): `moduleDir` (`SAVER`); every install disk's tag file in place of the archives (`DISK1`–`DISK5`, `DISK1`–`DISK4`: two-byte files the installer checks for; disk 1's is the fingerprint's); `marker`, a file of the release's own on disk 1 that the fingerprint wants beside the tag and the installer (`PTERY.IMQ`, `DB-CLOCK.IMQ`); `looseFiles`, every file the recipe installs, under its own name, plain or SZDD (20 rows for `farside`, 23 for `dilbert`, §4.3). Since the eighth round also `opus` (marker `OPUSCLOK.IMQ`, 21 rows), `opusroad` (`OPUSTREK.IMX`, 23), `flintstones` (`DRIVEIN.IMQ`, 22) and `intermission` (`IMSHARK.IMQ`, 73).
+* `build` and `builds` (eighth round; `opus` and `flintstones`): the id of the build the package's own fields describe (`1993-09`, `1994-06`) and its other builds (`Build`: an id, a label for people, a marker, its own known images, loose files and manifest, an optional note, and the files that stand for the disk tags when its copy lacks them). `opus`'s `1993-11` ("the November 1993 build"): marker `VELOC2.ASA`, 21 rows. `flintstones`' `1994-05` ("the May 1994 build"): marker `FM-PHOTO.IMX`, 17 rows (no `CARS.ASA`), the note "its CARS.ASA (Prehistoric Vehicles) is damaged in every known copy and is never installed; the June 1994 build's is whole", and `DISK1`, `DRIVEIN.IMQ` and `THEME.ASA` for its disks. The root, module folders, required files, name overrides (keyed by path), downloads and covers serve every build. A release of one build has neither (`import.json` then records no build).
 * `is1` parameters (`castaway`; seventh round): `moduleDir` (`SCRANTIC`); every file the recipe reads (`required_archives`: `SCRANTIC.SC$` first, the fingerprint's, then `RESOURCE.00$` and `RESOURCE.MAP`); `looseFiles`, each file it installs with the name `INSTALL.INS` gave it and its codec (`SCRANTIC.SC$` → `SCRANTIC/SCRANTIC.SCR` and `RESOURCE.00$` → `SCRANTIC/RESOURCE.001`, InstallShield 1 "$" files, §8.11; `RESOURCE.MAP` plain); one name override (§6) and `screen` (`640x480`).
 * `ad2kwaj` parameters (`startrek`): `moduleDir` (`AFTERDRK`); `setupTitle`, the `[Params] WndTitle` of Microsoft Setup's `SETUP.LST` that identifies the package (`Star Trek\xAE: The Screen Saver`, 0xAE being Windows-1252's ®); the install disks' tag files, from `ST_NSTLL.INF [Source Media Descriptions]` (`MISSION.AD_` on disk 1, which the fingerprint wants beside `SETUP.LST`, and `ST_SND.DL_` on disk 2); `looseFiles`, every file the recipe installs, each KWAJ-compressed (§4.3); `screen` (`640x480`) and the About rules (`ad20`), for the catalog (§6).
-* `fixups` (§4.3), `nameOverrides` (§6), `manifest` (`known_files_<id>.inc`, generated like today's `known_files.inc`; `swse` 29 files, `startrek` 27, `marvel` 64, `snoopy` 8, `looney` 34, `screams` 23, `disney` 31, `farside` 20, `dilbert` 23, `tng` 31, `castaway` 3), `downloadUrl` (Deluxe only, as planned; the importer now lists Internet Archive copies for every package, `importer/README.md` "Downloads"; `swse` has three: the ISO, the Redump BIN and a flat ZIP of the disc's 40 files, 6.9, 8.6 and 6.7 MB; `startrek` two, each the images of both disks, 2.8 MB: a copy is used only when both of its images are fetched and verify, §5.2; `marvel` two, the flat ZIP of item `afterdarkmarvelscreenposters` first, then the `after-dark-collection` ZIP, 1.9 and 2.0 MB; `snoopy`, `looney`, `screams` and `disney` the `after-dark-collection` ZIPs, 1.9, 2.8, 3.3 and 3.4 MB; each of the six is a known image, so a download verifies `image`; neither the items' serial-number files nor any URL that carries a serial is ever fetched; `farside` one, the five ZIPs `PNX-FSC1.ZIP`–`PNX-FSC5.ZIP` fetched from inside item `prog47_55`'s ZIP, 5.5 MB; `dilbert` two, the flat `DilbertS.zip` of item `dilbert_screensaver_collection`, 4.3 MB, then `DILBERT1.ZIP`–`DILBERT4.ZIP` from inside item `prog70_75`'s ZIP, 4.4 MB; every one of these files is a known image, so these downloads verify `image` too; `tng` one, the CD image of item `star-trek-the-next-generation-screensaver`, 5.8 MB, a known image, saved as `Star Trek - The Next Generation - screensaver.iso` because no Windows file name can hold the published name's colon; `castaway` one, the ZIP of the Internet Archive's KryoFlux dump of the floppy, item `screen-antics-johnny-castaway-16-color-v1.01-int.-1.4.93-win3.1-1.44m`, 1.3 MB, saved under its published name, a known image read as the floppy image it holds, so it verifies `image`).
-* `released` (`YYYY-MM[-DD]`, §6): `swse` is `1994-08`. Every Windows build of it found dates from 1994-08-20 at the earliest (`INTERMIS.EXE`), LucasArts announced it for July 1994 on both platforms, and this CD is a later build (its files are from October 1994). It ties with the Simpsons (`1994-08`) and sorts after it by registry order. `startrek` is `1992-11`: its newest files are dated 1992-11-16 (15 of the 16 modules, all but Sounder, with `AD_MOD.DL_`, `ST_NSTLL.IN_`, `AD_NSTLL.DL_` and `AD_NSTLL.MS_`), so it is the oldest release and comes first in the catalog's `packages` list. Of the fourth round: `marvel` is `1993-12` (the libraries and `MARVEL.AD` are dated 1993-12-13, its readme December 15, 1993); `snoopy` `1994-10` (its library is dated 1994-10-19, the newest modules 1994-10-13); `looney` `1995-04` (every file of the April build is dated 1995-04-11/12; Berkeley announced it on 1995-04-25); `screams` `1995-04` (the newest file on its disks is `ENGINE.ZIP`, 1995-04-11); `disney` `1995-09` (its script, package list and `AFI.ZIP` are dated 1995-09-13). `looney` and `screams` tie and sort by registry order, so the catalog's `packages` list reads `startrek`, `marvel`, `simpsons`, `swse`, `snoopy`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the fifth round: `farside` is `1994-06` (every file of its disks is dated 1994-06-19, the bulletin-board copy 1994-06-30); `dilbert` `1994-10` (its files are dated 1994-10-06; its readme names The Far Side's collection as an earlier release). `dilbert` ties with `snoopy` and follows it, so the list reads `startrek`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the sixth round: `tng` is `1994-10` (its modules are dated 1994-10-06/07 and `ST-TNG.AFI` 1994-10-13; every file on the CD is dated 1995-04-09, the CD's own build), so it ties with `snoopy` and `dilbert` and follows them: `startrek`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `tng`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the seventh round: `castaway` is `1992-12` (the program in `SCRANTIC.SC$` is dated 1992-12-09, its data `RESOURCE.001` the same day; every file on the floppy is dated 1993-01-04, the version 1.01 international build), so it comes second, after `startrek`: `startrek`, `castaway`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `tng`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
-* `screen` (§6): `"640x480"` on `startrek`, `marvel` (each poster is a fixed 640×480 picture, drawn in the middle of a larger screen with its caption at the bottom of the whole screen) and `screams` (four modules paint a 640×480 scene and Belcho composes one 640 wide, drawn small in the middle of a larger screen); none elsewhere: the Disney, Looney Tunes and Snoopy modules lay out for any screen, and `farside`'s and `dilbert`'s are Intermission modules, which the front-ends give 640×480 by their ABI. Since the sixth round also on `tng`: several of its modules compose a fixed 640×480 scene (Science Stations' panel in the top-left corner of a larger screen; Encounters, Personnel Files, Officer's Review and Starfleet Messages small in the middle; Counselor Troi and Data Dances pinned top-left), while Warp Effect, Tachyon Particle Field, Nanites, The Borg, Worf's Weapons and Starbase fill any screen. Since the seventh round also on `castaway`: the program paints a fixed 640×480 scene, centred on whatever screen it gets (on a 1024×768 one, in the middle of black; at 640×480 it fills the screen, as on the VGA it was made for; §7.6).
+* `fixups` (§4.3), `nameOverrides` (§6), `manifest` (`known_files_<id>.inc`, generated like today's `known_files.inc`; `swse` 29 files, `startrek` 27, `marvel` 64, `snoopy` 8, `looney` 34, `screams` 23, `disney` 31, `farside` 20, `dilbert` 23, `tng` 31, `castaway` 3, `opus` 21 (and 21 in `known_files_opus_1993-11.inc`, its November 1993 build's), `opusroad` 23, `flintstones` 22 (17 in `known_files_flintstones_1994-05.inc`), `intermission` 73), `downloadUrl` (Deluxe only, as planned; the importer now lists Internet Archive copies for every package, `importer/README.md` "Downloads"; `swse` has three: the ISO, the Redump BIN and a flat ZIP of the disc's 40 files, 6.9, 8.6 and 6.7 MB; `startrek` two, each the images of both disks, 2.8 MB: a copy is used only when both of its images are fetched and verify, §5.2; `marvel` two, the flat ZIP of item `afterdarkmarvelscreenposters` first, then the `after-dark-collection` ZIP, 1.9 and 2.0 MB; `snoopy`, `looney`, `screams` and `disney` the `after-dark-collection` ZIPs, 1.9, 2.8, 3.3 and 3.4 MB; each of the six is a known image, so a download verifies `image`; neither the items' serial-number files nor any URL that carries a serial is ever fetched; `farside` one, the five ZIPs `PNX-FSC1.ZIP`–`PNX-FSC5.ZIP` fetched from inside item `prog47_55`'s ZIP, 5.5 MB; `dilbert` two, the flat `DilbertS.zip` of item `dilbert_screensaver_collection`, 4.3 MB, then `DILBERT1.ZIP`–`DILBERT4.ZIP` from inside item `prog70_75`'s ZIP, 4.4 MB; every one of these files is a known image, so these downloads verify `image` too; `tng` one, the CD image of item `star-trek-the-next-generation-screensaver`, 5.8 MB, a known image, saved as `Star Trek - The Next Generation - screensaver.iso` because no Windows file name can hold the published name's colon; `castaway` one, the ZIP of the Internet Archive's KryoFlux dump of the floppy, item `screen-antics-johnny-castaway-16-color-v1.01-int.-1.4.93-win3.1-1.44m`, 1.3 MB, saved under its published name, a known image read as the floppy image it holds, so it verifies `image`; of the eighth round, `opus` three, each the three disks' ZIPs from inside a larger ZIP, `OPUS1NTA.ZIP`–`OPUS3NTA.ZIP` and then `ONBSBS-1.ZIP`–`ONBSBS-3.ZIP` from item `prog21-29`'s and `OPUS-1.ZIP`–`OPUS-3.ZIP` from `prog39_46`'s, 2.8 MB each; `opusroad` one, the ZIP of item `OpusNBill_OnTheRoadAgain`, 4.4 MB; `flintstones` one, the tar `wgam0219.tar` from inside item `ibm-wgam-wbiz-collection`'s ZIP `wgam0210-0219.zip`, 135,624,192 bytes (129.3 MB) for the three ZIPs it holds among some 160 other files, which are taken out of it by name, size and md5 (`Download::members`, §5.2), nothing else in it ever read; `intermission` one, the ZIP of item `intermission4.0`, 3.3 MB, read as the three floppy images in it; every one of these is a known image (the tar's three members are), so each verifies `image`; the November 1993 Opus 'n Bill and the May 1994 Flintstones are not downloaded).
+* `released` (`YYYY-MM[-DD]`, §6): `swse` is `1994-08`. Every Windows build of it found dates from 1994-08-20 at the earliest (`INTERMIS.EXE`), LucasArts announced it for July 1994 on both platforms, and this CD is a later build (its files are from October 1994). It ties with the Simpsons (`1994-08`) and sorts after it by registry order. `startrek` is `1992-11`: its newest files are dated 1992-11-16 (15 of the 16 modules, all but Sounder, with `AD_MOD.DL_`, `ST_NSTLL.IN_`, `AD_NSTLL.DL_` and `AD_NSTLL.MS_`), so it is the oldest release and comes first in the catalog's `packages` list. Of the fourth round: `marvel` is `1993-12` (the libraries and `MARVEL.AD` are dated 1993-12-13, its readme December 15, 1993); `snoopy` `1994-10` (its library is dated 1994-10-19, the newest modules 1994-10-13); `looney` `1995-04` (every file of the April build is dated 1995-04-11/12; Berkeley announced it on 1995-04-25); `screams` `1995-04` (the newest file on its disks is `ENGINE.ZIP`, 1995-04-11); `disney` `1995-09` (its script, package list and `AFI.ZIP` are dated 1995-09-13). `looney` and `screams` tie and sort by registry order, so the catalog's `packages` list reads `startrek`, `marvel`, `simpsons`, `swse`, `snoopy`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the fifth round: `farside` is `1994-06` (every file of its disks is dated 1994-06-19, the bulletin-board copy 1994-06-30); `dilbert` `1994-10` (its files are dated 1994-10-06; its readme names The Far Side's collection as an earlier release). `dilbert` ties with `snoopy` and follows it, so the list reads `startrek`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the sixth round: `tng` is `1994-10` (its modules are dated 1994-10-06/07 and `ST-TNG.AFI` 1994-10-13; every file on the CD is dated 1995-04-09, the CD's own build), so it ties with `snoopy` and `dilbert` and follows them: `startrek`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `tng`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the seventh round: `castaway` is `1992-12` (the program in `SCRANTIC.SC$` is dated 1992-12-09, its data `RESOURCE.001` the same day; every file on the floppy is dated 1993-01-04, the version 1.01 international build), so it comes second, after `startrek`: `startrek`, `castaway`, `marvel`, `farside`, `simpsons`, `swse`, `snoopy`, `dilbert`, `tng`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`. Of the eighth round: `opus` is `1993-09` (every file of its disks is dated 1993-09-21; its November build's 1993-11-03); `intermission` `1993-11` (its files are dated 1993-11-03); `flintstones` `1994-05` (its May build's readme is dated 1994-05-25; the June build, which the registry's fields describe, 1994-06-16); `opusroad` `1994-09` (its newest file, `INTERMIS.EXE`, is dated 1994-09-16). So the list reads `startrek`, `castaway`, `opus`, `intermission`, `marvel`, `flintstones`, `farside`, `simpsons`, `swse`, `opusroad`, `snoopy`, `dilbert`, `tng`, `looney`, `screams`, `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
+* `screen` (§6): `"640x480"` on `startrek`, `marvel` (each poster is a fixed 640×480 picture, drawn in the middle of a larger screen with its caption at the bottom of the whole screen) and `screams` (four modules paint a 640×480 scene and Belcho composes one 640 wide, drawn small in the middle of a larger screen); none elsewhere: the Disney, Looney Tunes and Snoopy modules lay out for any screen, and `farside`'s and `dilbert`'s are Intermission modules, which the front-ends give 640×480 by their ABI. Since the sixth round also on `tng`: several of its modules compose a fixed 640×480 scene (Science Stations' panel in the top-left corner of a larger screen; Encounters, Personnel Files, Officer's Review and Starfleet Messages small in the middle; Counselor Troi and Data Dances pinned top-left), while Warp Effect, Tachyon Particle Field, Nanites, The Borg, Worf's Weapons and Starbase fill any screen. Since the seventh round also on `castaway`: the program paints a fixed 640×480 scene, centred on whatever screen it gets (on a 1024×768 one, in the middle of black; at 640×480 it fills the screen, as on the VGA it was made for; §7.6). None on the eighth round's four: Intermission modules, which the front-ends give 640×480 by their ABI.
+* `speed_modules` (§6; eighth round): the modules whose catalog entries get the host control **Speed:** (`SpeedModule`: the path, `SAVER/<FILE>`, matched without case, and the stop its slider starts at, a `SpeedStop`, Normal unless named; `kIntermissionSpeed` in `packages.cc`). Only `intermission` has any, the 36 of §6 whose motion follows the lane's call rate (34 IMX modules, `IMSHARK.IMQ` and `MACHINE.MSV`): `DRAGON.IMX`, `PING.IMX` and `BRICKS.IMX` start at Slowest, `WORMS.IMX` and `SNOW.IMX` at Slow, `IMSHARK.IMQ` at Fast and the other 30 at Normal. Every other package's list is empty.
 
 ## 3. Identification
 
@@ -324,7 +406,10 @@ union of those folders (§5.2), so the steps below see one install folder.
    files (`farside`'s `PNX-FSC1.ZIP`–`PNX-FSC5.ZIP`, `dilbert`'s
    `DILBERT1.ZIP`–`DILBERT4.ZIP`), given as several `--image`s and read as
    one install folder; the log says "ZIPs of the install disks' files, the
-   known copies of <title> (by their md5s)".
+   known copies of <title> (by their md5s)". Since the eighth round a
+   further build's known images (`Build::images`, §2) name the package and
+   that build: a set of the November 1993 Opus 'n Bill's three ZIPs is the
+   known image of that build, and its import is that build's.
 2. **Fingerprints**, tried for every package in registry order (for folders,
    and for images with an unknown md5). Exactly one package must match: none
    → 2 ("not a known After Dark disc; known: …", since the sixth release
@@ -334,7 +419,7 @@ union of those folders (§5.2), so the steps below see one install folder.
    * `ad3zip` family: an install dir (`INSTALL\`, or the root for floppies and floppy copies) holding `INSTALL.INS`, `SETUP.PKG`, `ENGINE.ZIP` and `MODMISC.ZIP`, and since the fourth round `AFI.ZIP`. The package is the one whose `engineDll` is a member of `MODMISC.ZIP`, whose `folderAfi` is a member of `AFI.ZIP`, and whose `marker`, when it has one, is a member of `MODMISC.ZIP` too. Central-directory names are not encrypted, so no password is needed to identify. Before the fourth round the engine DLL alone decided, which no longer tells this family apart: ScreamSavers' `MODMISC.ZIP` holds After Dark 3.2's own `ADXPL300.DLL`, so every flat form of it was taken for 3.2 (exit 3, and with `--no-verify` it replaced an installed 3.2); every `AFI.ZIP` carries other products' folder files (`DISNEY.AFI` is on all six known releases' disks, `AD3.AFI` on three), so the AFI alone would not do either. Hence both, and for `ad32`, whose engine DLL and folder file ScreamSavers both ship, the marker `AD30RSDB.DLL`, which of every known AD 3.x install only 3.2's `MODMISC.ZIP` holds (`research/win/pkg/more/i2/members.json`). Checked over every known source form of `ad32`, `tt`, `simpsons`, `looney`, `screams` and `disney` (their CDs, floppies, ZIPs, flat folders and `DISK<n>` copies): each matches exactly one package. Disk 1 alone of ScreamSavers is identified and then refused by the recipe (every install disk is needed, §4.3); disk 1 alone of the others matches nothing, 3.2's among them, whose `AFI.ZIP` is on its disk 2 (before, a 3.2 disk 1 was identified, and imported a partial 3.2, since `ad32` lists no required archives). `tng`'s CD keeps its install files at its root, as a floppy does; its `AFI.ZIP` holds six other products' folder files (`AD2`, `DISNEY`, `MAD`, `MARVEL`, `STARTREK`, `STUMP`) beside `ST-TNG.AFI`, so the `DISNEY.AFI` among them never makes it `disney`: no other package's `MODMISC.ZIP` has `ADXPL320.DLL`, and `disney`'s `ADXPL100.DLL` is not in this one.
    * `islib` (`marvel`, `snoopy`; fourth round): InstallShield 2's package list `SETUP.PKG` at the source's root (disk 1, the disks together, a flat folder or ZIP of their files), with disk 1's library volume (`required_archives[0]`: `IMAGES.1`, `AD_MODS.1`) beside it. Only then is it read, once: a plain file of at most 64 KiB (the real ones are 1,650 and 194 bytes) that starts with `4A A3` and parses strictly (each group's body adds up to its size, the groups end at the disk table, every library in the disk table points at a group, and every group is pointed at); anything else is no package list and identifies nothing, whatever it holds. The package is the one whose tag member the list names in its tag library (`MARVEL.AD` in `modules.lib`; `IS_FLY.AD` in `AD_MODS.z`; both compared without ASCII case). `INSTALL.INS` and `SETUP.INS` are not needed. Since the list is opened only beside a first library volume, an AD 3.x install's `SETUP.PKG` is never read. Disk 1 alone is identified and then refused (every install disk is needed, §4.3); disk 2 alone matches nothing.
    * `intermission` (`swse`): Presage's installer script `INSTALL.DAT` at the source's root (the CD, disk 1, a flat ZIP, or a folder copy of the disks), a plain file of at most 64 KiB (a larger one is simply no match), whose `[data] shortname` is the package's `installName` (`SWSE`; sections and keys compared without case, values trimmed), with the first archive, `SWSE1.ARJ`, beside it. The script is read for nothing else. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); disks 2–5 without it match nothing.
-   * `intermission` with Delrina's installer (`farside`, `dilbert`; fifth round): disk 1's tag file `DISK1`, the installer `IMINST2.EXE` and the release's `marker` (`PTERY.IMQ`, `DB-CLOCK.IMQ`), side by side at the source's root (disk 1, the disks together, or a flat folder or ZIP of their files). Nothing is read: the names alone name the release, as an AD 3.x install's archive members do; the installer has no script (it copies by wildcard), and `PACKING.LST`, Dilbert's list of its modules, is not needed. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); any other disk alone, or disk 1 without the installer or the marker, matches nothing. Star Wars Screen Entertainment is never taken for either release, nor either for it, and a folder holding both releases' files matches both (ambiguous: `--package` chooses).
+   * `intermission` with Delrina's installer (`farside`, `dilbert`; fifth round): disk 1's tag file `DISK1`, the installer `IMINST2.EXE` and the release's `marker` (`PTERY.IMQ`, `DB-CLOCK.IMQ`), side by side at the source's root (disk 1, the disks together, or a flat folder or ZIP of their files). Nothing is read: the names alone name the release, as an AD 3.x install's archive members do; the installer has no script (it copies by wildcard), and `PACKING.LST`, Dilbert's list of its modules, is not needed. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); any other disk alone, or disk 1 without the installer or the marker, matches nothing. Star Wars Screen Entertainment is never taken for either release, nor either for it, and a folder holding both releases' files matches both (ambiguous: `--package` chooses). Since the eighth round the same for `opus` (`OPUSCLOK.IMQ`), `opusroad` (`OPUSTREK.IMX`), `flintstones` (`DRIVEIN.IMQ`) and `intermission` (`IMSHARK.IMQ`): no two of Delrina's six releases share a marker, so each source matches one. A release with builds is named by its own marker or by a build's (`Build::marker`), and a build's marker beside the installer makes the import that build's: `VELOC2.ASA` the November 1993 Opus 'n Bill's (the September build has none), `FM-PHOTO.IMX` the May 1994 Flintstones' (the June build has none). The markers are only looked for, never read.
    * `ad2kwaj` (`startrek`): Microsoft Setup's file list `SETUP.LST` at the source's root (disk 1, the disks together, or a flat folder, ZIP or ISO of their files), a plain file of at most 64 KiB (the real one is 654 bytes), whose `[Params] WndTitle` is the package's `setupTitle` ("Star Trek®: The Screen Saver", compared in Windows-1252 as the file holds it, without ASCII case, values trimmed), with disk 1's tag file, `MISSION.AD_`, beside it. `CmdLine` is not used: it is the same for every Berkeley After Dark 2.0 setup. The file is read for nothing else. Disk 1 alone is identified, and then refused because every install disk is needed (§4.3); disk 2 alone matches no fingerprint (its md5 names it, step 1). An installed `C:\AFTERDRK` is no source: it has no `SETUP.LST`, and the installer wrote the owner's name, company and serial number into its `AD.EXE` (resource type 3000, ids 1–3), so that file never matches the manifest.
    * `is1` (`castaway`; seventh round): InstallShield 1's own files, the launcher `SETUP.EXE`, the compiled script `INSTALL.INS` and the installer it expands, `INSTALL.EX$`, side by side at the source's root (the floppy, or a folder, ZIP or 7z of its files) with the release's first file (`required_archives[0]`: `SCRANTIC.SC$`). Nothing is read: the names alone name the release, as Delrina's floppies' do (another InstallShield 1 floppy has other files of its own). An AD 3.x install, whose `INSTALL.INS` belongs to InstallShield 2 or 3, has no `INSTALL.EX$` and no `SCRANTIC.SC$`, so it never matches, nor does this floppy match the `ad3zip` family (no `SETUP.PKG` or `ENGINE.ZIP`). An installed `\SIERRA\SCRANTIC` is no source: it has none of the installer's files.
 3. `--package <id>` restricts step 2 to one package. It is an error if the
@@ -389,6 +474,19 @@ This is the contract between the importer (A) and the lanes (B, C).
 <win>\packages\tng\ENGINE\…                   AD_SND, ADTASK, ADW30.EXE, ADW30.INI, ECOLOGIC.DLL (After Dark 3.0's, March 1995)
 <win>\packages\castaway\SCRANTIC\…            SCRANTIC.SCR (the program), RESOURCE.MAP, RESOURCE.001 (its data)
                                                 (3 files; the guest's C:\SIERRA\SCRANTIC, §7.6); no ENGINE folder
+<win>\packages\opus\SAVER\…                   15 ASA animations, 1 IMQ module (OPUSCLOK), INTRMLIB, ANTSW, MEMMIDI
+                                                (19 files, in either build: the November 1993 build's own 16 modules)
+<win>\packages\opus\ENGINE\…                  IMASAPLY.IMQ, INTERMIS.EXE (Intermission 4.0's, byte for byte)
+<win>\packages\opusroad\SAVER\…               12 ASA animations, 3 IMQ modules, 1 IMX module (OPUSTREK), INTRMLIB, ANTSW,
+                                                DIBDLL, MEMMIDI (20 files)
+<win>\packages\opusroad\ENGINE\…              IMASAPLY.IMQ, IMIMXPLY.IMQ, INTERMIS.EXE (Intermission 5.0's)
+<win>\packages\flintstones\SAVER\…            3 ASA animations, 8 IMQ modules, 4 IMX modules, INTRMLIB, ANTSW, DIBDLL,
+                                                MEMMIDI (19 files; the May 1994 build: 9 modules and DECO, 14 files)
+<win>\packages\flintstones\ENGINE\…           IMASAPLY.IMQ, IMIMXPLY.IMQ, INTERMIS.EXE
+<win>\packages\intermission\SAVER\…           43 IMX modules, 6 ASA animations, 1 IMQ module (IMSHARK), 2 FLI animations,
+                                                PARADISE.MRF, MACHINE.MSV, the 8 pictures FACE.ASA opens, INTRMLIB, ANTSW,
+                                                DECO, MEMMIDI, IMIMXPLY.IMQ (for the MultiSaver group, §4.3) (67 files)
+<win>\packages\intermission\ENGINE\…          the readers IMASAPLY, IMIMXPLY, IMFLIPLY, IMMRFPLY and IMMSVPLY (.IMQ), INTERMIS.EXE
 <win>\packages\<id>\import.json               record (v2, §5.3)
 <win>\catalog-win.json                        merged catalog (§6)
 ```
@@ -408,7 +506,8 @@ a file there would override (§7.3). Neither has `marvel` (its installer put
 `AD_SND.DLL`, which the package keeps in `ENGINE`, and an `AD_PREFS.INI`
 naming the PC speaker's driver in `C:\WINDOWS`), nor any AD 3.x package:
 what `ADW30.EXE` wrote into `AD_PREFS.INI` is seeded too (§7.3). Nor have
-`farside` and `dilbert`: Delrina's installer put only its VxD and control
+`farside` and `dilbert`, nor the eighth round's four, which the same
+installer installed: Delrina's installer put only its VxD and control
 panel in `C:\WINDOWS\SYSTEM`, which are never installed, and no settings
 file; their modules write `ANTSW.INI`, whose engine keys the lane seeds
 (§7.5).
@@ -482,10 +581,17 @@ as for `swse`, except:
 * **I1**: the module folder may hold the release's own IMQ modules (the
   `*.IMQ` files the registry places in `SAVER`), never a file named as
   Intermission's readers are (`IM???PLY.IMQ`: `IMIMXPLY`, `IMASAPLY`,
-  `IMAD_PLY`, …). `INTERMIS.EXE` and the ASA reader stay in `ENGINE`.
-* **I3**: `ENGINE\IMIMXPLY.IMQ` is not required (neither release has an IMX
-  module); `ENGINE\IMASAPLY.IMQ` is, when the module folder holds ASA
-  animations. No `WINDOWS` file is required: there is no `WINDOWS` folder.
+  `IMAD_PLY`, …), unless it is a copy of a reader the registry also places
+  in `ENGINE`: since the eighth round Intermission 4.0's `IMIMXPLY.IMQ`
+  sits beside its modules too, where its MultiSaver group looks for it
+  (§4.3). `INTERMIS.EXE` and the readers stay in `ENGINE`.
+* **I3**: each form's reader is in `ENGINE` when the module folder holds a
+  module of that form: `IMASAPLY.IMQ` for ASA animations, and since the
+  eighth round `IMIMXPLY.IMQ` for IMX modules (neither fifth-round release
+  has one; On the Road Again's Opus Trek, the Flintstones' four and
+  Intermission 4.0's 43 are), `IMFLIPLY.IMQ` for FLI animations,
+  `IMMRFPLY.IMQ` for a morph and `IMMSVPLY.IMQ` for a MultiSaver group. No
+  `WINDOWS` file is required: there is no `WINDOWS` folder.
 * **I5**: nothing is read to identify, and the disks' tag files are only
   looked for; only the registry's loose files are ever opened (the
   never-read list is in §4.3).
@@ -740,6 +846,56 @@ WinG), `ANTSW2.DLL` (nothing imports it), `MAPI.DLL` and `INTERMIS.LIB`;
 and whatever a copy of the disks holds besides, such as the bulletin
 boards' notes in the per-disk ZIPs. The tests lock made-up stand-ins for
 such files in folder sources to prove it (§9).
+
+**The eighth round's four** (`opus`, `opusroad`, `flintstones`,
+`intermission`) came the same way, on three, four, three and three 1.44 MB
+floppies installed by the same `IMINST2.EXE`, and the recipe is the same,
+with their tables:
+
+| Files | Go to |
+|---|---|
+| the modules: `opus`'s 15 `*.ASA` and `OPUSCLOK.IMQ`; `opusroad`'s 12 `*.ASA`, `BUTTWIPE.IMQ`, `OB-SKATE.IMQ`, `OB-SPACE.IMQ` and `OPUSTREK.IMX`; `flintstones`' 3 `*.ASA`, 8 `*.IMQ` and 4 `*.IMX`; `intermission`'s 43 `*.IMX`, 6 `*.ASA`, `IMSHARK.IMQ`, `EINSTEIN.FLI`, `FLYING.FLI`, `PARADISE.MRF` and `MACHINE.MSV` | `M\` |
+| what they load or open: `INTRMLIB.DLL`, `ANTSW.DLL` and `MEMMIDI.DLL`; `DIBDLL.DLL` (`opusroad`'s and `flintstones`' IMQ modules); `DECO.DLL` (`intermission`'s Photo Shoot); and the eight pictures Intermission 4.0's Snooze (`FACE.ASA`) opens beside it, `BALLOON.BMP`, `BIRD.BMP` and six `*FACE.BMP` | `M\` |
+| `IMASAPLY.IMQ` and `INTERMIS.EXE`, and the readers of the other forms a release has: `IMIMXPLY.IMQ` (`opusroad`, `flintstones`, `intermission`), `IMFLIPLY.IMQ`, `IMMRFPLY.IMQ` and `IMMSVPLY.IMQ` (`intermission`) | `E\` |
+| `intermission`'s `IMIMXPLY.IMQ` once more: its MultiSaver reader finds the group's IMX modules in INTRMLIB's module table, which `FINDALLMODULES` builds from the module folder alone, each module by a reader of its type there (Intermission's installer put every reader in `C:\SAVER`); without it The Machine (Palette) draws nothing | `M\` |
+
+Result: `opus` `SAVER\` 19 files and `ENGINE\` 2, 21 in all; `opusroad` 20
+and 3, 23; `flintstones` 19 and 3, 22; `intermission` 67 and 6, 73; each
+the manifest's. Stored plain: On the Road Again's `HAIRBALL.ASA`,
+`JUNGLE.ASA`, `PISTACH4.ASA`, `SINGIN2.ASA`, `OPUSTREK.IMX` and
+`IMASAPLY.IMQ`; all the June Flintstones' modules but `CARS.ASA` and
+`FM-CRANE.IMQ`, and its `IMASAPLY.IMQ`; Intermission 4.0's `MACHINE.MSV`;
+none of the Opus 'n Bill Screen Saver's. The rest are SZDD (the June
+Flintstones' `DIBDLL.DLL` ends with its version stamp in lower case, `dll
+0601`, §8.7).
+
+**Builds** (`Package::builds`, §2). A further build installs from its own
+table and is verified against its own manifest, under the same root and
+module folder. The November 1993 Opus 'n Bill: 21 files, its own 16
+modules (`CTOAST.ASA` in place of `DTOAST.ASA`, `BERSERK.ASA` added,
+`MICROIBM.ASA` gone, `BUNGEE2.ASA`, `VELOC2.ASA` and `OPUSMES2.ASA` in place
+of `BUNGEE.ASA`, `VELOC.ASA` and `OPUSMESS.ASA`; every other module a
+build of its own too) and the same engine files. The May 1994 Flintstones:
+17 files, its nine whole modules (`THEME.ASA` and `FM-PHOTO.IMX` among
+them, with `DECO.DLL` for the latter) and none of the June build's seven
+new ones. Its `CARS.ASA` is never opened: its SZDD stream decodes 34,114
+bytes short of the size its header declares, in all four copies of the
+build found online (`prog47_55` among them; DiscMaster's index lists the
+others), and the log and `import.json` say so (§5.3). The copy the
+registry knows has no tag file on disks 2 and 3, so `DRIVEIN.IMQ` and
+`THEME.ASA` stand for them.
+
+**Never opened** (I5), beyond the fifth round's list: `IWLIB.DLL` and the
+readers of forms no module of a release takes (`IMAD_PLY`, `IMFLCPLY`,
+`IMIW_PLY`, `IMNSSPLY`, `IMSAPPLY`, `IMSCRPLY`, `IMSEQPLY`, `IMSPXPLY`); On
+the Road Again's `ICONDLL.DLL`, `ANTSW2.DLL`, `MAPI.DLL` and `INTERMIS.LIB`,
+as Dilbert's; Intermission 4.0's `CURTCALL.EXE`, its help files and its
+module developer's kit (`SAVERDEV.KIT\`); the May Flintstones' `CARS.ASA`;
+and the bulletin boards' notes and programs beside the files
+(`FILE_ID.DIZ`, the `.NFO` and numbered `.TXT` files, `README.NTA`,
+`DONTREAD.ME`, `SEEME!.COM`, `ROI!-BBS.COM`, the `DISK 1`–`DISK 3` files
+with a space in their names, and the two programs beside the November 1993
+Opus 'n Bill's files), which are never opened, run or installed.
 
 **`ad2kwaj`** (`startrek`): the release came on two 1.44 MB floppies
 installed by Microsoft Setup 2.0. `SETUP.EXE` expanded what `SETUP.LST`
@@ -1018,7 +1174,12 @@ adimport --remove <id> [--dest <root>]          (should)
   merge, and a name on two disks must be one file (the same size when
   listed, the same bytes when read; Snoopy's `DREAM.ON`, on both of its
   disks, is), else 2 ("SAME.TXT differs between Disk1 and Disk2; they are
-  not the disks of one release"). Any subset of disks is accepted: the
+  not the disks of one release"). Since the eighth round that holds when
+  the file is read, never when it is only listed, for disk sets and for
+  several `--image`s alike: what no recipe reads never stops an import.
+  The bulletin boards' copies of the May 1994 Flintstones carry their notes
+  (`H3LLO2U.NFO`, `COD.NFO`, `FILE_ID.DIZ`) on every disk, other bytes on
+  each, and were refused for them before. Any subset of disks is accepted: the
   recipe decides whether the release is complete (disk 1 alone of
   ScreamSavers, Marvel Comics Screen Posters or Snoopy's Screen Savers is
   identified and needs every install disk; each of their other disks alone
@@ -1044,6 +1205,17 @@ adimport --remove <id> [--dest <root>]          (should)
     (`identify_folder`): such a source is then usually no known release.
   * `import.json`'s `from` names a file by its path in the union, without
     its disk folder (`AFI.ZIP!SCREAMS.AFI`).
+* **One folder** (eighth round; `source.h`). A ZIP or 7z of install files
+  may hold them, or only its `DISK<n>` folders, in one folder that holds
+  everything, as the Internet Archive's ZIP of On the Road Again's four
+  floppies does (`Opus n Bill - On the Road Again/`): that folder is then
+  read as its root, the same rule for both archives, and the log says
+  "reading <archive>'s folder <folder> as the source". Any other folder,
+  and anything deeper, is refused as before ("… (a ZIP source holds the
+  install files, or only DISK<n> folders of them, at its root or in one
+  folder)"). Before, the ZIP was refused ("member "Opus n Bill - On the
+  Road Again/" is not a bare file name or a file in a DISK<n> folder"),
+  and so was a 7z of the same shape.
 * **A known ZIP** (fourth round): a ZIP of install files whose md5 is one
   of a package's known images (§2) is still read as the install folder, and
   verified `image`; the log says "a ZIP of install files, the known copy of
@@ -1070,15 +1242,19 @@ adimport --remove <id> [--dest <root>]          (should)
   (`kMaxZippedImageBytes`: "… holds more than 64 MB of disk images; no
   release came on that many disks"): a bound, which the plan did not have,
   against a crafted ZIP. A ZIP with no floppy image is a ZIP of install
-  files, as before.
+  files, as before. Since the eighth round its images may sit in any
+  folder, as a 7z's could: the Internet Archive's ZIP of Intermission 4.0's
+  three images keeps them in `Intermission 4.0/` (`ITM4W-D1.IMA` …), and
+  1.4.4 refused it for that folder.
 * **A 7z** (seventh round; §8.10) is taken wherever a ZIP is, sniffed by
   its signature at byte 0: its floppy images when it holds any (in any
   folder: the user's Johnny Castaway, `000580_jonny_castaway.7z`, holds
   `000580_jonny_castaway/disk1.img`, a part
   `<7z path>!000580_jonny_castaway/disk1.img` identified by the image's
   md5), else a 7z of install files under the ZIP's rule (bare names, or
-  only flat `DISK<n>` folders), logged "a 7z of install files, not an
-  image of the original disks".
+  only flat `DISK<n>` folders, and since the eighth round either in one
+  folder), logged "a 7z of install files, not an image of the original
+  disks".
 * `--download` was planned to stay Deluxe-only, since no other package had
   a known URL when this was written. The Internet Archive search that
   followed found copies of every package, so `--download <id>|all` now
@@ -1098,7 +1274,19 @@ adimport --remove <id> [--dest <root>]          (should)
   files (5 ZIPs)"). The Internet Archive serves each of those from inside
   a larger ZIP, by its path, with no length and no `Range` support, so an
   interrupted one is fetched whole again; each is checked against our own
-  md5 (none is published for a file inside a ZIP).
+  md5 (none is published for a file inside a ZIP). The eighth round's
+  `opus` copies are such sets of three ZIPs. Since the eighth round a copy
+  may also be a tar that holds the release's files (`Download::members`,
+  `tar.h`): the June 1994 Flintstones' only copy is three ZIPs among some
+  160 files of a shareware collection's `wgam0219.tar`, which the Internet
+  Archive serves from inside its item's ZIP. The tar is fetched and checked
+  as any download (135,624,192 bytes, its md5 ours), then its headers are
+  walked from the start (every header's checksum and octal size checked,
+  only headers read) until the three members are found by name; each is
+  copied out beside it, checked against its size and md5, and the three are
+  imported as the known disk set they are. No other member's data is ever
+  read. `--list-packages` and the importer window give the tar's size
+  ("download 129.3 MB"), the whole download.
 * Exit codes are unchanged (0 ok · 1 error · 2 source invalid · 3 verify
   failed · 4 network · 5 cancelled). The settings dialog launches
   `adimport --gui` and reads only 0 and 5.
@@ -1134,6 +1322,12 @@ adimport --remove <id> [--dest <root>]          (should)
 
 * `package.recipe` is `tree`, `ad3zip`, `intermission`, `ad2kwaj` or,
   since the fourth round, `islib`.
+* `package.build` (eighth round): which build of a release with several
+  was imported (`opus`: `1993-09` or `1993-11`; `flintstones`: `1994-06` or
+  `1994-05`); absent for every other release. `package.buildNote`: the
+  build's note, when it has one (the May 1994 Flintstones': "its CARS.ASA
+  (Prehistoric Vehicles) is damaged in every known copy and is never
+  installed; the June 1994 build's is whole"), which the log gives too.
 * `kind` is `iso`, `floppy`, `folder` or `download` (and `zip`, as built;
   `7z` for a 7z of install files since the seventh round).
 * `format` is `iso9660`, `iso9660+joliet`, `fat12`, `fat16` or `folder`
@@ -1179,7 +1373,10 @@ added two packages and their ASA and IMQ entries under it as well; every
 entry of the twelve releases before them is as 1.2.1 wrote it. The
 seventh round added its package, the `is1` recipe and the first
 `"scrnsave"` entry under it too; every entry of the fifteen releases
-before it is as 1.4.3 wrote it.
+before it is as 1.4.3 wrote it. The eighth round added four packages,
+Intermission's data files of three more forms and a control's `host` field
+(Intermission 4.0's **Speed:**) under it as well; every entry of the
+sixteen releases before them is as 1.4.4 wrote it.
 
 * **Order.** Installed packages in registry order. Within a package, its
   module dirs in registry order. Within a dir, `*.AD` sorted as today.
@@ -1191,6 +1388,8 @@ before it is as 1.4.3 wrote it.
   the module folders of a release Delrina's installer installed
   (`Package::delrina_installer`) also list `*.ASA` and `*.IMQ`, sorted with
   the rest; no other package's folders, and never `ENGINE`, list them.
+  Since the eighth round those folders list `*.FLI`, `*.MRF` and `*.MSV`
+  too (Intermission 4.0's data files, below).
   Since the seventh round the module folders of an InstallShield 1
   package (`is1`) list `*.SCR` too, for a Windows 3.1 screen-saver program
   (below); no other package's folders, and never `ENGINE` (where After
@@ -1300,6 +1499,89 @@ before it is as 1.4.3 wrote it.
   (`farside.hell`, `dilbert.db-best`), paths
   `packages/farside/SAVER/HELL.ASA`; none is byte-identical to another
   release's module, so none has `sameAs`.
+* **The eighth round's modules** (`opus`, `opusroad`, `flintstones`,
+  `intermission`) are Intermission entries of every form, lane `ne16`,
+  `abi` `"intermission"`: 36 ASA animations, 13 IMQ modules, 48 IMX modules
+  (On the Road Again's Opus Trek, the Flintstones' four, Intermission
+  4.0's 43), and Intermission 4.0's data files of three more forms, each
+  played by a reader of its own from `ENGINE` (§7.5): two FLI animations
+  (`EINSTEIN`, `FLYING`), a morph (`PARADISE.MRF`) and a MultiSaver group
+  (`MACHINE.MSV`). A data file goes by its extension, as INTRMLIB matched
+  every file's extension against its readers' types; an `*.FLI` is listed
+  only when it is Autodesk's FLIC (`AF11` at byte 4, or `AF12` as the FLC
+  variant has it).
+  Like an ASA animation it imports nothing, so no `needs`, and its `entry`
+  is `"SAVERMAIN"`, its reader's. Every one of the 101 has one button,
+  **Configure...**, and 36 of Intermission 4.0's have a second control
+  after it, **Speed:** (Host controls, below). No file holds a name the
+  catalog can read without running it, so the names are the registry's
+  overrides, keyed
+  `SAVER/<FILE>`: each ASA header's title, the IMX and IMQ modules' own
+  (what their QUERY or their configure dialog says) and the names the
+  morph's and the MultiSaver group's files hold, without the "OB-", "FM-"
+  and "The Flintstones - " prefixes of Intermission's list of every
+  product's modules; On the Road Again's are its installer's module list's,
+  `PACKING.LST`, and the FLI animations' their file names (Einstein,
+  Flying). Ids are
+  `<package>.<stem>` (`opus.dtoast`, `opusroad.opustrek`,
+  `flintstones.fm-mobil`, `intermission.machine`), paths
+  `packages/intermission/SAVER/MACHINE.MSV`; none is byte-identical to
+  another release's module, so none has `sameAs`. A further build's
+  entries are its own modules' (the November 1993 Opus 'n Bill's 16, the
+  May 1994 Flintstones' 9), under the same rules.
+
+  With all twenty releases installed, each in its first build, the catalog
+  lists 429 modules, still 73 of them `sameAs`; four of the new names meet
+  older ones in the `ne16` lane and take the short title, Rat Race (On the
+  Road Again), Logo (Flintstones), Einstein (Intermission) and Tunnel
+  (Intermission); no display name repeats within a lane; `screen` is still
+  on 46 entries; and the `packages` list reads `startrek`, `castaway`,
+  `opus`, `intermission`, `marvel`, `flintstones`, `farside`, `simpsons`,
+  `swse`, `opusroad`, `snoopy`, `dilbert`, `tng`, `looney`, `screams`,
+  `ad32`, `tt`, `disney`, `deluxe`, `ad10`.
+* **Host controls** (since the eighth round). A control may carry `host`,
+  written last, the name of an environment variable of the host's: a
+  front end sets it to the control's value when it starts the host for
+  that module, and never sends that control's value as `ADCVSET` or `SET`
+  (INTERACTION.md §6.7). Without `host` a control is the module's, as every
+  control was before. There is one, Intermission 4.0's **Speed:**, index 1,
+  after the **Configure...** of each of its 36 entries whose motion
+  follows the lane's call rate, here as it reads for a module that starts
+  at Normal:
+
+  ```json
+  {"index": 1, "name": "Speed:", "kind": "stringslider", "type": "slider",
+   "items": ["Slowest","Slow","Normal","Fast","Fastest"], "values": [6,12,25,50,100],
+   "default": 25, "defaultStop": 2, "host": "ADNE16IMXSPEED"}
+  ```
+
+  Intermission ran a module as fast as the PC allowed, and most of
+  Intermission 4.0's own move one step per call (the speed options a few
+  have set only how far a step goes), so their speed was the machine's. The
+  value is the emulated machine's pace for that module, in percent of the
+  ne16 lane's model (§7.5, "Pacing"): **Normal** (25) is an estimate of a
+  typical 486 of 1993, **Fastest** (100) the model's full pace. The stops
+  are the same on every entry, but `default` and `defaultStop` are the
+  module's own, so that its motion is calm (INTERACTION.md §6.7, "Where it
+  starts"): 6 and 0 (Slowest) for `DRAGON`, `PING` and `BRICKS`, 12 and 1
+  (Slow) for `WORMS` and `SNOW`, 50 and 3 (Fast) for `IMSHARK`, and 25 and
+  2 (Normal) for the other 30. `catalog.cc` (`speed_control`) appends it to
+  the entry of each module the registry's `speed_modules` lists, with the
+  stop it starts at (§2), when that entry's `abi` is `"intermission"`; it
+  has no `boldStop`, and no other control has `host`, so every other
+  control is laid out as before. The 36, measured at 25 and at 100
+  (INTERACTION.md §6.7, "Which modules"): `ACIDSPRY`, `ANTMINE`, `BRICKS`
+  (its ball after its first wall), `CHAOS1`, `DISSOLVE`, `DRAGON`, `EYES`,
+  `FERN`, `FIRE`, `FIREFLY`, `FLASH`, `FLOW`, `ICE`, `IMBITMAP`, `IM_ANIM`,
+  `IM_MIXER`, `IM_PICTU` (its fades), `KALSCOPE`, `MARINE2`, `MELT`,
+  `MOIRE1`, `MOIRE3`, `MOSAIC`, `PALETTE`, `PING`, `PLANT`, `POLAR`, `SNOW`,
+  `SORCERY`, `SPIRALS`, `SWARM`, `SWIRL`, `TUNNEL` and `WORMS` (`.IMX`),
+  `IMSHARK.IMQ` and `MACHINE.MSV`. The other 18 pace themselves by the
+  clock, so the knob changes nothing they show, and have none: the six ASA
+  animations, the two FLI animations, `PARADISE.MRF`, and `BIGFOOT`,
+  `COMMNQUE`, `CONUND`, `FADE`, `FLEX`, `MAZE`, `ORBS`, `PHOTO` and
+  `TIMEPIEC`. With all twenty releases installed the catalog lists 957
+  controls: the 921 it listed before and the 36 Speed controls.
 * **After Dark 2.0 modules** (`startrek`, since the seventh release) are
   Classic entries like any other: NE files exporting `MODULE`, lane `ne16`,
   entry `MODULE`, their controls read from the same type-1000 records (40 in
@@ -1845,11 +2127,12 @@ Dark path of §7.3 and §7.4 (OLDMOD16 or the native AD3 bridge), and `imx`.
   that palette itself the same way (`CreatePalette` of the resource,
   through the thunks).
 * **Pacing.** INTERMIS called the saver back to back while the machine was
-  idle, and the modules pace themselves (ABI.md §3.8.5): most by
+  idle, and the modules pace themselves (ABI.md §3.8.5): Star Wars' most by
   `GetTickCount`, the two clocks by the DOS time, and Hyperspace's stars,
-  Scrolling Text's scroll and Death Star Trench one step per call. The
-  lane's frame loop, draw budget and long calls apply as they do to an After
-  Dark module, with two differences (`host/ne16/lane.hh` "Pacing"):
+  Scrolling Text's scroll and Death Star Trench one step per call, as 36 of
+  Intermission 4.0's 54 modules step (Speed, below). The lane's frame loop,
+  draw budget and long calls apply as they do to an After Dark module, with
+  three differences (`host/ne16/lane.hh` "Pacing"):
   * *Pixel cost.* A pixel a blit or fill writes costs the budget
     `ADNE16IMXPIXCOST` (default 4) instead of After Dark's `ADPIXCOST` (2):
     SWSE draws its scenes as full-screen DIB stretches through GDI, the
@@ -1863,21 +2146,50 @@ Dark path of §7.3 and §7.4 (OLDMOD16 or the native AD3 bridge), and `imx`.
     audio and runs the message loop). What is owed stays below six budgets
     and each frame without a call pays a whole one back, whatever its pumps
     did, so at most five frames in a row make none.
+  * *Speed* (since the eighth round). `ADNE16IMXSPEED=<percent>`, a whole
+    number from 1 to 100 (unset or empty: 100), runs the modeled machine at
+    that share of its pace, for the `imx` protocol and so for every
+    Intermission form. Each frame's budget is that share of `ADDRAWMIPS` ×
+    the period (at 25, 104,168 of 416,675); `ADMAXDRAWS` shrinks with it, to
+    the nearest call and at least one (64, 32, 16, 8 and 4 calls a frame at
+    100, 50, 25, 12 and 6); and what is owed stays below six full budgets of
+    work, that is 6 × 100 / percent of the smaller ones (24 at 25, 100 at
+    6), so a heavy pass slows with the machine instead of having what it
+    owes beyond the bound dropped. A module that steps once per pass
+    therefore steps that share as often. What an instruction costs in time
+    is untouched (`ADMIPS`: the clocks the modules read, the frames'
+    deadlines, long calls), and so is the pixel cost, so a module that paces
+    itself by the clock keeps its pace; only a pass the budget pays back
+    takes longer (Dragon Kites' START, a full-screen fill, leaves 2 frames
+    without a call at 100, 12 at 25 and 56 at 6). A number outside 1..100 is
+    taken as the nearer end and anything else as 100, either logged, and a
+    set knob is logged at the start (`DRAGON.IMX: the modeled machine runs
+    at 25% (ADNE16IMXSPEED=25): 25% of each frame's DRAWFRAME budget, at
+    most 16 DRAWFRAME(s) a frame`). At 100, or unset, every stream is what
+    it was before the knob, frame for frame, and without a DRAWFRAME budget
+    (`ADMIPS=0`) it changes nothing. The `ad3` and `scr` protocols have no
+    such knob, and the lane logs it as ignored for their modules. The front
+    ends set it from Intermission 4.0's **Speed:** control (§6,
+    INTERACTION.md §6.7); any Intermission module honours it when it is set,
+    but no other release's catalog entries carry the control (ABI.md
+    §3.8.12).
 
   So a module that steps once per call runs at the pace of the lane's
   25-MIPS model: Death Star Trench at 16 passes a second, where one pass a
   frame had run it at 60 (and the carry alone, at After Dark's pixel cost,
   at 31), and Scrolling Text at 19, its crawl taking about 11.4 s where one
-  pass a frame had shown it in 3.65 s. Those are seconds of 60 presented
-  frames: a streamed run is
-  stepped once per frame the front end presents, so the settings preview,
-  at 30 frames a second, shows about half as many passes. A pass that runs
-  past its frame's deadline is paced by the deadline instead (Long calls)
-  and carries nothing, neither in the frames that end inside it nor in the
-  one it returns in; the passes that frame runs after it returns are
-  carried as usual. After Dark modules carry nothing and keep their pixel
-  cost, so their streams stay as they were; `ADNE16IMXCARRY=0` turns the
-  carry off.
+  pass a frame had shown it in 3.65 s. Intermission 4.0's run at the pace
+  their **Speed** gives: where their sliders start, Dragon Kites makes 55
+  passes a second (Slowest, 6) and Ant Mine 553 and Fireworks 23.9 (Normal,
+  25), against 915, 2221 and 94.1 at Fastest (100). Those are seconds of 60
+  presented frames: a streamed run is stepped once per frame the front end
+  presents, so the settings preview, at 30 frames a second, shows about half
+  as many passes. A pass that runs past its frame's deadline is paced by the
+  deadline instead (Long calls) and carries nothing, neither in the frames
+  that end inside it nor in the one it returns in; the passes that frame
+  runs after it returns are carried as usual. After Dark modules carry
+  nothing and keep their pixel cost, so their streams stay as they were;
+  `ADNE16IMXCARRY=0` turns the carry off.
 * **The reader.** By default the real `IMIMXPLY.IMQ` from the engine dir
   (the guest's `C:\WINDOWS\SYSTEM\IMIMXPLY.IMQ`), as the real OLDMOD16 runs
   where a package has it: it is the host side of the module protocol that
@@ -1907,12 +2219,43 @@ Dark path of §7.3 and §7.4 (OLDMOD16 or the native AD3 bridge), and `imx`.
     and the lane then refuses the file at load (exit 1, "an Intermission
     reader (its query does not make it a saver: flags 00000E0C), not a
     module": `IMIMXPLY.IMQ` or `IMASAPLY.IMQ` given as a module).
+  * Since the eighth round (Intermission 4.0's own modules) four forms of
+    data file more, each a file that is no MZ executable named for its
+    reader's type, as INTRMLIB matched a file's extension against its
+    readers' QUERY types (the host's probe, `intermission_data_type`, sends
+    such a file to the ne16 lane, where 1.4.4 refused it with exit 2, "not
+    an MZ executable"): `fli`, an FLI animation (Autodesk's FLIC;
+    `EINSTEIN`, `FLYING`), read by `IMFLIPLY.IMQ` ("FLI Player"); `flc`,
+    an FLC animation, by `IMFLCPLY.IMQ` ("FLC Player", the same reader
+    under the other type; no module of the corpus is one); `mrf`, a morph
+    (`PARADISE`), by `IMMRFPLY.IMQ` ("Morph"); and `msv`, a MultiSaver
+    group (`MACHINE`: up to four IMX modules, each in its own part of the
+    screen), by `IMMSVPLY.IMQ` ("MultiSaver"), which loads those modules
+    itself. Each reader runs as real code, from the engine dir, else the
+    module dir, sent LOAD and QUERY with the file's path, as the ASA reader
+    is; none has a native reader. Their QUERY is sent with the record's
+    `0x8000` set, as INTRMLIB's `GETSAVERINFO` did, so the record carries
+    the module's name (the FLI reader files its settings under it). The
+    MultiSaver reader finds its group's modules in INTRMLIB's module table,
+    so for that form alone the lane runs INTRMLIB's `FINDALLMODULES` before
+    its LOAD and `FREEMODINFO` after, as `INTERMIS.EXE` did at start-up and
+    exit; `FINDALLMODULES` builds the table from the module dir only, every
+    `*.IMQ` there a reader and every file of a reader's type a module.
+  * An `.IMQ` whose QUERY says both saver and reader (`0x1800`: the Morph,
+    MultiSaver and Sequencer readers, whose editors Intermission's control
+    panel opened) is refused as a module, as `INTERMIS.EXE` never ran one.
 
-  Everything else is the same for the three forms: the record, the message
+  Everything else is the same for every form: the record, the message
   sequence, the pacing, the seeds (`ANTSW.INI [Intermission] Volume` and
   `Saver Path`; SWSE's only where `SWSE.DLL` is), the guest's disk and the
   sound. What the forms needed from the Win16 runtime was one call,
-  `IntersectClipRect`, which the ASA reader uses throughout
+  `IntersectClipRect`, which the ASA reader uses throughout, and since the
+  eighth round a window class's private DC (`CS_OWNDC`: Intermission's
+  saver window has one, and the FLI reader selects its palette into it
+  once), the display driver's own palette entries, `DISPLAY.22`
+  `SetPalette` and `DISPLAY.23` `GetPalette` (Fade Out), `LineDDA`
+  (Plants), `GetDialogBaseUnits`, and MMSYSTEM's `mciSendCommand`
+  `MCI_OPEN` and `mciGetErrorString` (DictaBird's, AUDIO.md §8.4)
   (`host/win16/README.md`).
 * **The guest's disk:**
 
@@ -1958,7 +2301,10 @@ Dark path of §7.3 and §7.4 (OLDMOD16 or the native AD3 bridge), and `imx`.
   (INTERACTION.md §5.2). Three IMQ modules do set the input flag,
   `0x2000` (The Far Side's PTERY, Dilbert's DB-BEST and DIL-WHAK), for
   which INTERMIS captured the mouse and passed input to the saver (ABI.md
-  §3.8.9). The lane traces the flag (`ADTRACE=lane`) and runs them as
+  §3.8.9), and since the eighth round nine more (On the Road Again's
+  `BUTTWIPE` and `OB-SKATE`; the Flintstones' `DICTABRD`, `DRIVEIN`,
+  `FM-BIRDY`, `FM-BOWL`, `FM-CRANE`, `FM-MOBIL` and `PAPERBOY`). The lane
+  traces the flag (`ADTRACE=lane`) and runs them as
   every Intermission module, under the saver's wake rules: input ends
   them, and what they show is what they draw without it. Honouring it
   would mean reporting them interactive, which leaves only Alt or the
@@ -1969,7 +2315,15 @@ Dark path of §7.3 and §7.4 (OLDMOD16 or the native AD3 bridge), and `imx`.
   overlay's `SWSE.INI` (INTERACTION.md §6.1, §7). The Far Side's and
   Dilbert's go through their own readers (an animation's dialog is
   IMASAPLY's "Animation Player Options"), and their settings land in the
-  overlay's `ANTSW.INI`, in a section named for the module.
+  overlay's `ANTSW.INI`, in a section named for the module. Since the
+  eighth round the lane loads INTRMLIB around a button, as
+  `INTERMIS.EXE`, which imports it, had it loaded: its LibEntry registers
+  the `ANT3D*` controls the FLI reader's dialog is made of, which could not
+  be created without them. The FLI reader's dialog is "FLI Play" (the
+  animation's position, and whether to erase the screen); the morph's and
+  the MultiSaver group's are Intermission's Morph and MultiSaver editors,
+  which save the `.MRF` or `.MSV` file itself, in the overlay's
+  `C:\SAVER`.
 * **Sound.** Effects go through the Win16 runtime's `sndPlaySound`, as After
   Dark's do; music through MEMMIDI's MIDI output on multimedia timers
   (AUDIO.md). The engine volume reaches both: the effects through the
@@ -2239,7 +2593,9 @@ installer ends its shared libraries' compressed files with one or two
 `ANTSW.DLL` has two), which it compared so that an older library never
 replaced a newer one. They are not data. The expander takes exactly such
 records after the last token and drops them; any other byte left over is
-still refused, and so is a record that is no stamp (a damaged file).
+still refused, and so is a record that is no stamp (a damaged file). Since
+the eighth round the tag is taken in any case: the June 1994 Flintstones'
+`DIBDLL.DLL` ends with `dll 0601`.
 
 ### 8.8 KWAJ (new with the seventh release: `kwaj.h/.cc`)
 
@@ -2475,6 +2831,25 @@ The stored name is the file's name before the installer renamed it
 recipe places by its own table (§4.3). As with §8.9, nothing has a
 checksum: a damaged file that still decodes is caught only by the
 manifest (3), and not at all under `--no-verify`.
+
+### 8.12 tar archives (new with the eighth round: `tar.h/.cc`)
+
+Only for a download (§5.2): the June 1994 Flintstones' one copy online is
+three ZIPs among some 160 files of a shareware collection's tar, which the
+Internet Archive serves from inside its item's ZIP. A tar is never a
+source of its own (`--image` does not take one). The reader takes POSIX
+ustar and the older V7 headers, and only what that copy needs: the
+headers are walked from the start, one 512-byte header and its padded data
+after another, reading only the headers, never the data of a member not
+asked for; every header's checksum must hold and its size must be octal
+digits that stay inside the file, else the archive is damaged (a tar
+error, and the download's copy fails). A member's name is its ustar prefix
+and name joined by `/`; GNU and pax extension headers are skipped like any
+other entry, so a member named only through one is not found. Two zero
+blocks or the end of the file end the archive, and the walk stops once
+every member asked for is found. A member is copied out in chunks of at
+most 1 MiB, checked against the size and md5 the registry gives it
+(`DownloadMember`), and then read as a downloaded file is.
 
 ## 9. Test strategy
 
@@ -2832,6 +3207,69 @@ manifest (3), and not at all under `--no-verify`.
     and Out to Lunch's skipped sound effects, saved there, changed the next
     run. The frozen baselines stayed at 0 differences: the 202 After Dark
     modules × A/C/S, Star Wars 28/28 and Star Trek 32/32.
+* **The eighth round** (`opus`, `opusroad`, `flintstones`,
+  `intermission`), the same way:
+  * Importer, synthetic: `import.packages` gains made-up installs of the
+    four (`tests/pkg_fixture.h`): the registry's shape (after Johnny
+    Castaway, Delrina's installer, `SAVER` and `ENGINE`, every disk's tag,
+    each table's files once and the manifests exactly those, each build's
+    its own, the required files and the fingerprint's file among them, a
+    name for every module, another build's own file on disk 1 in its table
+    alone, the copies online and the known images they are, the tar's
+    members among them); every source form (a folder, a ZIP and a 7z of
+    one folder holding everything, each disk as a floppy image or as a
+    bulletin board's ZIP whose notes differ from disk to disk, known by md5
+    or not, and Intermission 4.0's images in a folder of a ZIP beside a
+    picture); the catalog (every entry Intermission's, named by the
+    registry, with its button; ASA, IMQ and the data files at `SAVERMAIN`,
+    IMX modules at `SAVERDRAW`); the decoys of I5 (the installer, the other
+    readers, `AD_SND`, a board's notes, the May build's damaged
+    `CARS.ASA`), locked, never opened; disk 1 alone; a board's note of
+    another size on two disks never compared, while a release's file that
+    differs is; two of the four in one folder (ambiguous); the data files'
+    readers in `ENGINE` (I3); an `*.FLI` without Autodesk's magic left out
+    of the catalog, logged. The source tests take one folder holding
+    everything as the root, in a ZIP and a 7z alike, and refuse two
+    folders or a file beside one; a new `import.tar` (made-up tars,
+    `tests/tar_builder.h`) finds members by name (a ustar prefix, V7
+    headers, a name not there; directories, links and extension headers
+    no members; the walk ending once every name is found and at the two
+    zero blocks), reads them across chunks and refuses a damaged header,
+    size or file; `import.pkg_download` the tar copy; `import.cli` the
+    `--list-packages` lines (the id column now 12 characters wide, for
+    `intermission`); `import.szdd` a version stamp in lower case.
+  * Importer, real sources: `import.pkg_real` (`AD_E2E_PKG=1`) imports the
+    four from their real copies (`research/five/dl` in
+    `AD_SOURCE_ISO_DIR`; verified `image`, the manifest's files, the §4.3
+    counts) and checks the merged catalog of all twenty, 429 modules; every
+    copy of each build imported by hand too (`research/five/imp/real`), the
+    May 1994 Flintstones with its note; `--download` of each new id fetched
+    and imported (the tar's three members taken out by md5); the twenty
+    releases' root against the sixteen's (every older entry, row and file
+    unchanged); and the imported layout run on the lane's host (The Machine
+    (Palette) among them, 120 of 120 frames distinct).
+  * Lanes: `ne16.unit` (427 checks) the data forms, their readers and the
+    `0x1800` refusal; `win16.unit` (767) `LineDDA`, `DISPLAY.22` and `.23`,
+    `CS_OWNDC` and `GetDialogBaseUnits`; `core.unit` and `core.e2e` the
+    probe's data types. Each of the 112 files of the five staged builds
+    (both Opus 'n Bill builds, On the Road Again, the May Flintstones,
+    Intermission 4.0) ran 900 frames twice: 111 exit 0, identical, no
+    unimplemented call, no fault, contact sheets looked at; the one failure
+    is the May build's damaged `CARS.ASA`, whose June build runs. The
+    importer's own imports ran the same way, every module of each: the
+    June 1994 Flintstones 15 of 15 (DictaBird showing its "Sound Support
+    Not Available" line, §12), the May build 9 of 9, both Opus 'n Bill
+    builds, On the Road Again and Intermission 4.0. Sound was
+    captured twice, byte-identical (AUDIO.md §10.10); Configure... showed
+    its dialog on a hidden desktop for every form. The frozen baselines:
+    the 202 After Dark modules × A/C/S and Star Trek 32/32 at 0
+    differences; Star Wars 26/28, Hyperspace's two streams differing in 8
+    to 30 star pixels a frame, which take the grey of the cockpit's palette
+    now that the saver window has its private DC (`CS_OWNDC`), as
+    Intermission's saver window had and the FLI animations need: the
+    faithful behaviour, kept, and those two streams re-frozen; The Far
+    Side's, Dilbert's, the Next Generation's and Johnny Castaway's 44
+    streams identical to 1.4.4's.
 
 Headless runs stay deterministic throughout. Nothing may write to the
 user's real data folder (`%LOCALAPPDATA%\LongAfterDark`) except the
@@ -3116,7 +3554,7 @@ Acceptance:
    the settings dialog shows, and the saver needs no change for it.
 5. Documentation to update afterwards (outside these packages):
    * the project's status notes;
-   * `tools/package.sh`'s dist README ("Deluxe only" wording; since rewritten for the releases it knows, sixteen today);
+   * `tools/package.sh`'s dist README ("Deluxe only" wording; since rewritten for the releases it knows, twenty today);
    * the scr status strings that count "After Dark 4 / Classic" (the scr
      workflow owns them). These are part of the user-requested wording
      pass.
@@ -3259,16 +3697,26 @@ Acceptance:
   manifest per build (a `Package::builds` list) and, for the other
   languages, names that are not keyed by path. The Japanese edition was not
   examined.
-* **Intermission itself.** Delrina's Intermission 4.0 (on the Internet
-  Archive, not surveyed), other Intermission module packs, and the eight
-  readers the disc ships besides the IMX one (`IMAD_PLY.IMQ`, which ran After
-  Dark modules under Intermission; FLC/FLI, SCR, SAP, SPX, NSS, ASA) are
-  out of scope: the importer never installs those readers, and each such
-  release would need its own survey, as the future After Dark packages
-  above do. (Since the fifth round the ASA reader runs, for The Far Side's
-  and Dilbert's animations, from their own disks. Dilbert's readme names
-  two more Delrina Intermission products, The Flintstones and Opus 'n Bill
-  collections; neither was looked for.)
+* **Intermission itself.** Since the eighth round Delrina's Intermission
+  4.0 is a package of its own (`intermission`), and so are the Delrina
+  module packs Dilbert's readme named, the Opus 'n Bill and Flintstones
+  collections, with the second Opus 'n Bill release, On the Road Again
+  (`opus`, `opusroad`, `flintstones`). The readers of the forms their
+  modules take run as real code from each package's `ENGINE`: the IMX and
+  ASA readers, and Intermission 4.0's readers of FLI animations, morphs and
+  MultiSaver groups (§6, §7.5). Those of formats no module of the corpus
+  uses are never installed (§4.3): `IMAD_PLY.IMQ`, which ran After Dark
+  modules under Intermission, and the readers of FLC animations, Windows
+  screen savers (`IMSCRPLY.IMQ`) and the SAP, SPX, NSS, IW and SEQ formats.
+  **Intermission 5.0 is not online as a product of its own**: neither the
+  Internet Archive's search nor DiscMaster's index of every `INTERMIS.TXT`
+  on the discs it has read finds a copy whose readme's first line is a bare
+  "Intermission 5.0". Its engine came with On the Road Again ("Opus 'n Bill
+  On The Road Again/Intermission 5.0") and Dilbert ("Dilbert Screen Saver
+  Collection/Intermission 5.0"), both packages. Other Intermission products
+  stay out of scope until surveyed: the "Personal Edition" cut-downs of On
+  the Road Again on magazine cover discs (other builds), and module packs
+  no copy of which was looked for.
 * **The fifth round, open.**
   * *The Far Side's source.* Its only intact copy online is a 1994
     bulletin-board repack of the five floppies, one ZIP per disk, inside
@@ -3282,16 +3730,69 @@ Acceptance:
     captures and the ZIPs, but nobody could download them, so none is
     listed.
   * *The input flag.* PTERY, DB-BEST and DIL-WHAK set `0x2000` and run as
-    ordinary screen savers (§7.5): a decision left open. What they showed
+    ordinary screen savers (§7.5): a decision left open, which since the
+    eighth round covers nine more (On the Road Again's two, the
+    Flintstones' seven). What they showed
     under Intermission with the mouse captured was not compared with a
     real Windows 3.1, nor DIL-WHAK's small figure walking on black after
     its desk scene, nor the silence of PTERY and DB-BEST over 180 s. The
     meaning of QUERY's bit `0x00080000` is unknown.
-  * *The animations' size.* Every ASA header records 800×600, the same in
-    both releases, apparently a constant of the format: the animations
-    fill the 640×480 screen they get, as in the scouts' runs.
+  * *The animations' size.* Every ASA header of the two releases records
+    800×600, which looked like a constant of the format: the animations
+    fill the 640×480 screen they get, as in the scouts' runs. The eighth
+    round's say otherwise: the older form, `AniM`, records 640×480 (all of
+    the Opus 'n Bill Screen Saver's, Intermission 4.0's six and two of On
+    the Road Again's), and so do two of On the Road Again's `AniN` ones
+    (`MIDNITCC`, `PISTACH4`); the rest record 800×600.
   * *The Far Side's cover* is a WebP, shown only where Windows has the
     WebP codec (COVERS.md §2.3).
+* **The eighth round, open.**
+  * *The Flintstones' download* fetches a 129.3 MB tar for the 3.3 MB of
+    three ZIPs inside it, the only copy of the June 1994 build found
+    online (§5.2). Every copy of the May 1994 build holds the same damaged
+    `CARS.ASA` (§4.3); that build imports without it.
+  * *Copies not checked.* Two more copies of the November 1993 Opus 'n
+    Bill were found and not downloaded, on PC Plus's Super CD of June 1994
+    (`/install/opusbill`) and on WinWares '95 (`SCRNSVRS/O&B`): whether
+    their files are the bulletin-board copy's, byte for byte, is not
+    known. The "Personal Edition" cut-downs of On the Road Again on
+    magazine cover discs are other builds, not supported.
+  * *Covers.* No box, label or manual scan of the Opus 'n Bill Screen
+    Saver, the Flintstones or Intermission 4.0 was found online: the first
+    and the last show their installer's picture on disk 1, and the
+    Flintstones a generated cover, since their installer's picture is
+    SZDD-compressed in both builds (COVERS.md §2.3).
+  * *Modules that show black on their own.* Intermission 4.0's Palette
+    Animator (`IM_ANIM`) blanks the screen and cycles a palette over it,
+    so alone it shows black: Intermission made it the background of a
+    MultiSaver group (The Machine (Palette) has it). Its Picture Show
+    (`IM_PICTU`) shows the `.BMP` pictures of a folder, by default the
+    Windows directory, where the emulated `C:\WINDOWS` holds none: it
+    stays black until its **Configure...** names a folder of pictures (the
+    host's drives are under `H:\`, §7.5). Both are listed, as Intermission
+    listed them.
+  * *Screen effects.* Conundrum, Dissolve, Melting Screen, Flashlight and
+    Fade Out work on the picture of the desktop: with the saver's desktop
+    seed (INTERACTION.md §8) they transform it, while a headless run, whose
+    desktop is black, shows them still, as it should.
+  * *DictaBird* (the June 1994 Flintstones') opens MCI's `waveaudio`
+    device at its start, to record from a microphone, and when that fails
+    draws only its own line, "Sound Support Not Available For
+    FM-DictaBird". The machine's one MCI device is the sequencer, so that
+    line is what it shows, as on a 1994 PC without `MCIWAVE.DRV`
+    (AUDIO.md §8.4); a recording `waveaudio` device is not designed. The
+    May build's DictaBird records nothing and animates.
+  * *Slow ones.* Dino RDS (the Flintstones) is a random-dot stereogram that
+    shows Dino after about 100 seconds, by design, and the Opus 'n Bill
+    Screen Saver's Microboost 10,000, Quality Time and Velociraptor change
+    over minutes (seen over 3,600 frames).
+  * *The MultiSaver group's modules.* The Machine (Palette) finds its two
+    IMX modules (Palette Animator and Spirals) through INTRMLIB's module
+    table, built from the module folder alone, so the IMX reader is
+    installed there as well as in `ENGINE` (§4.3). Its editor
+    (**Configure...**) can name any module of the table, as Intermission's
+    did; only Intermission 4.0's own folder is the table here, so a group
+    cannot take another release's modules.
 * **WinG, natively.** Star Wars Screen Entertainment runs with the GDI
   technology its own setup program offered (ABI.md §3.8.6). A native WinG
   (WinG was the default on a 1994 PC that had it) would reuse the DIB

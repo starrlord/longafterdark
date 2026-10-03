@@ -1,10 +1,10 @@
 # Installing Long After Dark
 
 **Long After Dark** is a screen saver for Windows that runs the original
-modules of After Dark, of LucasArts' Star Wars Screen Entertainment and of
-Delrina's The Far Side and Dilbert collections, and Sierra's Johnny
-Castaway, unchanged, under x86 emulation. It knows sixteen releases, 328
-modules:
+modules of After Dark, of LucasArts' Star Wars Screen Entertainment, of
+Delrina's Intermission and its Opus 'n Bill, Flintstones, Far Side and
+Dilbert collections, and of Sierra's Johnny Castaway, unchanged, under x86
+emulation. It knows twenty releases, 429 modules:
 
 | id | Release | Internet Archive download |
 |---|---|---|
@@ -24,6 +24,10 @@ modules:
 | `dilbert` | Scott Adams' Dilbert Screen Saver Collection (1994) | install files (ZIP), 4.3 MB |
 | `tng` | Star Trek: The Next Generation Screen Saver (1994) | CD image, 5.8 MB |
 | `castaway` | Screen Antics: Johnny Castaway (1992) | floppy image (ZIP), 1.3 MB |
+| `opus` | Opus 'n Bill Screen Saver (1993) | install files (3 ZIPs, one per disk), 2.8 MB |
+| `opusroad` | Opus 'n Bill: On the Road Again! (1994) | install files (ZIP), 4.4 MB |
+| `flintstones` | The Flintstones Screen Saver Collection (1994) | install files (3 ZIPs, one per disk, in a tar), 129.3 MB |
+| `intermission` | Intermission 4.0 (1993) | three floppy images (ZIP), 3.3 MB |
 
 Star Trek: The Screen Saver is After Dark 2.0 (version 2.0b) with 16 Star
 Trek modules, on two floppies. Marvel Comics Screen Posters (After Dark
@@ -52,11 +56,19 @@ which Long After Dark runs unchanged, the way Windows 3.1 ran it.
 Star Wars Screen Entertainment is not an After Dark release, though it is
 sometimes listed as "After Dark Star Wars": its 14 modules were made for
 Delrina's Intermission screen saver engine, which Long After Dark stands in
-for as it does for After Dark's. The Far Side Screen Saver Collection (14
-modules, five floppies) and Scott Adams' Dilbert Screen Saver Collection
-(16 modules, four floppies) are Delrina's own Intermission releases: most
-of their modules are animations, played by Intermission's own animation
-player, which runs unchanged as the modules do.
+for as it does for After Dark's. Intermission 4.0 (1993, three floppies)
+is that engine's own release, with 54 modules of its own: graphic effects,
+effects on your desktop's picture and a few animations. Delrina's own
+collections for it are the Opus 'n Bill Screen Saver (1993, 16 modules of
+Berkeley Breathed's Opus the penguin and Bill the Cat, three floppies),
+Opus 'n Bill: On the Road Again! (1994, 16 more, four floppies), The
+Flintstones Screen Saver Collection (1994, 15 modules, three floppies), The
+Far Side Screen Saver Collection (14 modules, five floppies) and Scott
+Adams' Dilbert Screen Saver Collection (16 modules, four floppies): most of
+their modules are animations, played by Intermission's own animation
+player, which runs unchanged as the modules do. Intermission 5.0 is not
+online as a product of its own; its engine came with On the Road Again and
+with Dilbert.
 
 Requirements: 64-bit Windows on an x64 PC. It was developed on Windows 11.
 On Linux, see [LINUX.md](LINUX.md): it runs there under Wine, with a
@@ -95,11 +107,13 @@ Double-click `adimport.exe`, or open the screen saver's settings and click
   all, such as the Simpsons' two or Star Trek's two, or the ZIP they came
   in. A `.zip` that keeps each disk's files in a folder of its own
   (`DISK1`, `DISK2`, …, as the Internet Archive's copies of ScreamSavers,
-  Marvel and Snoopy do) is read as all its disks together.
+  Marvel and Snoopy do) is read as all its disks together, and a `.zip` or
+  `.7z` whose files all sit in one folder (as its copies of On the Road
+  Again and Intermission 4.0 do) as that folder.
 - **A drive or folder:** the CD itself, or a folder copied from it (for
   floppies, one folder holding the files of every disk, or one holding
   nothing but a `DISK1`, `DISK2`, … folder per disk).
-- **A download from the Internet Archive:** a list of the sixteen releases
+- **A download from the Internet Archive:** a list of the twenty releases
   with their sizes, plus one entry that fetches every release not imported
   yet. An interrupted download resumes, and each file is checked against its
   published MD5 before it is used.
@@ -161,6 +175,28 @@ it. The importer never runs the floppy's installer: it expands the program
 and its data from the floppy's compressed files, as the installer did, and
 checks them against the release.
 
+Delrina's four other releases came on floppies too. The Opus 'n Bill
+Screen Saver is online only as bulletin-board copies of its three
+floppies, a ZIP of each disk's files: `OPUS1NTA.ZIP` to `OPUS3NTA.ZIP`
+(the download), `ONBSBS-1.ZIP` to `ONBSBS-3.ZIP` and `OPUS-1.ZIP` to
+`OPUS-3.ZIP`; select the three of one copy together. A copy of its revised
+build of November 1993 (`WC!OPUS1.ZIP` to `WC!OPUS3.ZIP`, with Censored
+Toasters) imports too, as that build. On the Road Again's copy is the
+Internet Archive's ZIP of its four floppies' files, all in one folder,
+which `adimport --download opusroad` fetches. The Flintstones' June 1994
+build is online only as three ZIPs, `FLINTST1.ZIP` to `FLINTST3.ZIP`,
+inside a 129.3 MB archive (a tar) of a 1994 shareware collection:
+`adimport --download flintstones` fetches that archive and takes out those
+three ZIPs and nothing else, and three ZIPs you have already import as
+they are. The May 1994 build most copies online hold (`FLINT1.ZIP` to
+`FLINT3.ZIP`) imports as that build, with nine modules: its Prehistoric
+Vehicles animation is damaged in every known copy, so it is left out.
+Intermission 4.0's three floppy images (`ITM4W-D1.IMA` to `ITM4W-D3.IMA`)
+import loose, together, or in the Internet Archive's ZIP of them, which
+the download fetches. For each of them every install disk is needed, and
+the notes and programs the bulletin boards put beside the files are never
+opened or run.
+
 From a command prompt, with the ids from the table above:
 
 ```
@@ -170,11 +206,14 @@ adimport --image afterdark-20b_startrek.zip
 adimport --image "C:\Downloads\After Dark - Scream Savers.zip"
 adimport --image PNX-FSC1.ZIP --image PNX-FSC2.ZIP --image PNX-FSC3.ZIP --image PNX-FSC4.ZIP --image PNX-FSC5.ZIP
 adimport --image 000580_jonny_castaway.7z
+adimport --image OPUS1NTA.ZIP --image OPUS2NTA.ZIP --image OPUS3NTA.ZIP
+adimport --image "Intermission 4.0.zip"
 adimport --from E:\
 adimport --from C:\Copies\Snoopy
 adimport --download ad10
 adimport --download swse
 adimport --download disney
+adimport --download flintstones
 adimport --download all
 adimport --list-packages
 adimport --remove tt
@@ -262,14 +301,45 @@ have them, and every other module that always gets 640×480, fill the
 monitor instead, stretched out of their shape. The live preview shows it
 as you check it; After Dark's own modules fill the screen either way.
 
-The Far Side's and Dilbert's modules have one such button too,
-**Configure...**. For an animation it opens Intermission's own "Animation
-Player Options" (sound effects and music on or off, colour options); for
-their other modules, the module's own window, such as the banner text of
-The Far Side's Pterodactyl. Those settings are kept in `ANTSW.INI`, under
-`state\farside\WINDOWS\` or `state\dilbert\WINDOWS\` in your data folder,
-and apply from the next run. Like the Star Wars modules, these always get
-640×480, scaled to fit.
+The modules of Delrina's own releases (Intermission 4.0, the two Opus 'n
+Bill releases, the Flintstones, The Far Side and Dilbert) have one such
+button too, **Configure...**. For an animation it opens Intermission's own
+"Animation Player Options" (sound effects and music on or off, colour
+options); for their other modules, the module's own window, such as the
+banner text of The Far Side's Pterodactyl. Those settings are kept in
+`ANTSW.INI`, under `state\<id>\WINDOWS\` in your data folder (such as
+`state\farside\WINDOWS\`, with the ids from the table above), and apply
+from the next run. Like the Star Wars modules, these always get 640×480,
+scaled to fit. Intermission 4.0's Picture Show shows the `.BMP` pictures
+of a folder: pick one with its **Configure...** (your own drives are under
+`H:\`, in short 8.3 names); until then it shows black, since the emulated
+Windows folder it starts with holds no pictures. Its Palette Animator shows
+only black on its own: Intermission made it the background of a
+MultiSaver group, as in The Machine (Palette). The **Configure...** of
+Paradise and The Machine (Palette) opens Intermission's Morph and
+MultiSaver editors, which save
+the morph or the group itself, under `state\intermission\SAVER\`.
+
+Thirty-six of Intermission 4.0's 54 modules have a second setting,
+**Speed**. Intermission ran its modules as fast as the PC allowed, and
+these (Dragon Kites, Ant Mine, Wriggly, Fireworks and most of the other
+effects) move one small step each time they are called, so how fast they
+moved depended on the PC they ran on (the speed options a few of them have
+set only how big a step is). **Speed** picks the pace of the emulated PC
+for that module: **Normal** is our estimate of a typical PC of 1993 (a 486
+running Windows 3.1), and **Slowest**, **Slow**, **Fast** and **Fastest**
+run the module at about a quarter, half, twice and four times that pace,
+Fastest being the emulated PC at its full speed. Each slider starts where
+the module's motion is calm: most at **Normal**, Dragon Kites, Ping and
+Bricks at **Slowest**, Wriggly and Snow Flakes at **Slow**, and Space
+Shark, whose steps are heavy, at **Fast**. It is kept for each module with
+its other settings (**Restore defaults** puts it back where it started);
+the live preview restarts with it when you let go of the slider, and
+**Preview** and the screen saver use it. Intermission 4.0's other 18
+modules keep time by the clock, so they have no **Speed**: its animations
+(Golfing Ants, Rapping Pig, Cowboy Singer, Einstein, Flying and the
+others), the morph Paradise, and modules such as Timepiece, Maze, Photo
+Shoot and Orbs. The other releases' modules have none either.
 
 Several Star Trek modules compose their scenes for a 640×480 screen too,
 so the **Resolution** setting does not apply to any of them either: they
@@ -327,8 +397,9 @@ is silent, as it always was. In the settings window,
 Star Wars Screen Entertainment, Volume reaches the effects through
 Intermission's own volume setting, and the music as the Windows mixer's
 synthesizer slider did, since Intermission itself set only the effects'
-volume. The Far Side's and Dilbert's modules play wave effects (a few have
-none) and no music. **Preview** plays sound with the values you have not saved yet; the
+volume. The modules of Delrina's own releases play wave effects (a few
+have none) and no music, but for Intermission 4.0's Rapping Pig, whose song
+is MIDI. **Preview** plays sound with the values you have not saved yet; the
 small live preview never does.
 
 ## Ending it, and playing
@@ -364,7 +435,7 @@ address bar):
 | `assets\win\` | the imported modules, one folder per release, the module list `catalog-win.json`, and the releases' box covers (`covers\`) |
 | `downloads\` | Internet Archive downloads, reused if you import the same release again |
 | `settings.ini` | the screen saver's settings |
-| `state\` | what the modules save themselves (message texts, chosen pictures, high scores, the Star Wars, Far Side and Dilbert modules' settings, Sounder's folder, Marvel's poster choices, Johnny Castaway's settings and story), per release |
+| `state\` | what the modules save themselves (message texts, chosen pictures, high scores, the Intermission modules' settings, Sounder's folder, Marvel's poster choices, Johnny Castaway's settings and story), per release |
 | `thumbs\` | the settings window's module pictures |
 | `logs\saver-last.log` | how the last screen saver run went and why it ended |
 
@@ -380,12 +451,20 @@ program's Properties → Details in Explorer.
 
 - **Speed.** Each module's pace follows a model of a mid-1990s PC (Swirling
   Magic's too-fast pace is fixed); not every module has been compared with
-  the original yet. Marvel's poster transitions (wipes, irises, blinds and
-  the like) show at once where the original swept them over about half a
-  second.
+  the original yet. The **Normal** of Intermission 4.0's **Speed** slider
+  is an estimate of a 1993 PC, not measured on one. Marvel's poster
+  transitions (wipes, irises, blinds and the like) show at once where the
+  original swept them over about half a second.
 - **Chameleon** (Totally Twisted and 10th Anniversary): after about half a
   minute a stray icon covers the "Accessories" label, a known difference
   not fixed yet.
 - **Johnny Castaway's Password** (in its **Setup...**) has no effect:
   input ends it at once, without asking for the password.
+- **The Flintstones' DictaBird** recorded from a microphone, which the
+  emulated PC doesn't offer: it shows only its own line, "Sound Support Not
+  Available For FM-DictaBird", as on a 1994 PC that could not record.
+- **Modules that took the mouse.** Nine of the modules of On the Road
+  Again and the Flintstones, like three of The Far Side's and Dilbert's,
+  took the mouse and keyboard under Intermission instead of ending; here
+  they run as ordinary screen savers, and input ends them.
 - No installer or code signing yet.

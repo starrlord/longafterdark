@@ -14,6 +14,8 @@ The two Delrina Intermission releases of the fourteen-release registry (The Far 
 
 Screen Antics: Johnny Castaway, the sixteenth release, is not counted here either: it is no module but a Windows 3.1 screen-saver program (`SCRANTIC.SCR`, built on Microsoft's `SCRNSAVE.LIB`; the `scrnsave` ABI, `ABI.md` §3.15), which the ne16 lane runs unchanged as the Win16 runtime's first application task. Its imports (MMSYSTEM 2, GDI 34, KERNEL 27, USER 52) were checked against the shims and the program run for 900 and 6,000 frames with the census on: 64 to 67 functions called, none missing. What the runtime added for it: **KERNEL** `KERNEL.91 InitTask` with Windows 3.1's register contract for an application's start (until then a stub no DLL reached), `KERNEL.30 WaitEvent`; **USER** `USER.5 InitApp`, `USER.16 ClipCursor` and `USER.309 GetClipCursor` (emulated state only, never the host's cursor), `USER.69 SetCursor` returning the cursor before it (and, not imported by it, `USER.71 ShowCursor` and `USER.112 WaitMessage`); **GDI** `GDI.119 AddFontResource` (0 for a file the disk does not hold: the `WILLY.FON` it asks for was never on its floppy) and `GDI.136 RemoveFontResource`; **MMSYSTEM** `MMSYSTEM.701 mciSendCommand` (`MCI_CLOSE` of an open device; `MCIERR_INVALID_DEVICE_ID` for an ID that is not open, which is all its one call site could ever send). `KERNEL.__AHSHIFT` resolves as an equate, as before. Its message loop made `GetMessage` and `WaitMessage` wait in an application task (the frame ends there), and its windows get the messages Windows 3.1's USER sent an application's (`host/win16/README.md`, "Tasks").
 
+The four Delrina Intermission releases of the twenty-release registry (Opus 'n Bill Screen Saver, Opus 'n Bill: On the Road Again!, The Flintstones Screen Saver Collection, Intermission 4.0) are not counted here either: every one of their modules, in every build the importer takes, was run for 900 frames twice with the census on (`research/five/lane/runs`, gitignored), through Intermission's own readers — the ASA, IMX, FLI, Morph and MultiSaver readers — and INTRMLIB. None of what the runtime added for them is imported by a binary of the Deluxe disc (their rows below say "0 binaries" and name the module): **GDI** `GDI.100 LineDDA` (Intermission 4.0's Plants: the callback for every point of the line, the end excluded), **USER** `USER.243 GetDialogBaseUnits` (8 × 16, a VGA's System font; Intermission's After Dark reader, `IMAD_PLY.IMQ`, asks while INTRMLIB enumerates the readers for a MultiSaver group), the display driver's **DISPLAY** `DISPLAY.22 SetPalette` and `DISPLAY.23 GetPalette`, which Fade Out reaches with `GetModuleHandle("DISPLAY")` and `GetProcAddress` to fade the hardware palette (`ABI.md` §3.8.11), and **MMSYSTEM** `MMSYSTEM.706 mciGetErrorString` with `mciSendCommand`'s `MCI_OPEN` (the June 1994 Flintstones' DictaBird opens `waveaudio` to record a microphone; this machine's one MCI device is the sequencer, so it gets `MCIERR_DEVICE_NOT_INSTALLED` and shows its own "Sound Support Not Available"). One behaviour changed, not a call (the `GetDC` and `ReleaseDC` rows): the saver window of an Intermission module has `CS_OWNDC`, as INTERMIS registered its class, so `GetDC`, `ReleaseDC`, `BeginPaint` and `EndPaint` keep its one DC (`ABI.md` §3.8.4, §3.8.10).
+
 Sound is the largest change since that plan. With sound on (`ADSOUND=1` or `ADAUDIOOUT`; the saver turns it on for the primary monitor's host), DirectSound, MSACM32, the WINMM MCI sequencer, `waveOut` and aux calls, and MMSYSTEM's `sndPlaySound`, `waveOut*`, `midiOut*`, `aux*` and `mciSendString` are **emulated** over the host audio engine (`AUDIO.md` §7, §8); those rows are classed `emulate` below, and their notes say what the sound-off host answers, which is exactly what the silent host of before answered. `waveIn*`, the mixer and CD audio stay without a device either way.
 
 Lanes (what runs as emulated code):
@@ -448,8 +450,8 @@ Ordinals are resolved to names with the Wine `.spec` files in `research/win/spec
 | 420 | `_wsprintf` | 14 | emulate | cdecl varargs |
 | 15 | `GetCurrentTime` | 12 | emulate | time: same as GetTickCount |
 | 106 | `GetKeyState` | 12 | emulate | input |
-| 66 | `GetDC` | 11 | emulate | windows: DC of the emulated surface |
-| 68 | `ReleaseDC` | 11 | emulate | windows |
+| 66 | `GetDC` | 11 | emulate | windows: DC of the emulated surface; a window given `CS_OWNDC` (an Intermission module's saver window, as INTERMIS's class had it) gets its one DC back as it was left |
+| 68 | `ReleaseDC` | 11 | emulate | windows; a `CS_OWNDC` window's DC stays (EndPaint alike) |
 | 175 | `LoadBitmap` | 10 | emulate | resources -> real HBITMAP |
 | 176 | `LoadString` | 10 | emulate | resources |
 | 249 | `GetAsyncKeyState` | 10 | emulate | input |
@@ -600,6 +602,7 @@ Ordinals are resolved to names with the Wine `.spec` files in `research/win/spec
 | 71 | `ShowCursor` | 0 | emulate | the display count, state only (an application's companion of SetCursor; not imported by SCRANTIC) |
 | 112 | `WaitMessage` | 0 | emulate | an application task waits for a message (the frame ends); otherwise returns at once — not called by SCRANTIC |
 | 309 | `GetClipCursor` | 0 | emulate | ClipCursor's rectangle, else the screen |
+| 243 | `GetDialogBaseUnits` | 0 | emulate | 8 × 16 (a VGA's System font) — only: IMAD_PLY.IMQ (Intermission 4.0's After Dark reader; not in the Deluxe census) |
 
 ### GDI (97 imports)
 
@@ -704,6 +707,7 @@ Ordinals are resolved to names with the Wine `.spec` files in `research/win/spec
 | 444 | `CreateRoundRectRgn` | 1 | passthrough | only: TUNNEL |
 | 119 | `AddFontResource` | 0 | emulate | 0 for a file the guest's disk does not hold (WILLY.FON); a font file that is there is not loaded either: 0, logged — only: SCRANTIC (Johnny Castaway; not in the Deluxe census) |
 | 136 | `RemoveFontResource` | 0 | emulate | 0 |
+| 100 | `LineDDA` | 0 | emulate | the line's points, the end excluded (Bresenham, a tie keeping the shorter axis), each to the callback through `call_far` — only: PLANT.IMX (Intermission 4.0; not in the Deluxe census) |
 
 ### MMSYSTEM (17 imports)
 
@@ -725,7 +729,8 @@ Ordinals are resolved to names with the Wine `.spec` files in `research/win/spec
 | 415 | `waveOutGetVolume` | 1 | emulate | sound on: the engine's wave bus — only: AD_SND |
 | 416 | `waveOutSetVolume` | 1 | emulate | sound on: the engine's wave bus (never the real system volume) — only: AD_SND |
 | 607 | `timeGetTime` | 1 | emulate | time: PHOTON busy-waits on it — only: PHOTON |
-| 701 | `mciSendCommand` | 0 | emulate | MCI_CLOSE of a device mciSendString opened (MCI_ALL_DEVICE_ID: all), with MCI_NOTIFY; an ID that is not open: MCIERR_INVALID_DEVICE_ID — only: SCRANTIC (one call site, never reached) |
+| 701 | `mciSendCommand` | 0 | emulate | MCI_CLOSE of a device mciSendString opened (MCI_ALL_DEVICE_ID: all), with MCI_NOTIFY; an ID that is not open: MCIERR_INVALID_DEVICE_ID; MCI_OPEN (sound on; its ID is not looked at): the MCI_OPEN_PARMS device as the strings open it, the sequencer only, any other type MCIERR_DEVICE_NOT_INSTALLED — only: SCRANTIC (one call site, never reached), DICTABRD.IMQ (the June 1994 Flintstones: "waveaudio") |
+| 706 | `mciGetErrorString` | 0 | emulate | TRUE and a text in the host's own words for the MCI errors the machine answers, FALSE and "" otherwise — only: DICTABRD.IMQ (not in the Deluxe census) |
 | 702 | `mciSendString` | 1 | emulate | sound on: the MCI sequencer strings (open/play/stop/close/status…, `notify` → MM_MCINOTIFY to the engines' adwMidiCall window; AUDIO.md §8.4); sound off: MCIERR_DEVICE_NOT_INSTALLED — only: ADXPL300 |
 
 ### WIN87EM (1 imports)

@@ -95,7 +95,9 @@ INTERMIS's Configure button was `10 → 8 → 11`; our host sends
 before the control panel offered the button (`INTERACTION.md` §6.1). The
 reader loads the module and calls its `SAVERINIT`/`SAVERDRAW`/
 `SAVERDLGPROC`. No timer paces the calls and no input reaches the module:
-the modules poll for it themselves (§3.8.4). Every module starts only when
+the modules poll for it themselves (§3.8.4); one that steps once per call
+moves as fast as the PC runs the loop, so the host's machine speed is a knob
+(§3.8.12). Every module starts only when
 STRESS.DLL can open ten handles on a temporary file (§3.8.7), and with the
 GDI technology its support DLL draws through Windows 3.1's DIB driver,
 `CreateDC("DIB", …)` (§3.8.6). The Far Side's and Dilbert's modules take
@@ -960,9 +962,9 @@ two other forms, ASA animations and IMQ modules (§3.8.9).
 | File | What it is | Role | Evidence |
 |---|---|---|---|
 | `INTERMIS.EXE` | NE **application** (flags `0x030A`), module `INTERMIS`, 7 code segments | The engine: settings, idle timer, blanking window, frame loop, control panel. **Replaced by our host** (the Win16 runtime runs libraries only) | exports `SAVERWNDPROC` `6:0eee`, `TIMERFUNC` `1:140c`, `CPANEL` `2:078e` |
-| `INTRMLIB.DLL` | NE DLL "Intermission Screen Saver Library", 83 exports | Module list (`FINDALLMODULES` `1:1e06`, `LOADSAVER` `1:1fc0`, `FREESAVER` `1:21b2`), idle detection and input hook, palettes, sound. **Runs as real code**, loaded as the modules' import: its LibMain registers the dialog control classes (`ANT3DBOX`, `ANT3DCHECK`, `ANT3DSCROLL`, …) and the modules call `INTRAND`, `CENTERDLG`, `DOCTLCOLOR`. The host stands in for INTERMIS and calls none of its engine exports; for a module whose QUERY asks for an engine palette (§3.8.4; none of the 14 does) it makes that palette itself, as `CANISTART(1)` did (`PACKAGES.md` §7.5) | LibMain `1:0010..1:02d5` |
+| `INTRMLIB.DLL` | NE DLL "Intermission Screen Saver Library", 83 exports | Module list (`FINDALLMODULES` `1:1e06`, `LOADSAVER` `1:1fc0`, `FREESAVER` `1:21b2`), idle detection and input hook, palettes, sound. **Runs as real code**, loaded as the modules' import: its LibMain registers the dialog control classes (`ANT3DBOX`, `ANT3DCHECK`, `ANT3DSCROLL`, …) and the modules call `INTRAND`, `CENTERDLG`, `DOCTLCOLOR`. The host stands in for INTERMIS and calls none of its engine exports but `FINDALLMODULES` and `FREEMODINFO`, around a MultiSaver group, whose reader reads the module table (§3.8.10); for a module whose QUERY asks for an engine palette (§3.8.4; none of the 14 does) it makes that palette itself, as `CANISTART(1)` did (`PACKAGES.md` §7.5) | LibMain `1:0010..1:02d5` |
 | `ANTSW.DLL` | NE DLL, Ant Software's common library | The control window procedures and helpers; imported by INTRMLIB. Real code | |
-| `IMIMXPLY.IMQ` | NE DLL, the "IMX Player" reader, 3,936 bytes | Exports `SAVERMAIN` (ordinal 2, `2:002a`); loads an `.IMX` and drives it (§3.8.2). **Runs as real code**, the analogue of OLDMOD16. Eight more readers (`IMAD_PLY` for After Dark modules, FLC/FLI, SCR, …) are for other formats; of them only the ASA reader, `IMASAPLY.IMQ`, is needed, by The Far Side's and Dilbert's animations (§3.8.9) | |
+| `IMIMXPLY.IMQ` | NE DLL, the "IMX Player" reader, 3,936 bytes | Exports `SAVERMAIN` (ordinal 2, `2:002a`); loads an `.IMX` and drives it (§3.8.2). **Runs as real code**, the analogue of OLDMOD16. Eight more readers (`IMAD_PLY` for After Dark modules, FLC/FLI, SCR, …) are for other formats; of them the ASA reader, `IMASAPLY.IMQ`, is needed by the ASA animations (§3.8.9), and the FLI, Morph and MultiSaver readers by Intermission 4.0's own data files (§3.8.10) | |
 | `*.IMX` (14) | NE DLLs, Borland C++ 1991 | The modules (§3.8.5) | |
 | `SWSE.DLL` | NE DLL "SWSE Common Function DLL (C) 1994 Presage Software Development, Inc.", 248 exports | The modules' framework: canvases, palettes, sound, MIDI, titles, the credits box. Loads `swsfx.dll`, `MEMMIDI.DLL` and (probe only) `WING.DLL` by name | |
 | `READJPG.DLL`, `STRESS.DLL`, `SWSFX.DLL`, `MEMMIDI.DLL` | NE DLLs | The JPEG reader; the Windows 3.1 SDK's STRESS (§3.8.7); the sound-effect bank (module name `sw_sfx`, 118 `WAVE` resources); Sonic Foundry's in-memory MIDI player | |
@@ -1103,7 +1105,15 @@ neither `+0x44` nor `+0x59`, so one zeroed record serves.
    ```
 
    So nothing a module selects into the DC survives to the next call
-   (the modules reselect their palettes every time).
+   (the modules reselect their palettes every time). In DC mode `0x10`
+   (the FLI and FLC readers', the MultiSaver's; §3.8.10) the pass is
+   `GetDC`, the call, `ReleaseDC`, with no `SaveDC`/`RestoreDC` and no
+   engine palette: the class's `CS_OWNDC` makes it the same DC every pass,
+   and what the reader selected into it stays. In mode 0 too, a module's
+   own `GetDC` of the saver window inside a pass gets that DC: Star Wars'
+   Hyperspace, whose SWSE selects the cockpit picture's palette into it,
+   draws its stars in that palette's greys — 8 to 30 star pixels a frame
+   changed when the host gave the window its own DC.
 6. **Later `WM_PAINT`s** send **5** with the paint rectangle at `+0x0C` —
    which restarts an IMX module (§3.8.2), so a host sends it only for a
    real repaint.
@@ -1197,7 +1207,8 @@ IMIMXPLY asks for them in lower case.
   text modules type and wipe for seconds inside one call, busy-waiting on
   `GetTickCount` and polling `USERABORT`. So the speed of the per-call
   modules is the host's call rate (how the ne16 lane sets it:
-  `PACKAGES.md` §7.5, "Pacing").
+  `PACKAGES.md` §7.5, "Pacing"; for Intermission 4.0's own per-call
+  modules the user picks the machine's speed, §3.8.12).
 * **Code.** 386 instructions throughout, x87 through OSFIXUPs (BIOS,
   CANTINA, RCLOCK, READJPG), `__AHSHIFT` huge pointers, and **32-bit code in
   a 16-bit DLL**: SWSE's code segments 2–5 and HYPERSPC's segment 2 set the
@@ -1320,7 +1331,8 @@ releases' `IMASAPLY.IMQ` is the same file.
   loads the reader for a module's record and sends LOAD with the file's
   path, and loads a reader's record as itself with `+0x63` = 0. So an IMQ
   module gets LOAD and QUERY with no path, and it is a saver when that
-  QUERY leaves `0x1000` set, which is how INTERMIS listed savers. The
+  QUERY leaves `0x1000` set (and `0x0800`, a reader's, clear: §3.8.10),
+  which is how INTERMIS chose savers. The
   readers clear it in their pathless QUERY (`IMIMXPLY 2:02a6`, `IMASAPLY
   2:3f4a`): that tells an IMQ module from a reader. Beside INTRMLIB and
   ANTSW, some import Delrina's DIB library `DIBDLL.DLL` (huge pointers
@@ -1345,6 +1357,192 @@ releases' `IMASAPLY.IMQ` is the same file.
 * **Sound.** Wave effects, through INTRMLIB's and ANTSW's sound calls; 24
   of the 30 modules play some (four animations hold no wave data; PTERY and
   DB-BEST were silent for 180 s). No MIDI was heard from either release.
+
+#### 3.8.10 Intermission 4.0's data files: FLI, FLC, MRF and MSV — VERIFIED
+
+Intermission 4.0 itself (Delrina, November 1993) ships, beside 43 IMX
+modules, six ASA animations and the IMQ module IMSHARK, four files of its
+other readers' types: two FLIC animations (`EINSTEIN.FLI`, `FLYING.FLI`:
+Autodesk's FLC data, magic `0xAF12` at byte 4, 320 × 200, whatever the
+extension says), a morph (`PARADISE.MRF`) and a MultiSaver group
+(`MACHINE.MSV`). Verified on its disks (`research/five/x/im40`,
+gitignored) with `research/win/nedis.py` listings and the lane's traces.
+
+* **The reader is the type's.** `FINDALLMODULES` (`1:1e06`) gives a file
+  to the reader whose pathless QUERY names the file's extension as its
+  type (`+0x5B`): `IMFLIPLY.IMQ` "FLI Player" (FLI), `IMFLCPLY.IMQ` "FLC
+  Player" (FLC; the same 11,120-byte program under the other type),
+  `IMMRFPLY.IMQ` "Morph" (MRF), `IMMSVPLY.IMQ` "MultiSaver" (MSV); each
+  reader is named `IM<type>PLY`. These files share no header (an MRF starts
+  with its name, an MSV with two words), so for them the extension is the
+  whole rule, in the host too: core's probe takes a file of these four
+  extensions that is no MZ executable as an ne16 module.
+* **LOAD and QUERY** carry the file's path, as for an ASA animation.
+  QUERY sets flags `0x1218` (FLI, FLC: DC mode `0x10`), `0x1608` (MRF) and
+  `0x161A` (MSV: mode `0x10`), and copies a name only when `0x8000` is set
+  (`IMFLIPLY 2:0587`): the file name less its extension, capitalized by
+  `ANTSW.169` ("Einstein"); the morph's and the group's own name in the
+  file ("Paradise", "The Machine (Palette)"). INTRMLIB's enumeration set
+  that flag (`GETSAVERINFO`, `1:253f..1:254e`: set, QUERY, clear), so
+  INTERMIS's record had the name before it ran the module, and the FLI
+  reader's Configure dialog files its settings (Where, Blank) in
+  `ANTSW.INI` under it (`2:002a..2:0088`).
+* **DC mode `0x10`** (§3.8.4): the FLI reader selects its palette (made
+  from the FLIC's `COLOR_256` chunk) into the DC once, at its first frame,
+  keeps the old one in its block and selects nothing again
+  (`2:02bc..2:02fc`); every frame is a `StretchDIBits` of its whole
+  320 × 200 buffer with `DIB_PAL_COLORS` (`2:1925`). Only the saver
+  window's own DC keeps that palette between passes.
+* **The MultiSaver** ("MultiSaver by Anthony Andersen") plays a group of up
+  to four modules, each in a part of the screen (`MACHINE.MSV`:
+  `IM_ANIM.IMX` and `SPIRALS.IMX`). Its LOAD (`2:1778`) takes INTRMLIB's
+  module table with `GETMODULESINFO` (`1:2756`: the count and the table
+  that `FINDALLMODULES` made at INTERMIS's start-up, `INTERMIS 1:0372`),
+  finds its modules' records there by file name (`5:0048`) and loads them
+  with `LOADSAVER`; with no table it reads through a null pointer
+  (`5:0074`). `FINDALLMODULES` enumerates the saver directory alone —
+  every `*.IMQ` there a reader's record, then every file of a reader's
+  type a module's — so the group's modules exist only when their reader
+  (here `IMIMXPLY.IMQ`) is in the saver directory, where Intermission's
+  installer put every reader. Each record's information comes from
+  `ANTSW.INI`'s cache (`[Intermission Extensions]`, …) or from its reader
+  (LOAD, QUERY with `0x8000`, FREE), which `WRITESAVERINFO` then caches;
+  `FREEMODINFO` (`INTERMIS 1:0cb4`, at its exit) frees the table.
+* **Readers that are savers too.** The pathless QUERY of `IMMRFPLY`,
+  `IMMSVPLY` and `IMSEQPLY` ("Sequencer") leaves `0x1000` set beside
+  `0x0800` (a reader). INTERMIS's control panel lists such records
+  (`2:057e`, for their editors: a new morph, group or sequence), but its
+  random pick runs only records with `0x0200` and `0x1000` set and
+  `0x0800` clear (`6:03ca..6:03dd`, `6:048d..6:04a7`): no reader is ever a
+  saver.
+
+The host (`PACKAGES.md` §7.5, `host/ne16/package.hh` "Form"): forms `fli`,
+`flc`, `mrf`, `msv`, read by `IM<type>PLY.IMQ` from the engine dir, else
+the module dir; their QUERY asks for the name (`0x8000` around it); for an
+MSV group `FINDALLMODULES` before its LOAD and `FREEMODINFO` after its
+FREE, through the thunks, from the `INTRMLIB.DLL` the guest loads; the
+saver window has `CS_OWNDC` (`user16_own_dc`); an IMQ whose QUERY leaves
+`0x0800` set is refused as a reader.
+
+#### 3.8.11 What the 1993–1994 Delrina releases ask of Windows — VERIFIED
+
+* **The display driver's palette** (Fade Out, `FADE.IMX`):
+  `GetModuleHandle("DISPLAY")`, then `GetProcAddress` of ordinals 23 and 22
+  (`2:0596..2:05c7`), the Windows 3.1 DDK's display-driver entries
+  `GetPalette` and `SetPalette`, `(WORD nStartIndex, WORD nNumEntries,
+  LPVOID lpPalette)`, far Pascal, no result; an entry is 4 bytes, red,
+  green, blue and an unused byte (a COLORREF's order). Fade Out reads the
+  whole hardware palette (`SIZEPALETTE` entries), steps every entry toward
+  black at each pass and loads it with `SetPalette` — the static colours
+  too, behind GDI's back — and puts the original back at the end. The
+  host: `DISPLAY.22` writes the emulated hardware palette, which the screen
+  shows at once (GDI's own record of its `PC_RESERVED` slots is kept);
+  `DISPLAY.23` reads it, the fourth byte 0; nothing past entry 255.
+* **`LineDDA`** (`GDI.100`; Plants, `PLANT.IMX`, 12,636 calls in 300
+  frames): the points of the line from the start to the end, the end
+  excluded, each handed to the callback (`FAR PASCAL (x, y, lpData)`) in
+  order — Bresenham's steps along the longer axis, the shorter one
+  stepping when the error passes 0 (a tie keeps it); a one-point line
+  calls nothing.
+* **`GetDialogBaseUnits`** (`USER.243`; `IMAD_PLY`'s QUERY, during
+  `FINDALLMODULES`): 8 × 16, a VGA's System font.
+* **MCI's `waveaudio`** (the June 1994 Flintstones' DictaBird, an IMQ
+  module that repeats what the microphone hears): at START,
+  `mciSendCommand(0, MCI_OPEN, MCI_OPEN_TYPE|MCI_OPEN_ELEMENT|MCI_WAIT)` of
+  type `"waveaudio"` with a new (empty) element, then
+  `MCI_GETDEVCAPS` `CAN_RECORD` and `CAN_PLAY` and `MCI_CLOSE`
+  (`1:06a2..1:0734`); if the open fails it calls `mciGetErrorString`
+  (`MMSYSTEM.706`) and draws only its own line, "Sound Support Not
+  Available For FM-DictaBird" (`1:0b25`). MMSYSTEM handled `MCI_OPEN`
+  whatever `wDeviceID` said. The host's machine has the MCI sequencer
+  alone (`AUDIO.md` §8.4), so the answer is `MCIERR_DEVICE_NOT_INSTALLED`
+  and DictaBird shows that line, as on a 1994 PC without `MCIWAVE.DRV`.
+* **Configure's controls.** The FLI and FLC readers' dialogs use INTRMLIB's
+  control classes (`ANT3DBOX`, `ANT3DONEORMORE`, `ANT3DCHECK`), which
+  INTRMLIB's LibMain registers; the readers do not import INTRMLIB, but
+  INTERMIS.EXE does, so its control panel always had them. The host loads
+  `INTRMLIB.DLL` around a Configure button.
+* **The Flintstones' `CARS.ASA`.** The May 1994 build's `CARS.ASA`
+  (`FLINT3.ZIP`; the same file in every known copy) is a damaged SZDD
+  file: its header says 477,345 bytes, its stream gives 443,231, and
+  Windows' `expand.exe` reports a format error. ANTSW's LZSS frame decoder
+  (`5:0310`) decodes until its input ends, with no bound on its output: at
+  frame 13 the damaged input decodes 0x1E54 bytes into a block allocated
+  for 0x1BEC (rounded to 0x1C00 by Windows 3.1's 32-byte granule, the
+  selector's limit as the host has it) and writes 1,700 bytes past it — a
+  GP fault on Windows 3.1 as in the host (`ANTSW 5:03D1`). The twelve
+  earlier LZSS frames end exactly at their blocks' size, and so does every
+  frame of the June 1994 build's intact `CARS.ASA`: no rule of Windows
+  3.1 was missing.
+
+#### 3.8.12 How fast a module ran: the buyer's PC — VERIFIED
+
+Intermission paced nothing: INTERMIS made a pass, one `SAVERMAIN` call,
+whenever its queue was empty (§3.8.4, item 4), and the kit Delrina gave
+module authors asked for as little work per call as possible — its manual's
+`saverdraw` section: "It is VERY IMPORTANT to spend as little time as
+possible in this procedure. Windows will be completely locked up until you
+return" — with a sample, `STICKS.C`, that draws one random line per call
+and reads no clock (`research/five/sdk/MODULE.WRI`, `STICKS.C`,
+gitignored). So a module that does one step per call moved as fast as the
+buyer's PC ran that loop, and nothing in it says how fast that was meant to
+be: the speed options some have (Ping's ball speeds, Snow Flakes' maximum
+speed, Swarm's bee and wasp speeds) can only be a distance per call, since
+those modules read no clock (below).
+
+The ne16 lane models a 25-MIPS machine (`PACKAGES.md` §7.5, "Pacing";
+`host/ne16/lane.hh` "Pacing"), on which a light pass is cheap: Dragon Kites
+makes 915 passes a virtual second (about 39 API calls each), Ant Mine 2,221,
+Wriggly 2,440. `ADNE16IMXSPEED=<percent>` (1..100; unset is 100, the model as
+it is, frame for frame) is that PC's speed, for an Intermission module of
+any form (the IMX protocol's knob, `Protocol16::speed_knob`; After Dark and
+Windows 3.1 modules ignore it, and the lane logs that it is set for one):
+each presented frame's call budget is the percent of ADDRAWMIPS × the frame
+period, a frame makes at most ADMAXDRAWS × percent / 100 calls (to the
+nearest, at least one), and the bound on carried overruns is the same work
+as at 100 (six full budgets: 24 of the slowed ones at 25, 100 at 6), so a
+heavy pass slows in proportion instead of being clamped (Fireworks: 94.1
+passes a second at 100, 23.9 at 25). Instructions take the time they took
+(ADMIPS: the clocks the modules read, the frames' deadlines), so a module
+paced by the clock keeps its pace. Deterministic; a set knob is logged at
+start.
+
+Which of Intermission 4.0's 54 modules follow it was measured, each run 900
+frames at 25 and at 100, and those that looked paced by the clock for 5
+minutes more (`research/speed/host/FACTS.md`, gitignored):
+
+* **36 follow it.** For 26 of them the run at 25 shows the run at 100's
+  pictures, byte for byte, four times as late (its frame 4i+3 is frame i,
+  for 10 to 222 frames): the picture is a function of the call count alone.
+  The others draw random content that differs between runs, and change a
+  fifth to two thirds as much per frame at 25: Ant Mine (one ant steps per
+  call), Chaos, Fireworks, Flashlight, Bitmap Saver, Mosaic, Space Shark;
+  Palette Animator steps its palette once per 16 calls, Picture Show's
+  fades take 39 frames at 25 and 11 at 100 (its pictures change on a
+  clock), and Bricks' ball, which steps on the 55 ms tick for its first
+  45 s or so (150 px a second at any speed), then follows the knob (about
+  1,500 px a second at 25, 5,000 at 100). The 36: `ACIDSPRY` `ANTMINE`
+  `BRICKS` `CHAOS1` `DISSOLVE` `DRAGON` `EYES` `FERN` `FIRE` `FIREFLY`
+  `FLASH` `FLOW` `ICE` `IMBITMAP` `IM_ANIM` `IM_MIXER` `IM_PICTU`
+  `KALSCOPE` `MARINE2` `MELT` `MOIRE1` `MOIRE3` `MOSAIC` `PALETTE` `PING`
+  `PLANT` `POLAR` `SNOW` `SORCERY` `SPIRALS` `SWARM` `SWIRL` `TUNNEL`
+  `WORMS` (`.IMX`), `IMSHARK.IMQ`, `MACHINE.MSV`.
+* **18 pace themselves by the clock**: the same pictures at the same pace
+  at 25 and 100 (the same number of changes in every 30 s of 5 minutes),
+  shifted by the start, whose work a slower machine pays back later (up to
+  99 frames; a later full redraw adds its own, as each new maze of Maze
+  does). The six ASA animations (`ANTGOLF` `CLOWN` `COWBOY` `DPIG` `FACE`
+  `PIG01S`), the two FLIC animations (`EINSTEIN` `FLYING`), the morph
+  `PARADISE.MRF`, and `BIGFOOT` `COMMNQUE` `CONUND` `FADE` `FLEX` `MAZE`
+  `ORBS` `PHOTO` `TIMEPIEC` (`.IMX`): Orbs adds an orb every 33 frames,
+  Photo Shoot changes its photo every 60 s.
+
+The front end sets the knob from the module's **Speed** control, a catalog
+control whose `"host"` names the variable (`PACKAGES.md` §6, `INTERACTION.md`
+§6.7): the 36 have it, and its value goes into the environment of every
+`adhostwin` that runs the module, never into `ADCVSET` or a `SET` line. Its
+stops are the same for all; where it starts is the catalog's choice per
+module, so that the moving things start at a calm pace (`PACKAGES.md` §6).
 
 ### 3.9 The After Dark 2.0 host (`AD.EXE` 2.0b) — VERIFIED
 
@@ -1944,6 +2142,7 @@ All under `research/win/` (gitignored), run with `research/win/venv`
 | `pkg/startrek/lane/tools/ad2pal.py`, `neinv.py`, `impcheck.py` | §3.9: After Dark 2.0's four palettes recomputed from `AD.EXE`'s code and compared with ADTASK's and AFTERDAR.SCR's (`lane/ad2pal.json`); the release's NE imports and exports (`lane/neinv.json`); every import checked against the Win16 runtime's shims (`lane/impcheck.json`) |
 | `pkg/snoopy/lane/dis/`, `pkg/marvel/dis/`, `pkg/disney/dis/`, `pkg/installshield/tools/` | §3.10–§3.13: `nedis.py` listings of Snoopy's modules and AD_SND 3.0.3, of `MARVEL.AD` and `DECO.DLL`, of `ADXPL100.DLL`, `ADW30.EXE` and `ADTASK.DLL`; the InstallShield 2 readers that unpack the Marvel and Snoopy disks for them (`is3z.py`, `dclexplode.py`) |
 | `pkg/more/l2/FREED_SELECTOR_RULE.md`, `evidence/` | §3.14: what Windows 3.1, DPMI 1.0 and Wine did with a freed selector left in a segment register; the three `ADW30.EXE` builds' write code (§3.12) |
+| `../speed/host/tools/srun.py`, `warp.py`, `sync.py`, `cmp.py`, `track.py` | §3.8.12: Intermission modules run at a machine speed (`ADNE16IMXSPEED`) with their passes a second and frame motion; the test for a picture that is the call count's alone (the slower run's frames are the faster run's, byte for byte, as many times later); the clock test (the same pictures at the same pace); a moving thing's displacement per call |
 
 ---
 

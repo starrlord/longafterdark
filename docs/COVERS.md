@@ -46,9 +46,12 @@ Comics Screen Posters, Snoopy's Screen Savers, The Looney Tunes Screen
 Saver, ScreamSavers, The Disney Collection Screen Saver), and as the
 thirteenth and fourteenth, Delrina's `farside` and `dilbert` (The Far Side
 Screen Saver Collection, Scott Adams' Dilbert Screen Saver Collection), as
-the fifteenth `tng` (Star Trek: The Next Generation Screen Saver), and as
+the fifteenth `tng` (Star Trek: The Next Generation Screen Saver), as
 the sixteenth Sierra On-Line's `castaway` (Screen Antics: Johnny
-Castaway). The UI calls a release by
+Castaway), and as the seventeenth to the twentieth Delrina's `opus`,
+`opusroad`, `flintstones` and `intermission` (Opus 'n Bill Screen Saver,
+Opus 'n Bill: On the Road Again!, The Flintstones Screen Saver Collection,
+Intermission 4.0). The UI calls a release by
 its `title`, or by its `shortTitle` where space is tight. A **cover** is the
 art that stands for a release. A **tile** is the cover rendered as a 4:5
 portrait PNG for display. The **filter** is the set of releases whose tiles
@@ -121,7 +124,10 @@ control and the details card) moves down by the band's height.
   Dilbert (1994-10) seventh, after Snoopy. With all fifteen, the Next
   Generation (1994-10) comes eighth, after Dilbert (the same month, so
   registry order). With all sixteen, Johnny Castaway (1992-12) comes
-  second, after Star Trek. A release without a date comes
+  second, after Star Trek. With all twenty, Opus 'n Bill (1993-09) comes
+  third and Intermission (1993-11) fourth, before Marvel, the Flintstones
+  (1994-05) sixth, before Far Side, and On the Road Again (1994-09) tenth,
+  after Star Wars. A release without a date comes
   last. (As built for twelve: a row that
   scrolls starts after the left chevron's place, §1.3.)
 * **Status box.** A status box 200 DIP wide sits at the column's right
@@ -213,21 +219,23 @@ so every cover now shows, on as many rows as they need
 * **Rows.** As few as hold every cover. Regular covers fill each row left
   to right, up to what a row holds and at most eight (`kStripMaxCols`): ten
   are 8 and 2 even where a row holds nine, fifteen 8 and 7, sixteen 8 and
-  8. Compact covers,
+  8, twenty 8, 8 and 4. Compact covers,
   which only a short window gets, are as even as can be, so a cap never
   costs it a row: fourteen where a row holds ten are 7 and 7, sixteen 8
-  and 8. The rows are left-aligned on the
+  and 8, twenty 10 and 10. The rows are left-aligned on the
   column and `kStripRowGap` (8 DIP) apart, the gap between two covers of a
   row; only the last row may be shorter. The band is the rows of cells and
-  the 12-DIP gap under them: 236 DIP for two regular rows, 156 for two
-  compact ones (one row: 120 and 80, as before).
+  the 12-DIP gap under them: 236 DIP for two regular rows, 352 for three,
+  156 for two compact ones (one row: 120 and 80, as before).
 * **Which form.** The regular covers when the client has the height for
   their rows (the columns keeping what they have over a one-row regular band
   at 760 DIP: client height − band ≥ 640), else the compact covers while
   the columns keep at least their 600-DIP minimum, so the two columns never
   get less height than they have without the strip. Fourteen (or twelve)
   releases at 1104 DIP wide: two regular rows from 876 DIP tall, two compact
-  rows from 756. Only a client too short even for the compact rows (the
+  rows from 756; twenty, three regular rows from 992 DIP tall, two compact
+  rows (10 and 10) from 756. Only a client too short even for the compact
+  rows (the
   minimum 680 DIP, for eight releases and more) falls back to the one
   compact row that scrolls between its chevrons, exactly as above, 8 to 11
   covers at a time; the minimum window size is unchanged.
@@ -679,6 +687,10 @@ photos are those two releases' covers of choice, through `--set-cover`).
 | `dilbert` (the same) | download `https://archive.org/download/dilbert_screensaver_collection/box.jpg` (a photo of the box front, 1200×1600, in the item of the flat ZIP), md5 `aa8fe2600200685504ea9f15feaf4352`, 167593 B, **crop 100,215,965,1315** (the box), art `box` ("Box front", Internet Archive) | disc `INSTALL.BMP` (the picture beside the installer's pages on disk 1: Dogbert, 63×123), md5 `47199572d43fb457b952dcba197a19c5`, art `panel` ("Setup art", your disks) | — | — |
 | `tng` (added as the fifteenth release) | download `https://web.archive.org/web/19970720113647id_/http://www.berksys.com:80/products/afterdark/box.stngL.jpg` (the box front from Berkeley Systems' 1997 product page, 126×160, like the Looney Tunes' and the Disney Collection's; the same bytes in the `/lite/` captures), md5 `d7286d0d288c5f8c9982c2a97470a2f8`, 23278 B, art `box` ("Box front", Wayback Machine) | disc `SETUP.BMP` (the installer splash, 387×228), md5 `b54082b26b50a8bf44653fa079f36320`, **crop 0,0,387,168** (above the warning text), art `splash` ("Installer art", your disc) | download `https://archive.org/download/star-trek-the-next-generation-screensaver/Star%20Trek%3A%20The%20Next%20Generation%20-%20screensaver_disc.jpg` (the Internet Archive's photo of the disc, 6000×4000, in the ISO's own item), md5 `419a2ba9a3c762531365cef84d02ef45`, 11258025 B, **crop 1200,270,3600,3600** (the disc, normalized to 2048×2048), art `disc` ("Disc label", Internet Archive) | — |
 | `castaway` (added as the sixteenth release) | download `https://archive.org/download/johncast/johnny-castaway-pc-cover.png` (the box front, 204×253, in the Internet Archive's item of the release's art), md5 `d07b6af1d5ffe9e0edaafa11fb9badac`, 24904 B, art `box` ("Box front", Internet Archive) | — | — | — |
+| `opus` (added with Delrina's four, as the seventeenth release) | disc `INSTALL.BMP` (the picture beside the installer's pages on disk 1: Opus, 63×123; the same in both builds), md5 `9b3c235183f800bc9c3bc14b718a69e0`, art `panel` ("Setup art", your disks) | — | — | — |
+| `opusroad` (the same) | download `https://archive.org/download/OpusNBill_OnTheRoadAgain/OnB-OtRA-Box.jpg` (a scan of the box front, 1256×1593, in the item of the release's ZIP; it fills the tile, no crop), md5 `afc3289af08484ad64542363c5b6e9fb`, 465624 B, art `box` ("Box front", Internet Archive) | — | — | — |
+| `flintstones` (the same) | — (no source: the generated cover) | — | — | — |
+| `intermission` (the same) | disc `INSTALL.BMP` (the picture beside the installer's pages on disk 1: Intermission's logo, 100×150), md5 `cf21a2a530d09444445c4735d8dd59ca`, art `panel` ("Setup art", your disks) | — | — | — |
 
 Notes:
 * **ad32** starts with its disc art because the user chose it: no box scan
@@ -774,6 +786,25 @@ Notes:
   one photo of the floppy online, in the item of its KryoFlux dump, is not
   used: its label shows the disk's serial number. An import made offline
   shows the generated cover until `--refresh-covers` fetches the box.
+* **Delrina's four more releases.** The Opus 'n Bill releases' art belongs
+  to Berkeley Breathed and Delrina, the Flintstones' to Hanna-Barbera and
+  Delrina, Intermission's to Delrina; all of it is handled like the
+  others': fetched onto the user's machine at import time, or read from
+  the user's own disks, and never bundled, committed or redistributed. No
+  new cover-source kind was needed. No box, label or manual scan of the
+  Opus 'n Bill Screen Saver, the Flintstones or Intermission 4.0 was found
+  online (the Internet Archive, the Wayback Machine's Delrina pages; the
+  Intermission item holds a screenshot). **opus** and **intermission**
+  show the picture their installer shows beside its pages, a plain
+  `INSTALL.BMP` on disk 1 (Opus; Intermission's logo), drawn as a picture.
+  **opusroad**: the Internet Archive's scan of the box front ("Another
+  screen saver by Berkeley Breathed"), in the item of its ZIP; its disks'
+  only picture is SZDD-compressed, out of a disc source's reach, so an
+  offline import shows the generated cover until `--refresh-covers`
+  fetches the box. **flintstones**: its installer's picture is
+  SZDD-compressed in both builds, so its registry row lists no source and
+  it always shows the generated cover, unless the user sets a picture of
+  their own.
 
 ### 2.4 Capture during an import
 
@@ -1402,7 +1433,7 @@ the importer), but may **not** change anything listed above.
 5. **Cover**: §2.11.
 
 The layout uses the §3.3 spacing, a client width of 640 DIP (minimum 560;
-720 since the sixteen releases, §9.3),
+720 since the sixteen releases, 816 since the twenty, §9.3),
 and a height fitted to the page, clamped to the work area. Lists longer
 than the window scroll inside a card, using `attach_overlay_scrollbar` on a
 child container.
@@ -1738,6 +1769,25 @@ sections above stay the contract; this records the differences.
   and Sources is about 920 DIP tall. A narrower work area (the tests'
   640-DIP ones) keeps five to a row, four rows, with the short-screen
   fallback as before.
+* **As built for twenty releases: seven covers to a row.** Six to a row
+  would have put twenty releases on four rows, too tall again for a
+  1080-line screen. The window is now 816 DIP wide, where the grid fits
+  seven cells, so the twenty take three rows (7, 7 and 6) and Sources keeps
+  its height; the narrower work areas keep their fewer columns.
+* **As built for twenty releases: the Downloads list held to Sources'
+  height.** Its twenty cards (and Every release not imported yet) took the
+  whole height of the work area, a screen-tall column at 150% on a 4K
+  monitor. The list now shows nine whole cards at the most and scrolls for
+  the rest (the scroll bar's room taken from the cards' width, as before),
+  so the page is a little less tall than Sources with every release
+  installed (895 against 907 DIP at a 1920×1032 work area and 100%) and
+  the window keeps its height from one page to the other; a note longer
+  than two lines (a long downloads folder) takes its lines from the list.
+  On a shorter work area it shows as many whole cards as fit, two at the
+  least, else what fits (never less than 80 DIP, as before), as Sources
+  does with its rows. A card the keyboard focuses is scrolled into view.
+  The screenshot report gives, on Downloads, `list=<shown>,<whole>` and
+  `cards=<end>,…` (where each card ends in the list, in pixels).
 * The Downloads page reads "already downloaded" from the default downloads
   folder (`gui::Request` has no download folder).
 * PACKAGES.md §5.2's "GUI restyle out of scope" is superseded by §4.

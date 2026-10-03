@@ -18,7 +18,9 @@ outside that census and have sections of their own: Star Wars Screen
 Entertainment's music (§10.6), Star Trek: The Screen Saver's AD_SND 1.0
 (§2.12, §10.7), and the five of the twelve-release registry, with the
 Looney Tunes' and the Disney Collection's music paths (§2.9), the host's
-own AD_SND for Snoopy's Screen Savers (§2.10) and their results (§10.8).
+own AD_SND for Snoopy's Screen Savers (§2.10) and their results (§10.8),
+Johnny Castaway's (§10.9), and the Opus 'n Bill, Flintstones and
+Intermission 4.0 releases' (§10.10).
 Evidence is marked as in the
 other documents: **VERIFIED** (our disassembly, with addresses), **EMPIRICAL**
 (observed in runs or measured on the files) and **UNVERIFIED** (leads still
@@ -1619,6 +1621,20 @@ over the engine's songs:
 Return: 0 or an `MCIERR_*` DWORD in DX:AX; `lpstrReturn` always
 NUL-terminated.
 
+Since Delrina's four more releases, `mciSendCommand` takes `MCI_OPEN` too,
+with sound on: the `MCI_OPEN_PARMS` device is opened as the string's
+`open` does, the sequencer only, any other type
+`MCIERR_DEVICE_NOT_INSTALLED` (its `wDeviceID` is ignored, as MMSYSTEM
+ignored it); with sound off the silent device's
+`MCIERR_INVALID_DEVICE_ID` stays (§3, invariant 4). `mciGetErrorString`
+(MMSYSTEM.706) answers TRUE and a text in the host's own words for an
+`MCIERR_*`, else FALSE and an empty string. The June 1994 Flintstones'
+DictaBird opens MCI's `waveaudio` device to record from a microphone, and
+when that fails draws only its own line, "Sound Support Not Available For
+FM-DictaBird": the machine's one MCI device is the sequencer, so that line
+is what it shows, as on a 1994 PC without `MCIWAVE.DRV`. A `waveaudio`
+device that records is not designed.
+
 ### 8.5 The engines' music gates (§2.9)
 
 For AD 3.x music, L16 must make these hold and check them by tracing
@@ -2155,6 +2171,36 @@ no AD_SND, no MIDI. Captured from the package its import made with
   the saver's own sound setting still applies on top of it.
 * Not exercised: live output (`ADAUDIOLIVE=1`, §12), and a run with the
   program's Sounds box cleared.
+
+### 10.10 Delrina's four more releases' sound (2026-10-02)
+
+The modules of the Opus 'n Bill Screen Saver (both builds), On the Road
+Again, the Flintstones and Intermission 4.0 sound through the same paths as
+The Far Side's and Dilbert's: wave effects with `sndPlaySound`, music
+through MEMMIDI's MIDI output (§8.2, §8.3), the engine volume reaching both
+through the `ANTSW.INI` seed and the MIDI bus (PACKAGES.md §7.5). Eighteen
+of them, from every release and form, captured with `ADSOUND=1` for 900
+frames (15 s), twice, from a staged root (`research/five/lane/runs/snd1`,
+`snd2`, gitignored):
+
+* Wave effects in the ASA cartoons, the IMQ modules and On the Road
+  Again's Opus Trek: Fish Bowl 26 voices, peaking at −2.6 dBFS; Opus Trek
+  28 (−8.0 dBFS); Opus's Moment 21; the two clocks, Opus Clock and
+  Prehistoric Clock, 14 each (−15.3 dBFS); Cowboy Singer 17; the May
+  Flintstones' Theme Song one (−8.8 dBFS). Some play nothing in their
+  first 15 s (Buttheaded Bill, Opus in Space, Logo, Drive-In, Space Shark).
+* MIDI: only Intermission 4.0's Rapping Pig (`PIG01S.ASA`: 606 MIDI events,
+  296 notes, in 15 s). Of the sampled files only it and Cowboy Singer
+  carry a MIDI song, and Cowboy Singer plays wave effects; On the Road
+  Again's own readme says none of its modules uses MIDI.
+* Intermission 4.0's FLI animations, morph and MultiSaver group are
+  silent.
+* The June 1994 Flintstones' DictaBird records from a microphone through
+  MCI's `waveaudio` device, which the machine does not have: it shows its
+  own "Sound Support Not Available" line instead (§8.4).
+* Every capture is identical run to run.
+* Not exercised: live output (`ADAUDIOLIVE=1`, §12), and the modules not
+  sampled.
 
 ---
 

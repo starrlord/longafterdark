@@ -2,36 +2,43 @@
 
 The original After Dark screen savers, Flying Toasters and all, running on
 today's Windows (and on Linux, through Wine), along with LucasArts' Star
-Wars Screen Entertainment, Delrina's The Far Side and Dilbert screen saver
-collections, and Sierra's Johnny Castaway.
+Wars Screen Entertainment, Delrina's Intermission and its Opus 'n Bill,
+Flintstones, Far Side and Dilbert screen savers, and Sierra's Johnny
+Castaway.
 
 ![The Long After Dark settings window in dark mode: box covers of four After Dark releases across the top, the module list on the left, and Flying Toasters! in the live preview](docs/images/settings.png)
 
 ## What it is
 
 Long After Dark brings back Berkeley Systems' After Dark screen savers from
-the 1990s, and four of their contemporaries: three that ran on Delrina's
-Intermission, LucasArts' Star Wars Screen Entertainment and Delrina's own
-The Far Side Screen Saver Collection and Scott Adams' Dilbert Screen Saver
-Collection (all from 1994), and Sierra On-Line's Screen Antics: Johnny
-Castaway (1992), a screen saver program of its own. It doesn't remake
-them. It runs the original modules, unchanged, on an emulated PC of the
-time: the x86 processor and the parts of Windows 95 they talk to. So they
-look, move and sound the way they did.
+the 1990s, and eight of their contemporaries: seven that ran on Delrina's
+Intermission, which are Intermission 4.0 itself (1993), LucasArts' Star
+Wars Screen Entertainment (1994) and Delrina's own Opus 'n Bill Screen
+Saver (1993), Opus 'n Bill: On the Road Again!, The Flintstones Screen
+Saver Collection, The Far Side Screen Saver Collection and Scott Adams'
+Dilbert Screen Saver Collection (all four from 1994), and Sierra On-Line's
+Screen Antics: Johnny Castaway (1992), a screen saver program of its own.
+It doesn't remake them. It runs the original modules, unchanged, on an
+emulated PC of the time: the x86 processor and the parts of Windows 95
+they talk to. So they look, move and sound the way they did.
 
-It works with sixteen releases for Windows, 328 modules in all: ten of
+It works with twenty releases for Windows, 429 modules in all: ten of
 Berkeley Systems' After Dark, two of other companies' modules for After
-Dark, the three Intermission releases, and Johnny Castaway. Import one or
+Dark, the seven Intermission releases, and Johnny Castaway. Import one or
 all of them; each works on its own.
 
 | Release | Year | Modules |
 |---|---|---|
 | Star Trek: The Screen Saver | 1992 | 16 |
 | Screen Antics: Johnny Castaway (Sierra On-Line) | 1992 | 1 |
+| Opus 'n Bill Screen Saver (Delrina) | 1993 | 16 |
+| Intermission 4.0 (Delrina) | 1993 | 54 |
 | Marvel Comics Screen Posters | 1993 | 1 |
+| The Flintstones Screen Saver Collection (Delrina) | 1994 | 15 |
 | The Far Side Screen Saver Collection (Delrina) | 1994 | 14 |
 | The Simpsons Screen Saver | 1994 | 15 |
 | Star Wars Screen Entertainment (LucasArts) | 1994 | 14 |
+| Opus 'n Bill: On the Road Again! (Delrina) | 1994 | 16 |
 | Snoopy's Screen Savers (Image Smith) | 1994 | 8 |
 | Scott Adams' Dilbert Screen Saver Collection (Delrina) | 1994 | 16 |
 | Star Trek: The Next Generation Screen Saver | 1994 | 13 |
@@ -50,15 +57,34 @@ for just as it does for After Dark's. Its 14 modules include Death Star
 Trench, Space Battles, Hyperspace, Lightsaber Duel, Darth Vader and the
 Cantina, with the films' themes as music.
 
-The Far Side Screen Saver Collection and Scott Adams' Dilbert Screen Saver
-Collection are Delrina's own Intermission releases. The Far Side's 14
-modules are animated scenes of Gary Larson's cartoons (Hell, Age of
-Mammals, Deserted Island, Fishbowl, Nerd Clock, Pterodactyl and more), and
-Dilbert's 16 are scenes from Scott Adams' comic strip (Dilbert at Work, Out
-to Lunch, Whack a Lawyer, Secretary with a Crossbow, Necktie Clock, Budget
-Woes and more), with their sound effects. Most of them are animations played by
+Intermission 4.0 (1993) is the screen saver itself, Anthony Andersen's
+Intermission as Delrina sold it, the engine all of these ran on, with 54
+modules of its own: graphic effects such as Fireworks, Ferns, Swarm,
+Tunnel and Spirals, effects on the picture of your desktop, animations
+such as Golfing Ants, Rapping Pig and Cowboy Singer, two FLI animations, a
+morph of a balloon into a parrot, and The Machine (Palette), which shows
+two of its modules at once. Intermission 5.0 was never found online as a
+product of its own; its engine came with On the Road Again and with
+Dilbert.
+
+Delrina's own collections for Intermission are scenes of comic strips and
+cartoons, with their sound effects: the Opus 'n Bill Screen Saver (1993)
+and Opus 'n Bill: On the Road Again! (1994), 16 modules each of Berkeley
+Breathed's Opus the penguin and Bill the Cat (Penguins, Night Cat, Puddy
+Passion and Death Toasters in the first; Opus Trek, Opus in Space,
+Information Highway and Tax This in the second); The Flintstones Screen
+Saver Collection (1994), 15 of Hanna-Barbera's Stone Age family (The
+Flintmobile, Bronto Crane, Bowling, Paddle Rock, Prehistoric Clock and
+more); The Far Side Screen Saver Collection's 14 animated scenes
+of Gary Larson's cartoons (Hell, Age of Mammals, Deserted Island,
+Fishbowl, Nerd Clock, Pterodactyl and more); and Scott Adams' Dilbert
+Screen Saver Collection's 16 scenes from his comic strip (Dilbert at Work,
+Out to Lunch, Whack a Lawyer, Secretary with a Crossbow, Necktie Clock,
+Budget Woes and more). Most of them are animations played by
 Intermission's own animation player, which Long After Dark runs unchanged,
-as it runs the modules.
+as it runs the modules. In a revised build of the first Opus 'n Bill
+(November 1993), Death Toasters, which Berkeley Systems took Delrina to
+court over, is Censored Toasters.
 
 Star Trek: The Screen Saver is After Dark 2.0 with 16 modules of the
 original series, from 1992: The Mission, Final Frontier, Tribbles, Spock,
@@ -103,7 +129,8 @@ and start of day.
   Final Exam, without closing the screen saver.
 - **The modules' own options.** Each module's sliders and choices, and
   buttons such as Fish World's **Select Fish…**, Marvel's **Posters...**,
-  the **Configure...** of a Star Wars, Far Side or Dilbert module or Johnny
+  the **Configure...** of an Intermission module (Star Wars, Opus 'n Bill,
+  Flintstones, Far Side, Dilbert or Intermission's own) or Johnny
   Castaway's **Setup...** that open the module's original settings windows.
 - **A modern settings window.** It follows Windows' light or dark mode,
   shows each release's box cover, and has a live preview.
@@ -127,20 +154,26 @@ settings window or the modules' own options (see [On Linux](#on-linux)).
     `.flp`), or a `.zip` or `.7z` of the install files or of the floppy
     images. For a release on several floppies, choose every image, such as
     the Simpsons' two or Star Trek's two, or the ZIP they came in, and for a
-    copy made of one ZIP per disk, such as The Far Side's five, every ZIP;
+    copy made of one ZIP per disk, such as The Far Side's five or the
+    Flintstones' three, every ZIP;
   - a `.zip` whose install files sit in one folder per disk (`Disk1`,
     `Disk2`, …), as the Internet Archive's copies of ScreamSavers, Marvel
-    and Snoopy do, or a folder unzipped from one;
+    and Snoopy do, or all in one folder, as its copy of On the Road Again
+    does, or a folder unzipped from one;
   - the Internet Archive. The importer can download each release for you:
     a CD image of 381.7 MB (4.0 Deluxe), 143.3 MB (10th Anniversary),
     58.8 MB (3.2), 37.9 MB (Totally Twisted), 6.9 MB (Star Wars Screen
     Entertainment) or 5.8 MB (Star Trek: The Next Generation), Star Trek's
     two floppy images (2.8 MB), Johnny Castaway's floppy image in a ZIP
-    (1.3 MB), or a ZIP of the
-    install files: the Simpsons' (2.6 MB), Marvel's (1.9 MB), Snoopy's
-    (1.9 MB), the Looney Tunes' (2.8 MB), ScreamSavers' (3.3 MB), the
-    Disney Collection's (3.4 MB) or Dilbert's (4.3 MB), or for The Far
-    Side a ZIP of each of its five install floppies (5.5 MB in all).
+    (1.3 MB), Intermission 4.0's three floppy images in a ZIP (3.3 MB), or
+    a ZIP of the install files: the Simpsons' (2.6 MB), Marvel's (1.9 MB),
+    Snoopy's (1.9 MB), the Looney Tunes' (2.8 MB), ScreamSavers' (3.3 MB),
+    the Disney Collection's (3.4 MB), Dilbert's (4.3 MB) or On the Road
+    Again's (4.4 MB), or a ZIP of each install floppy's files for The Far
+    Side (five, 5.5 MB in all) and the Opus 'n Bill Screen Saver (three,
+    2.8 MB). For the Flintstones it fetches a 129.3 MB archive of a 1994
+    shareware collection and takes from it only the release's three ZIPs,
+    one per floppy.
 
 Every import is checked, file by file, against the original release, so you
 know you have the real thing. For Star Wars Screen Entertainment that is
@@ -154,8 +187,19 @@ After Dark 3.2's engine files in place of the April release's.
 The Far Side's only intact copy online is a 1994 bulletin-board copy of its
 five floppies, one ZIP of each disk's files, and that is what the download
 fetches. The floppy images in the Internet Archive item named for the
-release are damaged, so an import from them fails. The notes such copies
-carry beside the release's files are never opened.
+release are damaged, so an import from them fails. The Opus 'n Bill Screen
+Saver's and the Flintstones' downloads are bulletin-board copies of their
+three floppies too, one ZIP per disk. The notes and programs such copies
+carry beside the release's files are never opened or run.
+
+The Opus 'n Bill Screen Saver and the Flintstones came in two builds each,
+and either build imports. For Opus 'n Bill they are the September 1993
+build (the download, and two more bulletin-board copies online) and the
+revised build of November 1993, with Censored Toasters. For the
+Flintstones they are the June 1994 build, which the download fetches, and
+the May 1994 build most copies online hold: its Prehistoric Vehicles
+animation is damaged in every one of those copies, so that build imports
+without it, with nine modules.
 
 ## Getting started
 
@@ -208,20 +252,31 @@ carry beside the release's files are never opened.
 - **Num Lock never closes it either.** In Star Trek's Final Exam it starts
   the exam: type the number of your answer. Moving the mouse ends the exam
   and the screen saver.
-- **Module buttons** such as **Select Fish…**, **Configure...** for a
-  Star Wars, Far Side or Dilbert module, or Johnny Castaway's **Setup...**,
+- **Module buttons** such as **Select Fish…**, **Configure...** for an
+  Intermission module, or Johnny Castaway's **Setup...**,
   open the module's original options window. What you
   choose there is saved straight away, and **Cancel** in the settings window
   doesn't undo it. Marvel's wallpaper features (**Posters...** → Install,
   and Create Poster On Wakeup) make their picture inside the emulated PC
   only: your own desktop stays as it is.
+- **Speed, for Intermission 4.0's modules.** Intermission ran its modules
+  as fast as the PC allowed, and 36 of Intermission 4.0's own, Dragon
+  Kites, Ant Mine and Fireworks among them, move a small step each time
+  they're called, so their speed was the PC's. Their **Speed** slider
+  picks the emulated PC's pace: **Normal** is about a 1993 486 (an
+  estimate), and **Fastest**, four times that, is the emulated PC at full
+  speed. Each slider starts where the module's motion is calm: most at
+  Normal, Dragon Kites, Ping and Bricks at Slowest, Wriggly and Snow Flakes
+  at Slow, and Space Shark at Fast. Intermission 4.0's other modules, the
+  animations among them, keep time by the clock and have no Speed.
 - **Sound** plays only from the main monitor's screen saver. The small live
   preview is always silent.
 - **Random on several monitors** shows the same module on all of them, and
   changes it on all of them at once. For a different module on each, check
   **A different module on each monitor** under **Change module every** (it
   shows only when two or more monitors are connected).
-- **Star Wars, Far Side, Dilbert, Star Trek (both releases), ScreamSavers
+- **Intermission modules (Star Wars, Opus 'n Bill, Flintstones, Far Side,
+  Dilbert and Intermission's own), Star Trek (both releases), ScreamSavers
   and Marvel modules, and Johnny Castaway,** always get 640×480, scaled up
   to fit the screen in its 4:3 shape (with bars at the
   sides on a widescreen monitor). The Resolution setting applies to the
@@ -272,10 +327,18 @@ every module's speed has been compared with the original. Known
 differences: Marvel's poster transitions (wipes, irises, blinds and the
 like) show at once where the original swept them over about half a
 second, and in Chameleon (Totally Twisted and 10th Anniversary) a stray
-icon covers the "Accessories" label after about half a minute. Three
+icon covers the "Accessories" label after about half a minute. Twelve
 modules that took the mouse and keyboard under Intermission instead of
 ending (The Far Side's Pterodactyl, Dilbert's Best of Dilbert and Budget
-Woes) run as ordinary screen savers here: input ends them. Johnny
+Woes, On the Road Again's The Butt Boys and Skating, and seven of the
+Flintstones') run as ordinary screen savers here: input ends them.
+Intermission 4.0's Palette Animator shows only black on its own (it was
+made as the background of a MultiSaver group, as in The Machine
+(Palette)), and its Picture Show stays black until its **Configure...**
+names a folder of `.BMP` pictures (your own drives are under `H:` there).
+The Flintstones' DictaBird recorded from a microphone, which the emulated
+PC doesn't offer: it shows only its own line, "Sound Support Not Available
+For FM-DictaBird", as on a 1994 PC that could not record. Johnny
 Castaway's own Password option has no effect: input ends it at once,
 without asking for the password. The Linux
 player is newer still: [docs/LINUX.md](docs/LINUX.md#status) says what
@@ -318,7 +381,7 @@ screen saver.
 - [docs/BUILDING.md](docs/BUILDING.md): building, testing and the source
   tree.
 - [docs/DESIGN.md](docs/DESIGN.md): how the emulation works.
-- [docs/PACKAGES.md](docs/PACKAGES.md): the sixteen releases and how each one
+- [docs/PACKAGES.md](docs/PACKAGES.md): the twenty releases and how each one
   is imported.
 
 ## License
@@ -336,9 +399,11 @@ Systems (After Dark), LucasArts (Star Wars Screen Entertainment), Paramount
 Collection), Warner Bros. (the Looney Tunes), Marvel (Marvel Comics Screen
 Posters), United Feature Syndicate / Peanuts Worldwide and Image Smith
 (Snoopy's Screen Savers), Binary Software and Stephen Blickenstaff /
-IMPart (ScreamSavers), Delrina (The Far Side and Dilbert collections, and
-Intermission), Gary Larson, FarWorks and Universal Press Syndicate (The Far
-Side), Scott Adams and United Feature Syndicate / United Media (Dilbert),
-and Sierra On-Line and Dynamix (Johnny Castaway).
+IMPart (ScreamSavers), Delrina and Anthony Andersen (Intermission), Delrina
+(the Opus 'n Bill, Flintstones, Far Side and Dilbert collections), Berkeley
+Breathed (Opus 'n Bill), Hanna-Barbera (The Flintstones), Gary Larson,
+FarWorks and Universal Press Syndicate (The Far Side), Scott Adams and
+United Feature Syndicate / United Media (Dilbert), and Sierra On-Line and
+Dynamix (Johnny Castaway).
 None of their files are in this repository or in the programs it builds:
 you import your own copies.

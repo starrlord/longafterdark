@@ -245,7 +245,9 @@ Lanes read their own knobs from the same snapshot: `env.get("ADFOO")`. They
 are listed in the lanes' headers: `host/pe32/lane.hh` and `host/ne16/lane.hh`
 (`ADNE16KIND=auto|ad3|imx` forces the Classic lane's module protocol,
 `ADNE16READER=auto|imq|native` its Intermission reader, `ADNE16BRIDGE` its
-After Dark bridge, …).
+After Dark bridge, `ADNE16IMXSPEED=<1..100>` an Intermission module's machine
+speed in percent — the saver sets it from the module's Speed control, a
+catalog control whose `"host"` names it —, …).
 
 ## The data folder
 

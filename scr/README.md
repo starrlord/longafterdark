@@ -21,16 +21,18 @@ files together in either of these places:
 Screen Saver Settings lists it as "Long After Dark": the `.scr`'s string
 resource 1 (`IDS_DESCRIPTION`), which Windows shows instead of the file name.
 
-The modules come from your own discs: any of the sixteen releases (twelve of
+The modules come from your own discs: any of the twenty releases (twelve of
 After Dark modules: After Dark 4.0 Deluxe, After Dark 3.2, Totally Twisted
 After Dark, After Dark 10th Anniversary, The Simpsons Screen Saver, Star Trek:
 The Screen Saver, which is After Dark 2.0b on two floppies, Marvel Comics
 Screen Posters, Snoopy's Screen Savers, The Looney Tunes Screen Saver,
 ScreamSavers, The Disney Collection Screen Saver and Star Trek: The Next
-Generation Screen Saver; and three whose modules
-run on Delrina's Intermission engine: LucasArts' Star Wars Screen
-Entertainment, and Delrina's The Far Side Screen Saver Collection and Scott
-Adams' Dilbert Screen Saver Collection; and Sierra On-Line's Screen Antics:
+Generation Screen Saver; seven whose modules
+run on Delrina's Intermission engine: Delrina's Intermission 4.0 itself,
+LucasArts' Star Wars Screen Entertainment, and Delrina's Opus 'n Bill
+Screen Saver, Opus 'n Bill: On the Road Again!, The Flintstones Screen
+Saver Collection, The Far Side Screen Saver Collection and Scott Adams'
+Dilbert Screen Saver Collection; and Sierra On-Line's Screen Antics:
 Johnny Castaway, a Windows 3.1 screen saver program of its own), from
 the disc (or the floppies), an image of it, a copy of its files, or the
 Internet Archive download. Click **Import…** in the settings dialog (or run `adimport.exe`) to
@@ -163,9 +165,10 @@ column at most 1240 DIP wide, centred.
 
 * **The box-cover strip** (`docs/COVERS.md` §1), when two or more
   releases (packages) are imported: one 4:5 box cover per release across the
-  top, oldest release first (Star Trek, Johnny Castaway, Marvel, Far Side,
-  Simpsons, Star Wars, Snoopy, Dilbert, Star Trek TNG, Looney Tunes,
-  ScreamSavers, 3.2, Totally Twisted, Disney, Deluxe, 10th Anniversary), each with its short title under it (64×80 DIP covers; 48×60
+  top, oldest release first (Star Trek, Johnny Castaway, Opus 'n Bill,
+  Intermission, Marvel, Flintstones, Far Side, Simpsons, Star Wars, On the
+  Road Again, Snoopy, Dilbert, Star Trek TNG, Looney Tunes, ScreamSavers,
+  3.2, Totally Twisted, Disney, Deluxe, 10th Anniversary), each with its short title under it (64×80 DIP covers; 48×60
   without captions when the window is under 760 DIP tall). Seven fit the
   first-open window side by side, and eight compact ones the smallest. The
   twelve's regular covers never all fit side by side (they need 1240 DIP;
@@ -207,8 +210,9 @@ column at most 1240 DIP wide, centred.
   nothing and the preview carries on). Every cover shows: covers that don't
   fit on one row wrap onto more, as few rows as hold them: regular covers
   fill each row, at most eight (ten: 8 and 2; fifteen: 8 and 7; sixteen: 8
-  and 8), compact
-  ones as even as can be (fourteen: 7 and 7), regular
+  and 8; twenty: 8, 8 and 4), compact
+  ones as even as can be (fourteen: 7 and 7; twenty, where a row holds
+  ten, 10 and 10), regular
   while the window has the height for their rows, else compact (`ui_model.h`: `strip_grid`, `strip_band`). Only a
   window too short even for the compact rows (the smallest, with eight
   releases and more) gets one compact row that scrolls by whole
@@ -229,7 +233,7 @@ column at most 1240 DIP wide, centred.
   to the first selected cover. The
   window opens at 1104×836 DIP with the strip, a row of eight covers
   (1104×952 with nine releases and more: two rows of regular covers;
-  `design_client_h`), clamped to the
+  1104×1068 with seventeen and more: three rows; `design_client_h`), clamped to the
   work area (at least 680 tall; 716 without it).
 * **Single module / Random** at the top left chooses what the saver plays.
   Below it, the **module list**, grouped by release (the release's title and
@@ -341,8 +345,8 @@ column at most 1240 DIP wide, centred.
   screen saver." (`docs/AUDIO.md` §9; see **Sound** below). The
   slider is adw_ui's `init_slider`: Right and Up raise it by 1, Left and
   Down lower it, Page Up / Page Down by 10, Home / End to 0 / 100.
-* The footer: **Import…** with a line saying what is imported ("328
-  modules from 16 releases", or "84 modules from After Dark 4.0 Deluxe"),
+* The footer: **Import…** with a line saying what is imported ("429
+  modules from 20 releases", or "84 modules from After Dark 4.0 Deluxe"),
   then the credit, then **Preview** (full screen, of the module the details show; greyed for
   a module this host can't run yet, or whose file is missing, and while the
   details show none), **OK** and **Cancel**. The credit, "Made With Love by
@@ -355,7 +359,7 @@ column at most 1240 DIP wide, centred.
   hover cue high contrast keeps, whose hover fill is the window colour). It
   sits in the free space between the assets line's text and Preview, centred
   there and on the buttons, and shows only when its whole box fits with
-  24 DIP clear of both: beside "328 modules from 16 releases" (as long as
+  24 DIP clear of both: beside "429 modules from 20 releases" (as long as
   the twelve releases' "284 modules from 12 releases") it fits the
   first-open window at every scale, and the narrowest one at 100% only (at
   the other scales it gives way there: the line is a digit longer than the
@@ -378,16 +382,16 @@ column at most 1240 DIP wide, centred.
 Until the modules are imported the details card is one welcome: a picture
 across its top (the night sky, the moon and two flying toasters), "Welcome to
 Long After Dark", what importing does (the original modules of After Dark and
-Star Wars Screen Entertainment, from any of the sixteen releases' discs, an image,
+Star Wars Screen Entertainment, from any of the twenty releases' discs, an image,
 or the Internet Archive; `welcome_text` in `ui_model.h`) and an **Import a
 release…** button (the importer's window is "Import a release"). The
 footer's Import is hidden meanwhile (it is the same command), its line reads
 "Nothing imported yet" (the credit beside it as ever), Single/Random are greyed, and the list shows a few
 faint placeholder rows and "Your modules appear here after import". "Long
-After Dark" stays the product's name; the words for the releases fit all sixteen
+After Dark" stays the product's name; the words for the releases fit all twenty
 (not every one is After Dark's, and Star Trek, the Simpsons, Marvel, Snoopy's
 Screen Savers, the Looney Tunes (also on a CD), ScreamSavers, the Disney
-Collection, The Far Side, Dilbert and Johnny Castaway came on floppies,
+Collection, Johnny Castaway and Delrina's six releases came on floppies,
 which "discs" covers).
 
 **Thumbnails.** A module with no icon of its own is shown by a square of one
@@ -548,6 +552,9 @@ SoundMonitor=primary     ; reserved: the primary monitor's screen saver plays
 
 [Module.ad40.toasters]   ; control values by catalog index, sent as ADCVSET
 0=50
+
+[Module.intermission.dragon]   ; Intermission 4.0's Speed (a host control): ADNE16IMXSPEED=100, never ADCVSET
+1=100
 ```
 
 The saver rotates modules when `Module=random` (or there is no `Module` key)
@@ -623,6 +630,35 @@ last. **Change module every**
 offers 1 minute to 2 hours and Never (`DurationMin=0`); a value the file holds
 that isn't one of those is offered as well, so it survives OK unchanged.
 
+**Host controls** (catalog `host`). A control may name a variable of the host's
+own in `host`: Intermission 4.0's **Speed** (`"host": "ADNE16IMXSPEED"`, a
+string slider Slowest 6 · Slow 12 · Normal 25 · Fast 50 · Fastest 100, after
+the module's Configure... button, starting where the module's catalog entry
+says: Normal for most, Slowest for Dragon Kites, Ping and Bricks, Slow for
+Wriggly and Snow Flakes, Fast for Space Shark) sets the emulated machine's
+speed for the modules that step whenever Windows is idle (`docs/PACKAGES.md`).
+The dialog shows it as it shows any control, and keeps it with the others
+(`[Module.<id>] 1=<value>`; **Restore defaults** puts it back where the module
+starts), but its value goes to the host, never to the module: every start of
+that module's host is given `<host>=<value>` (the default when it was never
+set) and the value is never part of `ADCVSET`
+(`host_control_values` in `catalog.h`). That is each `/s` window on every
+monitor and each step of a rotation, `/p`, Preview, the dialog's live
+preview, its thumbnails, and the module's Configure... (`--configure`); the
+saver's spawn lines end with `host=ADNE16IMXSPEED=<value>` for such a
+module, and so do the dialog's `live preview: spawn`, `thumbs: run` and
+`configure` lines. Moving the slider starts the live preview again with the
+new value, as moving any control does. The variables go in front of the
+start's own, so a host control can't change one the saver sets: the parser
+accepts only a host variable's shape ("AD", a capital or digit, then
+capitals, digits and underscores) other than those the front end sets
+itself (`ADSTREAM`, `ADSCREENW`/`H`, `ADCVSET`, `ADCAPS`, `ADNUMLOCK`,
+`ADSTATE`, `ADSEEDIMG`, `ADSOUND`, `ADVOLUME`, `ADAUDIOOUT`,
+`ADSTATUSHANDLE`, `ADSTATUSLOG`), and leaves out a control naming anything
+else, one naming a variable an earlier control took, and a host control
+without a value (`host_variable_ok`). The Linux player, which has no
+settings window, gives every host each host control's default.
+
 The dialog updates the file in place. Keys, sections and comments it doesn't
 know about are left alone. `Sound`, `Volume` and `DifferentPerMonitor` are
 read leniently (`on`, `off`, `075`; a volume outside 0–100 is clamped;
@@ -654,8 +690,10 @@ running. Only files named that way are ever deleted.
   `module_screen` in `geometry.h`): the `/s` windows (each host of a
   rotation, which switches between the kinds freely), Preview (a `/s`), the
   dialog's live preview and its thumbnails. The host gets it through
-  `ADSCREENW`/`ADSCREENH`, together with `ADSTREAM=1`, `ADCVSET` and
-  `AD_ASSETS_DIR`, and the frame is letterboxed to keep the monitor's aspect.
+  `ADSCREENW`/`ADSCREENH`, together with `ADSTREAM=1`, `ADCVSET`,
+  `AD_ASSETS_DIR` and the module's host controls' variables (Intermission
+  4.0's `ADNE16IMXSPEED`; **Host controls** above), and the frame is
+  letterboxed to keep the monitor's aspect.
   * Modules that follow the display (After Dark's, without `screen`):
     640×480 × `Scale` (the Resolution setting), widened
     to the monitor's aspect ratio. It is never narrower than 4:3, both axes
@@ -947,7 +985,14 @@ only reads it.
   exceptions, a named module first),
   frame conversion, the environment block (with `ADNUMLOCK`: the
   toggle for a host that keeps one or hasn't answered yet, none for one
-  that answered without `numlock=1`, whatever is inherited), the dialog's helpers (`dialog`:
+  that answered without `numlock=1`, whatever is inherited; and with a
+  module's host controls, `tests/fixtures/catalog-speed.json`: what the
+  catalog accepts in `host` and leaves out, `host_control_values` (the
+  default when never set, the saved value clamped, never in `ADCVSET`), the
+  value kept in `settings.ini` through OK, Preview's copy and Restore
+  defaults, each start's variables in front of its own and over an
+  inherited value, the live preview's restart when the value changes,
+  `same_target`, and a real `--configure` run against `fakehost.exe`), the dialog's helpers (`dialog`:
   adimport's exit codes, the preview-file names and sweep, and starting
   `fakeimport.exe` without a console window), and its presentation (`ui`:
   About tidying (including the catalog's own mid-phrase breaks, and credits
@@ -1111,8 +1156,9 @@ only reads it.
   answers `--capabilities` and fakes `--configure` (logging its owner, whether
   that owner is disabled, and its environment; `FAKEHOST_CONFIGURE_EXIT` or
   `_EXIT_FILE` pick the exit, `crash` included). Its start lines carry
-  `ADSTATE`, `ADCAPS`, `ADNUMLOCK`, `ADSEEDIMG`, `ADSTATUSHANDLE`, and `ADSOUND`,
-  `ADVOLUME` and `ADAUDIOOUT` (fakehost makes no sound), and its exit lines
+  `ADSTATE`, `ADCAPS`, `ADNUMLOCK`, `ADSEEDIMG`, `ADSTATUSHANDLE`, `ADSOUND`,
+  `ADVOLUME` and `ADAUDIOOUT` (fakehost makes no sound), and
+  `ADNE16IMXSPEED` (Intermission 4.0's Speed, a host control), and its exit lines
   the Num Lock toggle it ended with. They use the
   fixture catalog and settings under `tests/fixtures`. The placeholder module
   files are created at test time and contain no After Dark bytes. Covered:
@@ -1301,7 +1347,14 @@ only reads it.
   black, no capture file is left, `StartFromDesktop=0`), `config-buttons` (the
   live button, `--owner` = the dialog, its unsaved values, `ADSTATE`, the
   dialog disabled until the host exits, enabled again after a crash, the
-  notes, the live preview restarted each time); every test checks that each
+  notes, the live preview restarted each time), `config-speed` (a host
+  control, `tests/fixtures/catalog-speed.json`: Dragon Kites' Speed a
+  five-stop slider at Normal whose live preview gets `ADNE16IMXSPEED=25`;
+  moved to Fastest, the preview restarted with 100, and Configure..., the
+  preview after it and Preview's `/s` with 100 too, unsaved; the thumbnails
+  of Ant Mine at its saved 12 and of the cartoon without the variable; OK
+  saving `1=100`; then `/s` rotating over all four modules, each host with
+  its own value or none, and `/p`; never in `ADCVSET`); every test checks that each
   host got `ADSTATE=<settings folder>\state`. Sound (`AUDIO.md` §9):
   `sound` (two staged monitors with `Sound=1 Volume=35`, rotating, and a
   hostile inherited `ADSOUND=1` and `ADAUDIOOUT`: every host of the primary
