@@ -124,7 +124,8 @@ ZipArchive::ZipArchive(std::shared_ptr<const std::vector<uint8_t>> data, std::st
     if (m.method != 0 && m.method != 8)
       throw ZipError(name_ + "!" + m.name + ": compression method " + std::to_string(m.method) + " is not supported");
     // The file's own name: the whole name, or (disk_folders) what follows a
-    // DISK<n>/ folder, which must be a bare name too.
+    // DISK<n>/ folder, which must be a bare name too, or (paths) the last of
+    // a path's names, each of which must be usable.
     std::string file = m.name;
     const size_t slash = m.name.find('/');
     if (names == ZipNames::disk_folders && slash != std::string::npos)
@@ -132,15 +133,29 @@ ZipArchive::ZipArchive(std::shared_ptr<const std::vector<uint8_t>> data, std::st
     if (m.disk) {
       file = m.name.substr(slash + 1);
       m.directory = file.empty();
+    } else if (names == ZipNames::paths && slash != std::string::npos) {
+      m.directory = m.name.back() == '/';
+      const std::string path = m.directory ? m.name.substr(0, m.name.size() - 1) : m.name;
+      size_t at = 0;
+      for (size_t next; (next = path.find('/', at)) != std::string::npos; at = next + 1) {
+        try {
+          check_component(path.substr(at, next - at), name_);
+        } catch (const ImportError& ex) {
+          throw ZipError(ex.what());
+        }
+      }
+      file = path.substr(at);
     }
     if (file.find_first_of("/\\:") != std::string::npos)
       throw ZipError(name_ + ": member \"" + m.name + "\" is not a bare file name" +
-                     (names == ZipNames::disk_folders ? " or a file in a DISK<n> folder" : ""));
-    if (m.directory) {
-      // A folder's own entry is never read; one that holds data is no
-      // folder entry at all.
-      if (m.usize != 0) throw ZipError(name_ + ": member \"" + m.name + "\" is a folder entry that holds data");
-    } else {
+                     (names == ZipNames::disk_folders ? " or a file in a DISK<n> folder"
+                      : names == ZipNames::paths      ? " or a path of file names"
+                                                      : ""));
+    // A folder's own entry is never read; one that holds data is no folder
+    // entry at all (paths: its own name must be usable too).
+    if (m.directory && m.usize != 0)
+      throw ZipError(name_ + ": member \"" + m.name + "\" is a folder entry that holds data");
+    if (!m.directory || names == ZipNames::paths) {
       try {
         check_component(file, m.disk ? name_ + "!" + m.name.substr(0, slash) : name_);
       } catch (const ImportError& ex) {

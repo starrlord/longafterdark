@@ -72,6 +72,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <unordered_map>
@@ -1117,6 +1118,44 @@ void register_gdi16(Runtime16& rt) {
     gt(c).sync(hdc);
     c.ret_bool(::LineTo(h, x, y));
   });
+  // LineDDA(xStart, yStart, xEnd, yEnd, lpLineFunc, lpData), no result: the
+  // points of the line from the start to the end, the end excluded as
+  // LineTo's, each handed to lpLineFunc(x, y, lpData) (FAR PASCAL) in order
+  // — Bresenham's steps along the longer axis, the shorter one stepping when
+  // the error passes 0 (a tie keeps it); a line of one point (start = end)
+  // has none. No DC and nothing drawn: what the callback does with a point
+  // is its own (Intermission's Plants grows its stems a point at a time).
+  r.impl(G, "LineDDA", [](Call16& c) {
+    int x = c.sw(), y = c.sw();
+    const int x2 = c.sw(), y2 = c.sw();
+    const uint32_t proc = c.ptr(), data = c.l();
+    if (!proc) return;
+    int dx = x2 - x, dy = y2 - y;
+    const int sx = dx < 0 ? -1 : 1, sy = dy < 0 ? -1 : 1;
+    dx = std::abs(dx);
+    dy = std::abs(dy);
+    const bool across = dx > dy;  // more horizontal than vertical
+    const int major = across ? dx : dy, minor = across ? dy : dx;
+    int err = 2 * minor - major;
+    for (int i = 0; i < major; i++) {
+      c.rt.call_far(proc, {w16(uint16_t(x)), w16(uint16_t(y)), l16(data)});
+      if (err > 0) {
+        if (across) {
+          y += sy;
+        } else {
+          x += sx;
+        }
+        err += 2 * minor - 2 * major;
+      } else {
+        err += 2 * minor;
+      }
+      if (across) {
+        x += sx;
+      } else {
+        y += sy;
+      }
+    }
+  });
   auto shape4 = [&](const char* name, BOOL (*fn)(HDC, int, int, int, int)) {
     r.impl(G, name, [fn](Call16& c) {
       uint16_t hdc = c.w();
@@ -1553,6 +1592,44 @@ void register_gdi16(Runtime16& rt) {
   r.impl(G, "GetSystemPaletteUse", [](Call16& c) {
     c.w();
     c.ret(uint16_t(gt(c).display().palette_use()));
+  });
+  // The display driver's palette entries (the Windows 3.1 DDK's display
+  // driver interface): SetPalette (DISPLAY.22) and GetPalette (DISPLAY.23),
+  // (nStartIndex, nNumEntries, lpPalette), far Pascal, no result — what GDI
+  // itself called to load the hardware palette, and what a program reaches
+  // with GetModuleHandle("DISPLAY") and GetProcAddress (Intermission's Fade
+  // Out reads the palette, then fades it to black and back). An entry is 4
+  // bytes, red, green, blue and an unused fourth, a COLORREF's order.
+  // SetPalette loads the hardware palette — the statics too, and behind
+  // every logical palette's back (GDI's own record of which slot is whose
+  // stays as it was) — and the screen shows the new colours at once;
+  // GetPalette copies the hardware palette out, the fourth byte 0. Indices
+  // past 255 are not there.
+  r.add("DISPLAY", 22, "SetPalette", Conv16::pascal_, true, 8, [](Call16& c) {
+    uint16_t start = c.w(), n = c.w();
+    uint32_t in = c.ptr();
+    Display& disp = gt(c).display();
+    if (start >= 256 || !n) return;
+    n = uint16_t(std::min<int>(n, 256 - start));
+    std::vector<PALETTEENTRY> e(disp.system_palette().begin() + start, disp.system_palette().begin() + start + n);
+    for (uint16_t k = 0; k < n; k++) {
+      uint8_t q[4];
+      c.rt.read_bytes(in + 4u * k, q, 4);
+      e[k].peRed = q[0];
+      e[k].peGreen = q[1];
+      e[k].peBlue = q[2];
+    }
+    disp.set_system_entries(start, n, e.data());
+  });
+  r.add("DISPLAY", 23, "GetPalette", Conv16::pascal_, true, 8, [](Call16& c) {
+    uint16_t start = c.w(), n = c.w();
+    uint32_t out = c.ptr();
+    const auto& sys = gt(c).display().system_palette();
+    for (uint16_t k = 0; k < n && start + k < 256; k++) {
+      const PALETTEENTRY& e = sys[size_t(start + k)];
+      const uint8_t q[4] = {e.peRed, e.peGreen, e.peBlue, 0};
+      c.rt.write_bytes(out + 4u * k, q, 4);
+    }
   });
   r.impl(G, "GetNearestColor", [](Call16& c) {
     uint16_t hdc = c.w();

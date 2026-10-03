@@ -59,6 +59,9 @@ struct ThumbJob {
   // own_screen, module_screen).
   std::string abi = kAfterDarkAbi;
   SizeI screen;
+  // Its host controls' variables (catalog.h: HostControlValues::env), as the
+  // saver would set them: Intermission 4.0's Speed.
+  std::vector<std::pair<std::wstring, std::wstring>> env;
 };
 
 // Posted to the queue's owner: wParam says what happened.

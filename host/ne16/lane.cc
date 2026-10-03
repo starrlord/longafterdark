@@ -70,15 +70,48 @@ bool dir_exists(const std::string& p) {
   return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
+// The file's first four bytes (fewer when it is shorter; 0 when it cannot be read).
+DWORD file_head(const std::string& p, char (&head)[4]) {
+  HANDLE h = CreateFileW(widen(p).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+  if (h == INVALID_HANDLE_VALUE) return 0;
+  DWORD got = 0;
+  if (!ReadFile(h, head, sizeof(head), &got, nullptr)) got = 0;
+  CloseHandle(h);
+  return got;
+}
+
 // The file starts with an Intermission ASA animation's header (package.hh "Form").
 bool asa_file(const std::string& p) {
-  HANDLE h = CreateFileW(widen(p).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-  if (h == INVALID_HANDLE_VALUE) return false;
   char head[4] = {};
-  DWORD got = 0;
-  const bool ok = ReadFile(h, head, sizeof(head), &got, nullptr) && got == sizeof(head);
-  CloseHandle(h);
-  return ok && asa_header(head);
+  return file_head(p, head) == sizeof(head) && asa_header(head);
+}
+
+// The file is an Intermission data file of another type (package.hh "Form"):
+// named for its reader's type and no MZ executable, as core's probe has it.
+bool data_file(const std::string& p, ImxForm* form) {
+  if (!form_for_type(intermission_data_type(p), form)) return false;
+  char head[4] = {};
+  return !(file_head(p, head) >= 2 && head[0] == 'M' && head[1] == 'Z');
+}
+
+// The modeled machine's speed (lane.hh "Pacing", Speed): the knob's whole
+// percent, 1..100; 100 when it is unset or empty. A number outside 1..100 is
+// clamped into it and anything else ignored (100), either logged.
+uint32_t speed_from_env(const Env& env, const char* knob, const std::string& module) {
+  const std::string* v = env.get(knob);
+  if (!v || v->empty()) return 100;
+  char* end = nullptr;
+  const long p = strtol(v->c_str(), &end, 10);
+  if (end == v->c_str() || *end) {
+    log("%s: %s='%s' is not a whole percent; using 100", module.c_str(), knob, v->c_str());
+    return 100;
+  }
+  if (p < 1 || p > 100) {
+    const uint32_t c = p < 1 ? 1 : 100;
+    log("%s: %s=%ld is not 1..100; using %" PRIu32, module.c_str(), knob, p, c);
+    return c;
+  }
+  return uint32_t(p);
 }
 
 }  // namespace
@@ -90,6 +123,17 @@ std::unique_ptr<Protocol16> Ne16Lane::choose_protocol(const Ne16Layout& layout, 
       log("%s: ADNE16KIND is ignored: an ASA animation is an Intermission module", file_of(layout.module_path).c_str());
     }
     return make_imx_protocol(layout, ImxForm::asa);
+  }
+  // Intermission's other data files: their extension, which INTRMLIB matched
+  // against its readers' types (package.hh "Form"). An executable so named
+  // is what its exports say.
+  ImxForm data = ImxForm::imx;
+  if (data_file(layout.module_path, &data)) {
+    if (env.get("ADNE16KIND")) {
+      log("%s: ADNE16KIND is ignored: an Intermission %s file is an Intermission module",
+          file_of(layout.module_path).c_str(), intermission_data_type(layout.module_path));
+    }
+    return make_imx_protocol(layout, data);
   }
   bool is_auto = true;
   ModuleKind kind = ModuleKind::ad3;
@@ -222,6 +266,27 @@ bool Ne16Lane::init_impl(const std::string& module_path, LaneContext& ctx) {
   // time (a 100-MIPS budget kept busy costs more than a frame of host time).
   draw_mips_ = std::min<uint64_t>(env_u64(env, "ADDRAWMIPS", 25), opts.insns_per_us);
   max_draws_ = opts.insns_per_us ? uint32_t(std::clamp<uint64_t>(env_u64(env, "ADMAXDRAWS", 64), 1, 100000)) : 1;
+  // The modeled machine's speed (lane.hh "Pacing", Speed): the protocol's
+  // knob, a percent of the machine above. Here it scales ADMAXDRAWS (to the
+  // nearest call, at least one); step() scales each frame's budget and the
+  // bound on what is owed. 100, and a protocol without the knob, change
+  // nothing.
+  speed_ = 100;
+  if (const char* knob = proto_->speed_knob()) {
+    speed_ = speed_from_env(env, knob, module_name_);
+    if (speed_ < 100) max_draws_ = std::max<uint32_t>(1, uint32_t((uint64_t(max_draws_) * speed_ + 50) / 100));
+    const std::string* raw = env.get(knob);
+    if (raw && !raw->empty()) {
+      log("%s: the modeled machine runs at %" PRIu32 "%% (%s=%s): %" PRIu32
+          "%% of each frame's DRAWFRAME budget, at most %" PRIu32 " DRAWFRAME(s) a frame",
+          module_name_.c_str(), speed_, knob, raw->c_str(), speed_, max_draws_);
+    } else {
+      trace("lane", "%s: the modeled machine runs at 100%% (the protocol's default; %s sets it)", module_name_.c_str(),
+            knob);
+    }
+  } else if (env.get(kImxSpeedKnob)) {
+    log("%s: %s is ignored: it is the Intermission modules' machine speed", module_name_.c_str(), kImxSpeedKnob);
+  }
   // Long calls (lane.hh): on with the virtual CPU; ADNE16LONGCALLS=0 turns them off.
   long_calls_ = opts.insns_per_us && !(env.get("ADNE16LONGCALLS") && !env.flag("ADNE16LONGCALLS"));
   // A protocol whose one call lasts the whole run (scr: the program's task)
@@ -236,7 +301,10 @@ bool Ne16Lane::init_impl(const std::string& module_path, LaneContext& ctx) {
   // DRAWFRAME budget on; ADNE16IMXCARRY=0 turns them off.
   carry_ = proto_->carries_overruns() && draw_mips_ && !(env.get("ADNE16IMXCARRY") && !env.flag("ADNE16IMXCARRY"));
   if (proto_->carries_overruns()) {
-    const std::string carried = "carried into the next frames (below " + std::to_string(kMaxOwedBudgets) + " budgets owed)";
+    // The bound in budgets: kMaxOwedBudgets at full speed, × 100 / speed_ slower.
+    char bound[32];
+    snprintf(bound, sizeof(bound), "%g", double(kMaxOwedBudgets) * 100.0 / double(speed_));
+    const std::string carried = std::string("carried into the next frames (below ") + bound + " budgets owed)";
     trace("lane", "%s: overruns %s", module_name_.c_str(),
           carry_       ? carried.c_str()
           : draw_mips_ ? "not carried (ADNE16IMXCARRY=0)"
@@ -650,6 +718,9 @@ StepResult Ne16Lane::step() {
     // (The frame period is the core's once the lane runs: ADPACEMS or ours.)
     const uint64_t period = ctx_->clock.step_us();
     frame_budget_ = draw_mips_ * period;
+    // The modeled machine's speed (lane.hh "Pacing", Speed): its share of the
+    // budget, never none where there was one.
+    if (speed_ != 100 && frame_budget_) frame_budget_ = std::max<uint64_t>(1, frame_budget_ * speed_ / 100);
     frame_w0_ = rt_->work_insns();
     frame_draws_ = 0;
     const uint64_t i0 = rt_->instructions(), d0 = draws_, t0 = rt_->peek_us();
@@ -713,9 +784,10 @@ StepResult Ne16Lane::step() {
       // starts while the frame's work is below its allowance (draw_run), so
       // what they did beyond it is the frame's work less the allowance (all
       // of the budget: the frame before ended inside a call, so nothing was
-      // owed or paid back). What is owed stays below kMaxOwedBudgets budgets,
-      // and each frame without a call pays a whole budget back, so at most
-      // kMaxOwedBudgets - 1 frames in a row make none.
+      // owed or paid back). What is owed stays below kMaxOwedBudgets budgets
+      // (× 100 / speed_ on a slower machine, the same work), and each frame
+      // without a call pays a whole budget back, so at most kMaxOwedBudgets - 1
+      // frames in a row make none (kMaxOwedBudgets × 100 / speed_ - 1).
       if (suspended_) {
         owed_ = 0;  // it ended inside a call
       } else if (resumed && draws_ - d0 <= 1) {
@@ -728,7 +800,7 @@ StepResult Ne16Lane::step() {
         owed_ -= paid;
       } else {
         const uint64_t over = work > frame_allow_ ? work - frame_allow_ : 0;
-        owed_ = std::min(owed_ - paid + over, kMaxOwedBudgets * frame_budget_ - 1);
+        owed_ = std::min(owed_ - paid + over, kMaxOwedBudgets * frame_budget_ * 100 / speed_ - 1);
       }
       if (idle) idle_frames_++;
     }

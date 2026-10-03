@@ -2189,6 +2189,136 @@ void test_intersect_clip_rect() {
   CHECK(m.rt.shims().find_name("GDI", "IntersectClipRect")->calls == 4, "GDI.22 is implemented (no stub)");
 }
 
+// The display driver's palette entries, DISPLAY.22 SetPalette and .23
+// GetPalette (nStartIndex, nNumEntries, lpPalette), which Intermission's Fade
+// Out reaches with GetModuleHandle("DISPLAY") and GetProcAddress: 4-byte
+// entries, red, green, blue and an unused byte. SetPalette loads the
+// hardware palette — static entries too — and the screen shows it at once,
+// GDI's record of PC_RESERVED slots kept; GetPalette reads it back, the
+// fourth byte 0; nothing past entry 255.
+void test_display_palette() {
+  Machine m;
+  Screen screen(64, 48);
+  m.rt.attach_display(screen);
+  win32::Display& disp = *m.rt.display();
+  const uint16_t hmod = uint16_t(api(m, "KERNEL", "GetModuleHandle", {l16(m.rt.static_bytes("t DISPLAY", "DISPLAY"))}));
+  const uint32_t set = api(m, "KERNEL", "GetProcAddress", {w16(hmod), l16(22)});
+  const uint32_t get = api(m, "KERNEL", "GetProcAddress", {w16(hmod), l16(23)});
+  CHECK(hmod && set && get && set != get, "DISPLAY.22 and .23 by GetProcAddress (%04X: %08X, %08X)", hmod, set, get);
+  const uint32_t buf = uint32_t(m.data(64)) << 16;
+  const uint8_t in[12] = {10, 20, 30, 99, 40, 50, 60, 0, 70, 80, 90, 7};
+  m.rt.write_bytes(buf, in, sizeof(in));
+  const PALETTEENTRY reserved{1, 2, 3, PC_RESERVED};
+  disp.set_system_entries(6, 1, &reserved);
+  const uint64_t changes = disp.palette_changes();
+  m.rt.call_far(set, {w16(5), w16(3), l16(buf)});
+  auto& sys = disp.system_palette();
+  CHECK(sys[5].peRed == 10 && sys[5].peGreen == 20 && sys[5].peBlue == 30 && sys[6].peRed == 40 &&
+            sys[7].peBlue == 90 && disp.palette_changes() > changes,
+        "SetPalette(5, 3): hardware entries 5..7, a static one among them (%u,%u,%u)", sys[5].peRed, sys[5].peGreen,
+        sys[5].peBlue);
+  CHECK(sys[6].peFlags == PC_RESERVED && sys[5].peFlags == 0, "GDI's PC_RESERVED mark on entry 6 kept (%02X)",
+        sys[6].peFlags);
+  CHECK(screen.palette()[5].rgbRed == 10 && screen.palette()[5].rgbGreen == 20 && screen.palette()[5].rgbBlue == 30 &&
+            screen.palette()[7].rgbRed == 70,
+        "the screen shows the new colours");
+  CHECK(sys[4].peRed == 0 && sys[4].peGreen == 0 && sys[4].peBlue == 0x80 && sys[8].peRed == 0xC0,
+        "the entries around are untouched (4: %u,%u,%u)", sys[4].peRed, sys[4].peGreen, sys[4].peBlue);
+  const uint32_t out = uint32_t(m.data(64)) << 16;
+  uint8_t junk[20];
+  memset(junk, 0xEE, sizeof(junk));
+  m.rt.write_bytes(out, junk, sizeof(junk));
+  m.rt.call_far(get, {w16(4), w16(4), l16(out)});
+  uint8_t got[20];
+  m.rt.read_bytes(out, got, sizeof(got));
+  const uint8_t want[20] = {0, 0, 0x80, 0, 10, 20, 30, 0, 40, 50, 60, 0, 70, 80, 90, 0, 0xEE, 0xEE, 0xEE, 0xEE};
+  CHECK(memcmp(got, want, sizeof(want)) == 0,
+        "GetPalette(4, 4): R, G, B, 0 each, the PC_RESERVED one too; nothing past the 4 (%02X %02X %02X %02X | %02X)",
+        got[4], got[5], got[6], got[7], got[16]);
+  m.rt.write_bytes(buf, in, sizeof(in));
+  m.rt.call_far(set, {w16(254), w16(3), l16(buf)});
+  CHECK(sys[254].peRed == 10 && sys[255].peRed == 40, "SetPalette(254, 3): 254 and 255 only (%u %u)", sys[254].peRed,
+        sys[255].peRed);
+  const uint64_t before = disp.palette_changes();
+  m.rt.call_far(set, {w16(300), w16(1), l16(buf)});
+  m.rt.call_far(set, {w16(0), w16(0), l16(buf)});
+  CHECK(disp.palette_changes() == before, "entries past 255 or none: no change");
+  CHECK(m.rt.shims().find("DISPLAY", 22)->calls == 4 && m.rt.shims().find("DISPLAY", 23)->calls == 1 &&
+            m.rt.shims().unimplemented_called().empty(),
+        "DISPLAY.22 and .23 are implemented (no stub)");
+}
+
+// LineDDA (GDI.100; Intermission's Plants): the line's points from the
+// start, the end excluded, each handed to the callback (FAR PASCAL x, y,
+// lpData) in order, Bresenham's steps along the longer axis, a tie keeping
+// the shorter one; a one-point line has none. GetDialogBaseUnits (USER.243;
+// Intermission's After Dark reader): a VGA's System font, 8 × 16.
+void test_line_dda() {
+  Machine m;
+  std::string pts;
+  uint32_t seen = 0;
+  m.rt.shims().add("TESTDLL", 7, "DdaProc", Conv16::pascal_, true, 8, [&](Call16& c) {
+    int16_t x = c.sw(), y = c.sw();
+    seen = c.l();
+    pts += "(" + std::to_string(x) + "," + std::to_string(y) + ")";
+  });
+  const uint32_t cb = m.rt.thunk_far(*m.rt.shims().find("TESTDLL", 7));
+  auto dda = [&](int x1, int y1, int x2, int y2) {
+    pts.clear();
+    api(m, "GDI", "LineDDA",
+        {w16(uint16_t(x1)), w16(uint16_t(y1)), w16(uint16_t(x2)), w16(uint16_t(y2)), l16(cb), l16(0x12345678)});
+    return pts;
+  };
+  CHECK(dda(0, 0, 4, 2) == "(0,0)(1,0)(2,1)(3,1)" && seen == 0x12345678, "shallow: %s, data %08X", pts.c_str(), seen);
+  CHECK(dda(0, 0, 0, 3) == "(0,0)(0,1)(0,2)", "vertical: %s", pts.c_str());
+  CHECK(dda(5, 5, 2, 2) == "(5,5)(4,4)(3,3)", "diagonal, backwards: %s", pts.c_str());
+  CHECK(dda(0, 0, -3, 1) == "(0,0)(-1,0)(-2,1)", "leftwards, negative coordinates: %s", pts.c_str());
+  CHECK(dda(2, 1, 3, 7) == "(2,1)(2,2)(2,3)(2,4)(3,5)(3,6)", "steep, the tie at (2.5, 4) kept: %s", pts.c_str());
+  CHECK(dda(7, 7, 7, 7).empty(), "one point: no call (%s)", pts.c_str());
+  CHECK(m.rt.shims().find_name("GDI", "LineDDA")->calls == 6 && m.rt.shims().unimplemented_called().empty(),
+        "GDI.100 is implemented (no stub)");
+  CHECK(api(m, "USER", "GetDialogBaseUnits", {}) == 0x00100008, "GetDialogBaseUnits: 8 x 16");
+}
+
+// CS_OWNDC (user16_own_dc; INTERMIS's saver window class has it): GetDC and
+// BeginPaint give the window one DC, with what was selected into it kept
+// across ReleaseDC and EndPaint, and SaveDC/RestoreDC still restore it; a
+// window without it gets a fresh DC each time.
+void test_own_dc() {
+  Machine m;
+  Screen screen(64, 48);
+  m.rt.attach_display(screen);
+  Gdi16& g = m.rt.state<Gdi16>();
+  const uint16_t saver = user16_saver_window(m.rt);
+  const uint16_t pal = g.create_palette({{255, 0, 0, 0}, {0, 255, 0, 0}});
+  const uint16_t def = g.stock(DEFAULT_PALETTE);
+  auto get_dc = [&]() { return uint16_t(api(m, "USER", "GetDC", {w16(saver)})); };
+  auto release = [&](uint16_t dc) { return api(m, "USER", "ReleaseDC", {w16(saver), w16(dc)}) & 0xFFFF; };
+  auto palette_of = [&](uint16_t dc) { return g.dc(dc) ? g.dc(dc)->s.palette : uint16_t(0); };
+  uint16_t a = get_dc();
+  api(m, "USER", "SelectPalette", {w16(a), w16(pal), w16(0)});
+  release(a);
+  uint16_t b = get_dc();
+  CHECK(palette_of(b) == def, "no CS_OWNDC: the next GetDC is a fresh DC, the default palette (%04X)", palette_of(b));
+  release(b);
+  user16_own_dc(m.rt, saver);
+  uint16_t c1 = get_dc();
+  api(m, "USER", "SelectPalette", {w16(c1), w16(pal), w16(0)});
+  CHECK(release(c1) == 1 && g.dc(c1), "CS_OWNDC: ReleaseDC answers 1 and keeps the DC");
+  uint16_t c2 = get_dc();
+  CHECK(c2 == c1 && palette_of(c2) == pal, "the next GetDC: the same DC, its palette still selected (%04X %04X)", c2,
+        palette_of(c2));
+  api(m, "GDI", "SaveDC", {w16(c2)});
+  api(m, "USER", "SelectPalette", {w16(c2), w16(def), w16(0)});
+  api(m, "GDI", "RestoreDC", {w16(c2), w16(0xFFFF)});
+  CHECK(palette_of(c2) == pal, "SaveDC/RestoreDC restore what it held");
+  release(c2);
+  const uint32_t ps = uint32_t(m.data(64)) << 16;
+  const uint16_t p = uint16_t(api(m, "USER", "BeginPaint", {w16(saver), l16(ps)}));
+  api(m, "USER", "EndPaint", {w16(saver), l16(ps)});
+  CHECK(p == c1 && g.dc(c1) && palette_of(c1) == pal, "BeginPaint: the same DC, kept by EndPaint (%04X)", p);
+}
+
 // FloodFill and ExtFloodFill (Snoopy's sprite masks): the colour keyed as
 // SetPixel's, so pixel indices are compared (PALETTEINDEX and PALETTERGB
 // through the DC's palette, a plain RGB to the statics); real GDI's fill,
@@ -4635,6 +4765,9 @@ int run_unit() {
   test_gdi_additions();
   test_map_mode();
   test_intersect_clip_rect();
+  test_display_palette();
+  test_line_dda();
+  test_own_dc();
   test_flood_fill();
   test_dib_pal_colors();
   test_getdibits_4bpp();

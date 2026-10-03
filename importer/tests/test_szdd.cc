@@ -154,6 +154,9 @@ int main(int argc, char** argv) {
     };
     CHECK(expand(stamped("DLL 0401")) == data);
     CHECK(expand(stamped("DLL 1001DLL 0501")) == data);
+    // In any case (The Flintstones' June build's DIBDLL.DLL ends "dll 0601").
+    CHECK(expand(stamped("dll 0601")) == data && expand(stamped("Dll 0601DLL 0401")) == data);
+    CHECK(fails("a stamp without its space", [&] { expand(stamped("dll_0601")); }, "8 byte(s) left after"));
     CHECK(fails("a stamp with a letter", [&] { expand(stamped("DLL 04X1")); }, "8 byte(s) left after"));
     CHECK(fails("a stamp cut short", [&] { expand(stamped("DLL 040")); }, "7 byte(s) left after"));
     CHECK(fails("a stamp and a byte", [&] { expand(stamped("DLL 0401 ")); }, "9 byte(s) left after"));

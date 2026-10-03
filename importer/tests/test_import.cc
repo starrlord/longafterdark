@@ -912,15 +912,18 @@ int main(int argc, char** argv) {
       CHECK(note.empty());
       CHECK((names_at(*z) == std::vector<std::string>{"A.TXT", "SAME.TXT", "SETUP.PKG"}));
     }
-    // One name in two disks: another size is refused when listed, other
-    // bytes of the same size when read.
+    // One name in two disks: another size, or other bytes of the same size,
+    // is refused when the file is read, never when it is only listed (what
+    // no recipe reads, a BBS's notes, never stops an import).
     {
       auto t = two;
       t[2]["SAME.TXT"] = blob("same", 301);
       test::write_bytes(ds / L"size.zip", zip_of_disks(t));
       auto z = open_image(ds / L"size.zip");
+      CHECK((names_at(*z) == std::vector<std::string>{"A.TXT", "B.TXT", "SAME.TXT", "SETUP.PKG"}));
+      CHECK(z->read_all(*z->find("B.TXT")) == blob("b"));
       CHECK(source_refused(
-          "a name of two sizes", [&] { z->list(z->root()); },
+          "a name of two sizes", [&] { z->read_all(*z->find("SAME.TXT")); },
           "SAME.TXT differs between Disk1 and Disk2 (size); they are not the disks of one release"));
       t[2]["SAME.TXT"] = blob("SAME");
       test::write_bytes(ds / L"bytes.zip", zip_of_disks(t));
@@ -940,8 +943,8 @@ int main(int argc, char** argv) {
       test::write_bytes(ds / L"mixed.zip", b.build());
       CHECK(source_refused(
           "a ZIP with files beside its disks", [&] { open_image(ds / L"mixed.zip"); },
-          "mixed.zip holds files at its root (README.TXT) beside DISK<n> folders (Disk1); a ZIP source "
-          "holds the install files at its root, or only DISK<n> folders"));
+          "mixed.zip holds files at its root (README.TXT) beside DISK<n> folders (Disk1) (a ZIP source "
+          "holds the install files, or only DISK<n> folders of them, at its root or in one folder)"));
       for (const char* deep : {"Disk1/SUB/B.TXT", "EXTRA/B.TXT", "Disk1/SUB/", "__MACOSX/Disk1/._A.TXT"}) {
         test::ZipBuilder d;
         d.password = "";
@@ -951,7 +954,7 @@ int main(int argc, char** argv) {
         CHECK(source_refused(
             deep, [&] { open_image(ds / L"deep.zip"); },
             "is not a bare file name or a file in a DISK<n> folder (a ZIP source holds the install "
-            "files at its root, or only DISK<n> folders)"));
+            "files, or only DISK<n> folders of them, at its root or in one folder)"));
       }
       test::ZipBuilder locked;
       locked.add("Disk1/A.TXT", blob("a"));  // encrypted under the test password
@@ -960,6 +963,59 @@ int main(int argc, char** argv) {
           "a password-protected member in a disk", [&] { open_image(ds / L"locked.zip"); },
           "locked.zip!Disk1/A.TXT is password-protected"));
     }
+    // One folder that holds everything (the Internet Archive's ZIP of a
+    // release's folder, "Opus n Bill - On the Road Again/"): read as the root,
+    // its files flat or only DISK<n> folders of them; its own entry or none.
+    // Anything else beside it, or deeper in it, is refused as before.
+    {
+      for (bool entry : {true, false}) {
+        test::ZipBuilder b;
+        b.password = "";
+        if (entry) b.add("A Release/", {}, false, false);
+        b.add("A Release/A.TXT", blob("a"), true, false);
+        b.add("A Release/SETUP.PKG", blob("pkg"), true, false);
+        test::write_bytes(ds / L"top.zip", b.build());
+        std::string note;
+        auto z = open_image(ds / L"top.zip", &note);
+        fprintf(stderr, "  note: %s\n", note.c_str());
+        CHECK_EQ(note, std::string("reading top.zip's folder A Release as the source"));
+        CHECK((names_at(*z) == std::vector<std::string>{"A.TXT", "SETUP.PKG"}));
+        CHECK(read_at(*z, "a.txt") == blob("a"));
+      }
+      {
+        test::ZipBuilder b;
+        b.password = "";
+        for (const auto& [n, files] : two)
+          for (const auto& [name, data] : files) b.add("Set/Disk" + std::to_string(n) + "/" + name, data, true, false);
+        test::write_bytes(ds / L"top-disks.zip", b.build());
+        std::string note;
+        auto z = open_image(ds / L"top-disks.zip", &note);
+        CHECK_EQ(note, std::string("reading top-disks.zip's folder Set as the source, as the union of its folders "
+                                   "Disk1 and Disk2 (one install disk each)"));
+        CHECK((names_at(*z) == std::vector<std::string>{"A.TXT", "B.TXT", "SAME.TXT", "SETUP.PKG"}));
+      }
+      // A DISK<n> folder alone is a set of one disk, never "one folder".
+      {
+        std::string note;
+        auto z = open_image(ds / L"disk2.zip", &note);
+        CHECK(note.find("'s folder") == std::string::npos);
+      }
+      for (const std::vector<const char*>& names :
+           std::vector<std::vector<const char*>>{{"A Release/A.TXT", "README.TXT"},
+                                                 {"A Release/A.TXT", "Other/B.TXT"},
+                                                 {"A Release/A.TXT", "A Release/SUB/B.TXT"},
+                                                 {"A Release/Disk1/A.TXT", "A Release/B.TXT"}}) {
+        test::ZipBuilder b;
+        b.password = "";
+        for (const char* n : names) b.add(n, blob(n), true, false);
+        test::write_bytes(ds / L"top-bad.zip", b.build());
+        std::string what = names[1];
+        CHECK(source_refused(what.c_str(), [&] { open_image(ds / L"top-bad.zip"); },
+                             "(a ZIP source holds the install files, or only DISK<n> folders of them, at its root or "
+                             "in one folder)"));
+      }
+    }
+
     // A folder: the disks' folders merge, subfolders too.
     {
       test::write_tree(ds / L"folder" / L"DISK1",

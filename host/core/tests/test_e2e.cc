@@ -1028,6 +1028,8 @@ TEST(lane_detection_exit_codes) {
   // An Intermission ASA animation is data: routed to the ne16 lane by its
   // header, where no ASA reader (IMASAPLY.IMQ) is installed for it.
   std::string asa = write_temp("fake.asa", {'A', 'n', 'i', 'N', 0x20, 0, 0x20, 3});
+  // So is an .FLI animation, by its extension: no IMFLIPLY.IMQ is installed for it.
+  std::string fli = write_temp("fake.fli", {0x10, 0, 0, 0, 0x12, 0xAF});
   // Without its lane a header-only stub is refused as "not built in" (3); with
   // the lane linked it is routed there, and the lane's init must reject a
   // 128-byte image (1) rather than crash on it.
@@ -1040,6 +1042,7 @@ TEST(lane_detection_exit_codes) {
       {{ne}, ADW_HAVE_LANE_NE16 ? 1 : 3, ADW_HAVE_LANE_NE16 ? "lane init failed" : "was built without the ne16 lane"},
       {{junk}, 2, "not a module this host can run"},
       {{asa}, ADW_HAVE_LANE_NE16 ? 1 : 3, ADW_HAVE_LANE_NE16 ? "IMASAPLY.IMQ" : "was built without the ne16 lane"},
+      {{fli}, ADW_HAVE_LANE_NE16 ? 1 : 3, ADW_HAVE_LANE_NE16 ? "IMFLIPLY.IMQ" : "was built without the ne16 lane"},
       {{temp_dir() + "adw_e2e_missing.ad"}, 2, "cannot open"},
       {{}, 2, "usage"},
       {{pe, "--test-pattern"}, 2, "--test-pattern takes no module"},
@@ -1059,7 +1062,7 @@ TEST(lane_detection_exit_codes) {
     CHECK_EQ(code, k.code);
     CHECK(err.find(k.needle) != std::string::npos);
   }
-  for (auto& p : {pe, ne, junk, asa}) DeleteFileW(widen(p).c_str());
+  for (auto& p : {pe, ne, junk, asa, fli}) DeleteFileW(widen(p).c_str());
 }
 
 // ---- interaction (INTERACTION.md §3) ------------------------------------------

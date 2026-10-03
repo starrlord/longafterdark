@@ -14,8 +14,9 @@
 // after the last token (all verified 0 over the disc's 24 SZDD files) but
 // Delrina's version stamps: its Intermission Installer's files (The Far
 // Side's, Dilbert's) end their shared libraries with one or two 8-byte
-// records "DLL " + four digits ("DLL 0401"; the installer compares them so
-// an older library never replaces a newer one), which are not data.
+// records "DLL " + four digits ("DLL 0401", or "dll 0601" in The
+// Flintstones' June build; the installer compares them so an older library
+// never replaces a newer one), which are not data.
 //
 // SZDD has no checksum. A damaged file from a source without a known image
 // md5 is caught only by the manifest, as a verify failure (3), and not at all

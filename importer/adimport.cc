@@ -572,9 +572,13 @@ int run_cli(const Args& a) {
 int run_list_packages(const Args& a) {
   fs::path root = a.dest.empty() ? default_assets_root() : a.dest;
   printf("packages in %s\n", to_utf8(win_assets_dir(root).wstring()).c_str());
-  // The title column fits the longest title ("The Disney Collection Screen Saver").
-  int title_w = 0;
-  for (const Package& p : builtin_packages()) title_w = std::max(title_w, int(strlen(p.title)));
+  // The id and title columns fit the longest id ("intermission") and title ("Scott Adams'
+  // Dilbert Screen Saver Collection").
+  int id_w = 0, title_w = 0;
+  for (const Package& p : builtin_packages()) {
+    id_w = std::max(id_w, int(strlen(p.id)));
+    title_w = std::max(title_w, int(strlen(p.title)));
+  }
   for (const PackageState& s : list_packages(root)) {
     std::string state = s.installed ? "installed, " + std::to_string(s.file_count) + " files, verified: " + s.verified +
                                           (s.imported_utc.empty() ? "" : ", " + s.imported_utc)
@@ -593,18 +597,27 @@ int run_list_packages(const Args& a) {
       const Download& d = s.package->downloads.front();
       const bool zip = std::string_view(d.kind) == "zip";
       const std::string parts = std::to_string(1 + d.more_images.size());
-      // One floppy's image (Johnny Castaway's, in a ZIP): its known image says so.
-      bool floppy = false;
-      for (const KnownImage& k : s.package->images)
-        floppy = floppy || (std::string_view(k.md5) == d.md5 &&
-                            std::string_view(k.medium).find("floppy") != std::string_view::npos);
+      // One floppy's image (Johnny Castaway's, in a ZIP), or a ZIP of every
+      // install floppy's image (Intermission 4.0's): its known image says so.
+      bool floppy = false, floppies = false;
+      int disks = 0;
+      for (const KnownImage& k : s.package->images) {
+        disks = std::max(disks, k.disk);
+        if (std::string_view(k.md5) != d.md5) continue;
+        const std::string_view medium = k.medium;
+        floppy = floppy || medium.find("floppy") != std::string_view::npos;
+        floppies = floppies || medium.find("floppy images") != std::string_view::npos;
+      }
       dl = "download " + mb(download_size(d)) +
-           (zip && d.more_images.empty() ? " (ZIP of the install files)"
-            : zip                        ? " (" + parts + " ZIPs of the install disks' files)"
-            : d.more_images.empty()      ? (floppy ? " (floppy image)" : " (disc image)")
-                                         : " (" + parts + " floppy images)");
+           (zip && !d.members.empty()
+                ? " (a tar holding " + std::to_string(d.members.size()) + " ZIPs of the install disks' files)"
+            : zip && d.more_images.empty()      ? " (ZIP of the install files)"
+            : zip                               ? " (" + parts + " ZIPs of the install disks' files)"
+            : d.more_images.empty() && floppies ? " (ZIP of " + std::to_string(disks) + " floppy images)"
+            : d.more_images.empty()             ? (floppy ? " (floppy image)" : " (disc image)")
+                                                : " (" + parts + " floppy images)");
     }
-    printf("  %-9s %-*s %s; %s\n", s.package->id, title_w, s.package->title, state.c_str(), dl.c_str());
+    printf("  %-*s %-*s %s; %s\n", id_w, s.package->id, title_w, s.package->title, state.c_str(), dl.c_str());
   }
   return 0;
 }

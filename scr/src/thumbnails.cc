@@ -244,6 +244,7 @@ void ThumbnailQueue::start_next() {
         {L"AD_ASSETS_DIR", assets_root()},
     };
     add_sound_env(spec.env, sound_for(Settings{}, HostRole::thumbnail, false, false));   // never plays (AUDIO.md §9)
+    add_host_control_env(spec.env, j.env);
     spec.stderr_path = env_w(L"AD_SCR_HOSTLOG");
     spec.priority_class = IDLE_PRIORITY_CLASS;
     ++generation_;
@@ -261,8 +262,8 @@ void ThumbnailQueue::start_next() {
     frames_ = 0;
     started_ = Clock::now();
     SetTimer(hwnd_, kTimerWatch, 400, nullptr);
-    log_line("thumbs: run %s size=%dx%d pid=%lu (%zu more queued)", current_.id.c_str(), emu.w, emu.h, host_->pid(),
-             jobs_.size());
+    log_line("thumbs: run %s size=%dx%d pid=%lu (%zu more queued)%s%s", current_.id.c_str(), emu.w, emu.h, host_->pid(),
+             jobs_.size(), current_.env.empty() ? "" : " host=", describe_env(current_.env).c_str());
     return;
   }
   PostMessageW(notify_, msg_, kThumbIdle, 0);

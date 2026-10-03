@@ -29,16 +29,25 @@ std::wstring count(size_t n, const wchar_t* one, const wchar_t* many) {
 }
 
 std::wstring download_kind(const Package& p, const Download& d) {
-  // One ZIP of the install files, or one of each install disk's.
-  if (std::string_view(d.kind) == "zip")
+  // One ZIP of the install files, or one of each install disk's (The
+  // Flintstones' three in a tar).
+  if (std::string_view(d.kind) == "zip") {
+    if (!d.members.empty()) return L"Install files (" + std::to_wstring(d.members.size()) + L" ZIPs, in a tar)";
     return d.more_images.empty() ? L"Install files (ZIP)"
                                  : L"Install files (" + std::to_wstring(1 + d.more_images.size()) + L" ZIPs)";
+  }
   // A release on several install floppies: an image of each.
   if (!d.more_images.empty()) return std::to_wstring(1 + d.more_images.size()) + L" floppy disk images";
-  // A release on one floppy (Johnny Castaway's, in a ZIP): its known image says so.
-  for (const KnownImage& k : p.images)
-    if (std::string_view(k.md5) == d.md5 && std::string_view(k.medium).find("floppy") != std::string_view::npos)
-      return L"Floppy disk image";
+  // A release on one floppy (Johnny Castaway's, in a ZIP), or a ZIP of every
+  // install floppy's image (Intermission 4.0's): its known image says so.
+  for (const KnownImage& k : p.images) {
+    const std::string_view medium = k.medium;
+    if (std::string_view(k.md5) != d.md5 || medium.find("floppy") == std::string_view::npos) continue;
+    if (medium.find("floppy images") == std::string_view::npos) return L"Floppy disk image";
+    int disks = 0;
+    for (const KnownImage& o : p.images) disks = std::max(disks, o.disk);
+    return std::to_wstring(disks) + L" floppy disk images (ZIP)";
+  }
   return L"CD image";
 }
 

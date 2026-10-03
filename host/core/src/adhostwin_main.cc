@@ -48,7 +48,8 @@ void usage() {
   log("           AD_LOCALAPPDATA=<dir> (instead of %%LOCALAPPDATA%% for the data folder)");
   log("  sound:   ADSOUND=1 ADAUDIOOUT=<file.wav> ADVOLUME=0..100 ADAUDIORATE=<hz> ADAUDIOLATENCYMS=<ms>");
   log("           ADAUDIOLIVE=0 ADMIDI=0 ADMIDIDEV=<n> ADMIDIBASE=1 (--test-pattern: ADTESTAUDIO=1)");
-  log("  lanes:   ne16: ADNE16KIND=auto|ad3|imx ADNE16READER=auto|imq|native ADNE16BRIDGE=auto|oldmod16|native ...");
+  log("  lanes:   ne16: ADNE16KIND=auto|ad3|imx ADNE16READER=auto|imq|native ADNE16BRIDGE=auto|oldmod16|native");
+  log("                 ADNE16IMXSPEED=1..100 (an Intermission module's machine speed, percent) ...");
   log("           (the lane knobs: host/ne16/lane.hh, host/pe32/lane.hh)");
   log("  stdin:   GO | SET <i> <v> | KEY <vk> <0|1> | CAPS <0|1> | NUMLOCK <0|1> | MOUSE <x> <y> <buttons> | QUIT");
   log("  see host/core/README.md");

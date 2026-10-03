@@ -10,7 +10,10 @@ or the ZIP they came in, or -- The Far Side -- the ZIP of each disk's files the 
 release known by the ZIP of its install files -- Marvel Comics Screen Posters, Snoopy's Screen
 Savers, the Looney Tunes, ScreamSavers, the Disney Collection, Dilbert -- that ZIP: --image <the ZIP>)
 
-writes known_files.inc (Deluxe) or known_files_<id>.inc next to this script.
+writes known_files.inc (Deluxe) or known_files_<id>.inc next to this script (for another build of a
+release with several builds -- the Opus 'n Bill Screen Saver's November 1993 disks, The Flintstones'
+May 1994 disks -- import.json's package.build names it, and the manifest is
+known_files_<id>_<build>.inc).
 
 A manifest is what lets adimport verify a folder source (a mounted disc, a
 copy of one, copied floppies) file by file, where there is no image to hash.
@@ -63,6 +66,36 @@ PACKAGES = {
     "tng": (("0b95b9271c75b9ff1d89b57a0e15ee7b",), "packages/tng", ("ST-TNG", "ENGINE")),
     # The floppy (its image in the KryoFlux dump's ZIP). No ENGINE: the program is its own.
     "castaway": (("81087ea7cc6a304896e81c722b0a85ec",), "packages/castaway", ("SCRANTIC",)),
+    # Three install floppies, known by a ZIP of each disk's files (three BBS copies; DISKS below).
+    "opus": ((), "packages/opus", ("SAVER", "ENGINE")),
+    # The ZIP of the four floppies' files, in one folder.
+    "opusroad": (("ad6023bae1deb7c55c8239d55d1a81cf",), "packages/opusroad", ("SAVER", "ENGINE")),
+    # Three install floppies, known by a ZIP of each disk's files (DISKS below).
+    "flintstones": ((), "packages/flintstones", ("SAVER", "ENGINE")),
+    # Three install floppies' images (DISKS below; the ZIP they came in holds them).
+    "intermission": ((), "packages/intermission", ("SAVER", "ENGINE")),
+}
+
+# packages.cc: the build the package's own fields describe (Package::build),
+# for a release with several builds.
+PRIMARY_BUILDS = {"opus": "1993-09", "flintstones": "1994-06"}
+
+# packages.cc: the known images of a release's other builds (Package::builds),
+# (package, build) -> {md5: disk}; the manifest is known_files_<id>_<build>.inc.
+BUILDS = {
+    # The Opus 'n Bill Screen Saver's November 1993 build: a 1993 BBS copy, a
+    # ZIP of each disk's files (WC!OPUS1..3.ZIP).
+    ("opus", "1993-11"): {
+        "a90d7e7545afb1020a1781f006dcbc0f": 1,
+        "95dc225cd0aeb5e2976253af2ffbe05e": 2,
+        "a2f001b54cd03059d154eead871ee87c": 3,
+    },
+    # The Flintstones' May 1994 build: a 1994 BBS copy (FLINT1..3.ZIP).
+    ("flintstones", "1994-05"): {
+        "68cf70016ec2438f2773678d2864e48c": 1,
+        "9b5faa07d55bbdb9a848645a6157ae05": 2,
+        "f6f94599e24d639fbdc5e2408a9c5c79": 3,
+    },
 }
 
 # packages.cc: the known images of releases on several install disks
@@ -86,6 +119,26 @@ DISKS = {
     "4347386255e85cddb39a5d69ab65bc81": ("dilbert", 2),
     "0f5408c77ed018db8b99b6b70f2a6a29": ("dilbert", 3),
     "9064065cfb1edd12cc659823b5ca88ad": ("dilbert", 4),
+    # The Opus 'n Bill Screen Saver's three floppies as three 1993 BBS copies,
+    # a ZIP of each disk's files (OPUS1..3NTA.ZIP, ONBSBS-1..3.ZIP, OPUS-1..3.ZIP).
+    "2aed4db32e141babe6a4336aac674cd2": ("opus", 1),
+    "10cdbe9634bf25292ad331dbbe5f7905": ("opus", 2),
+    "54b35b007c9ed7155441eb79de49d580": ("opus", 3),
+    "30c17d0fc45cb8b286d80e79e68bb42e": ("opus", 1),
+    "d5face113998cc8dc00db29877dcfd97": ("opus", 2),
+    "3e8946d995b84c0bd1d643fb0f018cc0": ("opus", 3),
+    "ec56dca1d8d324e5fea121ad1f69b51f": ("opus", 1),
+    "f3eaa8e4f8c80a9c41526211336e7a04": ("opus", 2),
+    "6441ea716809414208ee1b45ee13836a": ("opus", 3),
+    # The Flintstones' June 1994 build's three floppies as a 1994 BBS copy
+    # (FLINTST1..3.ZIP).
+    "a53599e3a8c1fbfed7147ef769c67d53": ("flintstones", 1),
+    "71a588d1f54f85f3a58326b16f0ad33b": ("flintstones", 2),
+    "d43fa04cda64a0f158eb84b0d96f6f24": ("flintstones", 3),
+    # Intermission 4.0's three floppy images (ITM4W-D1..3.IMA).
+    "fc1305b7f178adf862bebde610f51020": ("intermission", 1),
+    "f1fedb8dbd9fdde088b617cc2e543740": ("intermission", 2),
+    "a56edc671fe824830c4b6aa08ad5c57d": ("intermission", 3),
 }
 
 DELUXE_HEADER = """\
@@ -149,6 +202,13 @@ def main():
         sys.exit("refusing: import.json version %r" % j.get("version"))
     known_md5s, root, dirs = PACKAGES[pid]
     disks = {m: d for m, (p, d) in DISKS.items() if p == pid}
+    # A release with several builds: the build import.json records picks the
+    # known images (another build's are its own) and the manifest's name.
+    build = j.get("package", {}).get("build") if j.get("version") == 2 else None
+    if build != PRIMARY_BUILDS.get(pid):
+        if (pid, build) not in BUILDS:
+            sys.exit("refusing: import.json's build %r is no known build of %s" % (build, pid))
+        known_md5s, disks = (), dict(BUILDS[(pid, build)])
     # One known image of the whole release (a package known both ways, as
     # dilbert is, by either), else the set of its install disks.
     if image_md5 in known_md5s:
@@ -183,13 +243,16 @@ def main():
         if not re.fullmatch(r"[0-9a-f]{32}", f["md5"]) or p.upper() in seen or not isinstance(f["size"], int):
             sys.exit("bad entry %r" % f)
         seen.add(p.upper())
-    name = "known_files.inc" if pid == "deluxe" else "known_files_%s.inc" % pid
+    other_build = build is not None and build != PRIMARY_BUILDS.get(pid)
+    name = ("known_files.inc" if pid == "deluxe" else
+            "known_files_%s_%s.inc" % (pid, build) if other_build else "known_files_%s.inc" % pid)
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
     with open(out, "w", encoding="utf-8", newline="\n") as w:
         if pid == "deluxe":
             w.write(DELUXE_HEADER % image_md5)
         elif disks:
-            w.write(DISK_SET_HEADER % (pid, title, "ZIPs" if src.get("format") == "zip" else "images", image_md5))
+            what = "%s, build %s" % (title, build) if build else title
+            w.write(DISK_SET_HEADER % (pid, what, "ZIPs" if src.get("format") == "zip" else "images", image_md5))
         elif src.get("format") == "zip":
             w.write(ZIP_HEADER % (pid, title, image_md5))
         else:

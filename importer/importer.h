@@ -156,6 +156,7 @@ struct ImportResult {
   std::vector<ImagePart> parts;
   std::string verified;                    // "image" | "files" | "partial" | "none" (see import.json)
   std::string package_id, package_title;   // the identified package
+  std::string build;                       // its build (Package::build or a Build's id); "" for a release with one
   std::filesystem::path files_dir;         // the package root: <assets>\win\FILES or <assets>\win\packages\<id>
   std::filesystem::path import_json;       // <assets>\win\import.json (Deluxe) or <package root>\import.json
   std::filesystem::path catalog;           // <assets>\win\catalog-win.json (catalog.h)

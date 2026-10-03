@@ -136,7 +136,8 @@ int main(int argc, char** argv) {
     const std::map<std::string, std::pair<int, int>> want = {
         {"deluxe", {118, 226}},  {"ad10", {118, 226}},    {"ad32", {387, 183}},  {"tt", {387, 204}},
         {"simpsons", {387, 172}}, {"looney", {387, 161}}, {"screams", {350, 119}}, {"disney", {387, 172}},
-        {"snoopy", {79, 175}},    {"dilbert", {63, 123}},  {"tng", {387, 168}}};
+        {"snoopy", {79, 175}},    {"dilbert", {63, 123}},  {"tng", {387, 168}},  {"opus", {63, 123}},
+        {"intermission", {100, 150}}};
     fs::path root = dir / L"root";
     for (const Package& p : builtin_packages()) {
       if (p.images.empty()) continue;
@@ -145,15 +146,23 @@ int main(int argc, char** argv) {
         fprintf(stderr, "skip %s: no cover source on its disc\n", p.id);
         continue;
       }
-      const fs::path image = test::find_image(dirs, p.images[0].size, p.images[0].md5);
-      if (image.empty()) {
+      // Its one image, or every install disk's (the Opus 'n Bill Screen
+      // Saver's ZIPs, Intermission 4.0's floppy images, or the ZIP of them).
+      std::vector<fs::path> images = test::find_disk_set(dirs, p);
+      if (images.empty()) {
+        const fs::path image = test::find_image(dirs, p.images[0].size, p.images[0].md5);
+        if (!image.empty()) images.push_back(image);
+      }
+      if (images.empty()) {
         fprintf(stderr, "skip %s: no image with md5 %s\n", p.id, p.images[0].md5);
         notes.push_back(std::string("no image of ") + p.id);
         continue;
       }
-      fprintf(stderr, "---- %s from %s\n", p.id, to_utf8(image.wstring()).c_str());
-      test::ProcessResult pr = test::run_process(
-          exe, {L"--no-cover-download", L"--image", image.wstring(), L"--dest", root.wstring(), L"--quiet"}, 1800000);
+      fprintf(stderr, "---- %s from %s\n", p.id, to_utf8(images[0].wstring()).c_str());
+      std::vector<std::wstring> args = {L"--no-cover-download"};
+      for (const fs::path& f : images) args.insert(args.end(), {L"--image", f.wstring()});
+      args.insert(args.end(), {L"--dest", root.wstring(), L"--quiet"});
+      test::ProcessResult pr = test::run_process(exe, args, 1800000);
       fprintf(stderr, "%s", pr.output.c_str());
       CHECK_EQ(pr.exit_code, 0);
       fs::path cj = root / L"win" / L"covers" / to_wide(p.id) / L"cover.json";

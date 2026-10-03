@@ -68,6 +68,7 @@
 #include "names.h"
 #include "pkg_fixture.h"
 #include "run_process.h"
+#include "sevenzip_builder.h"
 
 using namespace adw::import;
 namespace fs = std::filesystem;
@@ -266,7 +267,9 @@ int main(int argc, char** argv) {
     };
     std::set<std::wstring> names;
     for (const Package& p : builtin_packages()) {
-      CHECK(!p.covers.empty());  // every package has at least one cover source
+      // Every package has at least one cover source, but The Flintstones (none
+      // was found: a generated cover).
+      CHECK(!p.covers.empty() || std::string(p.id) == "flintstones");
       for (const CoverSource& s : p.covers) {
         const std::string art = s.art ? s.art : "";
         CHECK(art == "box" || art == "disc" || art == "splash" || art == "panel");
@@ -372,7 +375,7 @@ int main(int argc, char** argv) {
            std::vector<std::string>{"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek"}));
     CHECK((order == std::vector<std::string>{"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek", "marvel",
                                              "snoopy", "looney", "screams", "disney", "farside", "dilbert", "tng",
-                                             "castaway"}));
+                                             "castaway", "opus", "opusroad", "flintstones", "intermission"}));
     for (const char* id : {"looney", "screams", "disney"}) CHECK(std::find(order.begin(), order.end(), id) != order.end());
     CHECK(std::find(order.begin(), order.end(), "looney") < std::find(order.begin(), order.end(), "screams"));
     CHECK(std::find(order.begin(), order.end(), "screams") < std::find(order.begin(), order.end(), "disney"));
@@ -2496,7 +2499,7 @@ int main(int argc, char** argv) {
     const Package* p = find_package("castaway");
     CHECK(p != nullptr);
     if (p) {
-      CHECK(builtin_packages().size() == 16 && &builtin_packages()[15] == p);
+      CHECK(builtin_packages().size() >= 16 && &builtin_packages()[15] == p);
       CHECK(p->recipe == Recipe::is1 && std::string(recipe_name(p->recipe)) == "is1" &&
             std::string(p->root) == "packages/castaway");
       CHECK(std::string(p->title) == "Screen Antics: Johnny Castaway" &&
@@ -3191,6 +3194,404 @@ int main(int argc, char** argv) {
     }
   }
 
+  // ---- the twentieth's four Delrina releases: opus, opusroad, flintstones, intermission ------------------
+  {
+    // The registry rows: after Johnny Castaway, Delrina's installer,
+    // SAVER and ENGINE; every disk's tag; the tables' files once each, the
+    // manifests exactly those (each build's its own), the required files and
+    // the fingerprint's file among them, a name for every module; the other
+    // builds' own file on disk 1 in their table alone; the copies online and
+    // the known images they are.
+    std::vector<std::string> order;
+    for (const Package& p : builtin_packages()) order.push_back(p.id);
+    CHECK(order.size() == 20 &&
+          (std::vector<std::string>(order.end() - 5, order.end()) ==
+           std::vector<std::string>{"castaway", "opus", "opusroad", "flintstones", "intermission"}));
+    struct Want {
+      const char* id;
+      size_t disks, modules;
+      const char* released;
+      const char* marker;
+      const char* build;  // the package's own build ("" = one build)
+    };
+    for (const Want& w : {Want{"opus", 3, 16, "1993-09", "OPUSCLOK.IMQ", "1993-09"},
+                          Want{"opusroad", 4, 16, "1994-09", "OPUSTREK.IMX", ""},
+                          Want{"flintstones", 3, 15, "1994-05", "DRIVEIN.IMQ", "1994-06"},
+                          Want{"intermission", 3, 54, "1993-11", "IMSHARK.IMQ", ""}}) {
+      const Package* p = find_package(w.id);
+      CHECK(p != nullptr);
+      if (!p) continue;
+      CHECK(p->recipe == Recipe::intermission && p->delrina_installer() && !p->install_name);
+      CHECK(p->module_dirs.size() == 1 && std::string(p->module_dirs[0]) == "SAVER" &&
+            std::string(p->module_dir) == "SAVER");
+      CHECK_EQ(std::string(p->root), "packages/" + std::string(w.id));
+      CHECK_EQ(std::string(p->released), std::string(w.released));
+      CHECK_EQ(std::string(p->marker), std::string(w.marker));
+      CHECK_EQ(std::string(p->build ? p->build : ""), std::string(w.build));
+      CHECK_EQ(p->builds.empty(), !*w.build);
+      CHECK(!p->screen && p->fixups.empty() && p->never_opened.empty() && p->copy_dirs.empty() && !p->setup_title);
+      CHECK_EQ(p->required_archives.size(), w.disks);
+      for (size_t k = 0; k < p->required_archives.size(); k++)
+        CHECK_EQ(std::string(p->required_archives[k]), "DISK" + std::to_string(k + 1));
+      // Every build's table and manifest.
+      struct Table {
+        std::span<const LooseFile> loose;
+        std::span<const KnownFile> manifest;
+        const char* marker;
+        size_t modules;
+      };
+      std::vector<Table> tables = {{p->loose_files, p->manifest, p->marker, w.modules}};
+      for (const Build& b : p->builds) tables.push_back({b.loose_files, b.manifest, b.marker, 0});
+      for (const Table& t : tables) {
+        std::set<std::string> tos, manifest;
+        bool marker_listed = false;
+        size_t modules = 0;
+        for (const LooseFile& lf : t.loose) {
+          const std::string to = lf.to;
+          CHECK(to.rfind("SAVER/", 0) == 0 || to.rfind("ENGINE/", 0) == 0);
+          CHECK(to == ascii_upper(to) && to.substr(to.find('/') + 1) == lf.from);
+          CHECK(tos.insert(std::string(p->root) + "/" + to).second);
+          // A reader in ENGINE; beside the modules only as a copy of one there
+          // (Intermission 4.0's IMX reader, for its MultiSaver).
+          bool in_engine = false;
+          for (const LooseFile& o : t.loose) in_engine = in_engine || std::string(o.to) == "ENGINE/" + std::string(lf.from);
+          CHECK(!is_intermission_reader(lf.from) || to.rfind("ENGINE/", 0) == 0 || in_engine);
+          CHECK(!iequals(lf.from, "AD_SND.DLL") && !iequals(lf.from, "IMAD_PLY.IMQ") && !iequals(lf.from, "IWLIB.DLL"));
+          marker_listed = marker_listed || iequals(lf.from, t.marker);
+          const bool module = to.rfind("SAVER/", 0) == 0 && !is_intermission_reader(lf.from) &&
+                              (ends_with_i(to, ".ASA") || ends_with_i(to, ".IMQ") || ends_with_i(to, ".IMX") ||
+                               ends_with_i(to, ".FLI") || ends_with_i(to, ".MRF") || ends_with_i(to, ".MSV"));
+          if (!module) continue;
+          modules++;
+          bool named = false;
+          for (const NameOverride& o : p->name_overrides) named = named || to == o.module;
+          CHECK(named);
+        }
+        CHECK(marker_listed);
+        if (t.modules) CHECK_EQ(modules, t.modules);
+        for (const KnownFile& k : t.manifest) manifest.insert(k.path);
+        CHECK(tos == manifest);
+        for (const char* r : p->required) CHECK(tos.count(std::string(p->root) + "/" + r) == 1);
+        CHECK(tos.count(std::string(p->root) + "/ENGINE/IMASAPLY.IMQ") == 1);
+        CHECK(tos.count(std::string(p->root) + "/ENGINE/INTERMIS.EXE") == 1);
+      }
+      // Another build's own file is in its table alone.
+      for (const Build& b : p->builds) {
+        CHECK(b.id && *b.id && b.label && *b.label && b.marker && *b.marker);
+        for (const LooseFile& lf : p->loose_files) CHECK(!iequals(lf.from, b.marker));
+        CHECK(!b.images.empty());
+        for (const KnownImage& k : b.images) CHECK(k.disk >= 1 && k.disk <= int(w.disks));
+      }
+      // Every copy's files are known images (or what its tar holds is).
+      CHECK(!p->downloads.empty());
+      for (const Download& d : p->downloads) {
+        CHECK(std::string_view(d.url).rfind("https://archive.org/download/", 0) == 0);
+        std::vector<std::pair<std::string, uint64_t>> files;
+        if (d.members.empty()) files.push_back({d.md5, d.size});
+        for (const DownloadPart& q : d.more_images) files.push_back({q.md5, q.size});
+        for (const DownloadMember& m : d.members) files.push_back({m.md5, m.size});
+        for (const auto& [md5, size] : files) {
+          bool known = false;
+          for (const KnownImage& k : p->images) known = known || (md5 == k.md5 && size == k.size);
+          CHECK(known);
+        }
+      }
+    }
+    // The covers: Opus's and Intermission's setup art on disk 1, On the
+    // Road Again's box front from its item; The Flintstones' generated.
+    CHECK(find_package("opus")->covers.size() == 1 &&
+          find_package("opus")->covers[0].kind == CoverSource::Kind::disc &&
+          std::string(find_package("opus")->covers[0].path) == "INSTALL.BMP");
+    CHECK(find_package("intermission")->covers.size() == 1 &&
+          find_package("intermission")->covers[0].kind == CoverSource::Kind::disc);
+    CHECK(find_package("opusroad")->covers.size() == 1 &&
+          find_package("opusroad")->covers[0].kind == CoverSource::Kind::download &&
+          std::string(find_package("opusroad")->covers[0].art) == "box");
+    CHECK(find_package("flintstones")->covers.empty());
+    // The Flintstones' copy is a tar served out of an item's ZIP: three
+    // ZIPs taken out of it by name.
+    CHECK(find_package("flintstones")->downloads.size() == 1 &&
+          find_package("flintstones")->downloads[0].members.size() == 3);
+
+    // The made-up releases (pkg_fixture.h), every source form.
+    const test::PkgFixture opus = test::opus_fixture(), opus11 = test::opus_1993_11_fixture(),
+                           opusroad = test::opusroad_fixture(), flint = test::flintstones_fixture(),
+                           flint05 = test::flintstones_1994_05_fixture(), im40 = test::intermission_fixture();
+    test::TestRegistry r4 = registry_for(
+        {{"opus", &opus}, {"opusroad", &opusroad}, {"flintstones", &flint}, {"intermission", &im40}});
+    r4.build_manifest("opus", "1993-11", test::manifest_of(opus11.expect));
+    r4.build_manifest("flintstones", "1994-05", test::manifest_of(flint05.expect));
+    CHECK_EQ(opus.ids.size(), size_t(16));
+    CHECK_EQ(opus11.ids.size(), size_t(16));
+    CHECK_EQ(opusroad.ids.size(), size_t(16));
+    CHECK_EQ(flint.ids.size(), size_t(15));
+    CHECK_EQ(flint05.ids.size(), size_t(9));
+    CHECK_EQ(im40.ids.size(), size_t(54));
+    auto sorted_ids = [](const fs::path& win) {
+      std::vector<std::string> ids = catalog_ids(win);
+      std::sort(ids.begin(), ids.end());
+      return ids;
+    };
+    struct Rel {
+      const char* tag;  // the scratch names
+      const char* id;
+      const char* build;  // import.json's package.build ("" = none)
+      const test::PkgFixture* f;
+      int (*disk_of)(const std::string&);
+      int disks;
+    };
+    for (const Rel& rel : {Rel{"opus", "opus", "1993-09", &opus, test::opus_disk, 3},
+                           Rel{"opus-1993-11", "opus", "1993-11", &opus11, test::opus_1993_11_disk, 3},
+                           Rel{"opusroad", "opusroad", "", &opusroad, test::opusroad_disk, 4},
+                           Rel{"flint", "flintstones", "1994-06", &flint, test::flintstones_disk, 3},
+                           Rel{"flint-1994-05", "flintstones", "1994-05", &flint05, test::flintstones_1994_05_disk, 3},
+                           Rel{"im40", "intermission", "", &im40, test::intermission_disk, 3}}) {
+      const std::wstring tag = to_wide(rel.tag);
+      const std::string pkg_root = std::string("packages/") + rel.id;
+      test::write_tree(src / tag, rel.f->source);
+      test::write_bytes(src / (tag + L".zip"), test::zip_folder(rel.f->source));
+      // One folder holding everything, as the Internet Archive's ZIP of On the
+      // Road Again's files: a ZIP and a 7z.
+      {
+        test::ZipBuilder z;
+        z.password = "";
+        test::SevenZipBuilder s;
+        z.add("A Release/", {}, false, false);
+        s.add_dir("A Release");
+        for (const auto& [rel_name, d] : rel.f->source) {
+          z.add("A Release/" + rel_name, d, true, false);
+          s.add("A Release/" + rel_name, d);
+        }
+        test::write_bytes(src / (tag + L"-top.zip"), z.build());
+        test::write_bytes(src / (tag + L"-top.7z"), s.build());
+      }
+      test::write_disk_folders(src / (tag + L"-disks"), rel.f->source, rel.disk_of, rel.disks);
+      // Each disk: a floppy image, and a BBS's ZIP of its files whose notes
+      // differ from disk to disk (other sizes): known by their md5s, or not.
+      std::vector<fs::path> floppies, zips;
+      std::vector<std::pair<std::string, uint64_t>> zip_md5s, floppy_md5s;
+      for (int k = 1; k <= rel.disks; k++) {
+        test::Tree t = test::disk_files(rel.f->source, k, rel.disk_of);
+        floppies.push_back(src / (tag + L"-disk" + std::to_wstring(k) + L".ima"));
+        const auto img = test::floppy_of(t);
+        test::write_bytes(floppies.back(), img);
+        floppy_md5s.push_back({md5_hex(img.data(), img.size()), img.size()});
+        t["FILE_ID.DIZ"] = test::vec("A made-up BBS's note on disk " + std::to_string(k) + std::string(size_t(k), '!'));
+        t["README.NTA"] = test::blob("a made-up BBS's readme " + std::to_string(k), 100 + size_t(k) * 7);
+        const auto z = test::zip_folder(t);
+        zips.push_back(src / (tag + L"-bbs" + std::to_wstring(k) + L".zip"));
+        test::write_bytes(zips.back(), z);
+        zip_md5s.push_back({md5_hex(z.data(), z.size()), z.size()});
+      }
+      std::vector<fs::path> floppies_rev(floppies.rbegin(), floppies.rend());
+      auto rest = [](const std::vector<fs::path>& v) { return std::vector<fs::path>(v.begin() + 1, v.end()); };
+      // The registry that knows the BBS's ZIPs (and the floppies) by md5, as
+      // the real one knows the real copies.
+      test::TestRegistry by_md5 = registry_for(
+          {{"opus", &opus}, {"opusroad", &opusroad}, {"flintstones", &flint}, {"intermission", &im40}});
+      by_md5.build_manifest("opus", "1993-11", test::manifest_of(opus11.expect));
+      by_md5.build_manifest("flintstones", "1994-05", test::manifest_of(flint05.expect));
+      std::vector<std::pair<std::string, uint64_t>> known = zip_md5s;
+      if (std::string(rel.id) == "intermission") known = floppy_md5s;
+      const std::string own_build = find_package(rel.id)->build ? find_package(rel.id)->build : "";
+      if (*rel.build && rel.build != own_build) {
+        by_md5.build_disk_images(rel.id, rel.build, known);
+      } else {
+        std::vector<test::TestRegistry::Disk> disks;
+        for (size_t k = 0; k < known.size(); k++) disks.push_back({known[k].first, known[k].second, int(k + 1)});
+        by_md5.disk_images(rel.id, disks);
+      }
+      // Intermission 4.0's images in a folder of a ZIP, as the Internet
+      // Archive's item holds them, beside a picture.
+      fs::path images_zip = src / (tag + L"-images.zip");
+      {
+        test::ZipBuilder z;
+        z.password = "";
+        z.add("A Release 4.0/", {}, false, false);
+        for (size_t k = 0; k < floppies.size(); k++)
+          z.add("A Release 4.0/D" + std::to_string(k + 1) + ".IMA", test::read_bytes(floppies[k]), true, false);
+        z.add("screenshot.png", test::blob("a made-up screenshot", 300), true, false);
+        test::write_bytes(images_zip, z.build());
+      }
+      struct Form {
+        std::string name;
+        Source source;
+        const test::TestRegistry* r;
+        const char* format;
+        const char* verified;
+      };
+      std::vector<Form> forms = {
+          {"folder", folder(src / tag), &r4, "folder", "files"},
+          {"flat zip", image(src / (tag + L".zip")), &r4, "zip", "files"},
+          {"zip of one folder", image(src / (tag + L"-top.zip")), &r4, "zip", "files"},
+          {"7z of one folder", image(src / (tag + L"-top.7z")), &r4, "7z", "files"},
+          {"disk folders", folder(src / (tag + L"-disks")), &r4, "folder", "files"},
+          {"floppies, last first", image(floppies_rev[0], rest(floppies_rev)), &r4, "fat12", "files"},
+          {"a BBS zip per disk, notes differing", image(zips[0], rest(zips)), &r4, "zip", "files"},
+      };
+      if (std::string(rel.id) == "intermission") {
+        forms.push_back({"its known floppies", image(floppies[0], rest(floppies)), &by_md5, "fat12", "image"});
+        forms.push_back({"its known floppies in a folder of a ZIP", image(images_zip), &by_md5, "fat12", "image"});
+      } else {
+        forms.push_back({"its known BBS zips", image(zips[0], rest(zips)), &by_md5, "zip", "image"});
+      }
+      for (const Form& form : forms) {
+        const std::string what = std::string(rel.tag) + " " + form.name;
+        fs::path root = dir / (L"delrina4-" + tag + L"-" + to_wide(std::to_string(&form - forms.data())));
+        g_log.clear();
+        ImportResult r = run(what.c_str(), form.source, opts_for(root, *form.r), Status::ok);
+        CHECK_EQ(r.package_id, std::string(rel.id));
+        CHECK_EQ(r.format, std::string(form.format));
+        CHECK_EQ(r.verified, std::string(form.verified));
+        CHECK_EQ(r.build, std::string(rel.build));
+        CHECK_EQ(r.package_modules, rel.f->ids.size());
+        if (r.status != Status::ok) continue;
+        check_installed(root / L"win", *rel.f, pkg_root);
+        CHECK(sorted_ids(root / L"win") == rel.f->ids);
+        CHECK(no_leftovers(root / L"win"));
+        const phosg::JSON pk = json_at(r.import_json).at("package");
+        CHECK_EQ(pk.contains("build"), *rel.build != 0);
+        if (*rel.build) CHECK_EQ(pk.get_string("build"), std::string(rel.build));
+        CHECK_EQ(pk.contains("buildNote"), std::string(rel.build) == "1994-05");
+        if (std::string(rel.build) == "1994-05") {
+          CHECK(pk.get_string("buildNote").find("CARS.ASA") != std::string::npos);
+          CHECK(logged("the May 1994 build: its CARS.ASA (Prehistoric Vehicles) is damaged in every known copy"));
+        }
+        if (std::string(rel.build) == "1993-11") CHECK(logged("identified the November 1993 build of Opus 'n Bill"));
+      }
+
+      // The catalog: every entry Intermission's, in the ne16 lane, named by
+      // the registry, with its Configure... button (and, for Intermission
+      // 4.0's speed modules, the Speed control); ASA, IMQ and the data
+      // modules (FLI, MRF, MSV) at SAVERMAIN, IMX modules at SAVERDRAW.
+      {
+        const Package& pkg = *find_package(rel.id);
+        phosg::JSON cat = json_at(dir / (L"delrina4-" + tag + L"-0") / L"win" / L"catalog-win.json");
+        size_t speeds = 0;
+        for (const std::string& mid : rel.f->ids) {
+          const phosg::JSON* m = module_by_id(cat, mid);
+          CHECK(m != nullptr);
+          if (!m) continue;
+          CHECK_EQ(m->get_string("abi"), std::string("intermission"));
+          CHECK_EQ(m->get_string("lane"), std::string("ne16"));
+          const std::string path = m->get_string("path"), in_pkg = path.substr(pkg_root.size() + 1);
+          CHECK_EQ(m->get_string("entry"), std::string(ends_with_i(path, ".IMX") ? "SAVERDRAW" : "SAVERMAIN"));
+          std::string name;
+          for (const NameOverride& o : pkg.name_overrides)
+            if (in_pkg == o.module) name = o.name;
+          CHECK(!name.empty() && m->get_string("moduleName") == name);
+          // Intermission 4.0's modules that step once per call have the
+          // Speed control too (Package::speed_modules), starting at their
+          // own stop; the others none.
+          const SpeedModule* speed = nullptr;
+          for (const SpeedModule& s : pkg.speed_modules)
+            if (in_pkg == s.module) speed = &s;
+          speeds += speed != nullptr;
+          const auto& ctl = m->at("controls").as_list();
+          CHECK_EQ(ctl.size(), size_t(speed ? 2 : 1));
+          CHECK_EQ(ctl.at(0)->get_string("name"), std::string("Configure..."));
+          CHECK(!ctl.at(0)->contains("host"));
+          if (speed && ctl.size() == 2)
+            CHECK(ctl[1]->get_int("index") == 1 && ctl[1]->get_string("name") == "Speed:" &&
+                  ctl[1]->get_string("kind") == "stringslider" &&
+                  ctl[1]->get_int("defaultStop") == int(speed->start) &&
+                  ctl[1]->get_int("default") == speed_control(speed->start).def &&
+                  ctl[1]->get_string("host") == "ADNE16IMXSPEED");
+          const bool data = ends_with_i(path, ".ASA") || ends_with_i(path, ".FLI") || ends_with_i(path, ".MRF") ||
+                            ends_with_i(path, ".MSV");
+          CHECK_EQ(m->at("needs").as_list().empty(), data);
+        }
+        CHECK_EQ(speeds, pkg.speed_modules.size());  // every one listed (Intermission 4.0's alone)
+        CHECK(!module_by_id(cat, std::string(rel.id) + ".lastdisk") &&
+              !module_by_id(cat, std::string(rel.id) + ".imasaply"));
+      }
+
+      // I5: the decoys (the installer, the other readers, AD_SND, a BBS's
+      // notes, the May build's damaged CARS.ASA), locked, are never opened.
+      {
+        std::vector<HANDLE> held;
+        for (const auto& [name, d] : rel.f->source) {
+          bool decoy = !name.starts_with("DISK");
+          for (const auto& [to, bytes] : rel.f->expect) decoy = decoy && to.substr(to.rfind('/') + 1) != name;
+          if (decoy)
+            held.push_back(CreateFileW((src / tag / to_wide(name)).c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0,
+                                       nullptr));
+        }
+        CHECK(held.size() >= 15);
+        for (HANDLE h : held) CHECK(h != INVALID_HANDLE_VALUE);
+        run((std::string(rel.tag) + " folder, decoys locked").c_str(), folder(src / tag),
+            opts_for(dir / (L"delrina4-" + tag + L"-locked"), r4), Status::ok);
+        check_installed(dir / (L"delrina4-" + tag + L"-locked") / L"win", *rel.f, pkg_root);
+        for (HANDLE h : held) CloseHandle(h);
+      }
+
+      // Disk 1 alone is the release without its other disks.
+      {
+        const fs::path d1 = src / (tag + L"-disk1");
+        test::write_tree(d1, test::disk_files(rel.f->source, 1, rel.disk_of));
+        ImportResult r = run((std::string(rel.tag) + " disk 1 alone").c_str(), folder(d1),
+                             opts_for(dir / (L"delrina4-" + tag + L"-d1"), r4), Status::source_invalid);
+        CHECK(r.message.find("needs every install disk") != std::string::npos);
+      }
+    }
+
+    // A BBS note of another size on two disks is never read, so never
+    // compared; a file of the release that differs between two disks is.
+    {
+      std::vector<fs::path> zips;
+      for (int k = 1; k <= 3; k++) {
+        test::Tree t = test::disk_files(opus.source, k, test::opus_disk);
+        t["H3LLO2U.NFO"] = test::blob("a note", 50 + size_t(k));
+        if (k == 2) t["IMINST3.EXE"] = test::blob("another build of the installer's loader", 333);
+        if (k != 2) t["IMINST3.EXE"] = test::blob("the installer's loader", 200);
+        zips.push_back(src / (L"opus-clash" + std::to_wstring(k) + L".zip"));
+        test::write_bytes(zips.back(), test::zip_folder(t));
+      }
+      run("opus, notes and a decoy of other sizes", image(zips[0], {zips[1], zips[2]}),
+          opts_for(dir / L"delrina4-clash", r4), Status::ok);
+      test::Tree t2 = test::disk_files(opus.source, 2, test::opus_disk);
+      t2["BASSELOP.ASA"] = test::szdd_encode(test::blob("another basselope, longer", 1500));
+      test::write_bytes(zips[1], test::zip_folder(t2));
+      ImportResult r = run("opus, a module of other sizes on two disks", image(zips[0], {zips[1], zips[2]}),
+                           opts_for(dir / L"delrina4-clash2", r4), Status::source_invalid);
+      CHECK(r.message.find("BASSELOP.ASA differs between the images (size); they are not the disks of one release") !=
+            std::string::npos);
+      CHECK(!fs::exists(dir / L"delrina4-clash2" / L"win" / L"packages" / L"opus"));
+    }
+
+    // Two of the four in one folder: both fingerprints, an ambiguous source.
+    {
+      test::write_tree(src / L"opus-im40", opus.source);
+      test::write_tree(src / L"opus-im40", im40.source);
+      ImportResult r = run("opus + intermission", folder(src / L"opus-im40"), opts_for(dir / L"delrina4-both", r4),
+                           Status::source_invalid);
+      CHECK(r.message.find("ambiguous source: it looks like Opus 'n Bill Screen Saver and Intermission 4.0") !=
+            std::string::npos);
+    }
+
+    // The data modules' readers stay in ENGINE (I3); an FLI animation without
+    // Autodesk's magic is left out of the catalog, its reason logged.
+    {
+      std::vector<LooseFile> dropped;
+      for (const LooseFile& lf : find_package("intermission")->loose_files)
+        if (std::string(lf.from) != "IMFLIPLY.IMQ") dropped.push_back(lf);
+      test::TestRegistry i3;
+      i3.get("intermission").required = {};
+      i3.get("intermission").loose_files = dropped;
+      ImportResult r = run("I3: no FLI reader", folder(src / L"im40"), opts_for(dir / L"delrina4-i3", i3, false),
+                           Status::source_invalid);
+      CHECK(r.message.find("breaks I3: no ENGINE\\IMFLIPLY.IMQ") != std::string::npos);
+      test::Tree t = im40.source;
+      t["EINSTEIN.FLI"] = test::szdd_encode(test::blob("no flic at all", 500));
+      test::write_tree(src / L"im40-badfli", t);
+      g_log.clear();
+      r = run("an FLI without its magic", folder(src / L"im40-badfli"), opts_for(dir / L"delrina4-badfli", r4, false),
+              Status::ok);
+      CHECK_EQ(r.package_modules, size_t(53));
+      CHECK(logged("not an FLI animation (no AF11 or AF12 magic at byte 4)"));
+    }
+  }
+
   // ---- --catalog-only without FILES, win_assets_dir, --remove, list --------------------------------------
   {
     fs::path root = dir / L"nofiles";
@@ -3210,7 +3611,7 @@ int main(int argc, char** argv) {
     CHECK_EQ(win_assets_dir(dir / L"fresh"), dir / L"fresh" / L"win");
 
     auto states = list_packages(root, reg.span());
-    CHECK_EQ(states.size(), size_t(16));
+    CHECK_EQ(states.size(), size_t(20));
     for (auto& s : states) {
       bool want = std::string(s.package->id) == "ad32" || std::string(s.package->id) == "simpsons";
       CHECK_EQ(s.installed, want);
@@ -3513,21 +3914,21 @@ int main(int argc, char** argv) {
         if (col != std::string::npos) cols.push_back(line.rfind("not ", col) == col - 4 ? col - 4 : col);
         pos += 3;
       }
-      CHECK_EQ(cols.size(), size_t(16));
+      CHECK_EQ(cols.size(), size_t(20));
       for (size_t c : cols) CHECK_EQ(c, cols.front());
-      CHECK(out.find("  swse      Star Wars Screen Entertainment               installed, ") != std::string::npos);
-      CHECK(out.find("  startrek  Star Trek: The Screen Saver                  installed, ") != std::string::npos);
+      CHECK(out.find("  swse         Star Wars Screen Entertainment               installed, ") != std::string::npos);
+      CHECK(out.find("  startrek     Star Trek: The Screen Saver                  installed, ") != std::string::npos);
       CHECK(out.find("; download 2.8 MB (2 floppy images)") != std::string::npos);
-      CHECK(out.find("  marvel    Marvel Comics Screen Posters                 installed, ") != std::string::npos);
-      CHECK(out.find("  snoopy    Snoopy's Screen Savers                       installed, ") != std::string::npos);
+      CHECK(out.find("  marvel       Marvel Comics Screen Posters                 installed, ") != std::string::npos);
+      CHECK(out.find("  snoopy       Snoopy's Screen Savers                       installed, ") != std::string::npos);
       CHECK(out.find("; download 1.9 MB (ZIP of the install files)") != std::string::npos);
-      CHECK(out.find("  disney    The Disney Collection Screen Saver           "
+      CHECK(out.find("  disney       The Disney Collection Screen Saver           "
                      "not installed; download 3.4 MB (ZIP of the install files)") != std::string::npos);
-      CHECK(out.find("  farside   The Far Side Screen Saver Collection         "
+      CHECK(out.find("  farside      The Far Side Screen Saver Collection         "
                      "not installed; download 5.5 MB (5 ZIPs of the install disks' files)") != std::string::npos);
-      CHECK(out.find("  dilbert   Scott Adams' Dilbert Screen Saver Collection not installed; download 4.3 MB (ZIP of "
+      CHECK(out.find("  dilbert      Scott Adams' Dilbert Screen Saver Collection not installed; download 4.3 MB (ZIP of "
                      "the install files)") != std::string::npos);
-      CHECK(out.find("  castaway  Screen Antics: Johnny Castaway               "
+      CHECK(out.find("  castaway     Screen Antics: Johnny Castaway               "
                      "not installed; download 1.3 MB (floppy image)") != std::string::npos);
     }
     CHECK_EQ(cli({L"--list-packages", L"--image", L"x"}, "--list-packages + a source"), 1);

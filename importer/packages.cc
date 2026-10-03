@@ -72,6 +72,30 @@ const KnownFile kCastawayKnown[] = {
 #include "known_files_castaway.inc"
     {nullptr, 0, nullptr},
 };
+const KnownFile kOpusKnown[] = {
+#include "known_files_opus.inc"
+    {nullptr, 0, nullptr},
+};
+const KnownFile kOpus199311Known[] = {
+#include "known_files_opus_1993-11.inc"
+    {nullptr, 0, nullptr},
+};
+const KnownFile kOpusroadKnown[] = {
+#include "known_files_opusroad.inc"
+    {nullptr, 0, nullptr},
+};
+const KnownFile kFlintstonesKnown[] = {
+#include "known_files_flintstones.inc"
+    {nullptr, 0, nullptr},
+};
+const KnownFile kFlintstones199405Known[] = {
+#include "known_files_flintstones_1994-05.inc"
+    {nullptr, 0, nullptr},
+};
+const KnownFile kIntermissionKnown[] = {
+#include "known_files_intermission.inc"
+    {nullptr, 0, nullptr},
+};
 
 template <size_t N>
 std::span<const KnownFile> manifest(const KnownFile (&a)[N]) {
@@ -875,6 +899,476 @@ const NameOverride kCastawayNames[] = {
     {"SCRANTIC/SCRANTIC.SCR", "Johnny Castaway"},
 };
 
+// ---- opus --------------------------------------------------------------------------------
+//
+// The Opus 'n Bill Screen Saver (Delrina, September 1993; Berkeley Breathed's
+// characters under licence) on Intermission 4.0's engine: 16 modules, 15 ASA
+// animations and one IMQ module (OPUSCLOK), on three 1.44 MB floppies
+// installed by Delrina's own Intermission Installer, as The Far Side's
+// (research/five, gitignored). Its engine files are Intermission 4.0's byte
+// for byte. A revised build of November 1993 (the build below) has the
+// toasters censored after Berkeley Systems' lawsuit (Censored Toasters for
+// Death Toasters), Opus's Moment added, Microboost 10,000 gone and new
+// builds of three modules under new names.
+
+const char* const kOpusModuleDirs[] = {"SAVER"};
+// No image of the floppies exists online: three 1993 BBS copies, one ZIP
+// per disk (each disk's files with their dates and the group's notes beside
+// them, which nothing ever opens), inside the Internet Archive's prog21-29
+// and prog39_46 items. Every file of the release is the same in all three,
+// byte for byte. A release on three disks: only a set of all three is the
+// release.
+const KnownImage kOpusImages[] = {
+    {"2aed4db32e141babe6a4336aac674cd2", 969014, "ZIP of install disk 1's files (a 1993 BBS copy of the three floppies)",
+     "", 1},
+    {"10cdbe9634bf25292ad331dbbe5f7905", 960813, "ZIP of install disk 2's files (a 1993 BBS copy of the three floppies)",
+     "", 2},
+    {"54b35b007c9ed7155441eb79de49d580", 963893, "ZIP of install disk 3's files (a 1993 BBS copy of the three floppies)",
+     "", 3},
+    {"30c17d0fc45cb8b286d80e79e68bb42e", 966605,
+     "ZIP of install disk 1's files (another 1993 BBS copy of the three floppies)", "", 1},
+    {"d5face113998cc8dc00db29877dcfd97", 958487,
+     "ZIP of install disk 2's files (another 1993 BBS copy of the three floppies)", "", 2},
+    {"3e8946d995b84c0bd1d643fb0f018cc0", 961753,
+     "ZIP of install disk 3's files (another 1993 BBS copy of the three floppies)", "", 3},
+    {"ec56dca1d8d324e5fea121ad1f69b51f", 968167,
+     "ZIP of install disk 1's files (a third 1993 BBS copy of the three floppies)", "", 1},
+    {"f3eaa8e4f8c80a9c41526211336e7a04", 960049,
+     "ZIP of install disk 2's files (a third 1993 BBS copy of the three floppies)", "", 2},
+    {"6441ea716809414208ee1b45ee13836a", 963315,
+     "ZIP of install disk 3's files (a third 1993 BBS copy of the three floppies)", "", 3},
+};
+// The three copies, each disk's ZIP fetched from inside its item's ZIP (the
+// Internet Archive serves a member of a stored ZIP by its path; it publishes
+// no md5 for one: these are the members' own, measured 2026-10-02:
+// research/five/imp). Other bytes, other names.
+const DownloadPart kOpusNtaDisks2to3[] = {
+    {"https://archive.org/download/prog21-29/prog21-29.zip/PROG_23%2FOPUS2NTA.ZIP", L"OPUS2NTA.ZIP", 960813,
+     "10cdbe9634bf25292ad331dbbe5f7905"},
+    {"https://archive.org/download/prog21-29/prog21-29.zip/PROG_23%2FOPUS3NTA.ZIP", L"OPUS3NTA.ZIP", 963893,
+     "54b35b007c9ed7155441eb79de49d580"},
+};
+const DownloadPart kOpusOnbsbsDisks2to3[] = {
+    {"https://archive.org/download/prog21-29/prog21-29.zip/PROG_24%2FONBSBS-2.ZIP", L"ONBSBS-2.ZIP", 958487,
+     "d5face113998cc8dc00db29877dcfd97"},
+    {"https://archive.org/download/prog21-29/prog21-29.zip/PROG_24%2FONBSBS-3.ZIP", L"ONBSBS-3.ZIP", 961753,
+     "3e8946d995b84c0bd1d643fb0f018cc0"},
+};
+const DownloadPart kOpusProg44Disks2to3[] = {
+    {"https://archive.org/download/prog39_46/prog39_46.zip/prog39_46%2FPROG_44%2FOPUS-2.ZIP", L"OPUS-2.ZIP", 960049,
+     "f3eaa8e4f8c80a9c41526211336e7a04"},
+    {"https://archive.org/download/prog39_46/prog39_46.zip/prog39_46%2FPROG_44%2FOPUS-3.ZIP", L"OPUS-3.ZIP", 963315,
+     "6441ea716809414208ee1b45ee13836a"},
+};
+const Download kOpusDownloads[] = {
+    {"https://archive.org/download/prog21-29/prog21-29.zip/PROG_23%2FOPUS1NTA.ZIP", L"OPUS1NTA.ZIP", 969014,
+     "2aed4db32e141babe6a4336aac674cd2", "zip", kOpusNtaDisks2to3},
+    {"https://archive.org/download/prog21-29/prog21-29.zip/PROG_24%2FONBSBS-1.ZIP", L"ONBSBS-1.ZIP", 966605,
+     "30c17d0fc45cb8b286d80e79e68bb42e", "zip", kOpusOnbsbsDisks2to3},
+    {"https://archive.org/download/prog39_46/prog39_46.zip/prog39_46%2FPROG_44%2FOPUS-1.ZIP", L"OPUS-1.ZIP", 968167,
+     "ec56dca1d8d324e5fea121ad1f69b51f", "zip", kOpusProg44Disks2to3},
+};
+// What every module loads (INTRMLIB -> ANTSW; the ASA reader MEMMIDI, by
+// name) and the ASA reader.
+const char* const kOpusRequired[] = {"SAVER/INTRMLIB.DLL", "SAVER/ANTSW.DLL", "SAVER/MEMMIDI.DLL",
+                                     "ENGINE/IMASAPLY.IMQ"};
+// Every install disk's tag file (disk 1's, beside the installer and
+// OPUSCLOK.IMQ, is the fingerprint's).
+const char* const kOpusDiskTags[] = {"DISK1", "DISK2", "DISK3"};
+// IMINST2's install, flattened as The Far Side's: the modules and the DLLs
+// they load in the module folder, the ASA reader and Intermission itself in
+// ENGINE. Never installed: AD_SND.DLL, the other readers, IWLIB.DLL,
+// NETPASS.EXE, SSINTERM.SCR, the VxD, the control panel, the sound drivers,
+// the DOS and setup programs, the help file and the texts.
+const LooseFile kOpusLoose[] = {
+    {"BASSELOP.ASA", "SAVER/BASSELOP.ASA", Codec::szdd}, {"BILLFISH.ASA", "SAVER/BILLFISH.ASA", Codec::szdd},
+    {"BUGS.ASA", "SAVER/BUGS.ASA", Codec::szdd},         {"BUNGEE.ASA", "SAVER/BUNGEE.ASA", Codec::szdd},
+    {"DTOAST.ASA", "SAVER/DTOAST.ASA", Codec::szdd},     {"MALELAM.ASA", "SAVER/MALELAM.ASA", Codec::szdd},
+    {"MICROIBM.ASA", "SAVER/MICROIBM.ASA", Codec::szdd}, {"NIGHTCAT.ASA", "SAVER/NIGHTCAT.ASA", Codec::szdd},
+    {"OPUSBATH.ASA", "SAVER/OPUSBATH.ASA", Codec::szdd}, {"OPUSMESS.ASA", "SAVER/OPUSMESS.ASA", Codec::szdd},
+    {"PENGUIN.ASA", "SAVER/PENGUIN.ASA", Codec::szdd},   {"PUDDYLUV.ASA", "SAVER/PUDDYLUV.ASA", Codec::szdd},
+    {"SILIBILL.ASA", "SAVER/SILIBILL.ASA", Codec::szdd}, {"SWINGER.ASA", "SAVER/SWINGER.ASA", Codec::szdd},
+    {"VELOC.ASA", "SAVER/VELOC.ASA", Codec::szdd},       {"OPUSCLOK.IMQ", "SAVER/OPUSCLOK.IMQ", Codec::szdd},
+    {"ANTSW.DLL", "SAVER/ANTSW.DLL", Codec::szdd},       {"INTRMLIB.DLL", "SAVER/INTRMLIB.DLL", Codec::szdd},
+    {"MEMMIDI.DLL", "SAVER/MEMMIDI.DLL", Codec::szdd},   {"IMASAPLY.IMQ", "ENGINE/IMASAPLY.IMQ", Codec::szdd},
+    {"INTERMIS.EXE", "ENGINE/INTERMIS.EXE", Codec::szdd},
+};
+// The November 1993 build (files dated 1993-11-03; its readme is
+// Intermission 4.0's own): Censored Toasters (CTOAST) for Death Toasters,
+// Opus's Moment (BERSERK) added, Microboost 10,000 gone, and new builds of
+// Bungee, Velociraptor and Full Moon under new names (BUNGEE2, VELOC2,
+// OPUSMES2); the other modules are new builds too, the engine files the
+// same. Its only copy online is a 1993 BBS copy, one ZIP per disk inside the
+// Internet Archive's prog70_75 item (the group's notes and two executables
+// beside the files, which nothing ever opens or runs).
+const KnownImage kOpus199311Images[] = {
+    {"a90d7e7545afb1020a1781f006dcbc0f", 1033811,
+     "ZIP of install disk 1's files (a 1993 BBS copy of the November 1993 build's three floppies)", "", 1},
+    {"95dc225cd0aeb5e2976253af2ffbe05e", 1193892,
+     "ZIP of install disk 2's files (a 1993 BBS copy of the November 1993 build's three floppies)", "", 2},
+    {"a2f001b54cd03059d154eead871ee87c", 1005230,
+     "ZIP of install disk 3's files (a 1993 BBS copy of the November 1993 build's three floppies)", "", 3},
+};
+const LooseFile kOpus199311Loose[] = {
+    {"BASSELOP.ASA", "SAVER/BASSELOP.ASA", Codec::szdd}, {"BERSERK.ASA", "SAVER/BERSERK.ASA", Codec::szdd},
+    {"BILLFISH.ASA", "SAVER/BILLFISH.ASA", Codec::szdd}, {"BUGS.ASA", "SAVER/BUGS.ASA", Codec::szdd},
+    {"BUNGEE2.ASA", "SAVER/BUNGEE2.ASA", Codec::szdd},   {"CTOAST.ASA", "SAVER/CTOAST.ASA", Codec::szdd},
+    {"MALELAM.ASA", "SAVER/MALELAM.ASA", Codec::szdd},   {"NIGHTCAT.ASA", "SAVER/NIGHTCAT.ASA", Codec::szdd},
+    {"OPUSBATH.ASA", "SAVER/OPUSBATH.ASA", Codec::szdd}, {"OPUSMES2.ASA", "SAVER/OPUSMES2.ASA", Codec::szdd},
+    {"PENGUIN.ASA", "SAVER/PENGUIN.ASA", Codec::szdd},   {"PUDDYLUV.ASA", "SAVER/PUDDYLUV.ASA", Codec::szdd},
+    {"SILIBILL.ASA", "SAVER/SILIBILL.ASA", Codec::szdd}, {"SWINGER.ASA", "SAVER/SWINGER.ASA", Codec::szdd},
+    {"VELOC2.ASA", "SAVER/VELOC2.ASA", Codec::szdd},     {"OPUSCLOK.IMQ", "SAVER/OPUSCLOK.IMQ", Codec::szdd},
+    {"ANTSW.DLL", "SAVER/ANTSW.DLL", Codec::szdd},       {"INTRMLIB.DLL", "SAVER/INTRMLIB.DLL", Codec::szdd},
+    {"MEMMIDI.DLL", "SAVER/MEMMIDI.DLL", Codec::szdd},   {"IMASAPLY.IMQ", "ENGINE/IMASAPLY.IMQ", Codec::szdd},
+    {"INTERMIS.EXE", "ENGINE/INTERMIS.EXE", Codec::szdd},
+};
+// Told apart by VELOC2.ASA, on its disk 1 (the September build has none).
+const Build kOpusBuilds[] = {
+    {"1993-11", "the November 1993 build", "VELOC2.ASA", kOpus199311Images, kOpus199311Loose,
+     manifest(kOpus199311Known)},
+};
+// No resource holds a name: each ASA header's title and the IMQ module's
+// own, without their "OB-" prefix (as The Far Side's). Both builds'.
+const NameOverride kOpusNames[] = {
+    {"SAVER/BASSELOP.ASA", "Basselope"},          {"SAVER/BERSERK.ASA", "Opus's Moment"},
+    {"SAVER/BILLFISH.ASA", "Fish Bowl"},          {"SAVER/BUGS.ASA", "System Bugs"},
+    {"SAVER/BUNGEE.ASA", "Bungee"},               {"SAVER/BUNGEE2.ASA", "Bungee 2"},
+    {"SAVER/CTOAST.ASA", "Censored Toasters"},    {"SAVER/DTOAST.ASA", "Death Toasters"},
+    {"SAVER/MALELAM.ASA", "Brief Insights"},      {"SAVER/MICROIBM.ASA", "Microboost 10,000"},
+    {"SAVER/NIGHTCAT.ASA", "Night Cat"},          {"SAVER/OPUSBATH.ASA", "Quality Time"},
+    {"SAVER/OPUSMESS.ASA", "Full Moon"},          {"SAVER/OPUSMES2.ASA", "Full Moon 2"},
+    {"SAVER/PENGUIN.ASA", "Penguins"},            {"SAVER/PUDDYLUV.ASA", "Puddy Passion"},
+    {"SAVER/SILIBILL.ASA", "Silicone Bill"},      {"SAVER/SWINGER.ASA", "Swinger"},
+    {"SAVER/VELOC.ASA", "Velociraptor"},          {"SAVER/VELOC2.ASA", "Velociraptor 2"},
+    {"SAVER/OPUSCLOK.IMQ", "Opus Clock"},
+};
+
+// ---- opusroad ----------------------------------------------------------------------------
+//
+// Opus 'n Bill: On the Road Again! (Delrina, September 1994) on Intermission
+// 5.0: 16 modules, 12 ASA animations, three IMQ modules (BUTTWIPE,
+// OB-SKATE, OB-SPACE) and one IMX module (OPUSTREK), on four 1.44 MB
+// floppies installed by Delrina's own Intermission Installer, as Dilbert's.
+
+const char* const kOpusroadModuleDirs[] = {"SAVER"};
+// No image of the floppies exists online: the Internet Archive's ZIP of the
+// four disks' files, all in one folder ("Opus n Bill - On the Road Again/",
+// with every disk's tag file), the user's copy byte for byte.
+const KnownImage kOpusroadImages[] = {
+    {"ad6023bae1deb7c55c8239d55d1a81cf", 4621603,
+     "ZIP of the four install floppies' files, in one folder (the Internet Archive's OpusNBill_OnTheRoadAgain copy)",
+     ""},
+};
+const Download kOpusroadDownloads[] = {
+    {"https://archive.org/download/OpusNBill_OnTheRoadAgain/Opus%20n%20Bill%20-%20On%20the%20Road%20Again.zip",
+     L"Opus n Bill - On the Road Again.zip", 4621603, "ad6023bae1deb7c55c8239d55d1a81cf", "zip"},
+};
+// What the modules load (INTRMLIB -> ANTSW; the IMQ modules also DIBDLL;
+// the ASA reader MEMMIDI, by name) and the ASA and IMX readers.
+const char* const kOpusroadRequired[] = {"SAVER/INTRMLIB.DLL", "SAVER/ANTSW.DLL",     "SAVER/DIBDLL.DLL",
+                                         "SAVER/MEMMIDI.DLL",  "ENGINE/IMASAPLY.IMQ", "ENGINE/IMIMXPLY.IMQ"};
+// Every install disk's tag file (disk 1's, beside the installer and
+// OPUSTREK.IMX, is the fingerprint's; the only copy keeps the four disks'
+// files together, so which disk held a file is not known).
+const char* const kOpusroadDiskTags[] = {"DISK1", "DISK2", "DISK3", "DISK4"};
+// IMINST2's install, flattened as Dilbert's; never installed besides what
+// Dilbert's never installs: nothing.
+const LooseFile kOpusroadLoose[] = {
+    {"ANTS.ASA", "SAVER/ANTS.ASA", Codec::szdd},         {"BUTTHEAD.ASA", "SAVER/BUTTHEAD.ASA", Codec::szdd},
+    {"HAIRBALL.ASA", "SAVER/HAIRBALL.ASA", Codec::plain}, {"INFOHWY.ASA", "SAVER/INFOHWY.ASA", Codec::szdd},
+    {"JUNGLE.ASA", "SAVER/JUNGLE.ASA", Codec::plain},     {"MIDNITCC.ASA", "SAVER/MIDNITCC.ASA", Codec::szdd},
+    {"OPUSFLY2.ASA", "SAVER/OPUSFLY2.ASA", Codec::szdd}, {"PISTACH4.ASA", "SAVER/PISTACH4.ASA", Codec::plain},
+    {"RATRACE2.ASA", "SAVER/RATRACE2.ASA", Codec::szdd}, {"SINGIN2.ASA", "SAVER/SINGIN2.ASA", Codec::plain},
+    {"TAXTHIS.ASA", "SAVER/TAXTHIS.ASA", Codec::szdd},   {"UNRIDER.ASA", "SAVER/UNRIDER.ASA", Codec::szdd},
+    {"BUTTWIPE.IMQ", "SAVER/BUTTWIPE.IMQ", Codec::szdd}, {"OB-SKATE.IMQ", "SAVER/OB-SKATE.IMQ", Codec::szdd},
+    {"OB-SPACE.IMQ", "SAVER/OB-SPACE.IMQ", Codec::szdd}, {"OPUSTREK.IMX", "SAVER/OPUSTREK.IMX", Codec::plain},
+    {"ANTSW.DLL", "SAVER/ANTSW.DLL", Codec::szdd},       {"DIBDLL.DLL", "SAVER/DIBDLL.DLL", Codec::szdd},
+    {"INTRMLIB.DLL", "SAVER/INTRMLIB.DLL", Codec::szdd}, {"MEMMIDI.DLL", "SAVER/MEMMIDI.DLL", Codec::szdd},
+    {"IMASAPLY.IMQ", "ENGINE/IMASAPLY.IMQ", Codec::plain}, {"IMIMXPLY.IMQ", "ENGINE/IMIMXPLY.IMQ", Codec::szdd},
+    {"INTERMIS.EXE", "ENGINE/INTERMIS.EXE", Codec::szdd},
+};
+// No resource holds a name (each ASA's QUERY answers ""): the names the
+// installer's own module list, PACKING.LST, gives them.
+const NameOverride kOpusroadNames[] = {
+    {"SAVER/ANTS.ASA", "Ants"},
+    {"SAVER/BUTTHEAD.ASA", "Buttheaded Bill"},
+    {"SAVER/HAIRBALL.ASA", "Hairball"},
+    {"SAVER/INFOHWY.ASA", "Information Highway"},
+    {"SAVER/JUNGLE.ASA", "Opus of the Jungle"},
+    {"SAVER/MIDNITCC.ASA", "Midnight Whisper"},
+    {"SAVER/OPUSFLY2.ASA", "Opus Flies"},
+    {"SAVER/PISTACH4.ASA", "Pistachio Tester"},
+    {"SAVER/RATRACE2.ASA", "Rat Race"},
+    {"SAVER/SINGIN2.ASA", "Dancing Opus"},
+    {"SAVER/TAXTHIS.ASA", "Tax This"},
+    {"SAVER/UNRIDER.ASA", "Uneasy Riders"},
+    {"SAVER/BUTTWIPE.IMQ", "The Butt Boys"},
+    {"SAVER/OB-SKATE.IMQ", "Skating"},
+    {"SAVER/OB-SPACE.IMQ", "Opus in Space"},
+    {"SAVER/OPUSTREK.IMX", "Opus Trek"},
+};
+
+// ---- flintstones -------------------------------------------------------------------------
+//
+// The Flintstones Screen Saver Collection (Delrina, June 1994; the 1994
+// film's Flintstones under licence) on Intermission 4.0: 15 modules, three
+// ASA animations, eight IMQ modules and four IMX modules, on three 1.44 MB
+// floppies installed by Delrina's own Intermission Installer, as The Far
+// Side's. The release is its June build (files dated 1994-06-16); the May
+// build (1994-05-25/26, the build below) has 10 modules, one of which,
+// CARS.ASA, is damaged in every known copy.
+
+const char* const kFlintstonesModuleDirs[] = {"SAVER"};
+// No image of the floppies exists online: a 1994 BBS copy, one ZIP per disk
+// (FLINTST1..3.ZIP, the group's notes and programs beside the files, which
+// nothing ever opens or runs), inside a tar of a BBS collection that the
+// Internet Archive serves out of its item's ZIP.
+const KnownImage kFlintstonesImages[] = {
+    {"a53599e3a8c1fbfed7147ef769c67d53", 1253065,
+     "ZIP of install disk 1's files (a 1994 BBS copy of the three floppies)", "", 1},
+    {"71a588d1f54f85f3a58326b16f0ad33b", 1218632,
+     "ZIP of install disk 2's files (a 1994 BBS copy of the three floppies)", "", 2},
+    {"d43fa04cda64a0f158eb84b0d96f6f24", 949191,
+     "ZIP of install disk 3's files (a 1994 BBS copy of the three floppies)", "", 3},
+};
+// The tar (135.6 MB: the whole collection's files) is fetched from inside
+// the item's ZIP (no md5 published for a member: this is its own, measured
+// 2026-10-02); the three ZIPs are taken out of it by name, each checked.
+const DownloadMember kFlintstonesTarMembers[] = {
+    {"wgam0219/FLINTST1.ZIP", L"FLINTST1.ZIP", 1253065, "a53599e3a8c1fbfed7147ef769c67d53"},
+    {"wgam0219/FLINTST2.ZIP", L"FLINTST2.ZIP", 1218632, "71a588d1f54f85f3a58326b16f0ad33b"},
+    {"wgam0219/FLINTST3.ZIP", L"FLINTST3.ZIP", 949191, "d43fa04cda64a0f158eb84b0d96f6f24"},
+};
+const Download kFlintstonesDownloads[] = {
+    {"https://archive.org/download/ibm-wgam-wbiz-collection/ibm-wgam-wbiz-collection%2Fwgam0210-0219.zip/"
+     "wgam0219.tar",
+     L"wgam0219.tar", 135624192, "2f8764b9c0dc03aef1a5f971f46769e8", "zip", {}, kFlintstonesTarMembers},
+};
+// What the modules load (INTRMLIB -> ANTSW; the IMQ modules also DIBDLL;
+// the ASA reader MEMMIDI, by name) and the ASA and IMX readers: both builds'.
+const char* const kFlintstonesRequired[] = {"SAVER/INTRMLIB.DLL", "SAVER/ANTSW.DLL",     "SAVER/DIBDLL.DLL",
+                                            "SAVER/MEMMIDI.DLL",  "ENGINE/IMASAPLY.IMQ", "ENGINE/IMIMXPLY.IMQ"};
+// Every install disk's tag file (disk 1's, beside the installer and
+// DRIVEIN.IMQ, is the fingerprint's; the BBS's own "DISK 1" files beside
+// them are never opened).
+const char* const kFlintstonesDiskTags[] = {"DISK1", "DISK2", "DISK3"};
+// IMINST2's install, flattened as The Far Side's.
+const LooseFile kFlintstonesLoose[] = {
+    {"CARS.ASA", "SAVER/CARS.ASA", Codec::szdd},         {"DINORDS.ASA", "SAVER/DINORDS.ASA", Codec::plain},
+    {"LOGO.ASA", "SAVER/LOGO.ASA", Codec::plain},         {"DICTABRD.IMQ", "SAVER/DICTABRD.IMQ", Codec::plain},
+    {"DRIVEIN.IMQ", "SAVER/DRIVEIN.IMQ", Codec::plain},   {"FM-BIRDY.IMQ", "SAVER/FM-BIRDY.IMQ", Codec::plain},
+    {"FM-BOWL.IMQ", "SAVER/FM-BOWL.IMQ", Codec::plain},   {"FM-CLOCK.IMQ", "SAVER/FM-CLOCK.IMQ", Codec::plain},
+    {"FM-CRANE.IMQ", "SAVER/FM-CRANE.IMQ", Codec::szdd},  {"FM-MOBIL.IMQ", "SAVER/FM-MOBIL.IMQ", Codec::plain},
+    {"PAPERBOY.IMQ", "SAVER/PAPERBOY.IMQ", Codec::plain}, {"FM-BOULD.IMX", "SAVER/FM-BOULD.IMX", Codec::plain},
+    {"FM-CRITT.IMX", "SAVER/FM-CRITT.IMX", Codec::plain}, {"FM-FEET.IMX", "SAVER/FM-FEET.IMX", Codec::plain},
+    {"FMPADROK.IMX", "SAVER/FMPADROK.IMX", Codec::plain}, {"ANTSW.DLL", "SAVER/ANTSW.DLL", Codec::szdd},
+    {"DIBDLL.DLL", "SAVER/DIBDLL.DLL", Codec::szdd},      {"INTRMLIB.DLL", "SAVER/INTRMLIB.DLL", Codec::szdd},
+    {"MEMMIDI.DLL", "SAVER/MEMMIDI.DLL", Codec::szdd},    {"IMASAPLY.IMQ", "ENGINE/IMASAPLY.IMQ", Codec::plain},
+    {"IMIMXPLY.IMQ", "ENGINE/IMIMXPLY.IMQ", Codec::szdd}, {"INTERMIS.EXE", "ENGINE/INTERMIS.EXE", Codec::szdd},
+};
+// The May 1994 build: THEME.ASA and FM-PHOTO.IMX (with the decoder it
+// imports, DECO.DLL), and none of the June build's FM-BIRDY, FM-BOWL,
+// FM-MOBIL, FM-BOULD, FM-CRITT, FM-FEET and FMPADROK. Its only copy online is
+// a 1994 BBS copy, one ZIP per disk inside the Internet Archive's prog47_55
+// item, as The Far Side's. Its CARS.ASA is a broken compressed file in
+// every known copy (its stream ends 34114 bytes short of the size its header
+// declares; the animation runs past its frame buffer at frame 13): it is
+// never installed, and the catalog lists the build's nine other modules.
+const KnownImage kFlintstones199405Images[] = {
+    {"68cf70016ec2438f2773678d2864e48c", 655873,
+     "ZIP of install disk 1's files (a 1994 BBS copy of the May 1994 build's three floppies)", "", 1},
+    {"9b5faa07d55bbdb9a848645a6157ae05", 1238122,
+     "ZIP of install disk 2's files (a 1994 BBS copy of the May 1994 build's three floppies)", "", 2},
+    {"f6f94599e24d639fbdc5e2408a9c5c79", 1554138,
+     "ZIP of install disk 3's files (a 1994 BBS copy of the May 1994 build's three floppies)", "", 3},
+};
+const LooseFile kFlintstones199405Loose[] = {
+    {"DINORDS.ASA", "SAVER/DINORDS.ASA", Codec::plain},   {"LOGO.ASA", "SAVER/LOGO.ASA", Codec::plain},
+    {"THEME.ASA", "SAVER/THEME.ASA", Codec::plain},       {"DICTABRD.IMQ", "SAVER/DICTABRD.IMQ", Codec::szdd},
+    {"DRIVEIN.IMQ", "SAVER/DRIVEIN.IMQ", Codec::plain},   {"FM-CLOCK.IMQ", "SAVER/FM-CLOCK.IMQ", Codec::plain},
+    {"FM-CRANE.IMQ", "SAVER/FM-CRANE.IMQ", Codec::szdd},  {"PAPERBOY.IMQ", "SAVER/PAPERBOY.IMQ", Codec::plain},
+    {"FM-PHOTO.IMX", "SAVER/FM-PHOTO.IMX", Codec::plain}, {"ANTSW.DLL", "SAVER/ANTSW.DLL", Codec::szdd},
+    {"DECO.DLL", "SAVER/DECO.DLL", Codec::szdd},          {"DIBDLL.DLL", "SAVER/DIBDLL.DLL", Codec::szdd},
+    {"INTRMLIB.DLL", "SAVER/INTRMLIB.DLL", Codec::szdd},  {"MEMMIDI.DLL", "SAVER/MEMMIDI.DLL", Codec::szdd},
+    {"IMASAPLY.IMQ", "ENGINE/IMASAPLY.IMQ", Codec::plain}, {"IMIMXPLY.IMQ", "ENGINE/IMIMXPLY.IMQ", Codec::szdd},
+    {"INTERMIS.EXE", "ENGINE/INTERMIS.EXE", Codec::szdd},
+};
+// Its only copy has no tag file on disks 2 and 3 (disk 1's ZIP holds
+// LASTDISK.ASA instead): a module of each stands for it.
+const char* const kFlintstones199405DiskFiles[] = {"DISK1", "DRIVEIN.IMQ", "THEME.ASA"};
+// Told apart by FM-PHOTO.IMX, on its disk 1 (the June build has none).
+const Build kFlintstonesBuilds[] = {
+    {"1994-05", "the May 1994 build", "FM-PHOTO.IMX", kFlintstones199405Images, kFlintstones199405Loose,
+     manifest(kFlintstones199405Known),
+     "its CARS.ASA (Prehistoric Vehicles) is damaged in every known copy and is never installed; the June 1994 "
+     "build's is whole",
+     kFlintstones199405DiskFiles},
+};
+// No resource holds a name: each ASA header's title, the IMX modules' and
+// the clock's own (their QUERY), and the other IMQ modules' configure
+// dialogs, without their "FM-" and "The Flintstones - " prefixes. Both
+// builds'.
+const NameOverride kFlintstonesNames[] = {
+    {"SAVER/CARS.ASA", "Prehistoric Vehicles"},  {"SAVER/DINORDS.ASA", "Dino RDS"},
+    {"SAVER/LOGO.ASA", "Logo"},                  {"SAVER/THEME.ASA", "Theme Song"},
+    {"SAVER/DICTABRD.IMQ", "DictaBird"},         {"SAVER/DRIVEIN.IMQ", "Drive-In"},
+    {"SAVER/FM-BIRDY.IMQ", "Fred & The Pterodactyls"}, {"SAVER/FM-BOWL.IMQ", "Bowling"},
+    {"SAVER/FM-CLOCK.IMQ", "Prehistoric Clock"}, {"SAVER/FM-CRANE.IMQ", "Bronto Crane"},
+    {"SAVER/FM-MOBIL.IMQ", "The Flintmobile"},   {"SAVER/PAPERBOY.IMQ", "Paper Boy"},
+    {"SAVER/FM-BOULD.IMX", "Bedrock Boulders"},  {"SAVER/FM-CRITT.IMX", "Prehistoric Critters"},
+    {"SAVER/FM-FEET.IMX", "Prehistoric Footprints"}, {"SAVER/FMPADROK.IMX", "Paddle Rock"},
+    {"SAVER/FM-PHOTO.IMX", "Photo Shoot"},
+};
+
+// ---- intermission ------------------------------------------------------------------------
+//
+// Intermission 4.0 (Delrina, November 1993; Anthony Andersen's Intermission
+// of 1990, sold by Delrina since 1993) itself: 54 modules — 43 IMX modules,
+// six ASA animations, one IMQ module (IMSHARK), two FLI animations, an MRF
+// morph and an MSV mix — on three 1.44 MB floppies installed by Delrina's
+// own Intermission Installer, as The Far Side's. Its engine files are the
+// Opus 'n Bill Screen Saver's byte for byte.
+
+const char* const kIntermissionModuleDirs[] = {"SAVER"};
+// The Internet Archive's images of the three floppies (in its ZIP of them,
+// all in one folder, "Intermission 4.0/"), each known by its own md5.
+const KnownImage kIntermissionImages[] = {
+    {"fc1305b7f178adf862bebde610f51020", 1474560, "FAT12 1.44 MB floppy image, install disk 1 of 3", "", 1},
+    {"f1fedb8dbd9fdde088b617cc2e543740", 1474560, "FAT12 1.44 MB floppy image, install disk 2 of 3", "", 2},
+    {"a56edc671fe824830c4b6aa08ad5c57d", 1474560, "FAT12 1.44 MB floppy image, install disk 3 of 3", "", 3},
+    {"983b8d35861eccfcd683205670a1fb89", 3419502,
+     "ZIP of the three FAT12 1.44 MB floppy images (the Internet Archive's intermission4.0 copy)", ""},
+};
+// The ZIP of the three images (its md5 published; an import reads the
+// images in it, each by its own md5).
+const Download kIntermissionDownloads[] = {
+    {"https://archive.org/download/intermission4.0/Intermission%204.0.zip", L"Intermission 4.0.zip", 3419502,
+     "983b8d35861eccfcd683205670a1fb89", "image"},
+};
+// What the modules load (INTRMLIB -> ANTSW; PHOTO also DECO; the ASA reader
+// MEMMIDI, by name) and the readers of its module forms.
+const char* const kIntermissionRequired[] = {
+    "SAVER/INTRMLIB.DLL",  "SAVER/ANTSW.DLL",     "SAVER/DECO.DLL",      "SAVER/MEMMIDI.DLL",
+    "ENGINE/IMASAPLY.IMQ", "ENGINE/IMIMXPLY.IMQ", "ENGINE/IMFLIPLY.IMQ", "ENGINE/IMMRFPLY.IMQ",
+    "ENGINE/IMMSVPLY.IMQ"};
+// Every install disk's tag file (disk 1's, beside the installer and
+// IMSHARK.IMQ, is the fingerprint's).
+const char* const kIntermissionDiskTags[] = {"DISK1", "DISK2", "DISK3"};
+// IMINST2's install, flattened as The Far Side's: the modules, FACE.ASA's
+// pictures (its faces, the bird and the balloon it opens beside it) and the
+// DLLs they load in the module folder; Intermission itself and the readers
+// of its module forms in ENGINE. Never installed: AD_SND.DLL and the After
+// Dark reader IMAD_PLY.IMQ, the readers of forms it ships no module in
+// (FLC, IW, NSS, SAP, SCR, SEQ, SPX), IWLIB.DLL, CURTCALL.EXE, NETPASS.EXE,
+// SSINTERM.SCR, the VxD, the control panel, the sound drivers, the DOS and
+// setup programs, the help files, the texts and the module developer's kit
+// (SAVERDEV.KIT).
+const LooseFile kIntermissionLoose[] = {
+    {"ACIDSPRY.IMX", "SAVER/ACIDSPRY.IMX", Codec::szdd}, {"ANTMINE.IMX", "SAVER/ANTMINE.IMX", Codec::szdd},
+    {"BIGFOOT.IMX", "SAVER/BIGFOOT.IMX", Codec::szdd},   {"BRICKS.IMX", "SAVER/BRICKS.IMX", Codec::szdd},
+    {"CHAOS1.IMX", "SAVER/CHAOS1.IMX", Codec::szdd},     {"COMMNQUE.IMX", "SAVER/COMMNQUE.IMX", Codec::szdd},
+    {"CONUND.IMX", "SAVER/CONUND.IMX", Codec::szdd},     {"DISSOLVE.IMX", "SAVER/DISSOLVE.IMX", Codec::szdd},
+    {"DRAGON.IMX", "SAVER/DRAGON.IMX", Codec::szdd},     {"EYES.IMX", "SAVER/EYES.IMX", Codec::szdd},
+    {"FADE.IMX", "SAVER/FADE.IMX", Codec::szdd},         {"FERN.IMX", "SAVER/FERN.IMX", Codec::szdd},
+    {"FIRE.IMX", "SAVER/FIRE.IMX", Codec::szdd},         {"FIREFLY.IMX", "SAVER/FIREFLY.IMX", Codec::szdd},
+    {"FLASH.IMX", "SAVER/FLASH.IMX", Codec::szdd},       {"FLEX.IMX", "SAVER/FLEX.IMX", Codec::szdd},
+    {"FLOW.IMX", "SAVER/FLOW.IMX", Codec::szdd},         {"ICE.IMX", "SAVER/ICE.IMX", Codec::szdd},
+    {"IMBITMAP.IMX", "SAVER/IMBITMAP.IMX", Codec::szdd}, {"IM_ANIM.IMX", "SAVER/IM_ANIM.IMX", Codec::szdd},
+    {"IM_MIXER.IMX", "SAVER/IM_MIXER.IMX", Codec::szdd}, {"IM_PICTU.IMX", "SAVER/IM_PICTU.IMX", Codec::szdd},
+    {"KALSCOPE.IMX", "SAVER/KALSCOPE.IMX", Codec::szdd}, {"MARINE2.IMX", "SAVER/MARINE2.IMX", Codec::szdd},
+    {"MAZE.IMX", "SAVER/MAZE.IMX", Codec::szdd},         {"MELT.IMX", "SAVER/MELT.IMX", Codec::szdd},
+    {"MOIRE1.IMX", "SAVER/MOIRE1.IMX", Codec::szdd},     {"MOIRE3.IMX", "SAVER/MOIRE3.IMX", Codec::szdd},
+    {"MOSAIC.IMX", "SAVER/MOSAIC.IMX", Codec::szdd},     {"ORBS.IMX", "SAVER/ORBS.IMX", Codec::szdd},
+    {"PALETTE.IMX", "SAVER/PALETTE.IMX", Codec::szdd},   {"PHOTO.IMX", "SAVER/PHOTO.IMX", Codec::szdd},
+    {"PING.IMX", "SAVER/PING.IMX", Codec::szdd},         {"PLANT.IMX", "SAVER/PLANT.IMX", Codec::szdd},
+    {"POLAR.IMX", "SAVER/POLAR.IMX", Codec::szdd},       {"SNOW.IMX", "SAVER/SNOW.IMX", Codec::szdd},
+    {"SORCERY.IMX", "SAVER/SORCERY.IMX", Codec::szdd},   {"SPIRALS.IMX", "SAVER/SPIRALS.IMX", Codec::szdd},
+    {"SWARM.IMX", "SAVER/SWARM.IMX", Codec::szdd},       {"SWIRL.IMX", "SAVER/SWIRL.IMX", Codec::szdd},
+    {"TIMEPIEC.IMX", "SAVER/TIMEPIEC.IMX", Codec::szdd}, {"TUNNEL.IMX", "SAVER/TUNNEL.IMX", Codec::szdd},
+    {"WORMS.IMX", "SAVER/WORMS.IMX", Codec::szdd},       {"ANTGOLF.ASA", "SAVER/ANTGOLF.ASA", Codec::szdd},
+    {"CLOWN.ASA", "SAVER/CLOWN.ASA", Codec::szdd},       {"COWBOY.ASA", "SAVER/COWBOY.ASA", Codec::szdd},
+    {"DPIG.ASA", "SAVER/DPIG.ASA", Codec::szdd},         {"FACE.ASA", "SAVER/FACE.ASA", Codec::szdd},
+    {"PIG01S.ASA", "SAVER/PIG01S.ASA", Codec::szdd},     {"IMSHARK.IMQ", "SAVER/IMSHARK.IMQ", Codec::szdd},
+    {"EINSTEIN.FLI", "SAVER/EINSTEIN.FLI", Codec::szdd}, {"FLYING.FLI", "SAVER/FLYING.FLI", Codec::szdd},
+    {"PARADISE.MRF", "SAVER/PARADISE.MRF", Codec::szdd}, {"MACHINE.MSV", "SAVER/MACHINE.MSV", Codec::plain},
+    {"BALLOON.BMP", "SAVER/BALLOON.BMP", Codec::szdd},   {"BIRD.BMP", "SAVER/BIRD.BMP", Codec::szdd},
+    {"CHCKFACE.BMP", "SAVER/CHCKFACE.BMP", Codec::szdd}, {"DECOFACE.BMP", "SAVER/DECOFACE.BMP", Codec::szdd},
+    {"MOONFACE.BMP", "SAVER/MOONFACE.BMP", Codec::szdd}, {"MOVAFACE.BMP", "SAVER/MOVAFACE.BMP", Codec::szdd},
+    {"ROCKFACE.BMP", "SAVER/ROCKFACE.BMP", Codec::szdd}, {"SWRLFACE.BMP", "SAVER/SWRLFACE.BMP", Codec::szdd},
+    {"ANTSW.DLL", "SAVER/ANTSW.DLL", Codec::szdd},       {"DECO.DLL", "SAVER/DECO.DLL", Codec::szdd},
+    {"INTRMLIB.DLL", "SAVER/INTRMLIB.DLL", Codec::szdd}, {"MEMMIDI.DLL", "SAVER/MEMMIDI.DLL", Codec::szdd},
+    {"IMASAPLY.IMQ", "ENGINE/IMASAPLY.IMQ", Codec::szdd}, {"IMIMXPLY.IMQ", "ENGINE/IMIMXPLY.IMQ", Codec::szdd},
+    {"IMFLIPLY.IMQ", "ENGINE/IMFLIPLY.IMQ", Codec::szdd}, {"IMMRFPLY.IMQ", "ENGINE/IMMRFPLY.IMQ", Codec::szdd},
+    {"IMMSVPLY.IMQ", "ENGINE/IMMSVPLY.IMQ", Codec::szdd}, {"INTERMIS.EXE", "ENGINE/INTERMIS.EXE", Codec::szdd},
+    // The IMX reader beside the modules too: the MultiSaver (MACHINE.MSV)
+    // finds its group's IMX modules in INTRMLIB's module table, which it
+    // builds from the module folder alone, each module by its reader there.
+    {"IMIMXPLY.IMQ", "SAVER/IMIMXPLY.IMQ", Codec::szdd},
+};
+// The names Intermission lists: the IMX modules' and IMSHARK's own (their
+// QUERY or configure dialog), each ASA header's title, the MSV's own and the
+// MRF's (their files hold them), and the FLI animations' file names, as the
+// FLI reader gives them. (Palette Animator alone blanks the screen and cycles
+// its palette: black, as Intermission showed it; The Machine is a group of it
+// and Spirals.)
+const NameOverride kIntermissionNames[] = {
+    {"SAVER/ACIDSPRY.IMX", "Acid Spray"},    {"SAVER/ANTMINE.IMX", "Ant Mine"},
+    {"SAVER/BIGFOOT.IMX", "Bigfoot"},        {"SAVER/BRICKS.IMX", "Bricks"},
+    {"SAVER/CHAOS1.IMX", "Chaos"},           {"SAVER/COMMNQUE.IMX", "Communique"},
+    {"SAVER/CONUND.IMX", "Conundrum"},       {"SAVER/DISSOLVE.IMX", "Dissolve"},
+    {"SAVER/DRAGON.IMX", "Dragon Kites"},    {"SAVER/EYES.IMX", "Eyes"},
+    {"SAVER/FADE.IMX", "Fade Out"},          {"SAVER/FERN.IMX", "Ferns"},
+    {"SAVER/FIRE.IMX", "Fireworks"},         {"SAVER/FIREFLY.IMX", "Firefly"},
+    {"SAVER/FLASH.IMX", "Flashlight"},       {"SAVER/FLEX.IMX", "Flex"},
+    {"SAVER/FLOW.IMX", "Flow"},              {"SAVER/ICE.IMX", "Ice Crystals"},
+    {"SAVER/IMBITMAP.IMX", "Bitmap Saver"},  {"SAVER/IM_ANIM.IMX", "Palette Animator"},
+    {"SAVER/IM_MIXER.IMX", "Battling Mixers"}, {"SAVER/IM_PICTU.IMX", "Picture Show"},
+    {"SAVER/KALSCOPE.IMX", "Kaleidoscope"},  {"SAVER/MARINE2.IMX", "Marine"},
+    {"SAVER/MAZE.IMX", "Maze"},              {"SAVER/MELT.IMX", "Melting Screen"},
+    {"SAVER/MOIRE1.IMX", "Moire A"},         {"SAVER/MOIRE3.IMX", "Moire B"},
+    {"SAVER/MOSAIC.IMX", "Mosaic"},          {"SAVER/ORBS.IMX", "Orbs"},
+    {"SAVER/PALETTE.IMX", "Crystal Palettes"}, {"SAVER/PHOTO.IMX", "Photo Shoot"},
+    {"SAVER/PING.IMX", "Ping"},              {"SAVER/PLANT.IMX", "Plants"},
+    {"SAVER/POLAR.IMX", "Polar Caps"},       {"SAVER/SNOW.IMX", "Snow Flakes"},
+    {"SAVER/SORCERY.IMX", "Sorcery"},        {"SAVER/SPIRALS.IMX", "Spirals"},
+    {"SAVER/SWARM.IMX", "Swarm"},            {"SAVER/SWIRL.IMX", "Swirl"},
+    {"SAVER/TIMEPIEC.IMX", "Timepiece"},     {"SAVER/TUNNEL.IMX", "Tunnel"},
+    {"SAVER/WORMS.IMX", "Wriggly"},          {"SAVER/ANTGOLF.ASA", "Golfing Ants"},
+    {"SAVER/CLOWN.ASA", "Clowns"},           {"SAVER/COWBOY.ASA", "Cowboy Singer"},
+    {"SAVER/DPIG.ASA", "Dancing Pig"},       {"SAVER/FACE.ASA", "Snooze"},
+    {"SAVER/PIG01S.ASA", "Rapping Pig"},     {"SAVER/IMSHARK.IMQ", "Space Shark"},
+    {"SAVER/EINSTEIN.FLI", "Einstein"},      {"SAVER/FLYING.FLI", "Flying"},
+    {"SAVER/PARADISE.MRF", "Paradise"},      {"SAVER/MACHINE.MSV", "The Machine (Palette)"},
+};
+// The modules whose motion is the machine's speed (Package::speed_modules),
+// as each module measured at 25% and at 100% of it showed
+// (research/speed/host/FACTS.md): 34 IMX modules (Picture Show for its
+// fades between pictures, Bricks for its ball after its first wall, about
+// 45 s in), the shark (IMSHARK.IMQ) and the mix (MACHINE.MSV). Not listed,
+// as they look the same at any speed: the ASA and FLI animations and the
+// morph (PARADISE.MRF), on their readers' clocks; the IMX modules that
+// pace themselves by the clock (Communique, Flex, Maze, Orbs, Photo Shoot,
+// Timepiece) and three whose runs at both speeds are identical (Bigfoot,
+// Conundrum, Fade Out).
+// Each starts at Normal but six, for which Normal is still too fast or
+// already slow: Dragon Kites, Ping and Bricks at Slowest (at Normal a
+// kite, or the ball, crosses the screen in about 0.27 s; Bricks' ball,
+// once it speeds up, in about 0.3-0.5 s), Wriggly and Snow Flakes at Slow,
+// and Space Shark at Fast (about 9 steps a second at Normal).
+const SpeedModule kIntermissionSpeed[] = {
+    {"SAVER/ACIDSPRY.IMX"}, {"SAVER/ANTMINE.IMX"},  {"SAVER/CHAOS1.IMX"},   {"SAVER/DISSOLVE.IMX"},
+    {"SAVER/EYES.IMX"},     {"SAVER/FERN.IMX"},     {"SAVER/FIRE.IMX"},     {"SAVER/FIREFLY.IMX"},
+    {"SAVER/FLASH.IMX"},    {"SAVER/FLOW.IMX"},     {"SAVER/ICE.IMX"},      {"SAVER/IMBITMAP.IMX"},
+    {"SAVER/IM_ANIM.IMX"},  {"SAVER/IM_MIXER.IMX"}, {"SAVER/IM_PICTU.IMX"}, {"SAVER/KALSCOPE.IMX"},
+    {"SAVER/MARINE2.IMX"},  {"SAVER/MELT.IMX"},     {"SAVER/MOIRE1.IMX"},   {"SAVER/MOIRE3.IMX"},
+    {"SAVER/MOSAIC.IMX"},   {"SAVER/PALETTE.IMX"},  {"SAVER/PLANT.IMX"},    {"SAVER/POLAR.IMX"},
+    {"SAVER/SORCERY.IMX"},  {"SAVER/SPIRALS.IMX"},  {"SAVER/SWARM.IMX"},    {"SAVER/SWIRL.IMX"},
+    {"SAVER/TUNNEL.IMX"},   {"SAVER/MACHINE.MSV"},
+    {"SAVER/DRAGON.IMX", SpeedStop::slowest}, {"SAVER/PING.IMX", SpeedStop::slowest},
+    {"SAVER/BRICKS.IMX", SpeedStop::slowest}, {"SAVER/WORMS.IMX", SpeedStop::slow},
+    {"SAVER/SNOW.IMX", SpeedStop::slow},      {"SAVER/IMSHARK.IMQ", SpeedStop::fast},
+};
+
 // ---- box covers (COVERS.md §2.3) ------------------------------------------------------------
 //
 // Only URLs, md5s, sizes, paths and crops: the pictures are fetched (md5- and
@@ -1119,6 +1613,36 @@ const CoverSource kCastawayCovers[] = {
                    "https://archive.org/download/johncast/johnny-castaway-pc-cover.png",
                    "d07b6af1d5ffe9e0edaafa11fb9badac", 24904, L"johnny-castaway-pc-cover.png"),
 };
+// The Opus 'n Bill Screen Saver: no box, label or manual scan was found
+// online (the Internet Archive, the Wayback Machine's Delrina pages); the
+// installer's picture beside its pages on disk 1 (INSTALL.BMP, Opus, 63x123;
+// both builds'), drawn as a picture. Berkeley Breathed's and Delrina's art:
+// read onto the user's machine only, never bundled.
+const CoverSource kOpusCovers[] = {
+    cover_disc("panel", "Setup art", "your disks", "INSTALL.BMP", "9b3c235183f800bc9c3bc14b718a69e0"),
+};
+// Opus 'n Bill: On the Road Again!: the Internet Archive's scan of the box
+// front (its ZIP's item; 1256x1593, the whole front). Berkeley Breathed's and
+// Delrina's art: fetched onto the user's machine only, never bundled. The
+// disks' only picture, the installer's INSTALL.BMP, is SZDD-compressed, out
+// of a disc source's reach.
+const CoverSource kOpusroadCovers[] = {
+    cover_download("box", "Box front", "Internet Archive",
+                   "https://archive.org/download/OpusNBill_OnTheRoadAgain/OnB-OtRA-Box.jpg",
+                   "afc3289af08484ad64542363c5b6e9fb", 465624, L"OpusNBill_OnTheRoadAgain_OnB-OtRA-Box.jpg"),
+};
+// The Flintstones Screen Saver Collection: no box, label or manual scan was
+// found online, and the disks' only picture, the installer's INSTALL.BMP, is
+// SZDD-compressed in both builds: the front-ends draw a generated cover (its
+// registry row lists no cover source).
+
+// Intermission 4.0: no box scan was found online (its item holds a
+// screenshot); the installer's picture beside its pages on disk 1
+// (INSTALL.BMP, Intermission's logo, 100x150), drawn as a picture. Delrina's
+// art: read onto the user's machine only, never bundled.
+const CoverSource kIntermissionCovers[] = {
+    cover_disc("panel", "Setup art", "your disks", "INSTALL.BMP", "cf21a2a530d09444445c4735d8dd59ca"),
+};
 
 const Package kPackages[] = {
     {"deluxe", "After Dark 4.0 Deluxe", "Deluxe", Recipe::tree, "FILES", kDeluxeModuleDirs, kDeluxeImages,
@@ -1225,6 +1749,32 @@ const Package kPackages[] = {
      kCastawayModuleDirs, kCastawayImages, kCastawayRequired, {}, nullptr, {}, "SCRANTIC", nullptr, nullptr,
      kCastawayFiles, {}, kCastawayNames, manifest(kCastawayKnown), kCastawayDownloads, kCastawayCovers, "1992-12",
      nullptr, kCastawayLoose, nullptr, "640x480"},
+    // Four more Delrina Intermission releases after the first sixteen, so
+    // they keep their places (and the GUI's command ids). Every file of the
+    // Opus 'n Bill Screen Saver's disks is dated 1993-09-21 (its November
+    // build's 1993-11-03); On the Road Again's newest, Intermission itself,
+    // 1994-09-16; The Flintstones' May build's readme 1994-05-25 (its June
+    // build, which the fields describe, 1994-06-16); Intermission 4.0's files
+    // 1993-11-03. Shown at 640x480 by their ABI, as the other Intermission
+    // releases are.
+    {"opus", "Opus 'n Bill Screen Saver", "Opus 'n Bill", Recipe::intermission, "packages/opus", kOpusModuleDirs,
+     kOpusImages, kOpusRequired, {}, "OPUSCLOK.IMQ", {}, "SAVER", nullptr, nullptr, kOpusDiskTags, {}, kOpusNames,
+     manifest(kOpusKnown), kOpusDownloads, kOpusCovers, "1993-09", nullptr, kOpusLoose, nullptr, nullptr,
+     Package::About::as_is, {}, nullptr, nullptr, {}, "1993-09", kOpusBuilds},
+    {"opusroad", "Opus 'n Bill: On the Road Again!", "On the Road Again", Recipe::intermission, "packages/opusroad",
+     kOpusroadModuleDirs, kOpusroadImages, kOpusroadRequired, {}, "OPUSTREK.IMX", {}, "SAVER", nullptr, nullptr,
+     kOpusroadDiskTags, {}, kOpusroadNames, manifest(kOpusroadKnown), kOpusroadDownloads, kOpusroadCovers, "1994-09",
+     nullptr, kOpusroadLoose},
+    {"flintstones", "The Flintstones Screen Saver Collection", "Flintstones", Recipe::intermission,
+     "packages/flintstones", kFlintstonesModuleDirs, kFlintstonesImages, kFlintstonesRequired, {}, "DRIVEIN.IMQ", {},
+     "SAVER", nullptr, nullptr, kFlintstonesDiskTags, {}, kFlintstonesNames, manifest(kFlintstonesKnown),
+     kFlintstonesDownloads, {}, "1994-05", nullptr, kFlintstonesLoose, nullptr, nullptr, Package::About::as_is, {},
+     nullptr, nullptr, {}, "1994-06", kFlintstonesBuilds},
+    {"intermission", "Intermission 4.0", "Intermission", Recipe::intermission, "packages/intermission",
+     kIntermissionModuleDirs, kIntermissionImages, kIntermissionRequired, {}, "IMSHARK.IMQ", {}, "SAVER", nullptr,
+     nullptr, kIntermissionDiskTags, {}, kIntermissionNames, manifest(kIntermissionKnown), kIntermissionDownloads,
+     kIntermissionCovers, "1993-11", nullptr, kIntermissionLoose, nullptr, nullptr, Package::About::as_is, {},
+     nullptr, nullptr, {}, nullptr, {}, kIntermissionSpeed},
 };
 
 }  // namespace

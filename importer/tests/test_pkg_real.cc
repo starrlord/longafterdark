@@ -14,17 +14,24 @@
 // the five ZIPs of its disks' files (PNX-FSC1..5.ZIP), Dilbert the ZIPs of
 // its four disks' files or the flat ZIP of them all (DilbertS.zip); Johnny
 // Castaway its floppy's image, the KryoFlux dump's ZIP of it or the user's
-// 7z of it (000580_jonny_castaway.7z).
+// 7z of it (000580_jonny_castaway.7z); the Opus 'n Bill Screen Saver the
+// ZIPs of its three disks' files (OPUS1..3NTA.ZIP, or another BBS's), On the
+// Road Again the Internet Archive's ZIP of its files, The Flintstones the
+// ZIPs of its June build's disks (FLINTST1..3.ZIP), Intermission 4.0 its three
+// floppy images or the Internet Archive's ZIP of them (research/five/dl: add
+// it to AD_SOURCE_ISO_DIR).
 //   1. Each package's image(s) into a fresh root through adimport.exe: exit
 //      0, verified "image", nothing missing, every file matches the package
 //      manifest, the installed files are exactly the manifest (the §4 layout
 //      and counts), the invariants hold (the intermission, ad2kwaj, islib
 //      and is1 recipes' own), and the catalog has 46 / 44 / 13 / 15 / 14 /
-//      16 / 1 / 8 / 12 / 15 / 16 / 14 / 16 / 13 / 1 modules in the right
+//      16 / 1 / 8 / 12 / 15 / 16 / 14 / 16 / 13 / 1 / 16 / 16 / 15 / 54 modules in the right
 //      lanes (castaway: one Windows 3.1 screen-saver program; swse:
 //      Intermission IMX entries with their registry names and one button;
 //      farside, dilbert: Intermission ASA and IMQ entries, SAVERMAIN, the
-//      same; startrek: Classic
+//      same; intermission: the same, with the Speed control after the
+//      button on the registry's speed modules alone, each at its starting
+//      stop; startrek: Classic
 //      entries with their fixed screen, trimmed names, the Planetary Atlas
 //      override and After Dark 2.0's About rules; marvel: its fixed screen
 //      and two buttons; snoopy: eight Classic entries, 27 controls; screams:
@@ -62,7 +69,7 @@
 //   2. Every package plus Deluxe (imported --from the installed assets, which
 //      are only read: AD_ASSETS_DIR picks them, e.g.
 //      <repo>/build/win-pkg-setup/assets, else the data folder's) in one root:
-//      328 modules (232 over the first seven), display names unique per lane,
+//      429 modules (232 over the first seven), display names unique per lane,
 //      sameAs consistent (73), and every Deluxe entry's existing fields equal
 //      to the installed catalog's.
 //   3. Re-importing each package into that root changes nothing else.
@@ -125,13 +132,18 @@ const std::map<std::string, Expect> kExpect = {
     {"dilbert", {23, {{"SAVER", 21}, {"ENGINE", 2}}, 16, 0}},
     {"tng", {31, {{"ST-TNG", 26}, {"ENGINE", 5}}, 13, 0}},
     {"castaway", {3, {{"SCRANTIC", 3}}, 1, 0}},
+    {"opus", {21, {{"SAVER", 19}, {"ENGINE", 2}}, 16, 0}},
+    {"opusroad", {23, {{"SAVER", 20}, {"ENGINE", 3}}, 16, 0}},
+    {"flintstones", {22, {{"SAVER", 19}, {"ENGINE", 3}}, 15, 0}},
+    {"intermission", {73, {{"SAVER", 67}, {"ENGINE", 6}}, 54, 0}},
 };
 // The catalog over every release with the Deluxe tree: 232 entries over the
 // first seven, 284 with Marvel Comics Screen Posters, Snoopy's Screen Savers,
 // the Looney Tunes, ScreamSavers and the Disney Collection, 314 with The Far
 // Side and Dilbert, 327 with Star Trek: The Next Generation Screen Saver,
-// 328 with Johnny Castaway; still 73 of them the same bytes as an earlier
-// entry.
+// 328 with Johnny Castaway, 429 with the Opus 'n Bill Screen Saver, On the
+// Road Again, The Flintstones and Intermission 4.0; still 73 of them the
+// same bytes as an earlier entry.
 size_t combined_modules() {
   size_t n = 84;
   for (const auto& [id, e] : kExpect) n += e.modules;
@@ -204,7 +216,8 @@ void check_package_root(const fs::path& win, const Package& p) {
       std::error_code ec;
       for (auto& f : fs::directory_iterator(root / to_wide(dir), ec)) {
         const std::string n = to_utf8(f.path().filename().wstring());
-        CHECK(!ends_with_i(n, ".IMQ") || (delrina && !is_intermission_reader(n)));
+        CHECK(!ends_with_i(n, ".IMQ") || (delrina && !is_intermission_reader(n)) ||
+              (std::string_view(p.id) == "intermission" && n == "IMIMXPLY.IMQ"));
         CHECK(!ends_with_i(n, ".ASA") || delrina);
       }
     }
@@ -219,7 +232,11 @@ void check_package_root(const fs::path& win, const Package& p) {
     // The ASA reader and Intermission in ENGINE, nothing else; no WINDOWS
     // folder (the modules read ANTSW.INI, which the lane seeds).
     CHECK(fs::exists(root / L"ENGINE" / L"IMASAPLY.IMQ") && fs::exists(root / L"ENGINE" / L"INTERMIS.EXE"));
-    CHECK(!fs::exists(root / L"ENGINE" / L"IMIMXPLY.IMQ") && !fs::exists(root / L"WINDOWS"));
+    // The IMX reader in ENGINE where the release has IMX modules.
+    bool imx_modules = false;
+    for (const LooseFile& lf : p.loose_files) imx_modules = imx_modules || ends_with_i(lf.to, ".IMX");
+    CHECK_EQ(fs::exists(root / L"ENGINE" / L"IMIMXPLY.IMQ"), imx_modules);
+    CHECK(!fs::exists(root / L"WINDOWS"));
     for (const char* n : {"OLDMOD16.DLL", "ADTASK.DLL", "AD_SND.DLL"}) CHECK(!fs::exists(root / L"ENGINE" / to_wide(n)));
   } else if (imx) {
     CHECK(fs::exists(root / L"ENGINE" / L"IMIMXPLY.IMQ"));
@@ -275,7 +292,8 @@ void check_package_root(const fs::path& win, const Package& p) {
   // copied that the recipe never reads.
   if (delrina)
     for (const char* never : {".NFO", "FILE_ID", "UNZIP_ME", "README", "PACKING.LST", "IMINST", "SETUP.EXE", "AD_SND",
-                              "IWLIB", "ICONDLL", "ANTSW2", "LASTDISK", "IMIMXPLY", "INTERMIS.TXT"})
+                              "IWLIB", "ICONDLL", "ANTSW2", "LASTDISK", "INTERMIS.TXT", "DONTREAD", "SEEME", "ROI!",
+                              "IMAD_PLY", "IMFLCPLY", "IMSEQPLY", "CURTCALL", "SAVERDEV", "WEED"})
       CHECK(upper.find(never) == std::string::npos);
 }
 
@@ -283,7 +301,7 @@ void check_catalog_of(const phosg::JSON& cat, const Package& p) {
   const Expect& e = kExpect.at(p.id);
   const bool imx = p.recipe == Recipe::intermission, ad2 = p.recipe == Recipe::ad2kwaj,
              isl = p.recipe == Recipe::islib, is1 = p.recipe == Recipe::is1;
-  size_t n = 0, pe = 0, controls = 0;
+  size_t n = 0, pe = 0, controls = 0, speeds = 0;
   for (auto& m : cat.at("modules").as_list()) {
     if (m->get_string("package") != p.id) continue;
     n++;
@@ -398,28 +416,49 @@ void check_catalog_of(const phosg::JSON& cat, const Package& p) {
     if (!imx) continue;
     // An Intermission module: its entry (an IMX module's SAVERDRAW, a
     // Delrina release's ASA animation's and IMQ module's SAVERMAIN, its
-    // reader's), its one button, its registry name.
+    // reader's), its one button (and, on Intermission 4.0's modules that
+    // step once per call, the Speed control after it), its registry name.
     CHECK_EQ(m->get_string("lane"), std::string("ne16"));
     CHECK_EQ(m->get_string("abi"), std::string("intermission"));
-    CHECK_EQ(m->get_string("entry"), std::string(p.delrina_installer() ? "SAVERMAIN" : "SAVERDRAW"));
+    const bool imx_file = ends_with_i(m->get_string("path"), ".IMX");
+    CHECK_EQ(m->get_string("entry"), std::string(p.delrina_installer() && !imx_file ? "SAVERMAIN" : "SAVERDRAW"));
     CHECK_EQ(m->get_string("about"), std::string());
+    std::string rel = m->get_string("path").substr(std::string(p.root).size() + 1), name;
+    const SpeedModule* speed = nullptr;
+    for (const SpeedModule& s : p.speed_modules)
+      if (iequals(s.module, rel)) speed = &s;
+    speeds += speed != nullptr;
     const auto& controls = m->at("controls").as_list();
-    CHECK_EQ(controls.size(), size_t(1));
-    if (controls.size() == 1) {
+    CHECK_EQ(controls.size(), size_t(speed ? 2 : 1));
+    if (!controls.empty()) {
       CHECK_EQ(controls[0]->get_string("name"), std::string("Configure..."));
       CHECK_EQ(controls[0]->get_string("type"), std::string("button"));
+      CHECK(!controls[0]->contains("host"));
     }
-    std::string rel = m->get_string("path").substr(std::string(p.root).size() + 1), name;
+    if (speed && controls.size() == 2) {
+      // At the module's own starting stop (Dragon Kites at Slowest, ...).
+      const phosg::JSON& s = *controls[1];
+      CHECK(s.get_int("index") == 1 && s.get_string("name") == "Speed:" && s.get_string("kind") == "stringslider" &&
+            s.get_string("type") == "slider" && s.get_int("defaultStop") == int(speed->start) &&
+            s.get_int("default") == speed_control(speed->start).def && s.get_string("host") == "ADNE16IMXSPEED");
+      CHECK(s.at("values").as_list().size() == 5 && s.at("items").as_list().size() == 5);
+    }
     for (const NameOverride& o : p.name_overrides)
       if (iequals(o.module, rel)) name = o.name;
     CHECK(!name.empty());
     CHECK_EQ(m->get_string("moduleName"), name);
-    CHECK_EQ(m->get_string("displayName"), name);  // no name of the others collides
-    const bool asa = ends_with_i(rel, ".ASA");
-    if (asa) CHECK(m->at("needs").as_list().empty() && m->at("system").as_list().empty());
+    // Its name, or (in a catalog of every release) told apart by its short
+    // title where an earlier release has it (Rat Race, Logo, Einstein, Tunnel).
+    const std::string shown = m->get_string("displayName");
+    CHECK(shown == name || shown == name + " (" + p.short_title + ")");
+    // Data a reader plays (an ASA animation, Intermission 4.0's FLI, MRF and
+    // MSV) imports nothing.
+    const bool data = ends_with_i(rel, ".ASA") || ends_with_i(rel, ".FLI") || ends_with_i(rel, ".MRF") ||
+                      ends_with_i(rel, ".MSV");
+    if (data) CHECK(m->at("needs").as_list().empty() && m->at("system").as_list().empty());
     for (auto& need : m->at("needs").as_list()) {
       const std::string d = need->as_string();
-      if (p.delrina_installer()) CHECK(d == "INTRMLIB" || d == "ANTSW" || d == "DIBDLL" || d == "IM4_EXP");
+      if (p.delrina_installer()) CHECK(d == "INTRMLIB" || d == "ANTSW" || d == "DIBDLL" || d == "IM4_EXP" || d == "DECO");
       else CHECK(d == "INTRMLIB" || d == "READJPG" || d == "STRESS" || d == "SWSE");
     }
   }
@@ -428,6 +467,7 @@ void check_catalog_of(const phosg::JSON& cat, const Package& p) {
   CHECK_EQ(pe, e.pe32);
   if (ad2) CHECK_EQ(controls, size_t(40));
   if (isl && std::string_view(p.id) == "snoopy") CHECK_EQ(controls, size_t(27));
+  CHECK_EQ(speeds, p.speed_modules.size());  // every module listed has it (Intermission 4.0's alone)
 }
 
 // Star Wars Screen Entertainment's installer script, read from its image,
@@ -1168,19 +1208,21 @@ int main(int argc, char** argv) {
       check_catalog_of(cat, p);
     }
   // The packages list: oldest release first (Star Trek: The Screen Saver,
-  // 1992-11, then Johnny Castaway, 1992-12, then Marvel Comics Screen
-  // Posters, 1993-12, then The Far Side, 1994-06); swse ties with the
-  // Simpsons (1994-08) and follows it, as in the
-  // registry, and Snoopy's Screen Savers, Dilbert and Star Trek: The Next
-  // Generation Screen Saver (1994-10) follow them, in registry order too;
-  // ScreamSavers ties with the Looney Tunes (1995-04) the same way; the
-  // Disney Collection (1995-09) comes after Totally Twisted.
+  // 1992-11, then Johnny Castaway, 1992-12, the Opus 'n Bill Screen Saver,
+  // 1993-09, Intermission 4.0, 1993-11, Marvel Comics Screen Posters,
+  // 1993-12, The Flintstones, 1994-05, then The Far Side, 1994-06); swse
+  // ties with the Simpsons (1994-08) and follows it, as in the registry; On
+  // the Road Again (1994-09) comes next; Snoopy's Screen Savers, Dilbert and
+  // Star Trek: The Next Generation Screen Saver (1994-10) follow them, in
+  // registry order too; ScreamSavers ties with the Looney Tunes (1995-04)
+  // the same way; the Disney Collection (1995-09) comes after Totally Twisted.
   {
     std::vector<std::string> order;
     for (auto& pk : cat.at("packages").as_list()) order.push_back(pk->get_string("id"));
-    CHECK((order == std::vector<std::string>{"startrek", "castaway", "marvel", "farside", "simpsons", "swse", "snoopy",
-                                             "dilbert", "tng", "looney", "screams", "ad32", "tt", "disney", "deluxe",
-                                             "ad10"}));
+    CHECK((order == std::vector<std::string>{"startrek",    "castaway", "opus",   "intermission", "marvel",
+                                             "flintstones", "farside",  "simpsons", "swse",       "opusroad",
+                                             "snoopy",      "dilbert",  "tng",    "looney",       "screams",
+                                             "ad32",        "tt",       "disney", "deluxe",       "ad10"}));
   }
   // The Looney Tunes' Messages comes after 3.2's: it is told apart by its
   // short title.

@@ -21,9 +21,18 @@
 //   popup    items; the value is the item index (+ min, if given)
 //   checkbox 0/1
 //   button   no value; the saver never presses buttons (ABI.md §2.10.4)
+// Any of the settable ones may name a variable of the host's own in `host`
+// (Intermission 4.0's "Speed:", "host": "ADNE16IMXSPEED"): a host control.
+// The settings window shows and keeps it like any other, but its value goes
+// to the host, never to the module: every start of the module's host sets
+// that variable to it (its default when never set), and it is never part of
+// ADCVSET or a SET line (host_control_values below).
 #pragma once
 
+#include <map>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "geometry.h"
@@ -60,9 +69,15 @@ struct Control {
   int bold_value = 0;
   std::string unit;                // numeric slider label unit ("%")
   bool unit_prefix = false;        // "$5" rather than "5%"
+  // A host control (catalog `host`): the variable its value is set in when
+  // the module's host starts ("ADNE16IMXSPEED"). Empty: the module's own
+  // control, sent as ADCVSET. Always a settable control with a name
+  // host_variable_ok() accepts (the parser drops any other).
+  std::string host;
 
   // A control the user can set and the host receives a value for.
   bool settable() const;
+  bool for_host() const { return !host.empty(); }
   // A slider that moves between labelled stops rather than over min..max.
   bool stepped() const { return type == ControlType::slider && !items.empty(); }
   int stop_count() const;
@@ -153,5 +168,34 @@ struct Catalog {
 
 bool parse_catalog(const std::string& json_text, Catalog& out, std::string* error);
 bool load_catalog(const std::wstring& path, Catalog& out, std::string* error);
+
+// Whether a host control may name `name` (catalog `host`): one of the host's
+// own variables, "AD" and a capital letter or digit, then capitals, digits
+// and underscores ("ADNE16IMXSPEED"), and none of those the front end sets
+// itself at every start (ADSTREAM, ADSCREENW, ADCVSET, ADSTATE, ADSOUND, ...:
+// a catalog must not override them). A control naming anything else, or a
+// variable a control before it in the file names, can do nothing, and the
+// parser drops it, as it does a host control without a value (a button).
+bool host_variable_ok(std::string_view name);
+
+// What a module's host is started with of its control values (DESIGN.md §1,
+// §6a). `values` is the module's [Module.<id>] section (catalog index ->
+// value: settings.ini's, or the settings window's edits; null when none).
+struct HostControlValues {
+  // ADCVSET: the module's own settable controls that have a value, each
+  // clamped by the catalog, ascending by index ("0=50,1=1"; "" for none). A
+  // value without a control, or for a button or a host control, is left out.
+  std::string cvset;
+  // The host controls' variables, each set to its control's value (clamped)
+  // or, with none, its default, ascending by index: every start of the
+  // module's host gets them (add_host_control_env, host_process.h).
+  std::vector<std::pair<std::wstring, std::wstring>> env;
+  bool operator==(const HostControlValues&) const = default;
+};
+HostControlValues host_control_values(const Module& m, const std::map<int, int>* values);
+// The same from every module's values (Settings::controls; the dialog's edits).
+HostControlValues host_control_values(const Module& m, const std::map<std::string, std::map<int, int>>& all);
+// "ADNE16IMXSPEED=25,ADFOO=1" for the logs ("" for none).
+std::string describe_env(const std::vector<std::pair<std::wstring, std::wstring>>& env);
 
 } // namespace adw::scr

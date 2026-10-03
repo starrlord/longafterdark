@@ -795,7 +795,30 @@ TEST(probe_module_kinds) {
   CHECK(probe_module(asa_m).kind == LaneKind::ne16);
   CHECK(probe_module(asa_x).kind == LaneKind::unsupported && probe_module(ani).kind == LaneKind::unsupported);
   CHECK(probe_module(temp_dir() + "adw_core_test_does_not_exist.ad").kind == LaneKind::unreadable);
-  for (auto& p : {pe, pe64, ne, dos, txt, asa, asa_m, asa_x, ani}) DeleteFileW(widen(p).c_str());
+  // Intermission's other data files go by their extension (the type of the
+  // reader INTRMLIB gave them to), whatever they hold and however short, but
+  // an MZ executable so named is what its header says.
+  std::string fli = write_temp("anim.fli", {0x10, 0, 0, 0, 0x12, 0xAF, 0x40, 1});
+  std::string flc = write_temp("anim.Flc", {1, 2, 3});
+  std::string mrf = write_temp("morph.mrf", {'M', 'o', 'r', 'p', 'h', 0});
+  std::string msv = write_temp("group.MSV", {0, 0, 4, 0});
+  std::string empty = write_temp("empty.msv", {});
+  std::string mz_fli = write_temp("prog.fli", image("NE\x05\x0a", 0));
+  std::string fli_txt = write_temp("anim.fli.txt", {0, 0, 0, 0});
+  CHECK(probe_module(fli).kind == LaneKind::ne16 && probe_module(fli).detail == "Intermission FLI file");
+  CHECK(probe_module(flc).kind == LaneKind::ne16 && probe_module(flc).detail == "Intermission FLC file");
+  CHECK(probe_module(mrf).kind == LaneKind::ne16 && probe_module(mrf).detail == "Intermission MRF file");
+  CHECK(probe_module(msv).kind == LaneKind::ne16 && probe_module(empty).kind == LaneKind::ne16);
+  CHECK(probe_module(mz_fli).kind == LaneKind::ne16 && probe_module(mz_fli).detail == "NE (Win16)");
+  CHECK(probe_module(fli_txt).kind == LaneKind::unsupported);
+  CHECK(std::string(intermission_data_type("C:\\x\\EINSTEIN.FLI")) == "FLI" &&
+        std::string(intermission_data_type("a/b.flc")) == "FLC" && std::string(intermission_data_type("P.Mrf")) == "MRF" &&
+        std::string(intermission_data_type("m.msv")) == "MSV");
+  CHECK(!intermission_data_type("x.asa") && !intermission_data_type("x.imx") && !intermission_data_type("x.fli2") &&
+        !intermission_data_type("dir.fli\\file") && !intermission_data_type("noext") && !intermission_data_type(""));
+  for (auto& p : {pe, pe64, ne, dos, txt, asa, asa_m, asa_x, ani, fli, flc, mrf, msv, empty, mz_fli, fli_txt}) {
+    DeleteFileW(widen(p).c_str());
+  }
 }
 
 // ---- run_host in-process -----------------------------------------------------

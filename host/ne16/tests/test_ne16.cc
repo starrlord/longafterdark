@@ -1345,6 +1345,7 @@ struct Script {
   // pixel_cost(): After Dark's (the base's) unless a knob is named.
   const char* pixel_knob = nullptr;
   uint32_t pixel_def = 0;
+  const char* speed_knob = nullptr;  // speed_knob(): none (the base's) unless named
   bool quiet = false;  // call() and after_call() leave `seen` alone (long runs)
   // Guest work of the test's own, at load, in every call (with its 1-based
   // number) and at unload.
@@ -1404,6 +1405,7 @@ struct ScriptedProtocol : ne16::Protocol16 {
   PixelCost pixel_cost() const override {
     return script.pixel_knob ? PixelCost{script.pixel_knob, script.pixel_def} : Protocol16::pixel_cost();
   }
+  const char* speed_knob() const override { return script.speed_knob ? script.speed_knob : Protocol16::speed_knob(); }
   bool set_control(int index, int32_t value) override {
     seen.push_back("set " + std::to_string(index) + " " + std::to_string(value));
     return index == 1;  // this module has one control
@@ -1806,7 +1808,12 @@ void test_lane_machinery() {
     size_t calls = 0, idle = 0, idle_run = 0, afters = 0;
     bool after_long = true;  // the frame after the one that finished a long call made a call
     size_t long_end_new = 0;  // the calls that frame started once the long call had returned
+    std::vector<size_t> per_frame;  // the calls each frame made
+    uint32_t speed = 0, max_draws = 0;  // the lane's machine speed (percent) and calls a frame at most
   };
+  // The scripted protocol's speed knob (Protocol16::speed_knob) for the next
+  // pace() runs: none unless a test names one.
+  const char* pace_speed_knob = nullptr;
   // A long call first (first_wait_us of waiting): its loop after the wait as
   // every call's, or with wait_only its wait alone, or with work_first its
   // loop before the wait (a frame then ends inside it after the work).
@@ -1823,6 +1830,7 @@ void test_lane_machinery() {
     LaneContext ctx{env, screen, clock, in};
     script = Script{};
     script.carry = carry;
+    script.speed_knob = pace_speed_knob;
     script.quiet = true;
     script.wait_call = first_wait_us && !work_first ? 1 : 0;  // a long call first: frames end inside it
     script.wait_us = first_wait_us;
@@ -1850,6 +1858,8 @@ void test_lane_machinery() {
       CHECK(false, "init for the pacing");
       return out;
     }
+    out.speed = lane.speed_percent();
+    out.max_draws = lane.max_draws();
     size_t run = 0;
     bool finished_long = false;
     for (int f = 0; f < frames; f++) {
@@ -1860,6 +1870,7 @@ void test_lane_machinery() {
         CHECK(false, "pacing: frame %d failed", f);
         break;
       }
+      out.per_frame.push_back(proto->calls - before);
       const bool made_call = proto->calls != before;
       if (finished_long && !made_call) out.after_long = false;
       finished_long = !waited_before && std::find(seen.begin(), seen.end(), "waited") != seen.end();
@@ -1956,6 +1967,119 @@ void test_lane_machinery() {
         "row without one)",
         p.long_end_new, p.after_long ? "the next frame made a call" : "the next frame made none", p.idle_run);
 
+  // The modeled machine's speed (lane.hh "Pacing", Speed): the protocol's
+  // knob (Protocol16::speed_knob, the IMX protocol's ADNE16IMXSPEED), a
+  // percent that scales each frame's budget and ADMAXDRAWS down and the bound
+  // on what is owed up. Unset or 100, nothing changes, frame for frame; a
+  // protocol without the knob ignores it.
+  {
+    const char* const kKnob = ne16::kImxSpeedKnob;
+    const std::map<std::string, std::string> at100 = {{kKnob, "100"}}, at50 = {{kKnob, "50"}}, at25 = {{kKnob, "25"}},
+                                             at6 = {{kKnob, "6"}};
+    // Unset and 100: the frames' calls exactly as without the knob, for a
+    // light call, the 1.69-, 3.77- and 9.98-budget ones (the last clamped).
+    struct Work {
+      uint16_t outer, inner;
+    };
+    for (const Work w : {Work{1, 20000}, Work{11, 64000}, Work{24, 65470}, Work{64, 65000}}) {
+      pace_speed_knob = nullptr;
+      const Pace none = pace(true, {}, w.outer, w.inner, 60);
+      pace_speed_knob = kKnob;
+      const Pace unset = pace(true, {}, w.outer, w.inner, 60);
+      const Pace full = pace(true, at100, w.outer, w.inner, 60);
+      CHECK(unset.per_frame == none.per_frame && full.per_frame == none.per_frame && none.calls > 0 &&
+                unset.speed == 100 && full.speed == 100 && full.max_draws == 64 && none.idle_run == full.idle_run,
+            "%u x (%u + 3): the knob unset and at 100 change nothing (%zu, %zu and %zu calls, speed %u/%u, %u a frame "
+            "at most)",
+            unsigned(w.outer), unsigned(w.inner), none.calls, unset.calls, full.calls, unset.speed, full.speed,
+            full.max_draws);
+    }
+    pace_speed_knob = nullptr;
+    p = pace(true, at25, 1, 20000, 60);
+    CHECK(p.speed == 100 && p.max_draws == 64 && p.calls == 1250,
+          "a protocol without the knob ignores it: speed %u, %u calls a frame at most, %zu calls (want 1250)", p.speed,
+          p.max_draws, p.calls);
+    pace_speed_knob = kKnob;
+    // The budget: a call of 1 × 20,003 + 2 = 20,005, never capped (20.8 a
+    // frame at 100, 1.25 at 6), makes ceil(60 frames × the budget / 20,005)
+    // calls — the budget being 416,675 × percent / 100.
+    for (const uint32_t percent : {100u, 50u, 25u, 12u, 6u}) {
+      const uint64_t budget = 416675ull * percent / 100;
+      const uint64_t want = (60 * budget + 20004) / 20005;
+      p = pace(true, {{kKnob, std::to_string(percent)}}, 1, 20000, 60);
+      CHECK(p.speed == percent && p.calls == want && p.idle == 0,
+            "at %u%% the budget is %llu: %zu calls of 20,005 in 60 frames (want %llu), %zu without one", percent,
+            (unsigned long long)budget, p.calls, (unsigned long long)want, p.idle);
+    }
+    // The cap: ADMAXDRAWS × percent / 100 to the nearest call, at least one —
+    // with calls of 6 instructions, every frame makes that many.
+    struct Cap {
+      const char* max_draws;
+      uint32_t percent, want;
+    };
+    for (const Cap c : {Cap{"64", 100, 64}, Cap{"64", 25, 16}, Cap{"64", 12, 8}, Cap{"64", 6, 4}, Cap{"10", 25, 3},
+                        Cap{"10", 50, 5}, Cap{"10", 6, 1}, Cap{"1", 1, 1}}) {
+      p = pace(true, {{"ADMAXDRAWS", c.max_draws}, {kKnob, std::to_string(c.percent)}}, 1, 1, 30);
+      const bool every = std::all_of(p.per_frame.begin(), p.per_frame.end(), [&](size_t n) { return n == c.want; });
+      CHECK(p.max_draws == c.want && every && p.calls == 30 * c.want,
+            "ADMAXDRAWS=%s at %u%%: %u calls a frame at most (want %u), %zu calls in 30 frames", c.max_draws, c.percent,
+            p.max_draws, c.want, p.calls);
+    }
+    // The bound on what is owed is the same work at every speed
+    // (kMaxOwedBudgets × 100 / percent budgets), so a heavy call slows with the
+    // machine instead of being clamped: the 4.99-budget call, unclamped at
+    // 100 (13 calls in 60 frames), is 9.98 budgets at 50 (7) and 19.96 at 25
+    // (4) — at a bound of six budgets both would be clamped to a call every
+    // sixth frame (10), the same at 50 and at 25.
+    struct Owed {
+      uint32_t percent;
+      size_t calls, idle_run;
+    };
+    for (const Owed o : {Owed{100, 13, 4}, Owed{50, 7, 9}, Owed{25, 4, 19}}) {
+      p = pace(true, {{kKnob, std::to_string(o.percent)}}, 32, 65000, 60);
+      CHECK(p.calls == o.calls && p.idle_run == o.idle_run,
+            "4.99 budgets of the full machine at %u%%: %zu calls in 60 frames (want %zu), at most %zu in a row without "
+            "one (want %zu)",
+            o.percent, p.calls, o.calls, p.idle_run, o.idle_run);
+    }
+    // ...and the clamped 9.98-budget call comes every kMaxOwedBudgets × 100 /
+    // percent frames: every 6th at 100, 12th at 50, 24th at 25.
+    for (const uint32_t percent : {100u, 50u, 25u}) {
+      const size_t every = size_t(kBound * 100 / percent);
+      p = pace(true, {{kKnob, std::to_string(percent)}}, 64, 65000, 60);
+      CHECK(p.calls == (60 + every - 1) / every && p.idle_run == every - 1,
+            "9.98 budgets of the full machine at %u%%: clamped at %zu budgets, %zu calls in 60 frames, at most %zu in a "
+            "row without one",
+            percent, every, p.calls, p.idle_run);
+    }
+    // What the knob says: a whole percent, 1..100; outside it clamped, anything
+    // else (logged) 100.
+    struct Value {
+      const char* text;
+      uint32_t want;
+    };
+    for (const Value v : {Value{"", 100}, Value{"33", 33}, Value{"1", 1}, Value{"0", 1}, Value{"-5", 1},
+                          Value{"250", 100}, Value{"12.5", 100}, Value{"fast", 100}}) {
+      p = pace(true, {{kKnob, v.text}}, 1, 20000, 2);
+      CHECK(p.speed == v.want, "%s='%s': %u%% (want %u)", kKnob, v.text, p.speed, v.want);
+    }
+    // No budget (ADMIPS=0): one call a frame, whatever the speed.
+    p = pace(true, {{"ADMIPS", "0"}, {kKnob, "25"}}, 11, 64000, 60);
+    CHECK(p.calls == 60 && p.idle == 0 && p.max_draws == 1, "ADMIPS=0 at 25%%: a call every frame (%zu)", p.calls);
+    // A call heavier than the slowed budget: the 1.69-budget call is 3.38
+    // budgets at 50 and 6.76 at 25 (below their bounds of 12 and 24), so it
+    // comes half and a quarter as often (36 calls in 60 frames at 100), and
+    // at 6 (28.2 budgets, below 100) every 28th frame.
+    p = pace(true, at50, 11, 64000, 60);
+    const Pace q = pace(true, at25, 11, 64000, 60);
+    const Pace r = pace(true, at6, 11, 64000, 60);
+    CHECK(p.calls == 18 && q.calls == 9 && r.calls == 3 && r.idle_run == 27,
+          "the 1.69-budget call at 50%%, 25%% and 6%%: %zu, %zu and %zu calls in 60 frames (want 18, 9 and 3), at 6%% at "
+          "most %zu in a row without one (want 27)",
+          p.calls, q.calls, r.calls, r.idle_run);
+    pace_speed_knob = nullptr;
+  }
+
   // The pixel cost is the protocol's (Protocol16::pixel_cost): After Dark's
   // ADPIXCOST, 2, and an Intermission protocol's ADNE16IMXPIXCOST, 4, neither
   // knob changing the other's; and it is what a blit costs the budget — a
@@ -1968,6 +2092,11 @@ void test_lane_machinery() {
     CHECK(std::string(imx.knob) == "ADNE16IMXPIXCOST" && imx.def == ne16::kImxPixelCost && ne16::kImxPixelCost == 4 &&
               std::string(ad3.knob) == "ADPIXCOST" && ad3.def == 2,
           "the protocols' pixel costs: IMX %s %u, AD3 %s %u", imx.knob, imx.def, ad3.knob, ad3.def);
+    // The speed knob (lane.hh "Pacing", Speed) is the IMX protocol's alone.
+    const char* imx_speed = ne16::make_imx_protocol(layout, ne16::ImxForm::asa)->speed_knob();
+    CHECK(imx_speed && std::string(imx_speed) == "ADNE16IMXSPEED" && std::string(ne16::kImxSpeedKnob) == imx_speed &&
+              !ne16::make_ad3_protocol(layout)->speed_knob() && !ne16::make_scr_protocol(layout)->speed_knob(),
+          "the protocols' speed knobs: IMX %s, AD3 and scr none", imx_speed ? imx_speed : "(none)");
     struct Case {
       bool imx;
       std::map<std::string, std::string> vars;
@@ -2658,6 +2787,31 @@ void test_kinds() {
             std::string(ne16::reader_file(ne16::ImxForm::asa)) == "IMASAPLY.IMQ" &&
             !ne16::reader_file(ne16::ImxForm::imq),
         "each form's reader file: IMIMXPLY.IMQ, IMASAPLY.IMQ, none (an IMQ module is its own)");
+  // Intermission's other data files: a form by type, read by IM<type>PLY.IMQ.
+  {
+    using ne16::ImxForm;
+    const std::pair<const char*, ImxForm> kTypes[] = {
+        {"FLI", ImxForm::fli}, {"flc", ImxForm::flc}, {"Mrf", ImxForm::mrf}, {"MSV", ImxForm::msv}};
+    for (const auto& [type, want] : kTypes) {
+      ImxForm f = ImxForm::imx;
+      CHECK(ne16::form_for_type(type, &f) && f == want && ne16::data_form(f), "type %s: its form, a data form", type);
+    }
+    ImxForm f = ImxForm::imq;
+    CHECK(!ne16::form_for_type("ASA", &f) && !ne16::form_for_type("IMX", &f) && !ne16::form_for_type(nullptr, &f) &&
+              f == ImxForm::imq,
+          "no other type has a form by extension (an ASA animation goes by its header)");
+    CHECK(ne16::data_form(ImxForm::asa) && !ne16::data_form(ImxForm::imx) && !ne16::data_form(ImxForm::imq),
+          "an ASA animation is data; IMX and IMQ modules are code");
+    CHECK(std::string(ne16::form_name(ImxForm::fli)) == "fli" && std::string(ne16::form_name(ImxForm::flc)) == "flc" &&
+              std::string(ne16::form_name(ImxForm::mrf)) == "mrf" &&
+              std::string(ne16::form_name(ImxForm::msv)) == "msv",
+          "the data forms' names");
+    CHECK(std::string(ne16::reader_file(ImxForm::fli)) == "IMFLIPLY.IMQ" &&
+              std::string(ne16::reader_file(ImxForm::flc)) == "IMFLCPLY.IMQ" &&
+              std::string(ne16::reader_file(ImxForm::mrf)) == "IMMRFPLY.IMQ" &&
+              std::string(ne16::reader_file(ImxForm::msv)) == "IMMSVPLY.IMQ",
+          "the data forms' readers: IMFLIPLY, IMFLCPLY, IMMRFPLY, IMMSVPLY");
+  }
   {
     const char asa_n[4] = {'A', 'n', 'i', 'N'}, asa_m[4] = {'A', 'n', 'i', 'M'}, other[4] = {'A', 'n', 'i', 'X'};
     CHECK(asa_header(asa_n) && asa_header(asa_m) && !asa_header(other) && !asa_header("MZ\x90\x00"),
@@ -2824,11 +2978,13 @@ struct ImRig {
   };
   std::vector<Draw> draws;
   // The IMIMXPLY stand-in: its answers by message (1 otherwise), what it saw.
-  // IMASAPLY (the ASA reader) and FAKEIMQ (an IMQ module, its own reader) are
-  // the same stand-in under their names.
+  // IMASAPLY (the ASA reader), FAKEIMQ (an IMQ module, its own reader) and
+  // the readers of the other data files (IMFLIPLY, IMFLCPLY, IMMRFPLY,
+  // IMMSVPLY) are the same stand-in under their names.
   std::map<uint16_t, uint32_t> answers;
   uint8_t palette_type = 0;  // written at +0x53 by its QUERY
   uint32_t query_clears = 0; // flags its QUERY clears (0x1000: a reader's QUERY without a path)
+  uint32_t query_sets = 0;   // flags its QUERY sets (0x0800: a reader, MultiSaver's or Morph's)
   bool post_task = false;    // its DRAW posts a message to the task (FORCETOWAKE)
   struct Seen {
     uint16_t msg = 0, hwnd = 0, hdc = 0, hpal = 0, reader = 0, index = 0xFFFF;
@@ -2879,7 +3035,7 @@ struct ImRig {
     });
     r.add("SETIMX", 7, "SETCURRSAVER", Conv16::pascal_, true, 0, [](Call16& c) { c.ret(0); });
     // SAVERMAIN(LPVOID info, WORD msg): info pushed first, msg last.
-    for (const char* reader : {"IMIMXPLY", "IMASAPLY", "FAKEIMQ"}) {
+    for (const char* reader : {"IMIMXPLY", "IMASAPLY", "FAKEIMQ", "IMFLIPLY", "IMFLCPLY", "IMMRFPLY", "IMMSVPLY"}) {
       std::string module = reader;
       r.add(reader, 2, "SAVERMAIN", Conv16::pascal_, false, 6, [this, module](Call16& c) {
         uint32_t info = c.ptr();
@@ -2901,7 +3057,7 @@ struct ImRig {
         if (msg == 7) {
           c.rt.write_str(info + 0x14, "Fake Saver", 41);
           c.rt.wr8(info + 0x53, palette_type);
-          c.rt.wr32(info, c.rt.rd32(info) & ~query_clears);
+          c.rt.wr32(info, (c.rt.rd32(info) & ~query_clears) | query_sets);
         }
         if (msg == 0 && post_task) {
           call("USER", "PostAppMessage", {win16::w16(win16::kernel16_current_task(c.rt)), win16::w16(0x0200),
@@ -2952,6 +3108,21 @@ struct ImRig {
         calls.push_back(fname + arg);
       };
     }
+  }
+  // INTRMLIB's module table (FINDALLMODULES, FREEMODINFO) as a stand-in:
+  // an empty table of `count` records. Not in every rig: the palette tests
+  // load a real INTRMLIB.DLL image of palettes.
+  void intrmlib_modules(uint16_t count) {
+    using win16::Call16;
+    using win16::Conv16;
+    rt.shims().add("INTRMLIB", 85, "FINDALLMODULES", Conv16::pascal_, false, 4, [this, count](Call16& c) {
+      c.rt.wr16(c.ptr(), count);
+      calls.push_back("FINDALLMODULES");
+      c.ret32(0);
+    });
+    rt.shims().add("INTRMLIB", 88, "FREEMODINFO", Conv16::pascal_, true, 0, [this](Call16&) {
+      calls.push_back("FREEMODINFO");
+    });
   }
   void wrap(const char* mod, const char* name_, win16::Shim16Fn fn) { rt.shims().find_name(mod, name_)->fn = std::move(fn); }
   uint32_t call(const char* mod, const char* fn, std::initializer_list<win16::Arg16> args) {
@@ -3508,7 +3679,8 @@ void test_imx_forms() {
   };
   // configure_runtime, mount, load, two passes, unload, close: what the stand-ins saw.
   using Vars = std::initializer_list<std::pair<std::string, std::string>>;
-  auto run = [&](const std::string& module, ne16::ImxForm form, Vars kv, uint32_t query_clears = 0) {
+  auto run = [&](const std::string& module, ne16::ImxForm form, Vars kv, uint32_t query_clears = 0,
+                 uint32_t query_sets = 0) {
     std::map<std::string, std::string> vars = {{"AD_ASSETS_DIR", root}};
     vars.insert(kv.begin(), kv.end());
     Env env = Env::parse(vars);
@@ -3519,6 +3691,8 @@ void test_imx_forms() {
     p->configure_runtime(opts, ctx0);
     ImRig g(opts);
     g.query_clears = query_clears;
+    g.query_sets = query_sets;
+    g.intrmlib_modules(60);
     LaneContext ctx{env, g.screen, g.clock, input};
     p->mount(g.rt, env);
     g.calls.clear();
@@ -3531,7 +3705,7 @@ void test_imx_forms() {
     }
     if (r.ok) p->unload();
     p->close();
-    r.calls = g.only({"LoadLibrary", "SAVERMAIN", "FreeLibrary"});
+    r.calls = g.only({"LoadLibrary", "SAVERMAIN", "FreeLibrary", "FINDALLMODULES", "FREEMODINFO"});
     r.seen = g.seen;
     return r;
   };
@@ -3577,15 +3751,66 @@ void test_imx_forms() {
   q = run("FAKEIMQ.IMQ", ne16::ImxForm::imq, {}, ne16::iminfo::kSaver);
   CHECK(!q.ok && q.calls == "LoadLibrary(C:\\SAVER\\FAKEIMQ.IMQ) SAVERMAIN(10) SAVERMAIN(7) SAVERMAIN(11) FreeLibrary",
         "an IMQ whose QUERY clears 0x1000 is a reader: FREE, freed, refused (%s)", q.calls.c_str());
+  // One that keeps 0x1000 beside 0x0800 is a reader too (INTERMIS 6:03d8):
+  // the Morph, MultiSaver and Sequencer readers, listed for their editors.
+  q = run("FAKEIMQ.IMQ", ne16::ImxForm::imq, {}, 0, ne16::iminfo::kIsReader);
+  CHECK(!q.ok && q.calls == "LoadLibrary(C:\\SAVER\\FAKEIMQ.IMQ) SAVERMAIN(10) SAVERMAIN(7) SAVERMAIN(11) FreeLibrary",
+        "an IMQ whose QUERY says saver and reader (0x1800) is refused (%s)", q.calls.c_str());
 
-  // A button on an IMQ module: LOAD, QUERY, CONFIGURE (+4 = the owner), FREE, through itself.
-  {
+  // The other data files (package.hh "Form"): the reader of their type, from
+  // the engine dir, else the module dir; LOAD and QUERY with the file's path.
+  const std::pair<const char*, const char*> kReaders[] = {{"IMFLIPLY", "FLI"}, {"IMFLCPLY", "FLC"}, {"IMMRFPLY", "MRF"}};
+  for (const auto& [reader, type] : kReaders) {
+    const std::string file = std::string("DATA.") + type;
+    ne16::ImxForm form = ne16::ImxForm::imx;
+    ne16::form_for_type(type, &form);
+    put("SAVER\\" + file, std::string("made-up ") + type + " bytes");
+    Ran d = run(file, form, {});
+    CHECK(!d.ok && d.calls.empty(), "%s without %s.IMQ: nothing loaded, the load fails (%s)", file.c_str(), reader,
+          d.calls.c_str());
+    put(std::string("SAVER\\") + reader + ".IMQ", std::string("stands for ") + reader);
+    d = run(file, form, {{"ADNE16READER", "native"}});
+    CHECK(d.ok && d.name == "imx/imq" &&
+              d.calls == std::string("LoadLibrary(C:\\SAVER\\") + reader +
+                             ".IMQ) SAVERMAIN(10) SAVERMAIN(7) SAVERMAIN(1) SAVERMAIN(0) SAVERMAIN(2) SAVERMAIN(11) "
+                             "FreeLibrary",
+          "%s: %s.IMQ beside it, LOAD, QUERY, START, DRAW, STOP, FREE; ADNE16READER=native ignored (%s)", file.c_str(),
+          reader, d.calls.c_str());
+    CHECK(!d.seen.empty() && d.seen[0].module == reader && d.seen[0].msg == 10 && d.seen[0].index == 0 &&
+              d.seen[0].file == file && d.seen[0].path == "C:\\SAVER\\" + file,
+          "%s: LOAD's record has the file's path and reader index 0 (%s)", file.c_str(),
+          d.seen.empty() ? "" : d.seen[0].path.c_str());
+    put(std::string("ENGINE\\") + reader + ".IMQ", "the engine dir's copy wins");
+    d = run(file, form, {});
+    CHECK(d.ok && d.calls.rfind(std::string("LoadLibrary(C:\\WINDOWS\\SYSTEM\\") + reader + ".IMQ)", 0) == 0,
+          "%s: the engine dir's reader first (%s)", file.c_str(), d.calls.c_str());
+    drop(std::string("ENGINE\\") + reader + ".IMQ");
+  }
+  // A MultiSaver group finds its modules in INTRMLIB's table, which INTERMIS
+  // made at its start: FINDALLMODULES before the group's LOAD, FREEMODINFO
+  // after its FREE (the stand-in's table is empty).
+  put("SAVER\\GROUP.MSV", std::string(4, '\0') + "made-up group");
+  put("SAVER\\IMMSVPLY.IMQ", "stands for the MultiSaver reader");
+  Ran v = run("GROUP.MSV", ne16::ImxForm::msv, {});
+  CHECK(v.ok && v.calls == "LoadLibrary(INTRMLIB.DLL) FINDALLMODULES LoadLibrary(C:\\SAVER\\IMMSVPLY.IMQ) SAVERMAIN(10) "
+                           "SAVERMAIN(7) SAVERMAIN(1) SAVERMAIN(0) SAVERMAIN(2) SAVERMAIN(11) FreeLibrary FREEMODINFO "
+                           "FreeLibrary",
+        "an MSV group: INTRMLIB's module table around its whole run (%s)", v.calls.c_str());
+  Ran f = run("DATA.FLI", ne16::ImxForm::fli, {});
+  CHECK(f.ok && f.calls.find("FINDALLMODULES") == std::string::npos, "no other form makes the table (%s)",
+        f.calls.c_str());
+
+  // A button on an IMQ module: LOAD, QUERY, CONFIGURE (+4 = the owner), FREE,
+  // through itself — with INTRMLIB, the control panel's (INTERMIS.EXE imports
+  // it), loaded around it when the package has one.
+  for (const bool intrmlib : {false, true}) {
     Env env = Env::parse({{"AD_ASSETS_DIR", root}});
     const ne16::Ne16Layout layout = ne16::resolve_layout(pkg + "\\SAVER\\FAKEIMQ.IMQ", root, exists);
     auto p = ne16::make_imx_protocol(layout, ne16::ImxForm::imq);
     win16::Runtime16Options opts;
     p->configure_button_runtime(opts, env);
     ImRig g(opts);
+    if (intrmlib) g.intrmlib_modules(0);
     LaneContext ctx{env, g.screen, g.clock, input};
     p->mount(g.rt, env);
     g.calls.clear();
@@ -3593,10 +3818,12 @@ void test_imx_forms() {
     p->close();
     CHECK(b.ran && b.failure.empty() &&
               g.only({"LoadLibrary", "SAVERMAIN", "FreeLibrary"}) ==
-                  "LoadLibrary(C:\\SAVER\\FAKEIMQ.IMQ) SAVERMAIN(10) SAVERMAIN(7) SAVERMAIN(8) SAVERMAIN(11) "
-                  "FreeLibrary" &&
+                  std::string("LoadLibrary(INTRMLIB.DLL) LoadLibrary(C:\\SAVER\\FAKEIMQ.IMQ) SAVERMAIN(10) SAVERMAIN(7) "
+                              "SAVERMAIN(8) SAVERMAIN(11) FreeLibrary") +
+                      (intrmlib ? " FreeLibrary" : "") &&
               g.seen.size() == 4 && g.seen[2].hwnd == 0xC004 && g.seen[2].path_ptr == 0,
-          "an IMQ module's button: CONFIGURE through itself, owned by --owner (%s)", g.joined().c_str());
+          "an IMQ module's button: CONFIGURE through itself, owned by --owner; INTRMLIB %s (%s)",
+          intrmlib ? "loaded and freed around it" : "looked for (none here)", g.joined().c_str());
   }
   for (const std::string& f : files) DeleteFileA(f.c_str());
   for (auto d = dirs.rbegin(); d != dirs.rend(); ++d) RemoveDirectoryA(d->c_str());

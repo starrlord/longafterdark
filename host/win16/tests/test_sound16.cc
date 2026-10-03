@@ -1618,6 +1618,65 @@ void test_mci() {
   CHECK(g.mci("close all wait") == 0 && g.fake.songs.empty() && g.mci("status a mode") == 263, "close all");
 }
 
+// mciSendCommand(MCI_OPEN): the device MCI_OPEN_PARMS names (the ID is not
+// looked at), as "open" of a command string: the sequencer by name or type
+// number, with an element and an alias, its ID written to wDeviceID; any
+// other type (DictaBird's "waveaudio" with a new element) is
+// MCIERR_DEVICE_NOT_INSTALLED. Without an engine, the silent device's
+// MCIERR_INVALID_DEVICE_ID. mciGetErrorString: TRUE and a text for the
+// errors this machine answers, cut to the buffer; FALSE and "" otherwise.
+void test_mci_open_command() {
+  Rig g;
+  g.fake.song_length_us = 2'000'000;
+  win32::Vfs& vfs = g.rt.vfs();
+  vfs.mount_overlay("C:\\SAVER", "", "");
+  vfs.add_virtual_file("C:\\SAVER\\SONG.MID", {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, 0, 96});
+  vfs.set_cwd("C:\\SAVER");
+  const uint32_t parms = uint32_t(g.data(64)) << 16;
+  auto open = [&](uint16_t id, uint32_t flags, uint32_t type, uint32_t element, uint32_t alias) {
+    for (uint32_t i = 0; i < 20; i += 4) g.rt.wr32(parms + i, 0);
+    g.rt.wr32(parms + 8, type);
+    g.rt.wr32(parms + 12, element);
+    g.rt.wr32(parms + 16, alias);
+    return g.api("MMSYSTEM", "mciSendCommand", {w16(id), w16(0x0803), l16(flags), l16(parms)});
+  };
+  auto close = [&](uint16_t id) { return g.api("MMSYSTEM", "mciSendCommand", {w16(id), w16(0x0804), l16(0), l16(0)}); };
+  CHECK(open(0, 0x2002, g.str("sequencer"), 0, 0) == 0 && g.rt.rd16(parms + 4) == 1,
+        "MCI_OPEN type \"sequencer\", wait: device 1 in wDeviceID (%u)", g.rt.rd16(parms + 4));
+  CHECK(close(1) == 0, "MCI_CLOSE of it");
+  CHECK(open(77, 0x3000, 523, 0, 0) == 0 && g.rt.rd16(parms + 4) == 1 && close(1) == 0,
+        "MCI_OPEN_TYPE_ID 523 (MCI_DEVTYPE_SEQUENCER), any wDeviceID: the sequencer");
+  CHECK(open(0, 0x2600, g.str("sequencer"), g.str("SONG.MID"), g.str("bob")) == 0 && g.fake.songs.size() == 1,
+        "type, element and alias: the song opened");
+  std::string ret;
+  CHECK(g.mci("status bob length", &ret) == 0 && ret == "2000", "the alias names it to the strings (%s)", ret.c_str());
+  CHECK(close(g.rt.rd16(parms + 4)) == 0 && g.fake.songs.empty(), "closed by its ID");
+  CHECK(open(0, 0x2202, g.str("waveaudio"), g.str(""), 0) == 306,
+        "DictaBird's open (waveaudio, a new element): MCIERR_DEVICE_NOT_INSTALLED");
+  CHECK(open(0, 0x3000, 522, 0, 0) == 306, "MCI_DEVTYPE_WAVEFORM_AUDIO by number: the same");
+  CHECK(open(0, 0x0200, 0, g.str("NOSUCH.MID"), 0) == 275, "an element alone: by its extension, as the strings");
+  CHECK(open(0, 0x0000, 0, 0, 0) == 292, "nothing named: MCIERR_MISSING_DEVICE_NAME");
+  CHECK(g.api("MMSYSTEM", "mciSendCommand", {w16(0), w16(0x0803), l16(0x2000), l16(0)}) == 273,
+        "no MCI_OPEN_PARMS: MCIERR_MISSING_PARAMETER");
+  {
+    Rig off(false);
+    const uint32_t p2 = uint32_t(off.data(64)) << 16;
+    off.rt.wr32(p2 + 8, off.str("sequencer"));
+    CHECK(off.api("MMSYSTEM", "mciSendCommand", {w16(0), w16(0x0803), l16(0x2000), l16(p2)}) == 257,
+          "no engine: the silent device's MCIERR_INVALID_DEVICE_ID");
+  }
+  const uint32_t buf = uint32_t(g.data(128)) << 16;
+  auto text = [&](uint32_t code, uint16_t len) {
+    g.rt.write_str(buf, "junk", 8);
+    const uint32_t r = g.api("MMSYSTEM", "mciGetErrorString", {l16(code), l16(buf), w16(len)}) & 0xFFFF;
+    return std::to_string(r) + ":" + g.rt.read_str(buf);
+  };
+  CHECK(text(306, 128) == "1:The device is not installed.", "mciGetErrorString(306): %s", text(306, 128).c_str());
+  CHECK(text(257, 128).rfind("1:The MCI device ID", 0) == 0, "257 too: %s", text(257, 128).c_str());
+  CHECK(text(306, 8) == "1:The dev", "cut to the buffer, NUL-terminated: %s", text(306, 8).c_str());
+  CHECK(text(12345, 128) == "0:", "an unknown code: FALSE and \"\" (%s)", text(12345, 128).c_str());
+}
+
 // The ADXPL3xx/40 music gates (AUDIO.md §2.9, §8.5).
 void test_gates() {
   Rig g;
@@ -1959,6 +2018,7 @@ int main() {
     test_timers_without_engine();
     test_timer_determinism();
     test_mci();
+    test_mci_open_command();
     test_gates();
     test_real_engine();
     test_real_engine_midi();

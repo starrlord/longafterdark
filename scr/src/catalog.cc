@@ -11,6 +11,7 @@
 #include <phosg/JSON.hh>
 
 #include "paths.h"
+#include "settings.h"
 
 namespace adw::scr {
 
@@ -118,6 +119,58 @@ std::string Control::value_label(int value) const {
 const Control* Module::control(int index) const {
   for (const auto& c : controls) if (c.index == index) return &c;
   return nullptr;
+}
+
+bool host_variable_ok(std::string_view name) {
+  // What the front end sets at every start (the saver's windows, the
+  // dialog's live preview, thumbnails and module buttons; the Linux player's
+  // own two): never a catalog's to change.
+  static constexpr std::string_view kOwn[] = {
+      "ADSTREAM", "ADSCREENW", "ADSCREENH", "ADCVSET",   "ADCAPS",   "ADNUMLOCK",      "ADSTATE",
+      "ADSEEDIMG", "ADSOUND",  "ADVOLUME",  "ADAUDIOOUT", "ADSTATUSHANDLE", "ADSTATUSLOG",
+  };
+  if (name.size() < 3 || name.substr(0, 2) != "AD" || name[2] == '_') return false;
+  for (char ch : name) {
+    if (!((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_')) return false;
+  }
+  return std::find(std::begin(kOwn), std::end(kOwn), name) == std::end(kOwn);
+}
+
+HostControlValues host_control_values(const Module& m, const std::map<int, int>* values) {
+  HostControlValues r;
+  std::map<int, int> cv;
+  if (values) {
+    // The catalog is authoritative about which slots exist and their ranges;
+    // buttons and unknown kinds never carry a value, nor do host controls.
+    for (auto [idx, val] : *values) {
+      if (const Control* c = m.control(idx); c && c->settable() && !c->for_host()) cv[idx] = c->clamp(val);
+    }
+  }
+  r.cvset = format_cvset(cv);
+  // Controls are sorted by index (parse_catalog).
+  for (const Control& c : m.controls) {
+    if (!c.for_host() || !c.settable()) continue;
+    int v = c.def;
+    if (values) {
+      if (auto it = values->find(c.index); it != values->end()) v = c.clamp(it->second);
+    }
+    r.env.emplace_back(widen(c.host), std::to_wstring(v));
+  }
+  return r;
+}
+
+HostControlValues host_control_values(const Module& m, const std::map<std::string, std::map<int, int>>& all) {
+  auto it = all.find(m.id);
+  return host_control_values(m, it == all.end() ? nullptr : &it->second);
+}
+
+std::string describe_env(const std::vector<std::pair<std::wstring, std::wstring>>& env) {
+  std::string s;
+  for (const auto& [k, v] : env) {
+    if (!s.empty()) s += ",";
+    s += narrow(k) + "=" + narrow(v);
+  }
+  return s;
 }
 
 const Module* Catalog::find(const std::string& id) const {
@@ -282,6 +335,19 @@ bool parse_catalog(const std::string& json_text, Catalog& out, std::string* erro
           Control ctl;
           ctl.index = int_or(c, "index", -1);
           if (ctl.index < 0) continue;
+          // A host control (catalog.h): absent or "", the module's own. A
+          // name it may not set, or one an earlier control took, can do
+          // nothing: the control is left out.
+          if (c.contains("host")) {
+            const phosg::JSON& h = c.at("host");
+            if (!h.is_string()) continue;
+            ctl.host = h.as_string();
+            if (!ctl.host.empty()) {
+              if (!host_variable_ok(ctl.host)) continue;
+              if (std::any_of(mod.controls.begin(), mod.controls.end(),
+                              [&](const Control& o) { return o.host == ctl.host; })) continue;
+            }
+          }
           ctl.name = str_or(c, "name", "Control " + std::to_string(ctl.index));
           ctl.type_name = str_or(c, "type");
           ctl.type = control_type(ctl.type_name);
@@ -344,6 +410,7 @@ bool parse_catalog(const std::string& json_text, Catalog& out, std::string* erro
             if (str_or(c, "unitPos") == "none") ctl.unit.clear();
           }
           ctl.def = ctl.clamp(def);
+          if (ctl.for_host() && !ctl.settable()) continue;   // a host control without a value
           mod.controls.push_back(std::move(ctl));
         }
         std::sort(mod.controls.begin(), mod.controls.end(),

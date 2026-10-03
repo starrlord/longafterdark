@@ -4,7 +4,10 @@
 // "AniN" or "AniM" is a Delrina Intermission ASA animation: data, not code,
 // which Intermission's ASA reader (IMASAPLY.IMQ, a Win16 DLL) plays, so it
 // is a Classic module too (the ne16 lane's Intermission protocol; IMASAPLY
-// itself checks for these two headers).
+// itself checks for these two headers). Intermission's other data files go
+// by their extension, as INTRMLIB gave them to its readers: a file named
+// .FLI, .FLC, .MRF or .MSV that is no MZ executable is a Classic module,
+// played by IMFLIPLY.IMQ, IMFLCPLY.IMQ, IMMRFPLY.IMQ or IMMSVPLY.IMQ.
 #include <cstdio>
 #include <cstring>
 
@@ -15,6 +18,18 @@ namespace adw {
 
 bool asa_header(const void* first4) {
   return memcmp(first4, "AniN", 4) == 0 || memcmp(first4, "AniM", 4) == 0;
+}
+
+const char* intermission_data_type(const std::string& path) {
+  static const char* const kTypes[] = {"FLI", "FLC", "MRF", "MSV"};
+  const size_t slash = path.find_last_of("\\/");
+  const size_t dot = path.rfind('.');
+  if (dot == std::string::npos || (slash != std::string::npos && dot < slash)) return nullptr;
+  const std::string ext = path.substr(dot + 1);
+  for (const char* t : kTypes) {
+    if (ext.size() == 3 && _strnicmp(ext.c_str(), t, 3) == 0) return t;
+  }
+  return nullptr;
 }
 
 const char* lane_kind_name(LaneKind k) {
@@ -42,6 +57,14 @@ ModuleProbe probe_module(const std::string& path_utf8) {
     fclose(f);
     p.kind = LaneKind::ne16;
     p.detail = "Intermission ASA animation";
+    return p;
+  }
+  // An Intermission data file of another type: no executable (whatever its length), named for its reader.
+  const char* type = intermission_data_type(path_utf8);
+  if (type && !(read_at(0, mz, 2) && mz[0] == 'M' && mz[1] == 'Z')) {
+    fclose(f);
+    p.kind = LaneKind::ne16;
+    p.detail = std::string("Intermission ") + type + " file";
     return p;
   }
   if (!read_at(0, mz, sizeof(mz))) {

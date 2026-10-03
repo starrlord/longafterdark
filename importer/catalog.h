@@ -41,24 +41,32 @@
 //                  name overrides give moduleName)
 //     about        "" (no text resource; no credits)
 //     controls     one button, {0, "Configure...", button}, when SAVERDLGPROC
-//                  is exported (the module's own dialog, IMIMXPLY's message 8)
+//                  is exported (the module's own dialog, IMIMXPLY's message 8);
+//                  then the Speed control, {1, "Speed:", stringslider, host
+//                  ADNE16IMXSPEED}, when the registry lists the module
+//                  (Package::speed_modules, with the stop it starts at: the
+//                  merge adds it)
 //     entry        "SAVERDRAW"
 //     abi          "intermission" (written last, only for Intermission
 //                  entries; absent means the After Dark module ABI)
-//   Intermission's other two module forms (lane ne16; The Far Side's and
-//   Dilbert's SAVER, the folders of a package Delrina's installer installed,
-//   Package::delrina_installer — only those folders list *.ASA and *.IMQ):
+//   Intermission's other module forms (lane ne16; the SAVER folders of a
+//   package Delrina's installer installed, Package::delrina_installer — only
+//   those folders list *.ASA, *.IMQ, *.FLI, *.MRF and *.MSV):
 //     an ASA animation, *.ASA starting "AniN" or "AniM" (the ne16 lane's
 //     rule: data, which Intermission's ASA reader IMASAPLY.IMQ plays from
-//     ENGINE); an IMQ module, an NE *.IMQ exporting SAVERMAIN but neither
-//     MODULE nor SAVERINIT and SAVERDRAW, its own reader, unless its name is
-//     one of Intermission's readers' (is_intermission_reader: left out,
-//     logged, as an NE exporting SAVERMAIN under any other extension is)
+//     ENGINE); Intermission 4.0's FLI animations (*.FLI with Autodesk's
+//     magic, AF11 or AF12, at byte 4), MRF morph (*.MRF) and MSV mix (*.MSV),
+//     data its readers IMFLIPLY, IMMRFPLY and IMMSVPLY play from ENGINE; an
+//     IMQ module, an NE *.IMQ exporting SAVERMAIN but neither MODULE nor
+//     SAVERINIT and SAVERDRAW, its own reader, unless its name is one of
+//     Intermission's readers' (is_intermission_reader: left out, logged, as
+//     an NE exporting SAVERMAIN under any other extension is)
 //     displayName  the file stem (the registry's name overrides give moduleName)
 //     about        ""
-//     controls     one button, {0, "Configure...", button}: an ASA's reader's
-//                  dialog (IMASAPLY exports SAVERDLGPROC), an IMQ module's own
-//                  when it exports SAVERDLGPROC
+//     controls     one button, {0, "Configure...", button}: a data module's
+//                  reader's dialog (each of them exports SAVERDLGPROC), an IMQ
+//                  module's own when it exports SAVERDLGPROC; then the Speed
+//                  control when the registry lists the module, as for IMX
 //     entry        "SAVERMAIN" (the reader's: the module's own for an IMQ)
 //     needs        an IMQ module's imports; none for an ASA (its reader's
 //                  are ENGINE's business)
@@ -111,6 +119,8 @@ namespace adw::import {
 //   popup         type "popup", items, default (clamped index)
 //   checkbox      type "checkbox", default 0/1
 //   button        type "button" (no value: the saver never presses buttons)
+// and, last, "host" for a host control: one no record holds, the host's own
+// setting for the module (speed_control, below).
 struct CatalogControl {
   int index = 0;              // slot: what SET <idx> / ADCVSET address
   std::string name;
@@ -123,6 +133,11 @@ struct CatalogControl {
   std::optional<int> min, max, raw_default;
   std::string unit;           // non-empty only when the record has one
   std::string unit_pos;       // "none" | "prefix" | "suffix" (with unit)
+  // A host control's environment variable: the front-end sets it to the
+  // control's value whenever it starts adhostwin for the module, and the
+  // value never reaches the module (no ADCVSET, no SET line). "" for every
+  // control a module has itself (the JSON then has no "host").
+  std::string host;
 };
 
 struct CatalogModule {
@@ -212,6 +227,18 @@ inline constexpr char kIntermissionConfigure[] = "Configure...";
 // behind (Control Panel's Desktop dialog's "S&etup...", without the mnemonic).
 inline constexpr char kScrnsaveSetup[] = "Setup...";
 
+// The Speed control: a host control (CatalogControl::host) that the merge
+// gives each module of Package::speed_modules after its own controls, at
+// index 1 (its Configure... button is 0). Its value is the speed of the
+// machine the ne16 lane emulates for the module, in percent of the host's
+// own model, which adhostwin reads from ADNE16IMXSPEED (kSpeedHost). A
+// string slider of five stops, the same for every module (SpeedStop):
+// Slowest 6, Slow 12, Normal 25, Fast 50 and Fastest 100 (the host's own
+// model: the speed the module ran at before the control); its default is
+// `start`, the module's own (SpeedModule::start).
+inline constexpr char kSpeedHost[] = "ADNE16IMXSPEED";
+CatalogControl speed_control(SpeedStop start = SpeedStop::normal);
+
 // One of Intermission's own readers, by its file name: IM???PLY.IMQ, as
 // every one is named (IMIMXPLY "IMX Player", IMASAPLY "ASA Player", IMAD_PLY,
 // IMFLCPLY, IMFLIPLY, IMNSSPLY, IMSAPPLY, IMSCRPLY, IMSEQPLY, IMSPXPLY),
@@ -251,13 +278,16 @@ struct CatalogDoc {
 // The merged catalog (PACKAGES.md §6) over `trees`, which are in registry
 // order. Per package, its module dirs in registry order (Deluxe: AD40\*.AD
 // sorted, ENGINE\STARRYNI.AD, CLASSIC\*.AD sorted; every other package: each
-// module dir's *.AD and *.IMX — a Delrina release's also *.ASA and *.IMQ —
+// module dir's *.AD and *.IMX — a Delrina release's also *.ASA, *.IMQ,
+// *.FLI, *.MRF and *.MSV —
 // sorted together, then ENGINE's *.AD and *.IMX; never WINDOWS),
 // paths "<package root>/<dir>/<file>" whatever the directory is called now. Ids are unique (a second file with a taken id is skipped
-// and logged); name overrides apply; display names are made unique per lane;
-// sameAs links byte-identical modules. A module that cannot be read, or that
-// its lane would refuse, is left out and reported through `log`, so one
-// damaged file never costs the user every other module.
+// and logged); name overrides apply, and an Intermission module of
+// Package::speed_modules gets the Speed control (speed_control); display
+// names are made unique per lane; sameAs links byte-identical modules. A
+// module that cannot be read, or that its lane would refuse, is left out
+// and reported through `log`, so one damaged file never costs the user
+// every other module.
 CatalogDoc build_catalog(const std::vector<CatalogTree>& trees,
                          const std::function<void(const std::string&)>& log = {});
 

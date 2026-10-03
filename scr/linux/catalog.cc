@@ -1,7 +1,9 @@
 #include "catalog.h"
 
+#include <algorithm>
 #include <fstream>
 #include <functional>
+#include <iterator>
 #include <sstream>
 #include <string_view>
 
@@ -10,6 +12,9 @@
 namespace lad {
 
 namespace {
+
+using adw::import::JsonValue;
+using Kind = JsonValue::Kind;
 
 std::string lower(std::string s) {
   for (char& c : s) {
@@ -25,7 +30,120 @@ std::string norm_path(std::string s) {
   return lower(s);
 }
 
+// A member as the Windows saver's parser reads an int: a number (a fraction
+// cut toward zero) or a boolean (1/0); `dflt` for anything else.
+int int_of(const JsonValue& o, std::string_view key, int dflt) {
+  const JsonValue* v = o.get(key);
+  if (!v) return dflt;
+  if (v->kind == Kind::boolean) return v->boolean ? 1 : 0;
+  return v->as_int(dflt);
+}
+
+// A control's default value, read and clamped exactly as the Windows saver
+// reads it (scr/src/catalog.cc: parse_catalog, Control::clamp), so the
+// player's host gets what a Windows saver's gets for a control never set.
+// False for a control without a value: a button, an unknown kind, a popup
+// without items.
+bool control_default(const JsonValue& c, int* out) {
+  const std::string type = c.str("type");
+  const bool slider = type == "slider", checkbox = type == "checkbox", popup = type == "popup";
+  int min = int_of(c, "min", 0), max = int_of(c, "max", checkbox ? 1 : 100);
+  std::vector<std::string> items;
+  if (const JsonValue* list = c.get("items"); list && list->kind == Kind::array) {
+    for (const JsonValue& i : list->array) {
+      if (i.kind == Kind::string) items.push_back(i.string);
+    }
+  }
+  int def = int_of(c, "default", min);
+  const int default_stop = int_of(c, "defaultStop", -1);
+  std::vector<int> values;   // a string slider's, ascending
+  if (slider && !items.empty()) {
+    if (const JsonValue* list = c.get("values"); list && list->kind == Kind::array) {
+      for (const JsonValue& v : list->array) {
+        if (v.kind != Kind::number) break;
+        values.push_back(v.as_int(0));
+      }
+      if (!values.empty()) {
+        // As many stops as have both a label and a value; defaultStop
+        // indexes the table as written, before it is put in order.
+        const size_t n = std::min(values.size(), items.size());
+        values.resize(n);
+        items.resize(n);
+        if (default_stop >= 0 && default_stop < (int)n) def = values[default_stop];
+        std::stable_sort(values.begin(), values.end());
+      }
+    }
+    min = values.empty() ? min : values.front();
+    max = values.empty() ? min + (int)items.size() - 1 : values.back();
+    if (values.empty() && default_stop >= 0 && default_stop < (int)items.size()) def = min + default_stop;
+  }
+  if (slider && !items.empty()) {
+    // A string slider snaps to the last stop whose value is <= it.
+    const int n = (int)items.size();
+    int stop = 0;
+    if (values.empty()) {
+      stop = std::clamp(def - min, 0, n - 1);
+    } else {
+      for (int i = 0; i < n; ++i) {
+        if (values[i] <= def) stop = i;
+      }
+    }
+    *out = values.empty() ? min + stop : values[stop];
+  } else if (slider) {
+    *out = std::clamp(def, std::min(min, max), std::max(min, max));
+  } else if (checkbox) {
+    *out = def ? 1 : 0;
+  } else if (popup && !items.empty()) {
+    *out = std::clamp(def, min, min + (int)items.size() - 1);
+  } else {
+    return false;
+  }
+  return true;
+}
+
+// The module's host controls, in index order (the Windows saver sorts its
+// controls by index).
+std::vector<std::pair<std::string, std::string>> host_env_of(const JsonValue& module) {
+  struct Var {
+    int index;
+    std::string name, value;
+  };
+  std::vector<Var> vars;
+  const JsonValue* controls = module.get("controls");
+  if (!controls || controls->kind != Kind::array) return {};
+  for (const JsonValue& c : controls->array) {
+    if (c.kind != Kind::object || !c.get("index")) continue;
+    const int index = int_of(c, "index", -1);
+    const JsonValue* host = c.get("host");
+    if (index < 0 || !host) continue;
+    // Not a string, or a name it may not set: left out (an empty one is the
+    // module's own control, which the player doesn't send).
+    if (host->kind != Kind::string || host->string.empty()) continue;
+    if (!host_variable_ok(host->string)) continue;
+    if (std::any_of(vars.begin(), vars.end(), [&](const Var& v) { return v.name == host->string; })) continue;
+    int value = 0;
+    if (!control_default(c, &value)) continue;
+    vars.push_back({index, host->string, std::to_string(value)});
+  }
+  std::stable_sort(vars.begin(), vars.end(), [](const Var& a, const Var& b) { return a.index < b.index; });
+  std::vector<std::pair<std::string, std::string>> env;
+  for (Var& v : vars) env.emplace_back(std::move(v.name), std::move(v.value));
+  return env;
+}
+
 }  // namespace
+
+bool host_variable_ok(std::string_view name) {
+  static constexpr std::string_view kOwn[] = {
+      "ADSTREAM", "ADSCREENW", "ADSCREENH", "ADCVSET",   "ADCAPS",   "ADNUMLOCK",      "ADSTATE",
+      "ADSEEDIMG", "ADSOUND",  "ADVOLUME",  "ADAUDIOOUT", "ADSTATUSHANDLE", "ADSTATUSLOG",
+  };
+  if (name.size() < 3 || name.substr(0, 2) != "AD" || name[2] == '_') return false;
+  for (char ch : name) {
+    if (!((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_')) return false;
+  }
+  return std::find(std::begin(kOwn), std::end(kOwn), name) == std::end(kOwn);
+}
 
 const Module* Catalog::find(const std::string& id) const {
   for (const Module& m : modules) {
@@ -62,7 +180,6 @@ bool load_catalog(const std::string& path, Catalog& out, std::string* error) {
   std::stringstream ss;
   ss << f.rdbuf();
   auto root = adw::import::parse_json(ss.str());
-  using Kind = adw::import::JsonValue::Kind;
   if (!root || root->kind != Kind::object) {
     if (error) *error = path + " is not JSON";
     return false;
@@ -91,6 +208,7 @@ bool load_catalog(const std::string& path, Catalog& out, std::string* error) {
     }
     m.package_title = item.str("packageTitle", m.package);
     m.same_as = item.str("sameAs");
+    m.host_env = host_env_of(item);
     out.modules.push_back(std::move(m));
   }
   return true;

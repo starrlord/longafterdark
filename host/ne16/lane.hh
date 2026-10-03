@@ -84,8 +84,20 @@
 // native reader), and .IMQ modules that export SAVERMAIN themselves, each
 // its own reader, loaded as INTRMLIB loaded a reader's record (index −1, no
 // path for LOAD and QUERY) and refused when that QUERY leaves the saver flag
-// 0x1000 clear (a pure reader such as IMIMXPLY.IMQ). Everything below holds
-// for the three forms alike.
+// 0x1000 clear (a pure reader such as IMIMXPLY.IMQ) or sets the reader flag
+// 0x0800 beside it (Morph, MultiSaver, Sequencer). Intermission 4.0's own
+// data files are four more forms, each played by the reader of its type
+// (package.hh "Form"): .FLI and .FLC animations (IMFLIPLY/IMFLCPLY.IMQ), an
+// .MRF morph (IMMRFPLY.IMQ) and an .MSV MultiSaver group (IMMSVPLY.IMQ, which
+// loads the group's modules itself from INTRMLIB's module table: the lane
+// has INTRMLIB make it, FINDALLMODULES, before the group's LOAD, as INTERMIS
+// did at its start-up, and FREEMODINFO after its FREE); their QUERY asks for
+// the name (flag 0x8000), as INTRMLIB's enumeration did. Everything below
+// holds for every form alike. The saver window has CS_OWNDC, as INTERMIS's
+// class had (win16 user16_own_dc): GetDC gives every pass the same DC — the
+// FLI reader (DC mode 0x10: no SaveDC/RestoreDC) selects its palette into it
+// once — and a module's own GetDC of the saver window inside a pass gets the
+// pass's DC.
 //
 //   init:  the record (0x67 bytes, GMEM_MOVEABLE|GMEM_ZEROINIT, with
 //          INTRMLIB's flags for an enabled module, 0x120C; +0x44 the file
@@ -101,7 +113,8 @@
 //          the wake hook), so it makes that palette itself, as CANISTART did
 //          (FindResource … CreatePalette through the thunks).
 //   step:  each call of the frame's run is one pass of INTERMIS's idle loop:
-//          GetDC(saver window), SaveDC, [the engine palette selected], +6 =
+//          GetDC(saver window), SaveDC (DC mode 0; mode 0x10 has none, nor
+//          the engine palette), [the engine palette selected], +6 =
 //          the DC, +8 = the palette, SAVERMAIN(1) on the first pass (START:
 //          the modules load their pictures and sounds there behind a title
 //          card, a long call) and SAVERMAIN(0) (DRAW) on every other,
@@ -110,7 +123,8 @@
 //          user16_dispatch_guest: the guest's own posted messages and due
 //          timers). INTERMIS called the saver back to back while idle, as
 //          AFTERDAR.SCR did, so Pacing and Long calls apply, with a pixel
-//          cost of Intermission's own and overruns carried (Pacing). How fast
+//          cost of Intermission's own, overruns carried and the machine's
+//          speed a knob (ADNE16IMXSPEED; Pacing, Speed). How fast
 //          a module goes is what it reads: BATTLES (a step every 54 ms at
 //          most), JAWAS, SABRDUEL, VADER and HYPERSPC's scenes pace
 //          themselves by GetTickCount; the text modules (BIOS, BLUPRINT,
@@ -169,7 +183,9 @@
 // from it). Configure: button 0 = SAVERMAIN(10), (7), +4 = the --owner,
 // (8) — IMIMXPLY's DialogBox(hLib, "DIALOGBOX", owner, SAVERDLGPROC) —,
 // (11): exit 0 when it showed, 4 for a module without SAVERDLGPROC; any
-// other button fails. What the dialog writes lands in
+// other button fails. INTRMLIB.DLL is loaded around it, as INTERMIS.EXE,
+// the control panel, imports it (its LibEntry registers the ANT3D* controls
+// the FLI reader's dialog is made of). What the dialog writes lands in
 // <state>\<package>\WINDOWS\SWSE.INI (Star Wars), or ANTSW.INI there, in a
 // section named for the module (The Far Side's and Dilbert's: IMASAPLY's
 // "Animation Player Options" for an ASA animation, an IMQ module's own
@@ -354,7 +370,8 @@
 // owe anything for it. The calls that frame makes after it returns are
 // carried as any frame's (SWTEXT's second DRAW, in the frame where its long
 // first one returns, owes 2.4 budgets). What is owed stays below six budgets
-// (Ne16Lane::kMaxOwedBudgets), and a frame without a call pays a whole one
+// (Ne16Lane::kMaxOwedBudgets; the same work on a slower machine, so more of
+// its budgets: Speed, below), and a frame without a call pays a whole one
 // back, so at most five frames in a row make none (83 ms): a pass of up to
 // six budgets runs at the model's rate (TRENCH's 3.77: three frames without a
 // call between its passes), and since the budget's work is not the clock the
@@ -372,6 +389,33 @@
 // as much as the allowance left where it starts decides). Deterministic
 // (work counts are).
 // ADNE16IMXCARRY=0 turns it off.
+//
+// Speed (a protocol's speed knob, Protocol16::speed_knob: the IMX protocol's
+// ADNE16IMXSPEED, a whole percent 1..100, default 100): Intermission paced
+// nothing — INTERMIS called SAVERMAIN whenever Windows was idle (ABI.md
+// §3.8.4), and Delrina's SDK had a module do a small step per call, no clock
+// — so how fast many of Intermission 4.0's own modules move was the buyer's
+// PC, and on the 25-MIPS machine their light passes race (Dragon Kites 915
+// passes a virtual second, Ant Mine 2221, Wriggly 2440). The knob is that
+// PC: each frame's budget is ADDRAWMIPS × the period × percent / 100, a frame
+// makes ADMAXDRAWS × percent / 100 calls at most (to the nearest, at least
+// one), and what is owed stays below kMaxOwedBudgets × 100 / percent of those
+// budgets — the same work as at full speed, so a pass heavier than the bound
+// slows with the machine instead of being clamped at it. So a module that
+// steps once per pass steps percent / 100 as often (Dragon Kites 229 at 25,
+// 55 at 6). What an instruction costs in time is untouched (ADMIPS: the
+// clocks the modules read, the frames' deadlines), so a module paced by the
+// clock keeps its pace for as long as its passes keep up, and START and the
+// other long calls keep their deadline pacing; but a pass the budget pays
+// back takes longer (Dragon Kites' START, a full-screen fill, 1.44 million of
+// work: 2 frames without a call after it at 100, 12 at 25, 56 at 6). 100,
+// and the knob unset, change nothing, frame for frame; a value outside
+// 1..100 is clamped into it, anything else is 100, both logged; the AD3 and
+// scr protocols have no knob (the lane logs it as ignored); with no
+// DRAWFRAME budget (ADMIPS=0, ADDRAWMIPS=0) it changes nothing. A set knob is
+// logged at init. The front end sets it from the module's Speed control: a
+// catalog control with "host": "ADNE16IMXSPEED" (ABI.md §3.8.12: the modules
+// whose motion follows it). Deterministic.
 //
 // Long calls: some DRAWFRAMEs draw for much longer than a frame — SATORI
 // about a second (it waits on the tick count, redrawing all the while),
@@ -482,6 +526,8 @@
 //                      only: an After Dark module's (default 2); an Intermission module ignores it
 //   ADNE16IMXPIXCOST=<n>  the same for an Intermission module (default 4; see Pacing); an After Dark
 //                      module ignores it
+//   ADNE16IMXSPEED=<n> an Intermission module's machine speed, a percent 1..100 (default 100; see
+//                      Pacing, Speed): its frames' budget and ADMAXDRAWS × n/100; other modules ignore it
 //   ADREADSTEPUS=<us>  virtual µs per clock read (default 5)
 //   ADMIPS=<n>         the virtual CPU: instructions per virtual µs, for clock reads and the
 //                      DRAWFRAME budget (default 100; 0 = one DRAWFRAME per frame, no instruction time)
@@ -494,8 +540,9 @@
 // when the host's answers) and palette source ("After Dark 2.0's four,
 // computed …" when there is no file to read them from);
 // from the IMX protocol the windows dir, the reader, the module's name,
-// palette type and flags, the disk and seeds, the pixel cost, whether
-// overruns are carried (and the bound), and the passes at close.
+// palette type and flags, the disk and seeds, the pixel cost, the machine's
+// speed (a set knob is logged without the trace), whether overruns are
+// carried (and the bound), and the passes at close.
 // ADTRACE=pace logs each frame's DRAWFRAMEs and work (and, carrying
 // overruns, what it paid back and what it owes).
 #pragma once
@@ -564,8 +611,14 @@ class Ne16Lane : public Lane {
   static int auto_guest_scale(int w, int h);
 
   // Carried overruns (lane.hh "Pacing"): what is owed stays below this many
-  // frame budgets, so at most this many minus one frames in a row make no call.
+  // frame budgets, so at most this many minus one frames in a row make no call
+  // — on a machine slowed by the speed knob, this many × 100 / percent of its
+  // budgets (the same work), so a heavy pass slows with it.
   static constexpr uint64_t kMaxOwedBudgets = 6;
+  // For tests and diagnostics: the modeled machine's speed, a percent (Pacing,
+  // Speed), and the calls a frame makes at most.
+  uint32_t speed_percent() const { return speed_; }
+  uint32_t max_draws() const { return max_draws_; }
 
  private:
   bool init_impl(const std::string& module_path, LaneContext& ctx);
@@ -651,9 +704,11 @@ class Ne16Lane : public Lane {
   uint64_t frames_ = 0;
   // Pacing: DRAWFRAMEs per presented frame until the work (instructions plus
   // ADAPICOST per API call, the protocol's pixel cost per pixel) reaches
-  // ADDRAWMIPS (draw_mips_) × the frame period, at most max_draws_.
+  // ADDRAWMIPS (draw_mips_) × the frame period × speed_ / 100, at most
+  // max_draws_ (ADMAXDRAWS × speed_ / 100). speed_: the protocol's speed knob
+  // (Protocol16::speed_knob), a percent; 100 without one.
   uint64_t draw_mips_ = 0, draws_ = 0;
-  uint32_t max_draws_ = 1;
+  uint32_t max_draws_ = 1, speed_ = 100;
   // A protocol that carries overruns (Protocol16::carries_overruns, lane.hh
   // "Pacing"): carry_ when it is on, owed_ the work the frames' completed
   // calls did beyond their budgets and not yet paid back, frame_allow_ the

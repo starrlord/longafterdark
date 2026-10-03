@@ -38,11 +38,6 @@ struct Bitmapinfo256 {
   RGBQUAD colors[256];
 };
 
-bool same_target(const LiveTarget& a, const LiveTarget& b) {
-  return a.id == b.id && a.abi == b.abi && a.screen == b.screen && a.host_exe == b.host_exe &&
-         a.module_path == b.module_path && a.win_dir == b.win_dir && a.cvset == b.cvset;
-}
-
 class Preview {
  public:
   explicit Preview(HWND h) : hwnd_(h) {
@@ -211,6 +206,9 @@ class Preview {
     // A thumbnail in the dialog: always silent (AUDIO.md §9; the Preview
     // button's "/s" is what plays).
     add_sound_env(spec.env, sound_for(Settings{}, HostRole::live_preview, false, false));
+    // The host controls' values as the settings window shows them, saved or
+    // not (Intermission 4.0's Speed).
+    add_host_control_env(spec.env, target_.env);
     spec.stderr_path = env_w(L"AD_SCR_HOSTLOG");
     spec.priority_class = BELOW_NORMAL_PRIORITY_CLASS;
     ++generation_;
@@ -226,8 +224,9 @@ class Preview {
     pacer_.add(host_.get());
     started_ = Clock::now();
     starting_shown_ = false;
-    log_line("live preview: spawn %s size=%dx%d abi=%s screen=%dx%d cvset=%s pid=%lu", narrow(spec.module_path).c_str(),
-             emu.w, emu.h, target_.abi.c_str(), target_.screen.w, target_.screen.h, target_.cvset.c_str(), host_->pid());
+    log_line("live preview: spawn %s size=%dx%d abi=%s screen=%dx%d cvset=%s pid=%lu%s%s", narrow(spec.module_path).c_str(),
+             emu.w, emu.h, target_.abi.c_str(), target_.screen.w, target_.screen.h, target_.cvset.c_str(), host_->pid(),
+             target_.env.empty() ? "" : " host=", describe_env(target_.env).c_str());
   }
 
   void stop_host(bool wait) {

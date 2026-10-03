@@ -283,22 +283,108 @@ class FolderFs : public SourceFs {
   static const fs::path& path(const SourceNode& n) { return *static_cast<const fs::path*>(n.impl.get()); }
 };
 
+// ---- ZIP and 7z: where an archive source's files are -------------------------------------
+
+// "DISK1, DISK2 and DISK3".
+std::string disks_named(const std::vector<std::string>& names) {
+  std::string s;
+  for (size_t i = 0; i < names.size(); i++) s += (i == 0 ? "" : i + 1 == names.size() ? " and " : ", ") + names[i];
+  return s;
+}
+
+// One entry of an archive source: its path, '/'-separated (a folder's own
+// entry without a trailing '/'), and whether it is a folder's own entry.
+struct ArchiveEntry {
+  std::string path;
+  bool directory = false;
+};
+
+// Where an archive source's files are (source.h): at its root, or in the
+// one folder that holds everything else (the Internet Archive's ZIPs of a
+// release's folder: "Opus n Bill - On the Road Again/"); there, the files
+// themselves, or only DISK<n> folders of them. The same rule for a ZIP and a
+// 7z.
+struct ArchiveLayout {
+  std::string top;                         // the one folder everything is in; "" = the archive's root
+  std::map<unsigned, std::string> disks;   // each disk once, under the folder name it first appears as
+  std::map<unsigned, std::vector<size_t>> files;  // the files of the root (0) and of each disk, by entry index
+};
+
+// `kind` names the archive in messages ("ZIP", "7z"), `word` its entries
+// ("member", "entry"). Throws ImportError(source_invalid) for anything else
+// the archive holds: a folder besides a DISK<n> one, anything deeper, files
+// beside DISK<n> folders.
+ArchiveLayout archive_layout(const std::vector<ArchiveEntry>& entries, const std::string& name, const char* kind,
+                             const char* word) {
+  const std::string rule = std::string(" (a ") + kind +
+                           " source holds the install files, or only DISK<n> folders of them, at its root or in one "
+                           "folder)";
+  ArchiveLayout l;
+  // One folder that holds everything — and is no DISK<n> folder: a disk set
+  // of one disk is that disk.
+  if (!entries.empty()) {
+    const std::string& p = entries.front().path;
+    const std::string top = p.substr(0, p.find('/'));
+    bool inside = false, all = !disk_folder_number(top);
+    for (const ArchiveEntry& e : entries) {
+      if (e.path.size() > top.size() && e.path.compare(0, top.size() + 1, top + "/") == 0) inside = true;
+      else if (!(e.directory && e.path == top)) all = false;
+    }
+    if (all && inside) l.top = top;
+  }
+  std::string at_root;
+  for (size_t i = 0; i < entries.size(); i++) {
+    const ArchiveEntry& e = entries[i];
+    if (!l.top.empty() && e.path == l.top) continue;  // the folder's own entry
+    const std::string rel = l.top.empty() ? e.path : e.path.substr(l.top.size() + 1);
+    const size_t slash = rel.find('/');
+    const std::string folder = slash != std::string::npos ? rel.substr(0, slash) : e.directory ? rel : "";
+    const unsigned disk = folder.empty() ? 0 : disk_folder_number(folder);
+    // A folder's own entry is a DISK<n> folder; a file is at the root or
+    // directly in one.
+    const bool flat = slash == std::string::npos || (!e.directory && rel.find('/', slash + 1) == std::string::npos);
+    if (!folder.empty() && (!disk || !flat))
+      invalid(name + ": " + word + " \"" + e.path + "\" is not a bare file name or a file in a DISK<n> folder" + rule);
+    if (disk) l.disks.emplace(disk, folder);
+    if (e.directory) continue;
+    l.files[disk].push_back(i);
+    if (!disk && at_root.empty()) at_root = rel;
+  }
+  if (!l.disks.empty() && !at_root.empty()) {
+    std::vector<std::string> labels;
+    for (const auto& [n, folder] : l.disks) labels.push_back(folder);
+    invalid(name + " holds files " + (l.top.empty() ? std::string("at its root") : "in " + l.top) + " (" + at_root +
+            ") beside DISK<n> folders (" + disks_named(labels) + ")" + rule);
+  }
+  return l;
+}
+
+// What `note` says of an archive source read from one folder or as a disk set.
+std::string layout_note(const std::string& name, const ArchiveLayout& l) {
+  std::string s;
+  if (!l.top.empty()) s = "reading " + name + "'s folder " + l.top + " as the source";
+  if (l.disks.empty()) return s;
+  std::vector<std::string> labels;
+  for (const auto& [n, folder] : l.disks) labels.push_back(folder);
+  return (s.empty() ? "reading " + name : s + ",") + " as the union of its folders " + disks_named(labels) +
+         " (one install disk each)";
+}
+
 // ---- ZIP ---------------------------------------------------------------------------------
 
-// A ZIP of an install folder (the Internet Archive's Simpsons copies): a flat
-// archive whose members are the files at the source's root. It is held in
-// memory (the known ones are under 4 MB), and a member is inflated and its
-// size and CRC-32 checked as it is read. The outer archive is only a
-// container, so a password-protected member is refused rather than guessed
-// at; the installer's own encrypted archives are members like any other file.
-// One view shows the archive's root, or the files of one of its DISK<n>
-// folders (a disk set: one view per disk, unioned).
+// A ZIP of an install folder (the Internet Archive's Simpsons copies): an
+// archive whose members are the files at the source's root (or in its one
+// folder: archive_layout). It is held in memory (the known ones are under
+// 5 MB), and a member is inflated and its size and CRC-32 checked as it is
+// read. The outer archive is only a container, so a password-protected
+// member is refused rather than guessed at; the installer's own encrypted
+// archives are members like any other file. One view shows the files of the
+// archive's root, or of one of its DISK<n> folders (a disk set: one view per
+// disk, unioned).
 class ZipFs : public SourceFs {
  public:
-  ZipFs(std::shared_ptr<const ZipArchive> zip, unsigned disk) : zip_(std::move(zip)), disk_(disk) {
-    for (const ZipMember& m : zip_->members())
-      if (m.disk == disk_ && !m.directory) files_.push_back(&m);
-  }
+  ZipFs(std::shared_ptr<const ZipArchive> zip, unsigned disk, std::vector<const ZipMember*> files)
+      : zip_(std::move(zip)), disk_(disk), files_(std::move(files)) {}
 
   SourceNode root() const override {
     SourceNode n;
@@ -311,7 +397,7 @@ class ZipFs : public SourceFs {
     if (!dir.is_dir) return out;
     for (const ZipMember* m : files_) {
       SourceNode n;
-      n.name = ascii_upper(m->file_name());
+      n.name = ascii_upper(m->name.substr(m->name.rfind('/') + 1));  // without its folders
       n.size = m->usize;
       n.mtime = dos_filetime(m->mod_date, m->mod_time);
       n.impl = std::make_shared<ZipMember>(*m);
@@ -370,56 +456,50 @@ std::shared_ptr<std::vector<uint8_t>> read_zip_bytes(const fs::path& path) {
   return data;
 }
 
-// "DISK1, DISK2 and DISK3".
-std::string disks_named(const std::vector<std::string>& names) {
-  std::string s;
-  for (size_t i = 0; i < names.size(); i++) s += (i == 0 ? "" : i + 1 == names.size() ? " and " : ", ") + names[i];
-  return s;
-}
-
-// A ZIP of install files: flat, or a disk set of flat DISK<n> folders (every
-// member in one of them), read as the union of one view per disk.
+// A ZIP of install files: flat, or a disk set of flat DISK<n> folders, at
+// its root or in its one folder (archive_layout); a disk set is read as the
+// union of one view per disk.
 std::unique_ptr<SourceFs> open_zip(const fs::path& path, std::string* note) {
   const std::string name = to_utf8(path.filename().wstring());
   auto data = read_zip_bytes(path);
   if (!data) invalid(name + " is too large for a ZIP of install files");
   std::shared_ptr<ZipArchive> zip;
   try {
-    zip = std::make_shared<ZipArchive>(std::move(data), name, ZipNames::disk_folders);
+    zip = std::make_shared<ZipArchive>(std::move(data), name, ZipNames::paths);
   } catch (const ZipError& e) {
-    invalid(std::string(e.what()) + " (a ZIP source holds the install files at its root, or only DISK<n> folders)");
+    invalid(e.what());
   }
+  std::vector<ArchiveEntry> entries;
+  for (const ZipMember& m : zip->members())
+    entries.push_back({m.directory ? m.name.substr(0, m.name.size() - 1) : m.name, m.directory});
+  const ArchiveLayout l = archive_layout(entries, name, "ZIP", "member");
   for (const ZipMember& m : zip->members())
     if (m.encrypted()) invalid(name + "!" + m.name + " is password-protected");
-  // Each disk once, in disk order, under the folder name it first appears as.
-  std::map<unsigned, std::string> disks;
-  const ZipMember* at_root = nullptr;
-  for (const ZipMember& m : zip->members()) {
-    if (m.disk)
-      disks.emplace(m.disk, m.name.substr(0, m.name.find('/')));
-    else if (!at_root)
-      at_root = &m;
-  }
-  if (disks.empty()) return std::make_unique<ZipFs>(std::move(zip), 0);
+  auto files = [&](unsigned disk) {
+    std::vector<const ZipMember*> out;
+    if (auto it = l.files.find(disk); it != l.files.end())
+      for (size_t i : it->second) out.push_back(&zip->members()[i]);
+    return out;
+  };
+  if (note) *note = layout_note(name, l);
+  if (l.disks.empty()) return std::make_unique<ZipFs>(std::move(zip), 0, files(0));
   std::vector<std::string> labels;
-  for (const auto& [n, folder] : disks) labels.push_back(folder);
-  if (at_root)
-    invalid(name + " holds files at its root (" + at_root->name + ") beside DISK<n> folders (" + disks_named(labels) +
-            "); a ZIP source holds the install files at its root, or only DISK<n> folders");
   std::vector<std::unique_ptr<SourceFs>> parts;
-  for (const auto& [n, folder] : disks) parts.push_back(std::make_unique<ZipFs>(zip, n));
-  if (note)
-    *note = "reading " + name + " as the union of its folders " + disks_named(labels) + " (one install disk each)";
+  for (const auto& [n, folder] : l.disks) {
+    labels.push_back(folder);
+    parts.push_back(std::make_unique<ZipFs>(zip, n, files(n)));
+  }
   return union_of(std::move(parts), std::move(labels));
 }
 
 // ---- 7z ----------------------------------------------------------------------------------
 
 // A 7z of an install folder, read as a ZIP of one is (above): its members
-// are the files at the source's root, or a disk set's DISK<n>/<bare name>.
-// It is held in memory, and a member is decoded (its block once, however
-// many files share it: sevenzip.h) and its size and CRC-32 checked as it is
-// read. One view shows the root's files, or one DISK<n> folder's.
+// are the files at the source's root (or in its one folder), or a disk
+// set's DISK<n>/<bare name>. It is held in memory, and a member is decoded
+// (its block once, however many files share it: sevenzip.h) and its size
+// and CRC-32 checked as it is read. One view shows the root's files, or one
+// DISK<n> folder's.
 class SevenZipFs : public SourceFs {
  public:
   SevenZipFs(std::shared_ptr<const SevenZipArchive> archive, unsigned disk, std::vector<const SevenZipMember*> files)
@@ -436,7 +516,7 @@ class SevenZipFs : public SourceFs {
     if (!dir.is_dir) return out;
     for (const SevenZipMember* m : files_) {
       SourceNode n;
-      n.name = ascii_upper(m->name.substr(m->name.find('/') + 1));  // without its DISK<n> folder
+      n.name = ascii_upper(m->name.substr(m->name.rfind('/') + 1));  // without its folders
       n.size = m->size;
       if (m->mtime) n.mtime = FILETIME{DWORD(*m->mtime), DWORD(*m->mtime >> 32)};
       n.impl = std::shared_ptr<const void>(archive_, m);  // the member lives as long as its archive
@@ -472,11 +552,10 @@ bool starts_with_7z_signature(const fs::path& path) {
   return in.valid() && ReadFile(in.get(), sig, 6, &got, nullptr) && got == 6 && is_7z_signature(sig);
 }
 
-// A 7z of install files: flat, or a disk set of flat DISK<n> folders (every
-// member in one of them, besides the folders' own entries), read as the
-// union of one view per disk — the rule a ZIP source follows.
+// A 7z of install files, by the rule a ZIP source follows (archive_layout):
+// flat, or a disk set of flat DISK<n> folders, at its root or in its one
+// folder; a disk set is read as the union of one view per disk.
 std::unique_ptr<SourceFs> open_7z(const fs::path& path, std::string* note) {
-  static const char* const kRule = " (a 7z source holds the install files at its root, or only DISK<n> folders)";
   const std::string name = to_utf8(path.filename().wstring());
   auto data = read_zip_bytes(path);
   if (!data) invalid(name + " is too large for a 7z of install files");
@@ -486,34 +565,23 @@ std::unique_ptr<SourceFs> open_7z(const fs::path& path, std::string* note) {
   } catch (const SevenZipError& e) {
     invalid(e.what());
   }
-  // Each disk once, in disk order, under the folder name it first appears as.
-  std::map<unsigned, std::string> disks;
-  std::map<unsigned, std::vector<const SevenZipMember*>> files;
-  const SevenZipMember* at_root = nullptr;
-  for (const SevenZipMember& m : archive->members()) {
-    const size_t slash = m.name.find('/');
-    const std::string folder = slash != std::string::npos ? m.name.substr(0, slash) : m.directory ? m.name : "";
-    const unsigned disk = folder.empty() ? 0 : disk_folder_number(folder);
-    // A folder entry is a DISK<n> folder at the root; a file is at the root
-    // or directly in one.
-    const bool flat = slash == std::string::npos || (!m.directory && m.name.find('/', slash + 1) == std::string::npos);
-    if (!folder.empty() && (!disk || !flat))
-      invalid(name + ": entry \"" + m.name + "\" is not a bare file name or a file in a DISK<n> folder" + kRule);
-    if (disk) disks.emplace(disk, folder);
-    if (m.directory) continue;
-    files[disk].push_back(&m);
-    if (!disk && !at_root) at_root = &m;
-  }
-  if (disks.empty()) return std::make_unique<SevenZipFs>(std::move(archive), 0, std::move(files[0]));
+  std::vector<ArchiveEntry> entries;
+  for (const SevenZipMember& m : archive->members()) entries.push_back({m.name, m.directory});
+  const ArchiveLayout l = archive_layout(entries, name, "7z", "entry");
+  auto files = [&](unsigned disk) {
+    std::vector<const SevenZipMember*> out;
+    if (auto it = l.files.find(disk); it != l.files.end())
+      for (size_t i : it->second) out.push_back(&archive->members()[i]);
+    return out;
+  };
+  if (note) *note = layout_note(name, l);
+  if (l.disks.empty()) return std::make_unique<SevenZipFs>(std::move(archive), 0, files(0));
   std::vector<std::string> labels;
-  for (const auto& [n, folder] : disks) labels.push_back(folder);
-  if (at_root)
-    invalid(name + " holds files at its root (" + at_root->name + ") beside DISK<n> folders (" + disks_named(labels) +
-            ")" + kRule);
   std::vector<std::unique_ptr<SourceFs>> parts;
-  for (const auto& [n, folder] : disks) parts.push_back(std::make_unique<SevenZipFs>(archive, n, std::move(files[n])));
-  if (note)
-    *note = "reading " + name + " as the union of its folders " + disks_named(labels) + " (one install disk each)";
+  for (const auto& [n, folder] : l.disks) {
+    labels.push_back(folder);
+    parts.push_back(std::make_unique<SevenZipFs>(archive, n, files(n)));
+  }
   return union_of(std::move(parts), std::move(labels));
 }
 
@@ -588,11 +656,11 @@ class UnionFs : public SourceFs {
       : parts_(std::move(parts)), labels_(std::move(labels)) {}
 
   SourceNode root() const override {
-    auto copies = std::make_shared<Copies>();
-    for (size_t i = 0; i < parts_.size(); i++) copies->push_back({i, parts_[i]->root()});
+    auto entry = std::make_shared<Entry>();
+    for (size_t i = 0; i < parts_.size(); i++) entry->copies.push_back({i, parts_[i]->root()});
     SourceNode n;
     n.is_dir = true;
-    n.impl = copies;
+    n.impl = entry;
     return n;
   }
 
@@ -605,12 +673,13 @@ class UnionFs : public SourceFs {
         if (it == index.end()) {
           index[c.name] = out.size();
           SourceNode u = c;
-          u.impl = std::make_shared<Copies>(Copies{{part, std::move(c)}});
+          u.impl = std::make_shared<Entry>(Entry{{{part, std::move(c)}}, {}});
           out.push_back(std::move(u));
           continue;
         }
         SourceNode& u = out[it->second];
-        const size_t first = copies(u).front().first;
+        Entry& e = *static_cast<Entry*>(const_cast<void*>(u.impl.get()));
+        const size_t first = e.copies.front().first;
         if (u.is_dir != c.is_dir) {
           auto kind = [](bool dir) { return std::string(dir ? "a folder in " : "a file in "); };
           invalid(c.name + " is " +
@@ -618,10 +687,13 @@ class UnionFs : public SourceFs {
                                    : kind(u.is_dir) + labels_[first] + " and " + kind(c.is_dir) + labels_[part]) +
                   "; they are not the disks of one release");
         }
-        if (!u.is_dir && u.size != c.size)
-          invalid(c.name + " differs between " + between(first, part) +
-                  " (size); they are not the disks of one release");
-        const_cast<Copies&>(copies(u)).push_back({part, std::move(c)});
+        // Another size: refused when the file is read, never when it is only
+        // listed (what the recipe never opens — a BBS's notes, which differ
+        // from disk to disk — never stops an import).
+        if (!u.is_dir && u.size != c.size && e.clash.empty())
+          e.clash = c.name + " differs between " + between(first, part) +
+                    " (size); they are not the disks of one release";
+        e.copies.push_back({part, std::move(c)});
       }
     }
     return out;
@@ -630,7 +702,9 @@ class UnionFs : public SourceFs {
   // Every other copy is hashed first, then the first one streams while it
   // is hashed too: the same bytes everywhere, or the source is invalid.
   void read(const SourceNode& file, const Sink& sink) const override {
-    const Copies& c = copies(file);
+    const Entry& e = *static_cast<const Entry*>(file.impl.get());
+    if (!e.clash.empty()) invalid(e.clash);
+    const Copies& c = e.copies;
     std::string other;
     for (size_t i = 1; i < c.size(); i++) {
       Md5 h;
@@ -676,9 +750,15 @@ class UnionFs : public SourceFs {
 
  private:
   using Copies = std::vector<std::pair<size_t, SourceNode>>;
+  // A name's copies, one per part that has it, and why it cannot be read
+  // ("" = it can): the first other size another part lists.
+  struct Entry {
+    Copies copies;
+    std::string clash;
+  };
   std::vector<std::unique_ptr<SourceFs>> parts_;
   std::vector<std::string> labels_;  // one per part, or none
-  static const Copies& copies(const SourceNode& n) { return *static_cast<const Copies*>(n.impl.get()); }
+  static const Copies& copies(const SourceNode& n) { return static_cast<const Entry*>(n.impl.get())->copies; }
 
   // "DISK1 and DISK3", or "the images" without labels.
   std::string between(size_t a, size_t b) const {
@@ -776,7 +856,7 @@ std::vector<ZippedImage> floppy_images_in_zip(const fs::path& path, std::vector<
   std::shared_ptr<SevenZipArchive> sz;
   try {
     if (seven) sz = std::make_shared<SevenZipArchive>(data, name);
-    else zip = std::make_unique<ZipArchive>(data, name);
+    else zip = std::make_unique<ZipArchive>(data, name, ZipNames::paths);
   } catch (const ZipError&) {
     return out;
   } catch (const SevenZipError&) {
@@ -827,8 +907,12 @@ std::vector<ZippedImage> floppy_images_in_zip(const fs::path& path, std::vector<
     }
     out.push_back({member, std::move(bytes)});
   };
+  // The images may sit in a folder of either ("<folder>/DISK1.IMG", the
+  // Internet Archive's "Intermission 4.0/ITM4W-D1.IMA"): only its name in
+  // messages and in import.json; folders' own entries are skipped.
   if (zip) {
     for (const ZipMember& m : zip->members()) {
+      if (m.directory) continue;
       const bool floppy_sized = m.usize % 512 == 0 && m.usize >= 163840 && m.usize <= 2949120;
       if (floppy_sized && m.encrypted()) invalid(name + "!" + m.name + " is password-protected");
       take(m.name, m.usize, [&](const Sink& sink) {
@@ -840,8 +924,6 @@ std::vector<ZippedImage> floppy_images_in_zip(const fs::path& path, std::vector<
       });
     }
   } else {
-    // A 7z's images may sit in a folder ("<folder>/DISK1.IMG"): only its
-    // name in messages and in import.json; folders' own entries are skipped.
     // An encrypted 7z never opens (sevenzip.h).
     for (const SevenZipMember& m : sz->members()) {
       if (m.directory) continue;

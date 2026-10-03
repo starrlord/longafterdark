@@ -11,11 +11,14 @@
 //   on the desktop; each PNG exists and its body margin is pal.base. Every
 //   release of the registry is imported (fake records), so the Sources page
 //   lists them all; on work areas too short for the page its list shows as
-//   many whole rows as fit (eleven of twelve at 150% on a 2560x1440 monitor).
+//   many whole rows as fit. The Downloads page's list shows nine whole cards
+//   at the most and scrolls, the page no taller than Sources.
 // flow: real windows, pressed with TDM_CLICK_BUTTON as import.cli does:
-//   Sources -> 103 -> Back -> Cancel is exit 5 and writes nothing; then
-//   "Change cover" on a scratch install with a synthetic picture is exit 0
-//   and leaves a new tile.png (skipped, 77, while set_cover is C's stub).
+//   Sources -> 103 -> Back -> Cancel is exit 5 and writes nothing (on the
+//   way the Downloads list scrolls with the wheel, and the Down arrow brings
+//   each card it focuses into view); then "Change cover" on a scratch
+//   install with a synthetic picture is exit 0 and leaves a new tile.png
+//   (skipped, 77, while set_cover is C's stub).
 #include <windows.h>
 #include <commctrl.h>
 #include <objbase.h>
@@ -58,7 +61,8 @@ void fake_install(const fs::path& assets, const std::vector<std::string>& ids,
                                                       {"startrek", 16}, {"marvel", 1},    {"snoopy", 8},
                                                       {"looney", 12},   {"screams", 15},  {"disney", 16},
                                                       {"farside", 14},  {"dilbert", 16},  {"tng", 13},
-                                                      {"castaway", 1}};
+                                                      {"castaway", 1},  {"opus", 16},     {"opusroad", 16},
+                                                      {"flintstones", 15}, {"intermission", 54}};
   for (const std::string& id : ids) {
     auto md5 = image_md5.find(id);
     const std::string source = md5 == image_md5.end() ? "" : ", \"source\": {\"imageMd5\": \"" + md5->second + "\"}";
@@ -107,6 +111,35 @@ std::map<std::string, std::string> read_report(const fs::path& p) {
   return kv;
 }
 
+// The Downloads list in a report (list=, cards=): the height that shows, the
+// whole list's and where each card ends, in px, and how many cards show whole
+// (0 when the list ends inside one).
+struct DownloadsList {
+  int shown = -1, whole = -1, cards = 0;
+  std::vector<int> ends;
+};
+DownloadsList downloads_list(std::map<std::string, std::string>& kv) {
+  DownloadsList l;
+  sscanf(kv["list"].c_str(), "%d,%d", &l.shown, &l.whole);
+  const std::string& s = kv["cards"];
+  for (size_t p = 0; p < s.size();) {
+    l.ends.push_back(atoi(s.c_str() + p));
+    const size_t comma = s.find(',', p);
+    if (comma == std::string::npos) break;
+    p = comma + 1;
+  }
+  for (size_t i = 0; i < l.ends.size(); ++i)
+    if (l.ends[i] == l.shown) l.cards = int(i + 1);
+  return l;
+}
+
+// The client area's height in a report (client=x,y,w,h), or -1.
+int client_height(std::map<std::string, std::string>& kv) {
+  int x = 0, y = 0, w = 0, h = -1;
+  sscanf(kv["client"].c_str(), "%d,%d,%d,%d", &x, &y, &w, &h);
+  return h;
+}
+
 // ---- import.gui_model ---------------------------------------------------------------
 
 void test_model(const fs::path& dir) {
@@ -148,8 +181,10 @@ void test_model(const fs::path& dir) {
                      L"Anniversary, ") == 0);
     for (const Package& p : builtin_packages()) CHECK(first.find(to_wide(p.title)) != std::wstring::npos);
     CHECK(first.find(L", The Disney Collection Screen Saver, The Far Side Screen Saver Collection, Scott Adams' "
-                     L"Dilbert Screen Saver Collection, Star Trek: The Next Generation Screen Saver and Screen Antics: "
-                     L"Johnny Castaway. Choose where to copy them from.") != std::wstring::npos);
+                     L"Dilbert Screen Saver Collection, Star Trek: The Next Generation Screen Saver, Screen Antics: "
+                     L"Johnny Castaway, Opus 'n Bill Screen Saver, Opus 'n Bill: On the Road Again!, The Flintstones "
+                     L"Screen Saver Collection and Intermission 4.0. Choose where to copy them from.") !=
+          std::wstring::npos);
     const std::wstring later = gui::sources_intro(true);
     CHECK(later.find(L"After Dark 4.0 Deluxe") == std::wstring::npos);
     CHECK(later.find(L" releases. Choose where to copy them from.") != std::wstring::npos);
@@ -166,7 +201,8 @@ void test_model(const fs::path& dir) {
     if (reg.size() == 14) CHECK(later.find(L" of fourteen releases. ") != std::wstring::npos);
     if (reg.size() == 15) CHECK(later.find(L" of fifteen releases. ") != std::wstring::npos);
     if (reg.size() == 16) CHECK(later.find(L" of sixteen releases. ") != std::wstring::npos);
-    CHECK_EQ(reg.size(), size_t(16));
+    if (reg.size() == 20) CHECK(later.find(L" of twenty releases. ") != std::wstring::npos);
+    CHECK_EQ(reg.size(), size_t(20));
   }
 
   // Nothing installed, and an assets folder that doesn't exist stays that way.
@@ -288,7 +324,7 @@ void test_model(const fs::path& dir) {
     fs::resize_file(downloads / d.file_name, d.size);
   }
   auto dl = gui::download_rows(assets, "", downloads);
-  CHECK_EQ(dl.size(), size_t(16));
+  CHECK_EQ(dl.size(), size_t(20));
   for (const auto& r : dl) {
     CHECK(r.text.find(r.title + L"\n") == 0);
     if (r.id == "deluxe" || r.id == "tt")
@@ -317,6 +353,18 @@ void test_model(const fs::path& dir) {
     // One floppy's image, in the KryoFlux dump's ZIP.
     if (r.id == "castaway")
       CHECK(r.text == L"Screen Antics: Johnny Castaway\nFloppy disk image \u00b7 1.3 MB\nNot imported yet");
+    // A ZIP of each install disk's files (Opus 'n Bill's three), a ZIP of a
+    // release's files in one folder, three ZIPs in a tar (The Flintstones':
+    // the tar's size), the ZIP of three floppy images (Intermission 4.0's).
+    if (r.id == "opus")
+      CHECK(r.text == L"Opus 'n Bill Screen Saver\nInstall files (3 ZIPs) \u00b7 2.8 MB\nNot imported yet");
+    if (r.id == "opusroad")
+      CHECK(r.text == L"Opus 'n Bill: On the Road Again!\nInstall files (ZIP) \u00b7 4.4 MB\nNot imported yet");
+    if (r.id == "flintstones")
+      CHECK(r.text == L"The Flintstones Screen Saver Collection\nInstall files (3 ZIPs, in a tar) \u00b7 129.3 MB\n"
+                      L"Not imported yet");
+    if (r.id == "intermission")
+      CHECK(r.text == L"Intermission 4.0\n3 floppy disk images (ZIP) \u00b7 3.3 MB\nNot imported yet");
   }
   // With disk 2's image too, the pair is downloaded.
   if (startrek && !startrek->downloads.empty() && !startrek->downloads.front().more_images.empty()) {
@@ -332,8 +380,8 @@ void test_model(const fs::path& dir) {
   if (all) {
     CHECK((all->ids == std::vector<std::string>{"ad10", "ad32", "simpsons", "swse", "startrek", "marvel", "snoopy",
                                                 "looney", "screams", "disney", "farside", "dilbert", "tng",
-                                                "castaway"}));
-    CHECK(all->text.find(L"Every release not imported yet\n14 releases") == 0);
+                                                "castaway", "opus", "opusroad", "flintstones", "intermission"}));
+    CHECK(all->text.find(L"Every release not imported yet\n18 releases") == 0);
   }
   auto one = gui::download_rows(assets, "tt", downloads);
   CHECK_EQ(one.size(), size_t(1));
@@ -539,6 +587,14 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
           CHECK(kv["base"] == got);
         }
         CHECK(kv["dpi"] == std::to_string(dpi));
+        if (shot.page == L"downloads") {
+          // A card per release, every one imported: nine show whole at the
+          // most (eight when the note under them runs to a third line, as the
+          // scratch folder's long path may make it), and the list scrolls.
+          const DownloadsList l = downloads_list(kv);
+          CHECK(l.ends.size() == all_ids.size() && l.shown < l.whole);
+          CHECK(l.cards == 8 || l.cards == 9);
+        }
         n++;
       }
     }
@@ -568,7 +624,7 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
     }
   }
   // The Sources page on common screens, every release installed: their
-  // covers are a grid, six to a row in the 720-DIP window (sixteen on three
+  // covers are a grid, seven to a row in the 816-DIP window (twenty on three
   // rows), which shows whole at 150% on a 2560x1440 monitor (a 2560x1392 DIP
   // work area) and on a 1080-line screen at 100%. A work area too narrow and
   // short for it (640x900 at 100%: five to a row, four rows) shows as many
@@ -582,10 +638,11 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
     int at_least;   // whole rows that must show (-1: every one; 0: the fallback)
     int cols;       // covers to a row
   };
-  const std::vector<Rows> rows = {{L"workarea=2560x1392;dpi=144", -1, 6},
-                                  {L"workarea=1920x1032;dpi=96", -1, 6},
+  const std::vector<Rows> rows = {{L"workarea=2560x1392;dpi=144", -1, 7},
+                                  {L"workarea=1920x1032;dpi=96", -1, 7},
                                   {L"workarea=640x900;dpi=96", 2, 5},
                                   {L"workarea=640x520;dpi=144", 0, 5}};
+  std::map<std::wstring, int> sources_h;   // the page's client height at each of them
   for (const Rows& t : rows) {
     std::wstring tag = t.state;
     for (wchar_t& c : tag)
@@ -597,8 +654,10 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
     test::ProcessResult r =
         test::run_process(exe, {L"--gui", L"--dest", assets.wstring(), L"--no-cover-download"}, 60000);
     CHECK_EQ(r.exit_code, 0);
+    auto kv = read_report(report);
+    sources_h[t.state] = client_height(kv);
     int shown = -1, whole = -1, row = -1, grid_rows = -1, cols = -1;
-    sscanf(read_report(report)["list"].c_str(), "%d,%d,%d,%d,%d", &shown, &whole, &row, &grid_rows, &cols);
+    sscanf(kv["list"].c_str(), "%d,%d,%d,%d,%d", &shown, &whole, &row, &grid_rows, &cols);
     fprintf(stderr, "sources covers at %s: grid %d of %d px, %d rows of %d px, %d to a row\n", to_utf8(t.state).c_str(),
             shown, whole, grid_rows, row, cols);
     CHECK(cols == t.cols && grid_rows == (int(all_ids.size()) + t.cols - 1) / t.cols);
@@ -614,6 +673,52 @@ void test_shots(const std::wstring& exe, const fs::path& dir) {
     } else {
       CHECK(shown < 2 * row + frame || shown == whole);
     }
+    n++;
+  }
+  // The Downloads page at the same work areas (a card per release, every one
+  // imported), with a short downloads folder so the note under the list keeps
+  // to two lines: the list shows nine whole cards, its most, and scrolls for
+  // the rest, and the page is no taller than Sources there, so the window
+  // keeps its height from one page to the other (unlimited at 200% too). On
+  // a short work area it shows as many whole cards as fit, two at the least;
+  // on a very short one (640x340 at 150%) what fits, never less than 80 DIP.
+  struct Cards {
+    std::wstring state;
+    int fewest, most;   // whole cards that show (0, 0: fewer than two fit)
+    int dpi;
+  };
+  const std::vector<Cards> cards = {{L"workarea=2560x1392;dpi=144", 9, 9, 144},
+                                    {L"workarea=1920x1032;dpi=96", 9, 9, 96},
+                                    {L"dpi=192", 9, 9, 192},
+                                    {L"workarea=640x900;dpi=96", 2, 8, 96},
+                                    {L"workarea=640x520;dpi=144", 2, 8, 144},
+                                    {L"workarea=640x340;dpi=144", 0, 0, 144}};
+  for (const Cards& t : cards) {
+    std::wstring tag = t.state;
+    for (wchar_t& c : tag)
+      if (c == L'=' || c == L';') c = L'-';
+    const fs::path png = out / (L"downloads_cards_" + tag + L".png"),
+                   report = out / (L"downloads_cards_" + tag + L".txt");
+    SetEnvironmentVariableW(L"AD_IMPORT_TEST_SCREENSHOT", png.wstring().c_str());
+    SetEnvironmentVariableW(L"AD_IMPORT_TEST_SCREENSHOT_STATE",
+                            (L"page=downloads;theme=light;" + t.state + L";report=" + report.wstring()).c_str());
+    // "dl": a folder name short enough for two lines (nothing is read there but whether a download is).
+    test::ProcessResult r =
+        test::run_process(exe, {L"--gui", L"--dest", assets.wstring(), L"--download-dir", L"dl"}, 60000);
+    CHECK_EQ(r.exit_code, 0);
+    auto kv = read_report(report);
+    const DownloadsList l = downloads_list(kv);
+    const int h = client_height(kv);
+    const int beside = sources_h.count(t.state) ? sources_h[t.state] : -1;
+    fprintf(stderr, "downloads cards at %s: list %d of %d px, %d cards whole of %zu, page %d px (sources %d)\n",
+            to_utf8(t.state).c_str(), l.shown, l.whole, l.cards, l.ends.size(), h, beside);
+    CHECK(l.ends.size() == all_ids.size() && l.shown < l.whole);
+    if (t.most) {
+      CHECK(l.cards >= t.fewest && l.cards <= t.most);
+    } else {
+      CHECK(l.cards < 2 && l.ends.size() >= 2 && l.shown < l.ends[1] && l.shown >= 80 * t.dpi / 96);
+    }
+    if (t.fewest == 9 && beside > 0) CHECK(h > 0 && h <= beside);
     n++;
   }
   // Live changes: the theme switched after opening, and a move to a monitor of
@@ -739,6 +844,28 @@ class GuiProcess {
     return nullptr;
   }
   static void click(HWND h, int id) { SendMessageW(h, WM_USER + 102 /* TDM_CLICK_BUTTON */, WPARAM(id), 0); }
+  // The control with the keyboard focus in `top`'s thread.
+  static HWND focus(HWND top) {
+    GUITHREADINFO gti{sizeof(gti)};
+    return GetGUIThreadInfo(GetWindowThreadProcessId(top, nullptr), &gti) ? gti.hwndFocus : nullptr;
+  }
+  // A key pressed on the focused control (posted, so the page's dialog keys
+  // see it); returns the control focused next, once the focus has moved.
+  static HWND press(HWND top, WPARAM vk, DWORD timeout_ms = 3000) {
+    HWND f = focus(top);
+    PostMessageW(f, WM_KEYDOWN, vk, 1);
+    PostMessageW(f, WM_KEYUP, vk, LPARAM(0xC0000001));
+    const ULONGLONG until = GetTickCount64() + timeout_ms;
+    while (focus(top) == f && GetTickCount64() < until) Sleep(10);
+    return focus(top);
+  }
+  // Waits until `cond` holds (or the time is up); returns whether it does.
+  template <typename F>
+  static bool settle(F cond, DWORD timeout_ms = 2000) {
+    const ULONGLONG until = GetTickCount64() + timeout_ms;
+    while (!cond() && GetTickCount64() < until) Sleep(10);
+    return cond();
+  }
   static bool gone(HWND h, DWORD timeout_ms = 5000) {
     const ULONGLONG until = GetTickCount64() + timeout_ms;
     while (IsWindow(h) && GetTickCount64() < until) Sleep(50);
@@ -849,6 +976,40 @@ int test_flow(const std::wstring& exe, const fs::path& dir) {
       if (list) {
         CHECK(GuiProcess::control(list, 200) != nullptr);
         CHECK(GuiProcess::control(list, 299) != nullptr);   // nothing imported: "every release"
+        // Twenty-one cards: nine show at the most, and the list scrolls. A
+        // wheel notch over a card scrolls it, and each card the Down arrow
+        // focuses (from the first, focused as the page opens, to "every
+        // release", the last) is scrolled into view, as Tab's are.
+        HWND panel = FindWindowExW(list, nullptr, nullptr, L"Releases"), first = GuiProcess::control(list, 200);
+        CHECK(panel != nullptr && first != nullptr);
+        if (panel && first) {
+          RECT pr{}, before{};
+          GetWindowRect(panel, &pr);
+          GetWindowRect(first, &before);
+          PostMessageW(first, WM_MOUSEWHEEL, MAKEWPARAM(0, WORD(-WHEEL_DELTA)),
+                       MAKELPARAM(before.left + 8, before.top + 8));
+          auto first_top = [&] {
+            RECT r{};
+            GetWindowRect(first, &r);
+            return r.top;
+          };
+          CHECK(GuiProcess::settle([&] { return first_top() < before.top; }));
+          auto in_view = [&](HWND h) {
+            RECT r{};
+            GetWindowRect(h, &r);
+            return r.top >= pr.top && r.bottom <= pr.bottom;
+          };
+          CHECK(GuiProcess::focus(list) == first);
+          HWND f = first;
+          for (int i = 0; i < 30 && GetDlgCtrlID(f) != 299; ++i) {
+            HWND next = GuiProcess::press(list, VK_DOWN);
+            if (next == f) break;
+            f = next;
+            CHECK(IsChild(panel, f) && GuiProcess::settle([&] { return in_view(f); }));
+          }
+          CHECK_EQ(GetDlgCtrlID(f), 299);
+          CHECK(first_top() < pr.top);   // the first card scrolled out at the top
+        }
         GuiProcess::click(list, IDCANCEL);
         CHECK(GuiProcess::gone(list));
         HWND back = p.window(list);

@@ -47,8 +47,9 @@
 //   unload, close       at shutdown, unless a call is still suspended; then every module is freed
 // What the lane's machinery does differently for a protocol is asked, not
 // decided by kind: whether KEY lines become key messages
-// (takes_key_messages), whether overruns are carried (carries_overruns) and
-// what a blit's or fill's pixel costs the budget (pixel_cost).
+// (takes_key_messages), whether overruns are carried (carries_overruns),
+// what a blit's or fill's pixel costs the budget (pixel_cost) and which knob
+// sets the modeled machine's speed (speed_knob).
 // A button (Ne16Lane::configure): check_button, configure_button_runtime, mount,
 // button, close; then every module is freed.
 //
@@ -154,6 +155,14 @@ class Protocol16 {
     uint32_t def;
   };
   virtual PixelCost pixel_cost() const { return {"ADPIXCOST", 2}; }
+  // The environment variable that sets the modeled machine's speed (lane.hh
+  // "Pacing", Speed): a percent, 1..100 (unset: 100, the lane's machine as it
+  // is), that scales the frame's DRAWFRAME budget and ADMAXDRAWS down and the
+  // bound on what is owed up, so a module that steps once a call steps that
+  // much less often. Null: the protocol has none, and its runs are at 100%
+  // (the lane logs kImxSpeedKnob as ignored when it is set). IMX:
+  // kImxSpeedKnob; AD3, scr: none.
+  virtual const char* speed_knob() const { return nullptr; }
   // SET <index> <value>. True when the module must be sent the values: the
   // lane calls send_controls() at once, or — a call being suspended — before
   // the next call. AD3: ctrl4[index] for index 0..3.
@@ -242,6 +251,12 @@ std::unique_ptr<Protocol16> make_imx_protocol(const Ne16Layout& layout, ImxForm 
 // budget unless ADNE16IMXPIXCOST says otherwise (Protocol16::pixel_cost;
 // why 4: lane.hh "Pacing").
 constexpr uint32_t kImxPixelCost = 4;
+
+// The knob that sets an Intermission module's machine speed, a percent
+// (Protocol16::speed_knob; lane.hh "Pacing", Speed). The front end sets it
+// from the module's Speed control (a catalog control with "host":
+// "ADNE16IMXSPEED"); other protocols ignore it.
+constexpr const char kImxSpeedKnob[] = "ADNE16IMXSPEED";
 
 // The guest's disk for an Intermission module (imx_protocol.cc): C:\SAVER (the
 // module dir, the current directory) and C:\WINDOWS (over the package's

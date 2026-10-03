@@ -88,6 +88,7 @@ constexpr uint16_t kSize = 0x67;
 // preview with the inline panel (saverdraw codes 3/4).
 constexpr uint32_t kModuleFlags = 0x0000120C;  // INTRMLIB's defaults for an enabled module (1:2274..1:22b5)
 constexpr uint32_t kSaver = 0x00001000;        // a runnable saver: what a QUERY without a path says of an IMQ module
+constexpr uint32_t kIsReader = 0x00000800;     // a reader: never one of INTERMIS's savers, whatever 0x1000 says
 constexpr uint32_t kTakesInput = 0x00002000;   // the saver takes input (lane.hh "Intermission (IMX)")
 constexpr uint32_t kPreview = 0x00004000;
 constexpr uint16_t kOwnReader = 0xFFFF;        // +0x59 of a reader's record, and of an IMQ module's: it is its own

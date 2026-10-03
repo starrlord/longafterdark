@@ -496,6 +496,88 @@ void test_catalog() {
   CHECK(resolve_module(c, "burns", &several) == nullptr && several.empty());
   add("simpsons.fish", "Fish", "packages/simpsons/SIMPSONS/FISH.AD");
   CHECK(resolve_module(c, "fish", &several) == nullptr && several.size() == 2);   // ambiguous
+
+  // Host controls (catalog "host": Intermission 4.0's Speed): the player has
+  // no settings of a module's own, so each one's variable is set to its
+  // catalog default, read as the Windows saver reads it, for every host it
+  // starts for the module. A name the front end sets itself, one not of the
+  // host's shape, a repeated one or a control without a value is left out;
+  // the module's own controls (no "host", or "") aren't read at all.
+  CHECK(host_variable_ok("ADNE16IMXSPEED") && host_variable_ok("ADX") && host_variable_ok("ADFOO_BAR"));
+  for (const char* bad : {"", "AD", "AD_ASSETS_DIR", "adne16imxspeed", "PATH", "ADFOO-BAR", "ADSTREAM", "ADCVSET",
+                          "ADSTATE", "ADSOUND", "ADVOLUME", "ADAUDIOOUT", "ADSTATUSLOG", "ADSTATUSHANDLE", "ADNUMLOCK"}) {
+    CHECK(!host_variable_ok(bad));
+  }
+  char dir[] = "/tmp/lad_unit_cat_XXXXXX";
+  CHECK(mkdtemp(dir) != nullptr);
+  const std::string file = std::string(dir) + "/catalog-win.json";
+  {
+    std::ofstream f(file, std::ios::binary);
+    f << R"({"version": 1, "modules": [
+      {"id": "intermission.dragon", "displayName": "Dragon Kites", "lane": "ne16", "abi": "intermission",
+       "path": "packages/intermission/SAVER/DRAGON.IMX", "package": "intermission",
+       "controls": [{"index": 0, "name": "Configure...", "kind": "button", "type": "button"},
+                    {"index": 1, "name": "Speed:", "kind": "stringslider", "type": "slider",
+                     "items": ["Slowest", "Slow", "Normal", "Fast", "Fastest"], "values": [6, 12, 25, 50, 100],
+                     "default": 6, "defaultStop": 0, "host": "ADNE16IMXSPEED"}]},
+      {"id": "intermission.worms", "displayName": "Wriggly", "lane": "ne16", "abi": "intermission",
+       "path": "packages/intermission/SAVER/WORMS.IMX", "package": "intermission",
+       "controls": [{"index": 0, "name": "Configure...", "kind": "button", "type": "button"},
+                    {"index": 1, "name": "Speed:", "kind": "stringslider", "type": "slider",
+                     "items": ["Slowest", "Slow", "Normal", "Fast", "Fastest"], "values": [6, 12, 25, 50, 100],
+                     "default": 12, "defaultStop": 1, "host": "ADNE16IMXSPEED"}]},
+      {"id": "intermission.antmine", "displayName": "Ant Mine", "lane": "ne16", "abi": "intermission",
+       "path": "packages/intermission/SAVER/ANTMINE.IMX", "package": "intermission",
+       "controls": [{"index": 0, "name": "Configure...", "kind": "button", "type": "button"},
+                    {"index": 1, "name": "Speed:", "kind": "stringslider", "type": "slider",
+                     "items": ["Slowest", "Slow", "Normal", "Fast", "Fastest"], "values": [6, 12, 25, 50, 100],
+                     "default": 25, "defaultStop": 2, "host": "ADNE16IMXSPEED"}]},
+      {"id": "intermission.imshark", "displayName": "Space Shark", "lane": "ne16", "abi": "intermission",
+       "path": "packages/intermission/SAVER/IMSHARK.IMQ", "package": "intermission",
+       "controls": [{"index": 0, "name": "Configure...", "kind": "button", "type": "button"},
+                    {"index": 1, "name": "Speed:", "kind": "stringslider", "type": "slider",
+                     "items": ["Slowest", "Slow", "Normal", "Fast", "Fastest"], "values": [6, 12, 25, 50, 100],
+                     "default": 50, "defaultStop": 3, "host": "ADNE16IMXSPEED"}]},
+      {"id": "intermission.dpig", "displayName": "Dancing Pig", "lane": "ne16", "abi": "intermission",
+       "path": "packages/intermission/SAVER/DPIG.ASA", "package": "intermission",
+       "controls": [{"index": 0, "name": "Configure...", "kind": "button", "type": "button"}]},
+      {"id": "x.mixed", "displayName": "Mixed", "lane": "ne16", "path": "X.IMX", "controls": [
+        {"index": 9, "name": "Box", "type": "checkbox", "default": 5, "host": "ADBOX"},
+        {"index": 1, "name": "Two", "type": "slider", "items": ["hi", "lo"], "values": [80, 10], "defaultStop": 1, "host": "ADTWO"},
+        {"index": 2, "name": "Own", "type": "slider", "min": 0, "max": 9, "default": 3, "host": ""},
+        {"index": 3, "name": "Theirs", "type": "checkbox", "default": 1, "host": "ADSTATE"},
+        {"index": 4, "name": "Number", "type": "checkbox", "default": 1, "host": 7},
+        {"index": 5, "name": "Again", "type": "checkbox", "default": 0, "host": "ADTWO"},
+        {"index": 6, "name": "Press", "type": "button", "host": "ADPRESS"},
+        {"index": 7, "name": "Empty", "type": "popup", "items": [], "host": "ADEMPTY"},
+        {"index": 8, "name": "Pick", "type": "popup", "items": ["a", "b", "c"], "default": 9, "host": "ADPICK"},
+        {"index": 10, "name": "Plain", "type": "slider", "min": 10, "max": 20, "default": 99, "host": "ADPLAIN"},
+        {"index": 11, "name": "Labels", "type": "slider", "items": ["a", "b", "c"], "defaultStop": 1, "host": "ADLABELS"},
+        {"index": 12, "name": "Odd", "type": "dial", "default": 1, "host": "ADODD"}]}]})";
+  }
+  Catalog cat;
+  std::string err;
+  CHECK(load_catalog(file, cat, &err));
+  using Env = std::vector<std::pair<std::string, std::string>>;
+  // Each module's own starting stop, as the catalog writes it.
+  const Module* dragon = cat.find("intermission.dragon");
+  CHECK(dragon && (dragon->host_env == Env{{"ADNE16IMXSPEED", "6"}}));   // Slowest
+  const Module* worms = cat.find("intermission.worms");
+  CHECK(worms && (worms->host_env == Env{{"ADNE16IMXSPEED", "12"}}));   // Slow
+  const Module* antmine = cat.find("intermission.antmine");
+  CHECK(antmine && (antmine->host_env == Env{{"ADNE16IMXSPEED", "25"}}));   // Normal
+  const Module* imshark = cat.find("intermission.imshark");
+  CHECK(imshark && (imshark->host_env == Env{{"ADNE16IMXSPEED", "50"}}));   // Fast
+  const Module* pig = cat.find("intermission.dpig");
+  CHECK(pig && pig->host_env.empty());
+  const Module* mixed = cat.find("x.mixed");
+  // By index; "Two"'s table put in order (defaultStop indexes it as written:
+  // "lo", 10); a popup's and a numeric slider's default clamped, a
+  // checkbox's 0/1, a labels-only slider's value its stop index.
+  CHECK(mixed && (mixed->host_env == Env{{"ADTWO", "10"}, {"ADPICK", "2"}, {"ADBOX", "1"}, {"ADPLAIN", "20"},
+                                         {"ADLABELS", "1"}}));
+  unlink(file.c_str());
+  rmdir(dir);
 }
 
 std::string tmpdir() {

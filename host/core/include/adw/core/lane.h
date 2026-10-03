@@ -126,8 +126,9 @@ class Lane {
   virtual bool can_configure() const { return false; }
   // The module ABIs this lane runs, for --capabilities (abis=): "afterdark"
   // (After Dark's module protocols), "intermission" (Delrina Intermission's
-  // modules: .IMX modules, .ASA animations and .IMQ modules that are their
-  // own readers; a catalog entry says "abi":"intermission", and no "abi"
+  // modules: .IMX modules, .ASA animations, .IMQ modules that are their own
+  // readers, and the .FLI, .FLC, .MRF and .MSV files Intermission's other
+  // readers play; a catalog entry says "abi":"intermission", and no "abi"
   // means "afterdark") and "scrnsave" (a Windows 3.1 screen saver: a .SCR
   // program built on SCRNSAVE.LIB, run as Windows 3.1 ran it;
   // "abi":"scrnsave"). The pe32 lane runs {afterdark}, the ne16 lane
@@ -149,7 +150,12 @@ class Lane {
 
 // Module image kind, from the header alone. A Delrina Intermission ASA
 // animation (a data file that starts "AniN" or "AniM", played by
-// Intermission's ASA reader) is an ne16 module.
+// Intermission's ASA reader) is an ne16 module. So is a file of one of
+// Intermission's other data types — an .FLI or .FLC animation, an .MRF
+// morph, an .MSV MultiSaver group —, which is no executable and which
+// Intermission gave the reader whose type is the file's extension (INTRMLIB's
+// FINDALLMODULES matched every file's extension against its readers' types):
+// here it is the extension too.
 enum class LaneKind { pe32, ne16, unsupported, unreadable };
 struct ModuleProbe {
   LaneKind kind = LaneKind::unreadable;
@@ -158,6 +164,10 @@ struct ModuleProbe {
 ModuleProbe probe_module(const std::string& path_utf8);
 // Whether a file's first four bytes are an Intermission ASA animation's header ("AniN" or "AniM").
 bool asa_header(const void* first4);
+// The Intermission data type a file name's extension names, upper case
+// ("FLI", "FLC", "MRF" or "MSV"; any case in the name), else nullptr. ASA is
+// not among them: an ASA animation goes by its header.
+const char* intermission_data_type(const std::string& path_utf8);
 const char* lane_kind_name(LaneKind k);
 
 // Built-in synthetic lane (adhostwin --test-pattern).

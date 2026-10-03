@@ -15,12 +15,14 @@ constexpr size_t kHeader = 14;
 
 uint32_t le32(const uint8_t* p) { return uint32_t(p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24); }
 
-// Whole 8-byte records "DLL " + four ASCII digits, and nothing else: the
+// Whole 8-byte records "DLL " (in any case: The Flintstones' June build's
+// DIBDLL.DLL ends "dll 0601") + four ASCII digits, and nothing else: the
 // version stamps Delrina's Intermission Installer reads after the data.
 bool version_stamps(std::span<const uint8_t> rest) {
   if (rest.empty() || rest.size() % 8) return false;
   for (size_t i = 0; i < rest.size(); i += 8) {
-    if (rest[i] != 'D' || rest[i + 1] != 'L' || rest[i + 2] != 'L' || rest[i + 3] != ' ') return false;
+    if ((rest[i] | 0x20) != 'd' || (rest[i + 1] | 0x20) != 'l' || (rest[i + 2] | 0x20) != 'l' || rest[i + 3] != ' ')
+      return false;
     for (size_t k = 4; k < 8; k++)
       if (rest[i + k] < '0' || rest[i + k] > '9') return false;
   }

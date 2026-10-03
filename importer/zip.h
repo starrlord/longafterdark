@@ -10,10 +10,13 @@
 // source may instead keep each install disk's files in a folder of its own
 // (ZipNames::disk_folders; the Internet Archive's copies of ScreamSavers,
 // Marvel Comics Screen Posters and Snoopy's Screen Savers): one level of
-// DISK<n> folders, never deeper; the installers' own archives keep the bare
-// names. Member names are UTF-8 from the constructor on: as stored when the
-// archive flags them UTF-8 (general-purpose bit 11; a byte that is not
-// UTF-8 becomes U+FFFD) or they are UTF-8, else decoded from code page 437
+// DISK<n> folders, never deeper; or hold its files in folders of any names
+// (ZipNames::paths, where the source's rule says what it may hold: one
+// folder of a release's files, or floppy images in any folder; source.h);
+// the installers' own archives keep the bare names. Member names are UTF-8
+// from the constructor on: as stored when the archive flags them UTF-8
+// (general-purpose bit 11; a byte that is not UTF-8 becomes U+FFFD) or they
+// are UTF-8, else decoded from code page 437
 // — so two names are one only when Windows would take them for one file.
 // Extraction streams: decrypt, raw-inflate through zlib, and check the size
 // and CRC-32 of every member.
@@ -40,12 +43,13 @@ class ZipError : public std::runtime_error {
 };
 
 // The member names an archive may hold. `bare`: file names only (every
-// installer's archive, and a flat ZIP of install files). `disk_folders`: a
-// bare name, or a bare name in a folder DISK<n> ("DISK2/SETUP.PKG"), or such
-// a folder's own entry ("DISK2/"); any other folder, and anything deeper, is
-// refused. Whether a ZIP source mixes the two is the source's rule
-// (source.h), not the archive's.
-enum class ZipNames { bare, disk_folders };
+// installer's archive). `disk_folders`: a bare name, or a bare name in a
+// folder DISK<n> ("DISK2/SETUP.PKG"), or such a folder's own entry
+// ("DISK2/"); any other folder, and anything deeper, is refused. `paths`: any
+// relative path of usable names ("Intermission 4.0/ITM4W-D1.IMA"), a folder's
+// own entry ending in '/' — what a ZIP source holds, whose layout is the
+// source's rule (source.h), not the archive's.
+enum class ZipNames { bare, disk_folders, paths };
 
 // n for a folder named DISK<n>, n = 1..99 written without leading zeros, in
 // any case ("DISK1", "Disk2", "disk12"); 0 for every other name ("DISK0",
@@ -60,7 +64,9 @@ struct ZipMember {
   uint32_t csize = 0, usize = 0;
   uint32_t local_offset = 0;
   unsigned disk = 0;       // disk_folders: the n of the DISK<n> folder it is in; 0 at the archive's root
-  bool directory = false;  // disk_folders: a DISK<n> folder's own entry ("DISK2/"), which holds no data
+  // disk_folders: a DISK<n> folder's own entry ("DISK2/"); paths: any
+  // folder's ("Intermission 4.0/"). It holds no data.
+  bool directory = false;
   bool encrypted() const { return (flags & 1) != 0; }
   // The name without its DISK<n> folder ("SETUP.PKG"); "" for a folder's own entry.
   std::string file_name() const { return disk ? name.substr(name.find('/') + 1) : name; }

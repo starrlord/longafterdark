@@ -6,9 +6,12 @@
 //     their exports as the ne16 lane does (MODULE first; what it refuses
 //     left out, with its reason), a scan of a synthetic FILES tree and of a
 //     package tree with *.AD and *.IMX, the JSON layout (abi last, IMX
-//     entries only), After Dark 2.0's About rules and "screen" (the startrek
-//     package's entries only), and regenerate_catalog (adimport
-//     --catalog-only)
+//     entries only), the Speed control (a made-up Intermission 4.0 tree: on
+//     the registry's speed modules alone, after the Configure... button,
+//     "host" last; the same files under another package as before; the
+//     registry's list against the package's modules), After Dark 2.0's
+//     About rules and "screen" (the startrek package's entries only), and
+//     regenerate_catalog (adimport --catalog-only)
 //   test_import_catalog real <scratch> <adimport.exe> <reference.json>
 //     semantic identity with the prototype's output (research/win/
 //     make_catalog.py -> research/win/catalog-win.json) over the real
@@ -18,12 +21,14 @@
 #include <phosg/JSON.hh>
 
 #include <functional>
+#include <map>
 #include <set>
 #include <tuple>
 
 #include "catalog.h"
 #include "importer.h"
 #include "module_builder.h"
+#include "names.h"
 #include "run_process.h"
 #include "test_util.h"
 
@@ -536,6 +541,271 @@ void test_imx(const fs::path& dir) {
   CHECK(!deluxe.empty() && deluxe[0].id == "classic.y");
 }
 
+// ---- the Speed control (Package::speed_modules) ---------------------------------------------
+
+// The catalog's Speed control as the JSON lays it out inside "controls" (a
+// module's), starting at `stop` (its value the default): the exact text the
+// front-ends read.
+std::string speed_json(int stop) {
+  static const int kValues[] = {6, 12, 25, 50, 100};
+  return "    {\n"
+         "     \"index\": 1,\n"
+         "     \"name\": \"Speed:\",\n"
+         "     \"kind\": \"stringslider\",\n"
+         "     \"type\": \"slider\",\n"
+         "     \"items\": [\n"
+         "      \"Slowest\",\n"
+         "      \"Slow\",\n"
+         "      \"Normal\",\n"
+         "      \"Fast\",\n"
+         "      \"Fastest\"\n"
+         "     ],\n"
+         "     \"values\": [\n"
+         "      6,\n"
+         "      12,\n"
+         "      25,\n"
+         "      50,\n"
+         "      100\n"
+         "     ],\n"
+         "     \"default\": " +
+         std::to_string(kValues[stop]) + ",\n     \"defaultStop\": " + std::to_string(stop) +
+         ",\n"
+         "     \"host\": \"ADNE16IMXSPEED\"\n"
+         "    }\n";
+}
+
+// Two controls alike, field for field.
+bool same_control(const CatalogControl& a, const CatalogControl& b) {
+  return std::tie(a.index, a.name, a.kind, a.type, a.items, a.values, a.def, a.default_stop, a.bold_stop, a.min, a.max,
+                  a.raw_default, a.unit, a.unit_pos, a.host) ==
+         std::tie(b.index, b.name, b.kind, b.type, b.items, b.values, b.def, b.default_stop, b.bold_stop, b.min, b.max,
+                  b.raw_default, b.unit, b.unit_pos, b.host);
+}
+
+void test_speed(const fs::path& dir) {
+  // The control: a host control (ADNE16IMXSPEED, never ADCVSET or SET), the
+  // same five stops for every module, starting at the module's own (Normal
+  // unless its row says otherwise).
+  const std::vector<std::string> stops = {"Slowest", "Slow", "Normal", "Fast", "Fastest"};
+  const std::vector<int> values = {6, 12, 25, 50, 100};
+  const CatalogControl s = speed_control();
+  CHECK(s.index == 1 && s.name == "Speed:" && s.kind == "stringslider" && s.type == "slider");
+  CHECK(s.items == stops && s.values == values);
+  CHECK(s.def == 25 && s.default_stop == 2 && !s.bold_stop && !s.min && !s.max && !s.raw_default && s.unit.empty());
+  CHECK_EQ(s.host, std::string("ADNE16IMXSPEED"));
+  CHECK_EQ(std::string(kSpeedHost), std::string("ADNE16IMXSPEED"));
+  for (int k = 0; k < 5; k++) {
+    const CatalogControl at = speed_control(SpeedStop(k));
+    CHECK(at.index == 1 && at.items == stops && at.values == values && at.host == s.host && !at.bold_stop);
+    CHECK(at.default_stop == k && at.def == values[size_t(k)]);
+  }
+
+  // The registry: Intermission 4.0 alone lists modules; each is one of its
+  // modules (its table installs it, its manifest has it, a name override
+  // names it), none twice. Its IMX, IMQ, MRF and MSV modules are listed but
+  // for the ten its measurement found the same at any speed (their own
+  // clocks, or their readers': research/speed/host/FACTS.md); no ASA or FLI
+  // animation is (their readers' clocks). Six start elsewhere than Normal:
+  // Dragon Kites, Ping and Bricks at Slowest, Wriggly and Snow Flakes at
+  // Slow, Space Shark at Fast.
+  for (const Package& p : builtin_packages())
+    CHECK_EQ(p.speed_modules.empty(), std::string_view(p.id) != "intermission");
+  const Package* im = find_package("intermission");
+  CHECK(im != nullptr);
+  if (!im) return;
+  std::set<std::string> listed, expected;
+  std::map<std::string, SpeedStop> not_normal;
+  for (const SpeedModule& m : im->speed_modules) {
+    CHECK(listed.insert(m.module).second);
+    if (m.start != SpeedStop::normal) not_normal[m.module] = m.start;
+  }
+  for (const std::string& m : listed) {
+    CHECK(m.rfind("SAVER/", 0) == 0 && !ends_with_i(m, ".ASA") && !ends_with_i(m, ".FLI"));
+    bool installed = false, known = false, named = false;
+    for (const LooseFile& lf : im->loose_files) installed = installed || m == lf.to;
+    for (const KnownFile& k : im->manifest) known = known || std::string(im->root) + "/" + m == k.path;
+    for (const NameOverride& o : im->name_overrides) named = named || m == o.module;
+    if (!installed || !known || !named) fprintf(stderr, "  speed module %s: not one of the package's\n", m.c_str());
+    CHECK(installed && known && named);
+  }
+  const std::set<std::string> same_at_any_speed = {
+      "SAVER/BIGFOOT.IMX", "SAVER/COMMNQUE.IMX", "SAVER/CONUND.IMX", "SAVER/FADE.IMX",     "SAVER/FLEX.IMX",
+      "SAVER/MAZE.IMX",    "SAVER/ORBS.IMX",     "SAVER/PHOTO.IMX",  "SAVER/TIMEPIEC.IMX", "SAVER/PARADISE.MRF"};
+  for (const LooseFile& lf : im->loose_files) {
+    const std::string to = lf.to;
+    if (to.rfind("SAVER/", 0) == 0 && !is_intermission_reader(lf.from) && !same_at_any_speed.count(to) &&
+        (ends_with_i(to, ".IMX") || ends_with_i(to, ".IMQ") || ends_with_i(to, ".MRF") || ends_with_i(to, ".MSV")))
+      expected.insert(to);
+  }
+  for (const std::string& m : expected)
+    if (!listed.count(m)) fprintf(stderr, "  speed module %s: not listed\n", m.c_str());
+  CHECK(listed == expected);
+  CHECK_EQ(listed.size(), size_t(36));  // 34 IMX, IMSHARK.IMQ, MACHINE.MSV
+  CHECK((not_normal == std::map<std::string, SpeedStop>{{"SAVER/DRAGON.IMX", SpeedStop::slowest},
+                                                        {"SAVER/PING.IMX", SpeedStop::slowest},
+                                                        {"SAVER/BRICKS.IMX", SpeedStop::slowest},
+                                                        {"SAVER/WORMS.IMX", SpeedStop::slow},
+                                                        {"SAVER/SNOW.IMX", SpeedStop::slow},
+                                                        {"SAVER/IMSHARK.IMQ", SpeedStop::fast}}));
+
+  // A made-up Intermission 4.0 tree. A listed module gets the control after
+  // its Configure... button (its key matched without case: worms.imx), at
+  // its own starting stop; one without a dialog gets it alone, still at
+  // index 1; an unlisted module of the release (the clock, the morph, the
+  // ASA and FLI animations), a module it does not have and an After Dark
+  // module at a listed path (its slot 1 is its own) do not.
+  const fs::path root = dir / L"im40-tree";
+  auto put = [&](const std::wstring& rel, const std::string& data) {
+    test::write_bytes(root / rel, std::vector<uint8_t>(data.begin(), data.end()));
+  };
+  const std::vector<std::string> imq = {"WEP", "SAVERMAIN", "SAVERDLGPROC"};
+  put(L"SAVER\\DRAGON.IMX", synth_imx(kImxExports, {"INTRMLIB", "KERNEL", "GDI"}));
+  put(L"SAVER\\worms.imx", synth_imx(kImxExports, {"INTRMLIB", "USER"}));
+  put(L"SAVER\\SNOW.IMX", synth_imx({"WEP", "SAVERINIT", "SAVERDRAW"}, {"INTRMLIB"}));
+  put(L"SAVER\\TIMEPIEC.IMX", synth_imx(kImxExports, {"INTRMLIB"}));
+  put(L"SAVER\\NEWONE.IMX", synth_imx(kImxExports, {"INTRMLIB"}));
+  put(L"SAVER\\IMSHARK.IMQ", synth_imx(imq, {"INTRMLIB", "ANTSW"}));
+  put(L"SAVER\\PARADISE.MRF", "a made-up morph");
+  put(L"SAVER\\MACHINE.MSV", "a made-up mix");
+  put(L"SAVER\\FACE.ASA", "AniN a made-up face");
+  put(L"SAVER\\EINSTEIN.FLI", std::string("\x00\x04\x00\x00\x12\xAF", 6) + std::string(200, '\x01'));
+  put(L"SAVER\\MOSAIC.IMX", synth_ne());
+  CatalogTree t;
+  t.package = im;
+  t.dir = root;
+  std::vector<std::string> logged;
+  const CatalogDoc doc = build_catalog({t}, [&](const std::string& l) { logged.push_back(l); });
+  for (const auto& l : logged) fprintf(stderr, "  %s\n", l.c_str());
+  CHECK(logged.empty());
+  CHECK_EQ(doc.modules.size(), size_t(11));
+  auto entry = [&](const CatalogDoc& d, const std::string& id) -> const CatalogModule* {
+    for (const CatalogModule& m : d.modules)
+      if (m.id == id) return &m;
+    fprintf(stderr, "  no entry %s\n", id.c_str());
+    return nullptr;
+  };
+  // Configure... then Speed: / Configure... alone / Speed: alone; the stop
+  // Speed: starts at.
+  enum class Has { both, button, speed };
+  struct Want {
+    const char* id;
+    Has has;
+    SpeedStop start;
+  };
+  for (const Want& w : {Want{"intermission.dragon", Has::both, SpeedStop::slowest},
+                        Want{"intermission.worms", Has::both, SpeedStop::slow},
+                        Want{"intermission.imshark", Has::both, SpeedStop::fast},
+                        Want{"intermission.machine", Has::both, SpeedStop::normal},
+                        Want{"intermission.snow", Has::speed, SpeedStop::slow},
+                        Want{"intermission.timepiec", Has::button, SpeedStop::normal},
+                        Want{"intermission.newone", Has::button, SpeedStop::normal},
+                        Want{"intermission.paradise", Has::button, SpeedStop::normal},
+                        Want{"intermission.face", Has::button, SpeedStop::normal},
+                        Want{"intermission.einstein", Has::button, SpeedStop::normal}}) {
+    const CatalogModule* m = entry(doc, w.id);
+    CHECK(m != nullptr);
+    if (!m) continue;
+    CHECK_EQ(m->abi, std::string("intermission"));
+    const std::vector<CatalogControl>& c = m->controls;
+    CHECK_EQ(c.size(), size_t(w.has == Has::both ? 2 : 1));
+    if (c.size() != (w.has == Has::both ? 2u : 1u)) continue;
+    if (w.has != Has::speed) CHECK(c[0].index == 0 && c[0].name == "Configure..." && c[0].host.empty());
+    if (w.has != Has::button) CHECK(same_control(c.back(), speed_control(w.start)));
+    else CHECK(c[0].kind == "button");
+  }
+  CHECK_EQ(entry(doc, "intermission.worms") ? entry(doc, "intermission.worms")->module_name : "", std::string("Wriggly"));
+  // The After Dark module keeps its own controls (slots 1, 2 and 4) and no
+  // more.
+  if (const CatalogModule* ad = entry(doc, "intermission.mosaic")) {
+    CHECK(ad->abi.empty() && ad->entry == "MODULE");
+    CHECK(ad->controls.size() == 3 && ad->controls[1].index == 1 && ad->controls[1].kind == "popup");
+    for (const CatalogControl& c : ad->controls) CHECK(c.host.empty());
+  }
+  // The JSON: the Configure... button, then the Speed control, exactly (at
+  // Slowest for Dragon Kites, at Normal for the mix; Snow Flakes' alone, at
+  // Slow); no other control has "host".
+  const std::string text = render_catalog(doc);
+  auto both = [](int stop, const char* entry_point) {
+    return "   \"controls\": [\n    {\n     \"index\": 0,\n     \"name\": \"Configure...\",\n"
+           "     \"kind\": \"button\",\n     \"type\": \"button\"\n    },\n" +
+           speed_json(stop) + "   ],\n   \"entry\": \"" + entry_point + "\",\n";
+  };
+  auto in_entry = [&](const std::string& id, const std::string& part) {
+    const size_t at = text.find("\"id\": \"" + id + "\""), end = text.find("\n  }", at);
+    return at != std::string::npos && text.find(part, at) < end;
+  };
+  CHECK(in_entry("intermission.dragon", both(0, "SAVERDRAW")));
+  CHECK(in_entry("intermission.machine", both(2, "SAVERMAIN")));
+  CHECK(in_entry("intermission.snow", "   \"controls\": [\n" + speed_json(1) + "   ],\n   \"entry\": \"SAVERDRAW\",\n"));
+  size_t hosts = 0;
+  for (size_t at = text.find("\"host\""); at != std::string::npos; at = text.find("\"host\"", at + 1)) hosts++;
+  CHECK_EQ(hosts, size_t(5));
+  // Read back independently: the same control everywhere but its default.
+  const phosg::JSON parsed = phosg::JSON::parse(text);
+  std::map<std::string, int64_t> defaults;
+  for (const auto& m : parsed.at("modules").as_list()) {
+    const auto& ctl = m->at("controls").as_list();
+    for (const auto& c : ctl) {
+      if (!c->contains("host")) continue;
+      CHECK(c->get_int("index") == 1 && c->get_string("name") == "Speed:" && c->get_string("kind") == "stringslider");
+      CHECK_EQ(c->get_string("type"), std::string("slider"));
+      CHECK_EQ(c->get_string("host"), std::string("ADNE16IMXSPEED"));
+      CHECK(c->at("items").as_list().size() == 5 && c->at("items").as_list()[4]->as_string() == "Fastest");
+      CHECK(c->at("values").as_list().size() == 5 && c->at("values").as_list()[0]->as_int() == 6 &&
+            c->at("values").as_list()[4]->as_int() == 100);
+      const int64_t stop = c->get_int("defaultStop");
+      CHECK(stop >= 0 && stop < 5 && c->get_int("default") == values[size_t(stop)]);
+      CHECK(!c->contains("boldStop"));
+      defaults[m->get_string("id")] = c->get_int("default");
+    }
+  }
+  CHECK((defaults == std::map<std::string, int64_t>{{"intermission.dragon", 6},
+                                                    {"intermission.worms", 12},
+                                                    {"intermission.snow", 12},
+                                                    {"intermission.imshark", 50},
+                                                    {"intermission.machine", 25}}));
+
+  // Another package, the same files: no Speed control anywhere, every entry's
+  // controls the file's own (catalog_module's), and the JSON has no "host" —
+  // The Flintstones' (IMX and IMQ modules, Delrina's installer, as
+  // Intermission 4.0's) and Star Wars Screen Entertainment's (IMX only).
+  for (const char* other : {"flintstones", "swse"}) {
+    const Package* p = find_package(other);
+    CHECK(p != nullptr && p->speed_modules.empty());
+    if (!p) continue;
+    CatalogTree o;
+    o.package = p;
+    o.dir = root;
+    const CatalogDoc od = build_catalog({o});
+    CHECK_EQ(od.modules.size(), size_t(std::string_view(other) == "swse" ? 6 : 11));
+    for (const CatalogModule& m : od.modules) {
+      const std::string rel = m.path.substr(std::string(p->root).size() + 1);
+      const CatalogModule alone = catalog_module(root / to_wide(rel), m.path, p);
+      CHECK_EQ(m.controls.size(), alone.controls.size());
+      for (size_t k = 0; k < std::min(m.controls.size(), alone.controls.size()); k++)
+        CHECK(same_control(m.controls[k], alone.controls[k]) && m.controls[k].host.empty());
+    }
+    const std::string otext = render_catalog(od);
+    CHECK(otext.find("\"host\"") == std::string::npos && otext.find("Speed:") == std::string::npos);
+  }
+
+  // The list is the registry's data: a made-up release whose list names
+  // NEWONE.IMX (in lower case, starting at Fastest) and a file the tree
+  // lacks gives NEWONE.IMX the control and DRAGON.IMX none.
+  Package made = *find_package("flintstones");
+  const SpeedModule made_speed[] = {{"saver/newone.imx", SpeedStop::fastest}, {"SAVER/ABSENT.IMX"}};
+  made.speed_modules = made_speed;
+  CatalogTree mt;
+  mt.package = &made;
+  mt.dir = root;
+  const CatalogDoc md = build_catalog({mt});
+  const CatalogModule* newone = entry(md, "flintstones.newone");
+  const CatalogModule* dragon = entry(md, "flintstones.dragon");
+  CHECK(newone && newone->controls.size() == 2 &&
+        same_control(newone->controls[1], speed_control(SpeedStop::fastest)) && newone->controls[1].def == 100);
+  CHECK(dragon && dragon->controls.size() == 1 && dragon->controls[0].name == "Configure...");
+}
+
 // ---- a FILES tree ------------------------------------------------------------------------
 
 // A FILES tree with modules of both lanes, files that are not modules, a
@@ -1011,6 +1281,7 @@ int main(int argc, char** argv) {
   test_records();
   test_modules(dir / L"modules");
   test_imx(dir / L"imx");
+  test_speed(dir / L"speed");
   test_scrnsave(dir / L"scrnsave");
   test_scan(dir / L"scan");
   test_ad20(dir / L"ad20");

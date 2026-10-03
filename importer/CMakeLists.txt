@@ -1,11 +1,12 @@
 # adw_import + adimport.exe — the Windows asset importer (DESIGN.md §6,
-# PACKAGES.md) and the catalog generator (§6a), for the sixteen releases of its
+# PACKAGES.md) and the catalog generator (§6a), for the twenty releases of its
 # registry (packages.h). The library depends on Win32 (WinHTTP, CNG, shell),
 # on adw_loader, whose PE/NE readers the catalog uses, and on zlib (raw
 # inflate for the AD 3.x installers' PKZIP archives, CRC-32 for them and for
 # Presage's ARJ archives, and for 7z archives); its own readers expand the ARJ,
 # SZDD and KWAJ files and the InstallShield 2 compressed libraries (PKWARE DCL
-# implode) of the floppy-based installers, and 7z archives (LZMA, LZMA2).
+# implode) of the floppy-based installers, and 7z archives (LZMA, LZMA2); a
+# download's members it takes out of a tar.
 # phosg is used by the tests alone, to parse import.json and the catalog
 # independently of the code writing them.
 enable_language(RC)
@@ -27,6 +28,7 @@ add_library(adw_import STATIC
   fat.cc
   zip.cc
   sevenzip.cc
+  tar.cc
   arj.cc
   szdd.cc
   kwaj.cc
@@ -96,6 +98,7 @@ adw_import_test(e2e)
 adw_import_test(catalog)
 adw_import_test(zip)
 adw_import_test(sevenzip)
+adw_import_test(tar)
 adw_import_test(arj)
 adw_import_test(szdd)
 adw_import_test(kwaj)
@@ -116,6 +119,8 @@ add_test(NAME import.download COMMAND test_import_download ${_scratch}/download)
 add_test(NAME import.cli COMMAND test_import_cli $<TARGET_FILE:adimport> ${_scratch}/cli)
 add_test(NAME import.catalog COMMAND test_import_catalog unit ${_scratch}/catalog)
 add_test(NAME import.zip COMMAND test_import_zip ${_scratch}/zip)
+# The tar reader The Flintstones' download needs (tar.h), on made-up tars.
+add_test(NAME import.tar COMMAND test_import_tar ${_scratch}/tar)
 # 7z archives (PACKAGES.md §8.10): 7-Zip's own archives of made-up files
 # (LZMA, LZMA2, Copy; header packed and plain; solid and not), kept as bytes,
 # Copy archives written by the test, the refusals, every truncation and

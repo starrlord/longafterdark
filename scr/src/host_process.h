@@ -58,6 +58,15 @@ struct HostSpec {
 // says ADSOUND itself.
 void add_host_defaults(std::vector<std::pair<std::wstring, std::wstring>>& env);
 
+// A module's host controls' variables (catalog.h: HostControlValues::env),
+// put in front of `env`, the start's own changes: every start of a module's
+// host passes them (the saver's windows, Preview and /p among them, the
+// dialog's live preview, its thumbnails and its module buttons). A start's
+// own variable wins over a control's of the same name (the catalog never has
+// one: host_variable_ok).
+void add_host_control_env(std::vector<std::pair<std::wstring, std::wstring>>& env,
+                          const std::vector<std::pair<std::wstring, std::wstring>>& controls);
+
 // CreateProcess environment block: ours with `changes` applied.
 std::wstring build_environment_block(const std::vector<std::pair<std::wstring, std::wstring>>& changes);
 

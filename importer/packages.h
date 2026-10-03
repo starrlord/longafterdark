@@ -1,8 +1,10 @@
 // The package registry (PACKAGES.md §2): every release the importer knows,
-// compiled in: the After Dark releases, three Delrina Intermission products —
+// compiled in: the After Dark releases, seven Delrina Intermission products —
 // Star Wars Screen Entertainment (LucasArts'), The Far Side Screen Saver
-// Collection and Scott Adams' Dilbert Screen Saver Collection — and Sierra's
-// Screen Antics: Johnny Castaway, a Windows 3.1 screen-saver program.
+// Collection, Scott Adams' Dilbert Screen Saver Collection, the Opus 'n Bill
+// Screen Saver, Opus 'n Bill: On the Road Again!, The Flintstones Screen
+// Saver Collection and Intermission 4.0 itself — and Sierra's Screen Antics:
+// Johnny Castaway, a Windows 3.1 screen-saver program.
 // Registry order is the catalog's module order and the precedence order for
 // display-name disambiguation (§6); the catalog's packages list goes by
 // `released` instead.
@@ -25,6 +27,11 @@
 //   tng       Star Trek: The Next Generation Screen Saver
 //                                                 ad3zip        -> <win>\packages\tng\{ST-TNG,ENGINE}
 //   castaway  Screen Antics: Johnny Castaway      is1           -> <win>\packages\castaway\SCRANTIC
+//   opus      Opus 'n Bill Screen Saver           intermission  -> <win>\packages\opus\{SAVER,ENGINE}
+//   opusroad  Opus 'n Bill: On the Road Again!    intermission  -> <win>\packages\opusroad\{SAVER,ENGINE}
+//   flintstones The Flintstones Screen Saver Collection
+//                                                 intermission  -> <win>\packages\flintstones\{SAVER,ENGINE}
+//   intermission Intermission 4.0                 intermission  -> <win>\packages\intermission\{SAVER,ENGINE}
 //
 // Each entry carries what identifies the release (known image md5s — of one
 // image, or of every install disk of a set — and fingerprints), how to
@@ -89,13 +96,27 @@ struct Fixup {
 };
 
 // A catalog moduleName replacement (§6), keyed by the module's path relative
-// to the package root ("AD10TH/TOAST2K.AD"); for Intermission modules the
-// name itself ("SAVER/VADER.IMX": the one SAVERINIT returns, which no
-// resource holds); for Johnny Castaway's program the name it is known by
-// (its description names it Screen Antics).
+// to the package root ("AD10TH/TOAST2K.AD", compared without case, as
+// Package::speed_modules is); for Intermission modules the name itself
+// ("SAVER/VADER.IMX": the one SAVERINIT returns, which no resource holds);
+// for Johnny Castaway's program the name it is known by (its description
+// names it Screen Antics).
 struct NameOverride {
   const char* module;
   const char* name;
+};
+
+// The stops of the Speed control (catalog.h speed_control): Slowest 6,
+// Slow 12, Normal 25, Fast 50 and Fastest 100, in percent of the host's
+// own speed.
+enum class SpeedStop { slowest, slow, normal, fast, fastest };
+
+// A module of Package::speed_modules: its path relative to the package
+// root, keyed as a name override is ("SAVER/DRAGON.IMX"), and the stop its
+// Speed control starts at.
+struct SpeedModule {
+  const char* module;
+  SpeedStop start = SpeedStop::normal;
 };
 
 // tree: plain files copied from the disc's FILES dir. ad3zip: the AD 3.x
@@ -155,6 +176,18 @@ struct LibraryMember {
   const char* to;
 };
 
+// A file a download is taken out of instead of used as it is: a member of a
+// tar the Internet Archive serves (The Flintstones' three ZIPs, in a BBS
+// collection's tar of 160 files): `path` as the tar names it, saved as
+// <downloads dir>\<file_name>, checked against `size` and `md5`. Nothing
+// else in the tar is ever read.
+struct DownloadMember {
+  const char* path;
+  const wchar_t* file_name;
+  uint64_t size;
+  const char* md5;
+};
+
 // A further file of a copy made of several (another install disk's image).
 struct DownloadPart {
   const char* url;
@@ -187,8 +220,13 @@ struct Download {
   // when every part is fetched and verifies; the parts are then read as one,
   // as several --image are.
   std::span<const DownloadPart> more_images = {};
+  // Set: the fields above are a tar (ustar) that holds the copy; these
+  // members are taken out of it, each checked, and read as the copy's
+  // files (the images or ZIPs of `kind`), in this order.
+  std::span<const DownloadMember> members = {};
 };
-// Every part of a copy together, in bytes (what the lists show).
+// Every part of a copy together, in bytes (what the lists show; for a tar,
+// the tar).
 uint64_t download_size(const Download& d);
 
 // A rectangle of a decoded picture, in its pixels (after EXIF orientation);
@@ -218,6 +256,37 @@ struct CoverSource {
   uint16_t resource_type;  // 0: the file itself is the picture; 2 (RT_BITMAP): a bitmap resource of an NE/PE file
   uint16_t resource_id;
   Crop crop;               // applied after decoding (and after EXIF orientation)
+};
+
+// Another build of a release: a revision of the same product on disks of
+// its own (Opus 'n Bill's November 1993 disks, with the toasters censored;
+// The Flintstones' May 1994 disks). The package's own fields describe one
+// build, the release's (Package::build names it); another has its own known
+// images, its own file on install disk 1 that tells it apart, what it
+// installs and its manifest. An
+// import of it is identified as the package, verified against that build's
+// manifest and recorded with its id (import.json package.build). The
+// package's root, module folders, required files, name overrides (keyed by
+// path), downloads and covers serve every build.
+struct Build {
+  const char* id;     // [0-9a-z-]+, import.json's package.build: "1993-11"
+  const char* label;  // for people: "the November 1993 build"
+  // Delrina's installer (Package::delrina_installer): a file of this build's
+  // own, on install disk 1 beside the installer, that no other build has.
+  // The package is identified by its own fingerprint or by this file; this
+  // file, or the build's known images, make the import this build's.
+  const char* marker;
+  std::span<const KnownImage> images;
+  std::span<const LooseFile> loose_files;
+  std::span<const KnownFile> manifest;
+  // What the log and import.json (package.buildNote) say of this build;
+  // nullptr when nothing ("CARS.ASA is damaged in every known copy").
+  const char* note = nullptr;
+  // The files that tell each install disk is there, disk 1's tag file first
+  // (Package::required_archives when empty): the only copy of The
+  // Flintstones' May build has no tag file on disks 2 and 3, so a file of
+  // its own on each stands for it.
+  std::span<const char* const> disk_files = {};
 };
 
 struct Package {
@@ -303,14 +372,30 @@ struct Package {
   const char* tag_library = nullptr;
   const char* tag_member = nullptr;
   std::span<const LibraryMember> library_members = {};
+  // A release with several builds (struct Build): the id of the build the
+  // fields above describe ("1993-09"), and the others. nullptr and none for
+  // a release with one build (import.json then records no build).
+  const char* build = nullptr;
+  std::span<const Build> builds = {};
+  // The Intermission modules whose motion is the machine's speed: each takes
+  // a small step per call, and Intermission called them as fast as the PC
+  // let it (ABI.md §3.8.4; Delrina's SDK gave them no clock). The catalog
+  // gives each the Speed control (catalog.h speed_control), the emulated
+  // machine's speed, which adhostwin takes from ADNE16IMXSPEED, starting at
+  // the module's own stop. A module that paces itself by a clock is not
+  // listed. Intermission 4.0's alone; empty for every other release, whose
+  // entries have no Speed control.
+  std::span<const SpeedModule> speed_modules = {};
 
   bool is_deluxe() const;
   // An Intermission release installed by Delrina's own Intermission
-  // Installer (recipe intermission, no INSTALL.DAT shortname): The Far Side's
-  // and Dilbert's. Its module folder holds Intermission's other two module
-  // forms, ASA animations (*.ASA, data that the ASA reader IMASAPLY.IMQ
-  // plays, from ENGINE) and IMQ modules (*.IMQ, each its own reader), and no
-  // IMX modules.
+  // Installer (recipe intermission, no INSTALL.DAT shortname): The Far
+  // Side's, Dilbert's, both Opus 'n Bill releases', The Flintstones' and
+  // Intermission 4.0's. Its module folder holds Intermission's other module
+  // forms besides IMX modules: ASA animations (*.ASA, data that the ASA
+  // reader IMASAPLY.IMQ plays, from ENGINE), IMQ modules (*.IMQ, each its
+  // own reader) and Intermission 4.0's FLI animations, MRF morph and MSV
+  // mix (data its readers IMFLIPLY, IMMRFPLY and IMMSVPLY play, from ENGINE).
   bool delrina_installer() const;
 };
 

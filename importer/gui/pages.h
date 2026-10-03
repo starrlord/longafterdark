@@ -110,6 +110,16 @@ class DownloadsPage : public Page {
   explicit DownloadsPage(Session& s);
   ~DownloadsPage() override;
   std::vector<std::string> ids;   // what to fetch; empty = Back
+  // The cards the list shows at the most (whole ones; it scrolls for the rest).
+  static constexpr int kMostCards = 9;
+  // The list as last laid out, in px (the screenshot hook's report): the
+  // height that shows, the whole list's, and where each card ends in it (a
+  // list that tall shows that card and the ones above it whole).
+  struct ListHeights {
+    int shown = 0, whole = 0;
+    std::vector<int> ends;
+  };
+  const ListHeights& list_heights() const { return list_heights_; }
 
  protected:
   std::wstring header_tagline() const override { return L"Download from the Internet Archive"; }
@@ -128,6 +138,7 @@ class DownloadsPage : public Page {
   HWND intro_ = nullptr, note_ = nullptr, back_ = nullptr;
   std::vector<HWND> cards_;
   HWND all_card_ = nullptr;
+  ListHeights list_heights_;
 };
 
 // ---- Progress -------------------------------------------------------------------------

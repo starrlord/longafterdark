@@ -29,7 +29,9 @@
 // .SCR built on SCRNSAVE.LIB (scr: Johnny Castaway's SCRANTIC.SCR; any other
 // application is refused); anything else is not a module at all. A file
 // that starts "AniN" or "AniM" is an Intermission ASA animation (imx, form
-// asa), whatever ADNE16KIND says.
+// asa), and a file named *.FLI, *.FLC, *.MRF or *.MSV that is no MZ
+// executable an Intermission data file of that type (imx, forms fli, flc,
+// mrf, msv: core's intermission_data_type), whatever ADNE16KIND says.
 //
 // Form (imx): what the Intermission module's file is, which picks its
 // reader. INTRMLIB's FINDALLMODULES (1:1e06) made every *.IMQ of the saver
@@ -47,6 +49,21 @@
 //        Side's PTERY and NERDCLOK, Dilbert's DB-BEST, DB-CLOCK and
 //        DIL-WHAK); a reader's QUERY clears the flag (IMIMXPLY 2:02a6,
 //        IMASAPLY 2:3f4a), and the protocol refuses it then.
+//   fli  an .FLI animation (Autodesk's FLIC; Intermission 4.0's EINSTEIN
+//        and FLYING): read by IMFLIPLY.IMQ, type FLI ("FLI Player")
+//   flc  an .FLC animation: read by IMFLCPLY.IMQ, type FLC ("FLC Player",
+//        the same reader under the other type)
+//   mrf  an .MRF morph (PARADISE): read by IMMRFPLY.IMQ, type MRF ("Morph")
+//   msv  an .MSV MultiSaver group (MACHINE: two IMX modules): up to four
+//        modules, each in its own part of the screen, read by IMMSVPLY.IMQ,
+//        type MSV ("MultiSaver"), which finds them in INTRMLIB's module
+//        table and loads them itself (imx_protocol.cc find_all_modules)
+// The data files' readers have the same rule as IMASAPLY: Intermission's
+// installer put them beside the modules (C:\SAVER), and the lane looks for
+// them in the engine dir, then the module dir; none has a native reader. An
+// ASA animation goes by its header (IMASAPLY checks it), the other data
+// files by their extension, as INTRMLIB matched them: each of those readers
+// names itself IM<type>PLY.IMQ after the type its QUERY gives.
 //
 // Bridge (ADNE16BRIDGE=auto|oldmod16|native, ad3): auto runs the real
 // OLDMOD16.DLL when the engine dir holds one, else the host-native AD3 bridge
@@ -90,9 +107,10 @@
 // Reader (ADNE16READER=auto|imq|native, imx): auto runs Intermission's own
 // IMX reader, IMIMXPLY.IMQ, from the engine dir (the guest's
 // C:\WINDOWS\SYSTEM), else from the module dir, when either holds it; else
-// the host-native reader (imreader.hh). An ASA animation's reader is
-// IMASAPLY.IMQ, looked for in the same places, and an IMQ module is its own;
-// neither has a native reader, so ADNE16READER=native is ignored for them.
+// the host-native reader (imreader.hh). A data file's reader (IMASAPLY.IMQ
+// for an ASA animation, IMFLIPLY, IMFLCPLY, IMMRFPLY or IMMSVPLY.IMQ for the
+// others) is looked for in the same places, and an IMQ module is its own;
+// none of them has a native reader, so ADNE16READER=native is ignored for them.
 #pragma once
 
 #include <windows.h>
@@ -135,8 +153,12 @@ Ne16Layout resolve_layout(const std::string& module_full_path, const std::string
 enum class ModuleKind { ad3, imx, scr };
 const char* kind_name(ModuleKind k);  // "ad3", "imx", "scr"
 // An Intermission module's form (the rule above).
-enum class ImxForm { imx, asa, imq };
-const char* form_name(ImxForm f);  // "imx", "asa", "imq"
+enum class ImxForm { imx, asa, imq, fli, flc, mrf, msv };
+const char* form_name(ImxForm f);  // "imx", "asa", "imq", "fli", "flc", "mrf", "msv"
+// A data file a reader plays (asa, fli, flc, mrf, msv), as opposed to code (imx, imq).
+bool data_form(ImxForm f);
+// The form of the data type core's intermission_data_type names ("FLI" → fli, …); false for any other.
+bool form_for_type(const char* type, ImxForm* form);
 // What the exports say (the rule above). !ok: the lane refuses the module,
 // and `why` says what it is instead.
 struct KindProbe {
@@ -163,8 +185,13 @@ struct ReaderFile {
 };
 constexpr const char* kImxReader = "IMIMXPLY.IMQ";  // type IMX
 constexpr const char* kAsaReader = "IMASAPLY.IMQ";  // type ASA
-// The reader file a form needs from the package: IMIMXPLY.IMQ, IMASAPLY.IMQ,
-// or none (nullptr) for an IMQ module, its own reader.
+constexpr const char* kFliReader = "IMFLIPLY.IMQ";  // type FLI
+constexpr const char* kFlcReader = "IMFLCPLY.IMQ";  // type FLC
+constexpr const char* kMrfReader = "IMMRFPLY.IMQ";  // type MRF
+constexpr const char* kMsvReader = "IMMSVPLY.IMQ";  // type MSV
+// The reader file a form needs from the package: IMIMXPLY.IMQ,
+// IMASAPLY.IMQ, IMFLIPLY.IMQ, IMFLCPLY.IMQ, IMMRFPLY.IMQ, IMMSVPLY.IMQ, or
+// none (nullptr) for an IMQ module, its own reader.
 const char* reader_file(ImxForm f);
 ReaderFile find_reader(const Ne16Layout& layout, const FileExists& exists, const char* file = kImxReader);
 

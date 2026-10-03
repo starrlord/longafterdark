@@ -14,6 +14,7 @@
 #include <mmsystem.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <map>
@@ -1621,12 +1622,68 @@ void register_sound16(Runtime16& rt) {
   // whatever the command, as MMSYSTEM checked the ID first (Johnny Castaway's
   // one call, MCI_CLOSE of a song it never opens, 5:00ab); every other
   // command is MCIERR_UNSUPPORTED_FUNCTION.
+  // MCI_OPEN (0x0803) is the one command whose wDeviceID MMSYSTEM did not
+  // look at: it opened the device MCI_OPEN_PARMS names — lpstrDeviceType
+  // (MCI_OPEN_TYPE; with MCI_OPEN_TYPE_ID, a device type number),
+  // lpstrElementName (MCI_OPEN_ELEMENT), lpstrAlias (MCI_OPEN_ALIAS),
+  // MCI_OPEN_SHAREABLE, MCI_NOTIFY to dwCallback — as "open" of a command
+  // string does (mci_open), and wrote the new device's ID to wDeviceID (+4).
+  // This machine's one MCI device is the sequencer (AUDIO.md §8.4): any other
+  // type is MCIERR_DEVICE_NOT_INSTALLED, as mciSendString answers (the June
+  // 1994 Flintstones' DictaBird asks for "waveaudio", to record a microphone,
+  // and shows its own "Sound Support Not Available" then). Without a sound
+  // engine MCI_OPEN keeps the silent device's answer, the ID's
+  // MCIERR_INVALID_DEVICE_ID (AUDIO.md §3 invariant 4).
   r.impl(M, "mciSendCommand", [](Call16& c) {
     const uint16_t id = c.w(), msg = c.w();
     const uint32_t flags = c.l(), parms = c.l();
     Sound16& s = snd(c.rt);
-    constexpr uint16_t kMciClose = 0x0804;
-    constexpr uint32_t kMciNotifyFlag = 0x00000001, kMciInvalidDeviceId = 256 + 1;
+    constexpr uint16_t kMciOpen = 0x0803, kMciClose = 0x0804;
+    constexpr uint32_t kMciNotifyFlag = 0x00000001, kMciWaitFlag = 0x00000002, kMciInvalidDeviceId = 256 + 1;
+    constexpr uint32_t kOpenShareable = 0x0100, kOpenElement = 0x0200, kOpenAlias = 0x0400, kOpenElementId = 0x0800,
+                       kOpenTypeId = 0x1000, kOpenType = 0x2000;
+    constexpr uint16_t kDevtypeWaveform = 522, kDevtypeSequencer = 523;
+    if (msg == kMciOpen && s.on) {
+      // MCI_OPEN_PARMS: dwCallback, wDeviceID, wReserved0, lpstrDeviceType, lpstrElementName, lpstrAlias.
+      uint32_t err = 0;
+      std::string type, element, alias;
+      if (!parms) err = kMciMissingParameter;
+      if (!err && (flags & kOpenType)) {
+        const uint32_t p = c.rt.rd32(parms + 8);
+        if (flags & kOpenTypeId) {
+          const uint16_t n = uint16_t(p);
+          type = n == kDevtypeSequencer ? "sequencer" : n == kDevtypeWaveform ? "waveaudio" : "#" + std::to_string(n);
+        } else {
+          type = c.rt.read_str(p);
+        }
+      }
+      if (!err && (flags & kOpenElement)) {
+        if (flags & kOpenElementId) err = kMciUnsupportedFunction;
+        else element = c.rt.read_str(c.rt.rd32(parms + 12));
+      }
+      if (!err && (flags & kOpenAlias)) alias = c.rt.read_str(c.rt.rd32(parms + 16));
+      if (!err && type.empty() && element.empty()) err = kMciMissingDeviceName;
+      if (!err && !type.empty() && lower(type) != "sequencer") err = kMciDeviceNotInstalled;
+      if (!err) {
+        std::string cmd = "open \"" + (element.empty() ? type : element) + "\"";
+        if (!element.empty() && !type.empty()) cmd += " type " + type;
+        if (!alias.empty()) cmd += " alias \"" + alias + "\"";
+        if (flags & kOpenShareable) cmd += " shareable";
+        if (flags & kMciWaitFlag) cmd += " wait";
+        uint16_t callback = 0;
+        if (flags & kMciNotifyFlag) {
+          callback = uint16_t(c.rt.rd32(parms));
+          cmd += " notify";
+        }
+        Op op(c.rt, s, c.rt.peek_us());
+        std::string ret;
+        err = mci_command(c.rt, s, op.t, cmd, callback, &ret);
+        if (!err) c.rt.wr16(parms + 4, uint16_t(std::strtoul(ret.c_str(), nullptr, 10)));
+      }
+      trace("sound", "mciSendCommand(MCI_OPEN, %08X, type \"%s\", element \"%s\", alias \"%s\") -> %u", flags,
+            type.c_str(), element.c_str(), alias.c_str(), err);
+      return c.ret32(err);
+    }
     uint32_t err = kMciInvalidDeviceId;
     if (id == kMciAllDevices || s.mci.count(id)) {
       if (msg != kMciClose) {
@@ -1647,6 +1704,43 @@ void register_sound16(Runtime16& rt) {
     }
     trace("sound", "mciSendCommand(%u, %04X, %08X, %08X) -> %u", id, msg, flags, parms, err);
     c.ret32(err);
+  });
+
+  // mciGetErrorString(dwError, lpszErrorText, cchErrorText): TRUE and a text
+  // for an MCI error this machine answers (in its own words, cut to fit,
+  // NUL-terminated), FALSE and "" for any other code (DictaBird asks after
+  // its MCI_OPEN fails).
+  r.impl(M, "mciGetErrorString", [](Call16& c) {
+    const uint32_t code = c.l(), out = c.ptr();
+    const uint16_t len = c.w();
+    static const std::pair<uint32_t, const char*> kTexts[] = {
+        {256 + 1, "The MCI device ID is not one of an open device."},
+        {kMciUnrecognizedKeyword, "The command has a parameter the device does not know."},
+        {kMciUnrecognizedCommand, "The device does not know the command."},
+        {kMciInvalidDeviceName, "No open MCI device has that name."},
+        {kMciDeviceOpen, "The device is already open."},
+        {kMciMissingCommandString, "The command string is empty."},
+        {kMciParamOverflow, "The answer does not fit in the buffer."},
+        {kMciBadInteger, "A number in the command is not an integer."},
+        {kMciMissingParameter, "The command lacks a parameter."},
+        {kMciUnsupportedFunction, "The device cannot do that."},
+        {kMciFileNotFound, "The file was not found."},
+        {kMciCannotUseAll, "\"all\" cannot be used with this command."},
+        {kMciOutOfRange, "A value is out of range."},
+        {kMciDuplicateAlias, "That alias is in use."},
+        {kMciMissingDeviceName, "The command names no device."},
+        {kMciBadTimeFormat, "The time format is not one the device knows."},
+        {kMciNoClosingQuote, "A quote is not closed."},
+        {kMciInvalidFile, "The file is not one the device can play."},
+        {kMciNonapplicableFunction, "The command does not apply to the device as it is."},
+        {kMciDeviceNotInstalled, "The device is not installed."},
+    };
+    const char* text = nullptr;
+    for (const auto& [k, t] : kTexts) {
+      if (k == code) text = t;
+    }
+    if (out && len) c.rt.write_str(out, text ? text : "", len);
+    c.ret(text ? 1 : 0);
   });
 }
 

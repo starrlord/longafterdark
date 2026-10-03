@@ -155,6 +155,9 @@ EnvList base_env(const Opts& o, const Work& w) {
       {L"FAKEHOST_QUIT_DELAY_MS", L""},
       // The dialog's credit link: the test build never opens it, only logs it.
       {L"AD_SCR_TEST_OPEN_LOG", L""},
+      // A host control's variable (Intermission 4.0's Speed): only what the
+      // saver sets reaches a host.
+      {L"ADNE16IMXSPEED", L""},
   };
 }
 
@@ -6103,6 +6106,231 @@ int test_config_buttons(const Opts& o) {
   return 0;
 }
 
+// ---- host controls (catalog "host": Intermission 4.0's Speed) -----------------------
+
+// A host control's value goes to the module's host as the variable it names
+// (ADNE16IMXSPEED), never as ADCVSET, at every start of that host. In the
+// settings window, on catalog-speed.json (two Intermission 4.0 modules with
+// "Speed:" after their Configure... button, a cartoon without it, an After
+// Dark module), driven by control ID:
+//  * Dragon Kites' Speed is a string slider of five stops at Normal, and its
+//    live preview's host gets ADNE16IMXSPEED=25 (the default: never set);
+//  * moved to Fastest, the live preview starts it again with 100; its
+//    Configure... (--configure), the live preview after that, and Preview's
+//    /s run with 100 too, unsaved;
+//  * the background thumbnails run Ant Mine with its saved 12 (Slow), and the
+//    cartoon without the variable;
+//  * OK saves [Module.intermission.dragon] 1=100, beside Ant Mine's 1=12.
+// Then /s, Random over all four on one staged monitor: each module's host
+// gets its own value (100, 12) or nothing; and /p the single module's.
+int test_config_speed(const Opts& o) {
+  Work w = prepare_six(o, "config-speed", "catalog-speed.json");
+  edit_settings(w, [](Settings& s) {
+    s.module = "intermission.dragon";
+    s.controls["intermission.antmine"] = {{1, 12}};
+  });
+  seed_thumbs(w, {"intermission.antmine", "intermission.dpig"});   // the queue takes those two alone
+  EnvList env = base_env(o, w);
+  env.push_back({L"AD_SCR_THUMBGEN", L"1"});
+  env.push_back({L"FAKEHOST_CONFIGURE_MS", L"200"});
+  // Preview's /s inherits these: one monitor off every real one, and an end.
+  env.push_back({L"AD_SCR_TEST_MONITORS", L"-16000,0,856,480,p"});
+  env.push_back({L"AD_SCR_TESTEXIT_AFTER_FRAMES", L"60"});
+  auto slot = [](HWND panel, int i, int part) { return GetDlgItem(panel, IDC_PANEL_BASE + i * IDC_PANEL_STRIDE + part); };
+  auto mine = [&](DWORD pid, const char* file) {
+    std::vector<std::map<std::string, std::string>> r;
+    for (auto& e : hosts_of(w, pid)) {
+      if (ends_with(e["module"], file)) r.push_back(e);
+    }
+    return r;
+  };
+  const fs::path thumbs = w.dir / "thumbs";
+  auto thumbs_taken = [&] {
+    return fs::exists(thumbs / "intermission.antmine.v2.png") && fs::exists(thumbs / "intermission.dpig.v2.png");
+  };
+
+  DWORD dialog_pid = 0;
+  int step = 0;
+  LRESULT stops = -1, pos = -1, pos_after = -1;
+  std::string label, value, value_after, label_kind;
+  size_t dragons_before = 0, moved_at = 0;   // the preview's starts so far; at the move
+  RunResult r = run_scr(o, L"/c", env, 120000, [&](DWORD pid) {
+    dialog_pid = pid;
+    HWND dlg = find_dialog(pid);
+    if (!dlg) return;
+    HWND panel = GetDlgItem(dlg, IDC_PANEL);
+    HWND button = slot(panel, 0, IDC_PART_INPUT), speed = slot(panel, 1, IDC_PART_INPUT);
+    if (!panel || !button || !speed) return;
+    const size_t configures = host_events(w, "configure").size(), ends = host_events(w, "configure-end").size();
+    if (configures > ends || !IsWindowEnabled(dlg)) return;   // a module button runs
+    switch (step) {
+      case 0: {
+        // The probe has answered (a live button), the preview runs, and the
+        // thumbnails are in.
+        wchar_t cls[32] = {};
+        GetClassNameW(button, cls, 32);
+        if (_wcsicmp(cls, L"Button") != 0 || !IsWindowEnabled(button) || mine(pid, "DRAGON.IMX").empty() ||
+            !thumbs_taken())
+          return;
+        GetClassNameW(speed, cls, 32);
+        label_kind = narrow(cls);
+        stops = SendMessageW(speed, TBM_GETRANGEMAX, 0, 0) + 1;
+        pos = SendMessageW(speed, TBM_GETPOS, 0, 0);
+        label = window_text(slot(panel, 1, IDC_PART_LABEL));
+        value = window_text(slot(panel, 1, IDC_PART_VALUE));
+        dragons_before = moved_at = mine(pid, "DRAGON.IMX").size();
+        // Fastest, as the trackbar reports a move (the thumb let go).
+        SendMessageW(speed, TBM_SETPOS, TRUE, 4);
+        SendMessageW(panel, WM_HSCROLL, MAKEWPARAM(TB_ENDTRACK, 0), (LPARAM)speed);
+        pos_after = SendMessageW(speed, TBM_GETPOS, 0, 0);
+        value_after = window_text(slot(panel, 1, IDC_PART_VALUE));
+        step = 1;
+        break;
+      }
+      case 1:   // the preview started again: Configure...
+        if (mine(pid, "DRAGON.IMX").size() <= dragons_before) return;
+        dragons_before = mine(pid, "DRAGON.IMX").size();
+        PostMessageW(panel, WM_COMMAND, MAKEWPARAM(GetDlgCtrlID(button), BN_CLICKED), (LPARAM)button);
+        step = 2;
+        break;
+      case 2:   // it ran, and the preview started over: Preview
+        if (host_events(w, "configure-end").empty() || mine(pid, "DRAGON.IMX").size() <= dragons_before) return;
+        click(dlg, IDC_PREVIEW);
+        step = 3;
+        break;
+      case 3:   // Preview's /s runs the module: OK
+        if (hosts_of(w, pid, true).empty()) return;
+        PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), (LPARAM)GetDlgItem(dlg, IDOK));
+        step = 4;
+        break;
+    }
+  });
+  CHECK(step == 4);
+  if (!expect_exit(w, r, 0)) return 1;
+  // Preview's /s ends itself after its frames.
+  for (ULONGLONG until = GetTickCount64() + 45000; count_in_log(w.scr_log, "test-exit after") == 0;) {
+    if (GetTickCount64() > until) break;
+    Sleep(100);
+  }
+  CHECK(count_in_log(w.scr_log, "test-exit after 60 frames") == 1);
+  // The control as the settings window shows a string slider.
+  CHECK(label_kind == "msctls_trackbar32");
+  CHECK(stops == 5 && pos == 2 && pos_after == 4);
+  CHECK(label == "Speed" && value == "Normal" && value_after == "Fastest");
+  // The live preview: Normal first, then Fastest from the move on (the run
+  // after Configure... included); never ADCVSET.
+  auto dragons = mine(dialog_pid, "DRAGON.IMX");
+  CHECK(moved_at >= 1 && dragons.size() >= moved_at + 2);
+  for (size_t i = 0; i < dragons.size(); ++i) CHECK(dragons[i]["ADNE16IMXSPEED"] == (i < moved_at ? "25" : "100"));
+  for (auto& e : dragons) CHECK(e["ADCVSET"].empty() && e["ADSTREAM"] == "1" && e["ADSCREENW"] == "640");
+  CHECK(count_in_log(w.scr_log, "live preview: spawn ") >= 3);
+  CHECK(count_in_log(w.scr_log, "DRAGON.IMX size=640x480 abi=intermission screen=0x0 cvset= pid=") >= 3);
+  CHECK(count_in_log(w.scr_log, " host=ADNE16IMXSPEED=25") >= 1 && count_in_log(w.scr_log, " host=ADNE16IMXSPEED=100") >= 2);
+  // Configure...: the unsaved value too.
+  auto cfg = host_events(w, "configure");
+  CHECK(cfg.size() == 1);
+  for (auto& e : cfg) {
+    CHECK(ends_with(e["module"], "DRAGON.IMX") && e["button"] == "0");
+    CHECK(e["ADNE16IMXSPEED"] == "100" && e["ADCVSET"].empty());
+  }
+  CHECK(count_in_log(w.scr_log, "dialog: configure intermission.dragon button 0 cvset= pid=") == 1);
+  // The thumbnails: Ant Mine at its saved Slow, the cartoon with no Speed.
+  auto ants = mine(dialog_pid, "ANTMINE.IMX"), pigs = mine(dialog_pid, "DPIG.ASA");
+  CHECK(!ants.empty() && !pigs.empty());
+  for (auto& e : ants) CHECK(e["ADNE16IMXSPEED"] == "12" && e["ADCVSET"].empty());
+  for (auto& e : pigs) CHECK(e["ADNE16IMXSPEED"].empty() && e["ADCVSET"].empty());
+  CHECK(count_in_log(w.scr_log, "thumbs: run intermission.antmine ") == 1);
+  int ant_lines = 0;
+  for (const auto& l : lines_of(w.scr_log)) {
+    if (l.find("thumbs: run intermission.antmine ") != std::string::npos) ant_lines += ends_with(l, " host=ADNE16IMXSPEED=12");
+    if (l.find("thumbs: run intermission.dpig ") != std::string::npos) CHECK(l.find(" host=") == std::string::npos);
+  }
+  CHECK(ant_lines == 1);
+  // Preview's /s: what the dialog showed, unsaved.
+  auto previewed = hosts_of(w, dialog_pid, true);
+  CHECK(!previewed.empty());
+  for (auto& e : previewed) {
+    CHECK(ends_with(e["module"], "DRAGON.IMX"));
+    CHECK(e["ADNE16IMXSPEED"] == "100" && e["ADCVSET"].empty());
+  }
+  // OK kept it with the other control values.
+  Settings s;
+  CHECK(load_settings(w.settings.wstring(), s));
+  CHECK((s.controls["intermission.dragon"] == std::map<int, int>{{1, 100}}));
+  CHECK((s.controls["intermission.antmine"] == std::map<int, int>{{1, 12}}));
+  std::string text;
+  read_file(w.settings.wstring(), text);
+  CHECK(text.find("[Module.intermission.dragon]\r\n1=100\r\n") != std::string::npos);
+  check_state_everywhere(w);
+  check_hosts_gone(w);
+  if (g_failures) {
+    fprintf(stderr, "---- settings.ini\n%s\n", text.c_str());
+    dump_logs(w);
+    return 0;
+  }
+
+  // /s, Random over all four on one staged monitor.
+  edit_settings(w, [](Settings& s) {
+    s.module = "random";
+    s.randomize.clear();
+    s.all_monitors = false;
+  });
+  // Each session's logs kept aside (the dialog's, the rotation's) for a look.
+  auto set_aside = [&](const char* session) {
+    std::error_code ec;
+    fs::rename(w.scr_log, w.dir / ("scr-" + std::string(session) + ".log"), ec);
+    fs::rename(w.host_log, w.dir / ("fakehost-" + std::string(session) + ".log"), ec);
+  };
+  set_aside("dialog");
+  EnvList run = base_env(o, w);
+  run.push_back({L"AD_SCR_TEST_MONITORS", L"-16000,0,856,480,p"});
+  run.push_back({L"AD_SCR_TEST_ROTATE_MS", L"300"});
+  run.push_back({L"AD_SCR_TESTEXIT_AFTER_FRAMES", L"240"});
+  r = run_scr(o, L"/s", run, 90000);
+  if (!expect_exit(w, r, 0)) return 1;
+  std::map<std::string, std::set<std::string>> speeds;   // module file -> ADNE16IMXSPEED seen
+  for (auto& e : host_events(w, "start")) {
+    const std::string file = fs::path(e["module"]).filename().string();
+    speeds[file].insert(e["ADNE16IMXSPEED"]);
+    CHECK(e["ADCVSET"].empty());   // nothing set of the modules' own controls
+  }
+  CHECK(speeds.size() == 4);
+  CHECK((speeds["DRAGON.IMX"] == std::set<std::string>{"100"}));
+  CHECK((speeds["ANTMINE.IMX"] == std::set<std::string>{"12"}));
+  CHECK((speeds["DPIG.ASA"] == std::set<std::string>{""}));
+  CHECK((speeds["ALPHA.AD"] == std::set<std::string>{""}));
+  int with = 0, without = 0;
+  for (const auto& l : lines_of(w.scr_log)) {
+    if (l.find("spawn window=0 ") == std::string::npos) continue;
+    if (l.find("module=intermission.dragon ") != std::string::npos) with += ends_with(l, " host=ADNE16IMXSPEED=100");
+    if (l.find("module=intermission.antmine ") != std::string::npos) with += ends_with(l, " host=ADNE16IMXSPEED=12");
+    if (l.find("module=intermission.dpig ") != std::string::npos || l.find("module=ad40.alpha ") != std::string::npos)
+      without += l.find(" host=") == std::string::npos ? 1 : -100;
+  }
+  CHECK(with >= 2 && without >= 2);
+  check_hosts_gone(w);
+  if (g_failures) {
+    dump_logs(w);
+    return 0;
+  }
+
+  // /p (the Control Panel's thumbnail): the single module's value.
+  edit_settings(w, [](Settings& s) { s.module = "intermission.antmine"; });
+  set_aside("random");
+  HWND parent = make_parent(152, 112);
+  EnvList pv = base_env(o, w);
+  pv.push_back({L"AD_SCR_TESTEXIT_AFTER_FRAMES", L"10"});
+  r = run_scr(o, L"/p " + hwnd_arg(parent), pv, 60000);
+  DestroyWindow(parent);
+  if (!expect_exit(w, r, 0)) return 1;
+  auto starts = host_events(w, "start");
+  CHECK(!starts.empty());
+  for (auto& e : starts) CHECK(ends_with(e["module"], "ANTMINE.IMX") && e["ADNE16IMXSPEED"] == "12");
+  check_hosts_gone(w);
+  if (g_failures) dump_logs(w);
+  return 0;
+}
+
 // ---- opt-in, real modules (AD_E2E=1) --------------------------------------------------
 // --realhost <adhostwin.exe> (a build with the lanes), AD_E2E_ASSETS=<assets root with
 // the Deluxe package>. Skipped (77) otherwise.
@@ -6731,6 +6959,7 @@ int wmain(int argc, wchar_t** argv) {
       {L"seed", test_seed},
       {L"seed-screens", test_seed_screens},
       {L"config-buttons", test_config_buttons},
+      {L"config-speed", test_config_speed},
       {L"config-collections", test_config_collections},
       {L"config-cover", test_config_cover},
       {L"config-remove", test_config_remove},

@@ -542,6 +542,24 @@ bool asa_header(std::string_view data) {
   return data.size() >= 4 && (data.substr(0, 4) == "AniN" || data.substr(0, 4) == "AniM");
 }
 
+// Intermission 4.0's other data modules, by their file type (the reader
+// Intermission picks goes by it): an FLI animation (*.FLI, Autodesk's
+// format: the magic AF11, or AF12 as its FLC variant has it, at byte 4;
+// IMFLIPLY.IMQ plays it), a morph (*.MRF, IMMRFPLY.IMQ's) or a mix of
+// modules (*.MSV, IMMSVPLY.IMQ's). nullptr for any other file; throws
+// ImportError(source_invalid) for an *.FLI without the magic.
+const char* data_module_form(const std::string& file_name, std::string_view data) {
+  if (has_ext(file_name, ".FLI")) {
+    const unsigned magic = data.size() >= 6 ? unsigned(uint8_t(data[4]) | uint8_t(data[5]) << 8) : 0;
+    if (magic != 0xAF11 && magic != 0xAF12)
+      throw ImportError(Status::source_invalid, "not an FLI animation (no AF11 or AF12 magic at byte 4)");
+    return "fli";
+  }
+  if (has_ext(file_name, ".MRF")) return "mrf";
+  if (has_ext(file_name, ".MSV")) return "msv";
+  return nullptr;
+}
+
 void add_controls(CatalogModule& m, const std::function<std::optional<std::string_view>(uint16_t)>& find) {
   for (int slot = 0; slot < 4; slot++) {
     auto d = find(uint16_t(slot + 1));
@@ -576,6 +594,20 @@ bool is_intermission_reader(std::string_view file_name) {
   return u.size() == 12 && u.compare(0, 2, "IM") == 0 && u.compare(5, 7, "PLY.IMQ") == 0;
 }
 
+CatalogControl speed_control(SpeedStop start) {
+  CatalogControl c;
+  c.index = 1;
+  c.name = "Speed:";
+  c.kind = "stringslider";
+  c.type = "slider";
+  c.items = {"Slowest", "Slow", "Normal", "Fast", "Fastest"};  // SpeedStop's order
+  c.values = {6, 12, 25, 50, 100};
+  c.default_stop = int(start);
+  c.def = c.values[size_t(start)];
+  c.host = kSpeedHost;
+  return c;
+}
+
 CatalogModule catalog_module(const fs::path& file, const std::string& rel_path, const Package* package) {
   std::string data = read_whole_file(file);
   loader::Format fmt = loader::detect_format(data);
@@ -589,9 +621,10 @@ CatalogModule catalog_module(const fs::path& file, const std::string& rel_path, 
     m.package_title = package->title;
     if (package->screen) m.screen = package->screen;
   }
-  if (asa_header(data)) {
-    // Played by Intermission's ASA reader, whose dialog its Configure...
-    // button opens; it imports nothing itself.
+  if (asa_header(data) || data_module_form(to_utf8(file.filename().wstring()), data)) {
+    // Played by one of Intermission's readers (the ASA reader, or the FLI,
+    // MRF or MSV one), whose dialog its Configure... button opens; it
+    // imports nothing itself.
     m.lane = "ne16";
     m.id = (legacy_ids ? "classic." : std::string(package->id) + ".") + base;
     intermission_entry(m, base, "SAVERMAIN", true);
@@ -685,9 +718,9 @@ bool iequals_w(std::wstring_view a, std::wstring_view b) {
   return CompareStringOrdinal(a.data(), int(a.size()), b.data(), int(b.size()), TRUE) == CSTR_EQUAL;
 }
 
-// <dir>\*.AD (and, with `imx`, *.IMX; with `asa_imq`, *.ASA and *.IMQ too;
-// with `scr`, *.SCR), matched case-insensitively (as glob does on Windows)
-// and sorted by name together.
+// <dir>\*.AD (and, with `imx`, *.IMX; with `asa_imq`, *.ASA, *.IMQ, *.FLI,
+// *.MRF and *.MSV too; with `scr`, *.SCR), matched case-insensitively (as
+// glob does on Windows) and sorted by name together.
 std::vector<std::wstring> modules_in(const fs::path& dir, bool imx, bool asa_imq = false, bool scr = false) {
   std::vector<std::wstring> names;
   std::error_code ec;
@@ -699,7 +732,9 @@ std::vector<std::wstring> modules_in(const fs::path& dir, bool imx, bool asa_imq
     const bool four = n.size() > 4;  // a name before a four-character extension
     if (n.size() < 3 || n[0] == L'.' ||
         !(ends_with(n, L".AD") || (imx && four && ends_with(n, L".IMX")) ||
-          (asa_imq && four && (ends_with(n, L".ASA") || ends_with(n, L".IMQ"))) ||
+          (asa_imq && four &&
+           (ends_with(n, L".ASA") || ends_with(n, L".IMQ") || ends_with(n, L".FLI") || ends_with(n, L".MRF") ||
+            ends_with(n, L".MSV"))) ||
           (scr && four && ends_with(n, L".SCR"))))
       continue;
     std::error_code fe;
@@ -758,6 +793,12 @@ std::vector<ModuleFile> module_files(const Package& pkg, const fs::path& dir) {
 
 std::string file_name_of(const std::string& rel) { return rel.substr(rel.rfind('/') + 1); }
 
+// A registry key (a name override's, a Speed module's) names the file at
+// `pkg_rel`, without case.
+bool key_names(const char* key, const std::string& pkg_rel) {
+  return CompareStringOrdinal(to_wide(key).c_str(), -1, to_wide(pkg_rel).c_str(), -1, TRUE) == CSTR_EQUAL;
+}
+
 }  // namespace
 
 CatalogDoc build_catalog(const std::vector<CatalogTree>& trees, const std::function<void(const std::string&)>& log) {
@@ -784,8 +825,16 @@ CatalogDoc build_catalog(const std::vector<CatalogTree>& trees, const std::funct
           continue;
         }
         for (const NameOverride& o : pkg.name_overrides)
-          if (CompareStringOrdinal(to_wide(o.module).c_str(), -1, to_wide(f.pkg_rel).c_str(), -1, TRUE) == CSTR_EQUAL)
-            m.module_name = o.name;
+          if (key_names(o.module, f.pkg_rel)) m.module_name = o.name;
+        // The Speed control, after the module's own (its Configure...
+        // button), at the module's own starting stop; on an Intermission
+        // module only: an After Dark module's slot 1 is its own.
+        if (m.abi == "intermission")
+          for (const SpeedModule& s : pkg.speed_modules)
+            if (key_names(s.module, f.pkg_rel)) {
+              m.controls.push_back(speed_control(s.start));
+              break;
+            }
         doc.modules.push_back(std::move(m));
         cp.modules++;
       } catch (const std::exception& e) {
@@ -947,6 +996,9 @@ Json control_json(const CatalogControl& c) {
   } else if (c.kind == "checkbox") {
     j.add("default", Json::num(c.def.value_or(0)));
   }
+  // Last, and only on a host control: every other control is laid out
+  // exactly as before it existed.
+  if (!c.host.empty()) j.add("host", Json::str(c.host));
   return j;
 }
 

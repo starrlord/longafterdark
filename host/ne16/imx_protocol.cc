@@ -137,6 +137,10 @@ class ImxProtocol : public Protocol16 {
   // canvases: the host forces its GDI technology), a path 1994's machines
   // ran several times slower than the After Dark figure (lane.hh "Pacing").
   PixelCost pixel_cost() const override { return {"ADNE16IMXPIXCOST", kImxPixelCost}; }
+  // Intermission paced nothing: INTERMIS called SAVERMAIN whenever Windows
+  // was idle, and Delrina's SDK had a module do a small step per call, so
+  // how fast most of them move was the buyer's PC (lane.hh "Pacing", Speed).
+  const char* speed_knob() const override { return kImxSpeedKnob; }
   bool set_control(int index, int32_t value) override;
   void unload() override;
   bool check_button(int slot, std::string* why) override;
@@ -147,6 +151,8 @@ class ImxProtocol : public Protocol16 {
  private:
   void choose_reader(const Env& env, bool quiet);
   bool open_reader(std::string* why);
+  void find_all_modules();
+  void free_all_modules();
   bool start(uint16_t hwnd, std::string* failure);
   void engine_palette(uint8_t type);
   uint32_t pass(uint16_t msg, bool send, bool palette);
@@ -176,16 +182,33 @@ class ImxProtocol : public Protocol16 {
   uint32_t info_ = 0, path_ = 0;  // the record and its path block
   uint16_t hpal_ = 0;             // the engine palette (INTERMIS's window word 4), 0 for none
   uint16_t intrmlib_ = 0;         // INTRMLIB, when the engine palette was looked for in it
+  uint16_t modlib_ = 0;           // INTRMLIB, when its module table was made (an MSV group)
+  uint16_t h_count_ = 0;          // FINDALLMODULES's count
+  bool modules_found_ = false;    // FINDALLMODULES ran: FREEMODINFO is owed
   bool loaded_ = false;           // LOAD succeeded, FREE not yet sent
   bool started_ = false;          // START returned (INTERMIS clears [0x2c0], 1:08f6)
   bool set_logged_ = false;
   uint64_t passes_ = 0, dispatched_ = 0;
 };
 
+// What a form is, for messages.
+const char* form_what(ImxForm f) {
+  switch (f) {
+    case ImxForm::imx: return "an IMX module";
+    case ImxForm::asa: return "an ASA animation";
+    case ImxForm::imq: return "an IMQ module, its own reader,";
+    case ImxForm::fli: return "an FLI animation";
+    case ImxForm::flc: return "an FLC animation";
+    case ImxForm::mrf: return "an MRF morph";
+    case ImxForm::msv: return "an MSV MultiSaver group";
+  }
+  return "?";
+}
+
 // The reader (package.hh): for an IMX module ADNE16READER, else IMIMXPLY.IMQ
-// when the package has one, else the native reader; for an ASA animation
-// IMASAPLY.IMQ, and for an IMQ module the module itself (neither has a
-// native reader).
+// when the package has one, else the native reader; for a data file the
+// reader of its type (IMASAPLY.IMQ for an ASA animation), and for an IMQ
+// module the module itself (none of them has a native reader).
 void ImxProtocol::choose_reader(const Env& env, bool quiet) {
   ReaderKind forced = ReaderKind::imq;
   reader_auto_ = true;
@@ -200,13 +223,12 @@ void ImxProtocol::choose_reader(const Env& env, bool quiet) {
     reader_kind_ = reader_auto_ ? (reader_file_.host.empty() ? ReaderKind::native : ReaderKind::imq) : forced;
   } else {
     if (!reader_auto_ && forced == ReaderKind::native && !quiet) {
-      log("%s: ADNE16READER=native is ignored: %s has no native reader", module_name_.c_str(),
-          form_ == ImxForm::asa ? "an ASA animation" : "an IMQ module, its own reader,");
+      log("%s: ADNE16READER=native is ignored: %s has no native reader", module_name_.c_str(), form_what(form_));
     }
     reader_auto_ = reader_auto_ || forced == ReaderKind::native;
     reader_kind_ = ReaderKind::imq;
-    if (form_ == ImxForm::asa) {
-      reader_file_ = find_reader(layout_, file_exists, kAsaReader);
+    if (data_form(form_)) {
+      reader_file_ = find_reader(layout_, file_exists, reader_file(form_));
     } else {
       reader_file_ = ReaderFile{layout_.module_path, false};
     }
@@ -247,8 +269,13 @@ bool ImxProtocol::open_reader(std::string* why) {
   }
   if (reader_file_.host.empty()) {
     const std::string where = "neither " + layout_.engine_dir + " nor " + layout_.module_dir + " holds ";
-    *why = form_ == ImxForm::asa ? where + kAsaReader + ", the reader of ASA animations (there is no native one)"
-                                 : "ADNE16READER=imq, but " + where + kImxReader;
+    if (form_ == ImxForm::asa) {
+      *why = where + kAsaReader + ", the reader of ASA animations (there is no native one)";
+    } else if (data_form(form_)) {
+      *why = where + reader_file(form_) + ", the reader of " + form_what(form_) + " (there is no native one)";
+    } else {
+      *why = "ADNE16READER=imq, but " + where + kImxReader;
+    }
     return false;
   }
   // An IMQ module is loaded by its own path, as LOADSAVER loaded a reader's
@@ -258,6 +285,59 @@ bool ImxProtocol::open_reader(std::string* why) {
       (reader_file_.in_engine_dir ? o.system_dir : o.guest_dir) + "\\" + win16::upper16(file_of(reader_file_.host));
   reader_ = open_imq_reader(*rt_, reader_path_, why);
   return reader_ != nullptr;
+}
+
+// INTERMIS's start-up enumeration (1:0372): FINDALLMODULES(&count), which
+// INTRMLIB's GETMODULESINFO (1:2756) answers from afterwards — its table of
+// every reader and module record of the saver directory (1:1e06: every *.IMQ
+// a reader's record, then every file whose extension is a reader's type a
+// module's, its information from ANTSW.INI's cache or from its reader). The
+// lane runs no INTERMIS start-up, and a MultiSaver group is the one form that
+// reads the table (IMMSVPLY's LOAD, 2:177d, finds its modules' records in it
+// and loads them with LOADSAVER): for it, and only for it, the table is made
+// before its LOAD, through the thunks, from the INTRMLIB.DLL the guest
+// loads; FREEMODINFO (INTERMIS's exit, 1:0cb4) frees it at unload.
+void ImxProtocol::find_all_modules() {
+  if (modules_found_ || form_ != ImxForm::msv) return;
+  const uint16_t h = uint16_t(api("KERNEL", "LoadLibrary", {l16(str("INTRMLIB.DLL"))}));
+  const uint32_t proc = h >= 32 ? api("KERNEL", "GetProcAddress", {w16(h), l16(str("FINDALLMODULES"))}) : 0;
+  h_count_ = proc ? uint16_t(api("KERNEL", "GlobalAlloc", {w16(0x0042), l16(2)})) : 0;
+  const uint32_t count = h_count_ ? api("KERNEL", "GlobalLock", {w16(h_count_)}) : 0;
+  if (h >= 32) modlib_ = h;
+  if (!count) {
+    log("%s: no INTRMLIB.DLL FINDALLMODULES: the MultiSaver group finds no modules", module_name_.c_str());
+    return;
+  }
+  modules_found_ = true;
+  const uint32_t table = rt_->call_far(proc, {l16(count)});
+  const uint16_t n = rt_->rd16(count);
+  trace("lane", "%s: INTRMLIB FINDALLMODULES -> %u records at %08" PRIX32, module_name_.c_str(), n, table);
+  if (tracing("lane") && table) {
+    for (uint16_t i = 0; i < n; i++) {
+      const uint32_t rec = rt_->rd32(table + 4u * i);
+      trace("lane", "  record %u: %-12s reader %d, flags %08" PRIX32 ", \"%s\"", i,
+            rt_->read_str(rec + iminfo::kFile, iminfo::kFileSize).c_str(), int16_t(rt_->rd16(rec + iminfo::kReaderIndex)),
+            rt_->rd32(rec + iminfo::kFlags), rt_->read_str(rec + iminfo::kName, iminfo::kNameSize).c_str());
+    }
+  }
+}
+
+void ImxProtocol::free_all_modules() {
+  if (modules_found_) {
+    modules_found_ = false;
+    if (const uint32_t proc = api("KERNEL", "GetProcAddress", {w16(modlib_), l16(str("FREEMODINFO"))})) {
+      rt_->call_far(proc, {});
+    }
+  }
+  if (h_count_) {
+    api("KERNEL", "GlobalUnlock", {w16(h_count_)});
+    api("KERNEL", "GlobalFree", {w16(h_count_)});
+    h_count_ = 0;
+  }
+  if (modlib_) {
+    api("KERNEL", "FreeLibrary", {w16(modlib_)});
+    modlib_ = 0;
+  }
 }
 
 // INTRMLIB's LOADSAVER (1:1fc0..1:21a7) and INTERMIS's StartSaver (6:0396)
@@ -306,17 +386,31 @@ bool ImxProtocol::start(uint16_t hwnd, std::string* failure) {
     free_saver();
     return false;
   }
+  // The FLI, FLC, Morph and MultiSaver readers name a module only when the
+  // QUERY asks for it (flag 0x8000: IMFLIPLY 2:0587), as INTRMLIB's
+  // enumeration asked (GETSAVERINFO, 1:253f..1:254e: set, QUERY, clear) before
+  // INTERMIS ever ran one — and their Configure dialogs file the settings
+  // under that name. Their record gets it the same way here.
+  const bool name_it = data_form(form_) && form_ != ImxForm::asa;
+  if (name_it) rt.wr8(info_ + iminfo::kFlags + 1, uint8_t(rt.rd8(info_ + iminfo::kFlags + 1) | 0x80));
   r = saver_main(immsg::kQuery);
+  if (name_it) rt.wr8(info_ + iminfo::kFlags + 1, uint8_t(rt.rd8(info_ + iminfo::kFlags + 1) & 0x7F));
   if (!r) {
     // INTERMIS frees a saver whose QUERY failed (6:06ec) and picks another.
     *failure = "the reader's query failed (SAVERMAIN(7) -> 0)";
     free_saver();
     return false;
   }
-  // INTERMIS listed only runnable savers: an IMQ whose QUERY clears 0x1000 is a reader (package.hh "Form").
-  if (own && !(rt.rd32(info_ + iminfo::kFlags) & iminfo::kSaver)) {
-    *failure = "an Intermission reader (its query does not make it a saver: flags " +
-               hex32(rt.rd32(info_ + iminfo::kFlags)) + "), not a module";
+  // INTERMIS ran only savers that are no readers (6:03d1..6:03dd,
+  // 6:049b..6:04a7): an IMQ whose QUERY clears 0x1000 is a reader, and so is
+  // one that keeps it beside 0x0800 — the Morph, MultiSaver and Sequencer
+  // readers, which its control panel listed for their editors alone
+  // (package.hh "Form").
+  const uint32_t own_flags = own ? rt.rd32(info_ + iminfo::kFlags) : 0;
+  if (own && (!(own_flags & iminfo::kSaver) || (own_flags & iminfo::kIsReader))) {
+    *failure = std::string("an Intermission reader (its query ") +
+               ((own_flags & iminfo::kSaver) ? "says it is one" : "does not make it a saver") + ": flags " +
+               hex32(own_flags) + "), not a module";
     free_saver();
     return false;
   }
@@ -361,9 +455,13 @@ void ImxProtocol::engine_palette(uint8_t type) {
 }
 
 bool ImxProtocol::load(Runtime16& rt, uint16_t hwnd, uint16_t hdc, LaneContext& ctx) {
-  (void)hdc;  // every pass gets its own DC (GetDC), as INTERMIS's did
+  (void)hdc;  // every pass gets its DC from GetDC, as INTERMIS's did
   rt_ = &rt;
   hwnd_ = hwnd;
+  // INTERMIS's saver window class has CS_OWNDC (4:009e): GetDC gives every
+  // pass the same DC, which keeps what a pass left in it — a mode-0x10
+  // reader's (IMFLIPLY's) palette, selected once; mode 0 restores it.
+  win16::user16_own_dc(rt, hwnd);
   // The music's level (lane.hh "Sound"): Intermission set the effects' alone
   // (SWSE's waveOutSetVolume from ANTSW.INI's Volume), and the Windows mixer's
   // synth line the rest. With the engine on, the saver's volume stands in for
@@ -375,8 +473,10 @@ bool ImxProtocol::load(Runtime16& rt, uint16_t hwnd, uint16_t hdc, LaneContext& 
     ctx.audio->set_bus_gain(audio::Bus::midi, audio::gain_from_mm(v | (v << 16)), rt.peek_us());
   }
   std::string why;
+  find_all_modules();
   if (!open_reader(&why) || !start(hwnd, &why)) {
     log("%s: %s", module_name_.c_str(), why.c_str());
+    free_all_modules();
     return false;
   }
   const uint8_t type = rt.rd8(info_ + iminfo::kPaletteType);
@@ -503,6 +603,7 @@ void ImxProtocol::unload() {
     api("KERNEL", "FreeLibrary", {w16(intrmlib_)});
     intrmlib_ = 0;
   }
+  free_all_modules();
   free_record();
   trace("lane", "%s: %" PRIu64 " passes; %" PRIu64 " guest messages dispatched between them", module_name_.c_str(),
         passes_, dispatched_);
@@ -531,32 +632,42 @@ void ImxProtocol::configure_button_runtime(win16::Runtime16Options& opts, const 
 // SAVERDLGPROC), which runs the whole dialog inside the call —, FREESAVER
 // (11), +4 = 0. QUERY (7) follows the load, as INTRMLIB's enumeration had
 // sent it (GETSAVERINFO: 10, 7, 11) before the control panel offered the
-// button; nothing starts the module (no 1).
+// button; nothing starts the module (no 1). The control panel is
+// INTERMIS.EXE, which imports INTRMLIB: its LibEntry had registered the
+// dialog controls (ANT3DBOX, ANT3DCHECK, ANT3DONEORMORE, …) that readers'
+// Configure dialogs name — IMFLIPLY's and IMFLCPLY's among them, which do not
+// import INTRMLIB themselves —, so INTRMLIB is loaded around the button
+// (when the package has it).
 Protocol16::Button ImxProtocol::button(Runtime16& rt, int slot, uint16_t owner16, LaneContext& ctx) {
   (void)slot;
   (void)ctx;
   rt_ = &rt;
+  uint16_t panel = uint16_t(api("KERNEL", "LoadLibrary", {l16(str("INTRMLIB.DLL"))}));
+  if (panel < 32) panel = 0;
   Button out;
   std::string why;
+  find_all_modules();
   if (!open_reader(&why)) {
     out.message = why;
-    return out;
+  } else {
+    out.ran = true;
+    if (!start(0, &why)) {
+      out.failure = why;
+      free_record();
+    } else {
+      rt.wr16(info_ + iminfo::kHwnd, owner16);
+      uint32_t r = saver_main(immsg::kConfigure);
+      trace("lane", "%s: \"%s\": SAVERMAIN(8 configure, owner %04X) through the %s reader -> %" PRIu32,
+            module_name_.c_str(), rt.read_str(info_ + iminfo::kName, iminfo::kNameSize).c_str(), owner16,
+            reader_name(reader_kind_), r);
+      if (!r) out.message = "the module has no Configure dialog (no SAVERDLGPROC)";
+      free_saver();
+      rt.wr16(info_ + iminfo::kHwnd, 0);
+      free_record();
+    }
   }
-  out.ran = true;
-  if (!start(0, &why)) {
-    out.failure = why;
-    free_record();
-    return out;
-  }
-  rt.wr16(info_ + iminfo::kHwnd, owner16);
-  uint32_t r = saver_main(immsg::kConfigure);
-  trace("lane", "%s: \"%s\": SAVERMAIN(8 configure, owner %04X) through the %s reader -> %" PRIu32,
-        module_name_.c_str(), rt.read_str(info_ + iminfo::kName, iminfo::kNameSize).c_str(), owner16,
-        reader_name(reader_kind_), r);
-  if (!r) out.message = "the module has no Configure dialog (no SAVERDLGPROC)";
-  free_saver();
-  rt.wr16(info_ + iminfo::kHwnd, 0);
-  free_record();
+  free_all_modules();
+  if (panel) api("KERNEL", "FreeLibrary", {w16(panel)});
   return out;
 }
 

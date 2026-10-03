@@ -737,15 +737,11 @@ void SaverWindow::spawn() {
   // size, and the letterbox follows its frames.
   const ModuleScreen screen = screen_for(m);
   const SizeI emu = screen.emu;
-  std::map<int, int> cv;
-  if (auto it = app_.settings.controls.find(m->id); it != app_.settings.controls.end()) {
-    // The catalog is authoritative about which slots exist and their ranges;
-    // buttons and unknown kinds never carry a value.
-    for (auto [idx, val] : it->second) {
-      if (const Control* c = m->control(idx); c && c->settable()) cv[idx] = c->clamp(val);
-    }
-  }
-  std::string cvset = format_cvset(cv);
+  // Its controls' values (catalog.h): the module's own as ADCVSET, clamped
+  // by the catalog; its host controls' (Intermission 4.0's Speed) as the
+  // variables they name, at their defaults when never set.
+  const HostControlValues values = host_control_values(*m, app_.settings.controls);
+  const std::string& cvset = values.cvset;
   // Modules latch the Caps Lock toggle when they start (INTERACTION.md §3.1);
   // every window's host gets it, owner or not. The Num Lock toggle too, for
   // a host that keeps one (numlock=1; dialog_support.h: numlock_env): Final
@@ -789,6 +785,7 @@ void SaverWindow::spawn() {
       {L"ADSEEDIMG", seed},
   };
   add_sound_env(spec.env, sound);
+  add_host_control_env(spec.env, values.env);
   const bool seeded = !seed.empty();
   spec.stderr_path = env_w(L"AD_SCR_HOSTLOG");
   spec.priority_class = app_.preview ? BELOW_NORMAL_PRIORITY_CLASS : 0;
@@ -814,10 +811,10 @@ void SaverWindow::spawn() {
   }
   app_.pacer.add(host_.get());
   last_log("spawn window=%d gen=%llu module=%s path=%s size=%dx%d cvset=%s caps=%d numlock=%d seed=%d sound=%d volume=%d "
-           "pid=%lu stretch=%d",
+           "pid=%lu stretch=%d%s%s",
            index_, (unsigned long long)generation_, m->id.c_str(), narrow(spec.module_path).c_str(), emu.w, emu.h,
            cvset.c_str(), caps, numlock_sent, seeded ? 1 : 0, sound.on ? 1 : 0, sound.on ? sound.volume : -1, host_->pid(),
-           stretch_ ? 1 : 0);
+           stretch_ ? 1 : 0, values.env.empty() ? "" : " host=", describe_env(values.env).c_str());
 }
 
 void SaverWindow::kill_host(bool wait) {
@@ -1380,7 +1377,8 @@ bool App::load() {
     }
   }
   if (available.empty()) {
-    // Any release will do (the eleven of After Dark modules, the three of Intermission's).
+    // Any release will do (the eleven of After Dark modules, the seven of Intermission's,
+    // Johnny Castaway).
     message = preview ? L"No modules imported" : L"No modules imported — open Screen Saver Settings…";
     message_code = kExitNotImported;
   } else if (!file_exists(host_exe)) {

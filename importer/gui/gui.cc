@@ -199,7 +199,8 @@ int run_flow(Session& s) {
 //     themechange=light|dark|hc (after opening: a live theme change to that mode)
 //     report=<path> (where the client area is in the picture, and pal.base; on
 //       Sources also list=<shown>,<whole>,<row>,<rows>,<cols>: the installed covers' heights
-//       in px, and the grid's rows and columns)
+//       in px, and the grid's rows and columns; on Downloads list=<shown>,<whole> and
+//       cards=<end>,…: the list's heights, and where each card ends in it, in px)
 
 std::map<std::wstring, std::wstring> parse_state(const std::wstring& s) {
   std::map<std::wstring, std::wstring> kv;
@@ -253,7 +254,8 @@ int run_screenshot(Session& s, const std::wstring& png) {
   s.offscreen = true;
 
   std::unique_ptr<Page> pg;
-  SourcesPage* src = nullptr;   // page=sources (the report's list heights)
+  SourcesPage* src = nullptr;     // page=sources (the report's list heights)
+  DownloadsPage* dls = nullptr;   // page=downloads (the same)
   std::vector<InstalledRow> installed = installed_rows(s.assets);
   if (page == L"sources") {
     if (kv[L"notice"] == L"1") s.notice = removed_note(L"The Simpsons Screen Saver");
@@ -265,7 +267,9 @@ int run_screenshot(Session& s, const std::wstring& png) {
       src->show_caution(L"That is not a disc Long After Dark knows. D:\\Backup\\Screen savers: no known release is "
                         L"there. Choose the CD drive itself (for example E:\\) or a copy of the disc or floppies.");
   } else if (page == L"downloads") {
-    pg = std::make_unique<DownloadsPage>(s);
+    auto dp = std::make_unique<DownloadsPage>(s);
+    dls = dp.get();
+    pg = std::move(dp);
     if (!pg->open(nullptr)) return 1;
   } else if (page == L"progress") {
     Job job;
@@ -412,6 +416,12 @@ int run_screenshot(Session& s, const std::wstring& png) {
       const SourcesPage::ListHeights l = src->list_heights();
       snprintf(buf, sizeof(buf), "list=%d,%d,%d,%d,%d\n", l.shown, l.whole, l.row, l.rows, l.cols);
       report += buf;
+    }
+    if (dls) {
+      const DownloadsPage::ListHeights& l = dls->list_heights();
+      report += "list=" + std::to_string(l.shown) + "," + std::to_string(l.whole) + "\ncards=";
+      for (size_t i = 0; i < l.ends.size(); ++i) report += (i ? "," : "") + std::to_string(l.ends[i]);
+      report += "\n";
     }
     if (FILE* f = _wfopen(kv[L"report"].c_str(), L"wb")) {
       fputs(report.c_str(), f);

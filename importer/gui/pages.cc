@@ -345,8 +345,8 @@ int SourcesPage::layout(int w, int max_h) {
     }
     return y + px(16);
   };
-  // Too tall for the work area (on a short screen; three rows of six covers
-  // hold sixteen releases): the grid scrolls in its card, showing as many whole
+  // Too tall for the work area (on a short screen; three rows of seven covers
+  // hold twenty releases): the grid scrolls in its card, showing as many whole
   // rows as fit (two at the least) when that makes the page fit, else as
   // many as fit down to one (the part of a row that shows says there are
   // more); when even one row does not fit, the whole body scrolls instead,
@@ -640,26 +640,45 @@ int DownloadsPage::layout(int w, int max_h) {
   std::vector<HWND> all_cards = cards_;
   if (all_card_) all_cards.push_back(all_card_);
   // The cards in the list's own coordinates (each window is its body plus the
-  // focus margin, which the list keeps clear at its edges).
+  // focus margin, which the list keeps clear at its edges); `ends` gets where
+  // each window ends: a list that tall shows that card and the ones above it whole.
+  std::vector<int> ends;
   auto content = [&](int card_w, bool apply) {
+    ends.clear();
     int yc = fm;
     for (HWND c : all_cards) {
       const int ch = ui::card_height(t_, window_text(c), card_w + 2 * fm, c != all_card_);
       if (apply) list_->put(c, 0, yc - fm, card_w + 2 * fm, ch);
+      ends.push_back(yc - fm + ch);
       yc += ch - 2 * fm + px(4);
     }
     return yc - px(4) + fm;
   };
-  const int avail = std::max(px(80), max_h - (y - fm) - px(kGap) - footer_h);
+  // The list's room: what the work area leaves it (80 DIP at the least), and
+  // nine cards at the most: the page is then a little less tall than Sources
+  // with every release installed (three rows of covers), so the window keeps
+  // its height from one page to the other. A note longer than two lines (a
+  // long downloads folder) takes its lines from the list.
+  const int top = y - fm, below = px(kGap) + footer_h;
+  auto room = [&] {
+    int r = max_h - top - below;
+    if ((int)ends.size() > kMostCards) r = std::min(r, ends[kMostCards - 1] - (footer_h - px(kFooter)));
+    return std::max(px(80), r);
+  };
   int card_w = cw;
-  int natural = content(card_w, false);
-  if (natural > avail) {
+  int natural = content(card_w, false), list_h = natural;
+  if (natural > room()) {
     // Room for the scroll bar at the right.
     card_w = cw - px(12);
     natural = content(card_w, false);
+    // As many whole cards as fit, two at the least, as Sources shows its rows
+    // (else what fits: the part of a card that shows says there are more).
+    const int r = room();
+    list_h = std::min(natural, r);
+    for (size_t i = 1; i < ends.size() && ends[i] <= r; ++i) list_h = ends[i];
   }
   content(card_w, true);
-  const int list_h = std::min(natural, avail);
+  list_heights_ = ListHeights{list_h, natural, ends};
   list_->place(x0 - fm, y - fm, cw + 2 * fm, list_h, natural);
   y = y - fm + list_h + px(kGap);
   footer_top_ = y;

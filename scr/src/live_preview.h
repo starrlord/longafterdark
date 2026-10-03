@@ -38,11 +38,24 @@ struct LiveTarget {
   std::wstring module_path;      // absolute
   std::wstring win_dir;          // <assets>\win (working directory)
   std::string cvset;             // ADCVSET, "0=50,1=1"
+  // Its host controls' variables (catalog.h: HostControlValues::env), set in
+  // its host's environment: Intermission 4.0's {"ADNE16IMXSPEED", "25"}.
+  std::vector<std::pair<std::wstring, std::wstring>> env;
   std::wstring name;             // the module's display name (hover caption, messages)
   // Where to keep a thumbnail of the module ("" = don't take one): the most
   // detailed of a few of its frames (thumbnails.h: ThumbTaker).
   std::wstring thumb_path;
 };
+
+// Whether live_preview_run() keeps the module running for `b` while it runs
+// `a`: everything its host is started with is the same (its name and its
+// thumbnail's file aside). A control moved in the settings window changes
+// its cvset or, for a host control (Speed), its env, so the preview starts
+// it again with the new value.
+inline bool same_target(const LiveTarget& a, const LiveTarget& b) {
+  return a.id == b.id && a.abi == b.abi && a.screen == b.screen && a.host_exe == b.host_exe &&
+         a.module_path == b.module_path && a.win_dir == b.win_dir && a.cvset == b.cvset && a.env == b.env;
+}
 
 void register_live_preview_class(HINSTANCE hinst);
 HWND create_live_preview(HWND parent, int id, HINSTANCE hinst);

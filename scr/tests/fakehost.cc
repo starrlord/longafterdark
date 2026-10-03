@@ -57,6 +57,8 @@
 //
 // The "start" lines also carry the sound variables the front-end passed
 // (ADSOUND, ADVOLUME, ADAUDIOOUT; AUDIO.md §9). fakehost makes no sound.
+// They (and the "configure" and "capabilities" lines) carry ADNE16IMXSPEED
+// too, Intermission 4.0's Speed: a host control's variable (catalog "host").
 //   FAKEHOST_INTERACTIVE=0     CAPS never makes it interactive
 //   FAKEHOST_CURSOR=1          raise the cursor flag while interactive
 //   FAKEHOST_ROTATE_OK=1       raise the rotate-ok flag while interactive
@@ -299,8 +301,10 @@ std::string check_seed(const std::string& path, int w, int h) {
 
 std::string env_fields() {
   std::string s;
+  // ADNE16IMXSPEED: Intermission 4.0's Speed, a host control (catalog "host").
   for (const char* k : {"ADSTREAM", "ADSCREENW", "ADSCREENH", "ADCVSET", "AD_ASSETS_DIR", "ADSTATE", "ADCAPS",
-                        "ADNUMLOCK", "ADSEEDIMG", "ADSTATUSHANDLE", "ADSOUND", "ADVOLUME", "ADAUDIOOUT"}) {
+                        "ADNUMLOCK", "ADSEEDIMG", "ADSTATUSHANDLE", "ADSOUND", "ADVOLUME", "ADAUDIOOUT",
+                        "ADNE16IMXSPEED"}) {
     s += "\t";
     s += k;
     s += "=" + env(k);

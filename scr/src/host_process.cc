@@ -96,6 +96,12 @@ void add_host_defaults(std::vector<std::pair<std::wstring, std::wstring>>& env) 
   if (!says_sound) add_sound_env(env, SoundChoice{});
 }
 
+void add_host_control_env(std::vector<std::pair<std::wstring, std::wstring>>& env,
+                          const std::vector<std::pair<std::wstring, std::wstring>>& controls) {
+  // build_environment_block applies changes in order: the later one wins.
+  env.insert(env.begin(), controls.begin(), controls.end());
+}
+
 HANDLE create_kill_on_close_job() {
   HANDLE job = CreateJobObjectW(nullptr, nullptr);
   if (!job) return nullptr;

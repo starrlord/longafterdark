@@ -150,7 +150,7 @@ foreach(_t run preview preview-parent-gone not-imported host-missing respawn sta
            start-failure display-off p6-garbage primary-only config config-lead config-live config-classic
            config-thumbs list-top import preview-settings display-change
            input-play input-alt input-wake input-rotate input-monitors input-display-change seed seed-screens
-           config-buttons
+           config-buttons config-speed
            config-collections config-cover config-remove rotate-collections config-details data-root
            sound sound-wake config-sound present config-abi rotate-abi rotate-abi-wait screen-abi screen-field numlock
            config-credit config-twelve rotate-monitors config-monitors config-stretch)
@@ -188,6 +188,9 @@ set_tests_properties(scr_smoke_present PROPERTIES TIMEOUT 180)
 set_tests_properties(scr_smoke_rotate-monitors PROPERTIES TIMEOUT 180)
 # The dialog driven by control ID four times, then seven off-screen renders.
 set_tests_properties(scr_smoke_config-monitors PROPERTIES TIMEOUT 240)
+# The dialog with its thumbnails, a module button and a Preview (a /s), then
+# a /s rotation and a /p.
+set_tests_properties(scr_smoke_config-speed PROPERTIES TIMEOUT 240)
 set_tests_properties(scr_smoke_config-stretch PROPERTIES TIMEOUT 240)
 set_tests_properties(scr_host_stream PROPERTIES TIMEOUT 60)
 

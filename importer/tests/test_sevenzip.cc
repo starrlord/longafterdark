@@ -425,10 +425,24 @@ int main(int argc, char** argv) {
         return e.status() == Status::source_invalid && strstr(e.what(), expect) != nullptr;
       }
     };
+    // One folder that holds everything is read as the root, as a ZIP's is;
+    // two folders, or a file beside one, are refused.
+    {
+      test::SevenZipBuilder one;
+      one.add_dir("SUB");
+      one.add("SUB/A.TXT", text("a"));
+      test::write_bytes(dir / L"one.7z", one.build());
+      auto top = open_image(dir / L"one.7z", &note);
+      CHECK_EQ(note, std::string("reading one.7z's folder SUB as the source"));
+      CHECK(top->find("A.TXT") && top->read_all(*top->find("A.TXT")) == text("a"));
+    }
     test::SevenZipBuilder other;
     other.add_dir("SUB");
     other.add("SUB/A.TXT", text("a"));
-    CHECK(source_refused(L"other.7z", other, "(a 7z source holds the install files at its root, or only DISK<n> folders)"));
+    other.add("OTHER/B.TXT", text("b"));
+    CHECK(source_refused(L"other.7z", other,
+                         "(a 7z source holds the install files, or only DISK<n> folders of them, at its root or in "
+                         "one folder)"));
     test::SevenZipBuilder deeper;
     deeper.add_dir("DISK1");
     deeper.add("DISK1/SUB/A.TXT", text("a"));

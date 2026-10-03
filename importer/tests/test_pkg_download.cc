@@ -52,6 +52,7 @@
 #include "names.h"
 #include "pkg_fixture.h"
 #include "run_process.h"
+#include "tar_builder.h"
 
 using namespace adw::import;
 namespace fs = std::filesystem;
@@ -775,15 +776,91 @@ int main(int argc, char** argv) {
     CHECK(!j.at("source").contains("url"));
     check_installed(dir / L"zip-image" / L"win", simpsons, "packages/simpsons");
 
-    test::write_bytes(dir / L"nested.zip", flat_zip(simpsons.source, 0x1EF1, "SIMPSONS/"));
-    r = run("a ZIP with the files in a folder", image(dir / L"nested.zip"), opts_for(dir / L"zip-nested", reg),
+    // The files in one folder that holds everything (the Internet Archive's
+    // ZIP of On the Road Again's files): that folder is read as the root.
+    test::write_bytes(dir / L"top.zip", flat_zip(simpsons.source, 0x1EF1, "SIMPSONS/"));
+    r = run("a ZIP with the files in one folder", image(dir / L"top.zip"), opts_for(dir / L"zip-top", reg), Status::ok);
+    CHECK_EQ(r.verified, std::string("files"));
+    CHECK_EQ(r.format, std::string("zip"));
+    check_installed(dir / L"zip-top" / L"win", simpsons, "packages/simpsons");
+    // In a folder of that folder: refused.
+    test::write_bytes(dir / L"nested.zip", flat_zip(simpsons.source, 0x1EF1, "SIMPSONS/FILES/"));
+    r = run("a ZIP with the files two folders down", image(dir / L"nested.zip"), opts_for(dir / L"zip-nested", reg),
             Status::source_invalid);
-    CHECK(r.message.find("at its root") != std::string::npos);
+    CHECK(r.message.find("at its root or in one folder") != std::string::npos);
     test::write_bytes(dir / L"locked.zip", test::zip_of({{"INSTALL.INS", test::install_ins("")}}));
     r = run("a password-protected ZIP", image(dir / L"locked.zip"), opts_for(dir / L"zip-locked", reg),
             Status::source_invalid);
     CHECK(r.message.find("password-protected") != std::string::npos);
     CHECK(!fs::exists(dir / L"zip-nested" / L"win" / L"packages"));
+  }
+
+  // ---- a tar: The Flintstones' three ZIPs among a collection's files ---------------------------
+  {
+    const test::PkgFixture flint = test::flintstones_fixture();
+    test::TestRegistry treg;
+    treg.manifest("flintstones", test::manifest_of(flint.expect));
+    std::vector<std::vector<uint8_t>> zips;
+    std::vector<test::TestRegistry::Disk> known;
+    std::vector<test::TestRegistry::Member> members;
+    test::TarBuilder tar;
+    tar.add("coll/", {}, '5');
+    tar.add("coll/OTHER.ZIP", test::blob("another upload of the collection", 3000));
+    for (int k = 1; k <= 3; k++) {
+      test::Tree t = test::disk_files(flint.source, k, test::flintstones_disk);
+      t["FILE_ID.DIZ"] = test::vec("A made-up BBS's note on disk " + std::to_string(k) + std::string(size_t(k), '*'));
+      zips.push_back(test::zip_folder(t));
+      known.push_back({md5_of(zips.back()), zips.back().size(), k});
+      const std::string name = "FLINT" + std::to_string(k) + ".ZIP";
+      tar.add("coll/" + name, zips.back());
+      members.push_back({"coll/" + name, to_wide(name), zips.back().size(), md5_of(zips.back())});
+      tar.add("coll/README" + std::to_string(k) + ".TXT", test::blob("a note", 70 + size_t(k)));
+    }
+    treg.disk_images("flintstones", known);
+    const auto tar_bytes = tar.build();
+    srv.serve("/flint.tar", tar_bytes);
+    // The same tar with disk 2's ZIP changed (another size), and without it.
+    test::TarBuilder bad = tar, short_tar;
+    for (auto& e : bad.entries)
+      if (e.name == "coll/FLINT2.ZIP") e.data = test::blob("not the published ZIP", 999);
+    for (const auto& e : tar.entries)
+      if (e.name != "coll/FLINT3.ZIP") short_tar.entries.push_back(e);
+    srv.serve("/flint-bad.tar", bad.build());
+    srv.serve("/flint-short.tar", short_tar.build());
+    const Copy tar_copy{srv.url("/r/flint.tar"), L"flint.tar", tar_bytes.size(), md5_of(tar_bytes), "zip", {}, members};
+    treg.downloads("flintstones", {tar_copy});
+
+    g_log.clear();
+    ImportResult r = run("flintstones from the tar", download(dir / L"downloads-tar", "flintstones"),
+                         opts_for(dir / L"tar", treg), Status::ok);
+    CHECK_EQ(r.verified, std::string("image"));
+    CHECK_EQ(r.parts.size(), size_t(3));
+    CHECK_EQ(r.build, std::string("1994-06"));
+    check_installed(dir / L"tar" / L"win", flint, "packages/flintstones");
+    for (int k = 1; k <= 3; k++)
+      CHECK(test::read_bytes(dir / L"downloads-tar" / (L"FLINT" + std::to_wstring(k) + L".ZIP")) == zips[size_t(k - 1)]);
+    CHECK(logged("took coll/FLINT1.ZIP out of flint.tar (") && logged("md5 checked"));
+    // Again: the tar is there and so are the ZIPs taken out of it.
+    g_log.clear();
+    run("flintstones from the tar, again", download(dir / L"downloads-tar", "flintstones"),
+        opts_for(dir / L"tar-again", treg), Status::ok);
+    CHECK(logged("using the already-downloaded") && logged("using the already-extracted"));
+    CHECK(!logged("took coll/"));
+    // A member that is not the published ZIP, or none: the copy is refused
+    // as one with the wrong md5 is, and nothing is imported.
+    for (const auto& [what, path] : std::vector<std::pair<std::string, std::string>>{
+             {"a member of another size", "/r/flint-bad.tar"}, {"a member missing", "/r/flint-short.tar"}}) {
+      test::TestRegistry breg;
+      breg.manifest("flintstones", test::manifest_of(flint.expect));
+      breg.disk_images("flintstones", known);
+      const auto& served = path == "/r/flint-bad.tar" ? bad.build() : short_tar.build();
+      breg.downloads("flintstones", {Copy{srv.url(path), L"flint-x.tar", served.size(), md5_of(served), "zip", {}, members}});
+      const fs::path dl_x = dir / to_wide("downloads-" + what);
+      r = run(what, download(dl_x, "flintstones"), opts_for(dir / to_wide("tar-" + what), breg), Status::verify_failed);
+      CHECK(r.message.find(path == "/r/flint-bad.tar" ? "flint-x.tar!coll/FLINT2.ZIP is 1021 bytes, not the published"
+                                                      : "flint-x.tar holds no coll/FLINT3.ZIP") != std::string::npos);
+      CHECK(!fs::exists(dir / to_wide("tar-" + what) / L"win" / L"packages"));
+    }
   }
 
   // ---- --download all -----------------------------------------------------------------------
@@ -823,9 +900,10 @@ int main(int argc, char** argv) {
 
   // ---- the built-in copies -------------------------------------------------------------------
   {
-    CHECK(downloadable_packages() == std::vector<std::string>({"deluxe", "ad10", "ad32", "tt", "simpsons", "swse",
-                                                                "startrek", "marvel", "snoopy", "looney", "screams",
-                                                                "disney", "farside", "dilbert", "tng", "castaway"}));
+    CHECK(downloadable_packages() ==
+          std::vector<std::string>({"deluxe", "ad10", "ad32", "tt", "simpsons", "swse", "startrek", "marvel", "snoopy",
+                                    "looney", "screams", "disney", "farside", "dilbert", "tng", "castaway", "opus",
+                                    "opusroad", "flintstones", "intermission"}));
     for (const Package& p : builtin_packages()) {
       CHECK(!p.downloads.empty());
       std::map<std::string, std::wstring> name_of_md5;
@@ -868,15 +946,35 @@ int main(int argc, char** argv) {
           total += q.size;
         }
         CHECK_EQ(download_size(d), total);
-        // An image copy is a whole release: one whole-release image, or every
+        int n = 0;
+        for (const KnownImage& k : p.images) n = std::max(n, k.disk);
+        std::vector<int> every(size_t(n ? n : 1), 0);
+        for (int i = 0; i < n; i++) every[size_t(i)] = i + 1;
+        // An image copy is a whole release: one whole-release image (or the
+        // ZIP of every install disk's image: Intermission 4.0's), or every
         // install disk of the package exactly once (a copy of a ZIP per disk too).
         if (kind == "image" || !d.more_images.empty()) {
           std::sort(disks.begin(), disks.end());
-          int n = 0;
-          for (const KnownImage& k : p.images) n = std::max(n, k.disk);
-          std::vector<int> want(size_t(n ? n : 1), 0);
-          for (int i = 0; i < n; i++) want[size_t(i)] = i + 1;
-          CHECK(disks == want);
+          const KnownImage* first = nullptr;
+          for (const KnownImage& k : p.images)
+            if (std::string_view(k.md5) == d.md5) first = &k;
+          const bool zip_of_images =
+              first && !first->disk && std::string_view(first->medium).find("floppy images") != std::string_view::npos;
+          CHECK(zip_of_images || disks == every);
+        }
+        // A tar (The Flintstones'): what is taken out of it is every install
+        // disk's known ZIP, once, under names of their own.
+        if (!d.members.empty()) {
+          CHECK_EQ(kind, std::string("zip"));
+          std::vector<int> member_disks;
+          for (const DownloadMember& m : d.members) {
+            CHECK(is_md5(m.md5) && m.size > 0 && m.path && *m.path && m.file_name && *m.file_name);
+            CHECK(std::wstring(m.file_name).find_first_of(L"<>:\"/\\|?*") == std::wstring::npos);
+            for (const KnownImage& k : p.images)
+              if (std::string_view(k.md5) == m.md5 && k.size == m.size) member_disks.push_back(k.disk);
+          }
+          std::sort(member_disks.begin(), member_disks.end());
+          CHECK(member_disks == every);
         }
       }
     }
@@ -1021,19 +1119,19 @@ int main(int argc, char** argv) {
     CHECK(out.find("download 2.6 MB (ZIP of the install files)") != std::string::npos);
     CHECK(out.find("download 381.7 MB (disc image)") != std::string::npos);
     CHECK(out.find("download 6.9 MB (disc image)") != std::string::npos);  // swse
-    CHECK(out.find("  startrek  Star Trek: The Screen Saver                  "
+    CHECK(out.find("  startrek     Star Trek: The Screen Saver                  "
                    "not installed; download 2.8 MB (2 floppy images)") != std::string::npos);
-    CHECK(out.find("  looney    The Looney Tunes Screen Saver                "
+    CHECK(out.find("  looney       The Looney Tunes Screen Saver                "
                    "not installed; download 2.8 MB (ZIP of the install files)") != std::string::npos);
-    CHECK(out.find("  screams   ScreamSavers                                 "
+    CHECK(out.find("  screams      ScreamSavers                                 "
                    "not installed; download 3.3 MB (ZIP of the install files)") != std::string::npos);
-    CHECK(out.find("  marvel    Marvel Comics Screen Posters                 "
+    CHECK(out.find("  marvel       Marvel Comics Screen Posters                 "
                    "not installed; download 1.9 MB (ZIP of the install files)") != std::string::npos);
-    CHECK(out.find("  snoopy    Snoopy's Screen Savers                       "
+    CHECK(out.find("  snoopy       Snoopy's Screen Savers                       "
                    "not installed; download 1.9 MB (ZIP of the install files)") != std::string::npos);
-    CHECK(out.find("  farside   The Far Side Screen Saver Collection         "
+    CHECK(out.find("  farside      The Far Side Screen Saver Collection         "
                    "not installed; download 5.5 MB (5 ZIPs of the install disks' files)") != std::string::npos);
-    CHECK(out.find("  dilbert   Scott Adams' Dilbert Screen Saver Collection "
+    CHECK(out.find("  dilbert      Scott Adams' Dilbert Screen Saver Collection "
                    "not installed; download 4.3 MB (ZIP of the install files)") != std::string::npos);
     CHECK(!fs::exists(dir / L"cli-empty"));
 

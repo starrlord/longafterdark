@@ -256,15 +256,16 @@ std::wstring assets_summary(const AssetCounts& a) {
 }
 
 std::wstring welcome_text() {
-  // Sixteen releases, four of them not After Dark's: the product name stays
+  // Twenty releases, eight of them not After Dark's: the product name stays
   // "Long After Dark", the releases are named for what they are. (Star Trek:
   // The Screen Saver, the Simpsons, Marvel Comics Screen Posters, Snoopy's
   // Screen Savers, the Looney Tunes (also on a CD), ScreamSavers, the
-  // Disney Collection, The Far Side, Dilbert and Johnny Castaway came on
-  // floppies: "discs" covers them.)
+  // Disney Collection, The Far Side, Dilbert, Johnny Castaway, both Opus 'n
+  // Bill releases, The Flintstones and Intermission 4.0 came on floppies:
+  // "discs" covers them.)
   return L"The screen saver runs the original modules of After Dark and Star Wars Screen Entertainment from your "
          L"own discs.\n\n"
-         L"Import them from any of your discs (sixteen releases are supported), a disc image, or the Internet "
+         L"Import them from any of your discs (twenty releases are supported), a disc image, or the Internet "
          L"Archive download. They are copied to your computer once; nothing else is needed.";
 }
 

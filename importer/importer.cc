@@ -31,6 +31,7 @@
 #include "names.h"
 #include "source.h"
 #include "szdd.h"
+#include "tar.h"
 #include "winutil.h"
 #include "zip.h"
 
@@ -142,6 +143,7 @@ struct Identified {
   const Package* pkg = nullptr;
   SourceNode dir;        // tree: the FILES dir; ad3zip and intermission: the install dir
   std::string dir_path;  // its path in the source ("ADE/FILES", "INSTALL", "")
+  const Build* build = nullptr;  // another build of the package (Package::builds); nullptr: its own
 };
 
 // tree: a FILES dir (ADE\FILES, FILES or the root) holding the first module
@@ -233,15 +235,16 @@ std::optional<std::string> presage_shortname(const SourceFs& fs) {
 constexpr char kDelrinaInstaller[] = "IMINST2.EXE";
 
 // intermission, Delrina's installer (Package::delrina_installer): disk 1's
-// tag file, the installer and the release's own file on disk 1 (`marker`),
-// side by side at the source's root (disk 1 itself, the disks together, or
-// a flat folder or ZIP of their files). Nothing is read: their names name
-// the release, as an AD 3.x install's archive members do (the installer has
-// no script; it copies by wildcard).
-bool delrina_fingerprint(const SourceFs& fs, const Package& p) {
-  if (!p.marker || p.required_archives.empty()) return false;
+// tag file, the installer and the release's own file on disk 1 (`marker`:
+// the package's, or one of its other builds'), side by side at the source's
+// root (disk 1 itself, the disks together, or a flat folder or ZIP of their
+// files). Nothing is read: their names name the release, as an AD 3.x
+// install's archive members do (the installer has no script; it copies by
+// wildcard).
+bool delrina_fingerprint(const SourceFs& fs, const Package& p, const char* marker) {
+  if (!marker || p.required_archives.empty()) return false;
   const SourceNode root = fs.root();
-  for (const char* n : {p.required_archives[0], kDelrinaInstaller, p.marker}) {
+  for (const char* n : {p.required_archives[0], kDelrinaInstaller, marker}) {
     auto x = fs.child(root, n);
     if (!x || x->is_dir) return false;
   }
@@ -407,6 +410,7 @@ bool lists_tag(const std::vector<PkgLibrary>& list, const Package& p) {
 // several — and whether that is the whole release.
 struct ImageMatch {
   const Package* pkg = nullptr;
+  const Build* build = nullptr;  // the images are another build's (Package::builds)
   // One whole-release image; or several images that are every install disk
   // of `pkg` exactly once (either copy of a disk alike), and nothing else.
   bool complete = false;
@@ -417,46 +421,67 @@ struct ImageMatch {
   std::vector<int> disks;  // the install disks among them, sorted
 };
 
-// A package's install disks (0 for a release on one image).
-int disk_count(const Package& p) {
+// The known images of a package's build (`b`, or its own when nullptr).
+std::span<const KnownImage> build_images(const Package& p, const Build* b) { return b ? b->images : p.images; }
+
+// A package's install disks (0 for a release on one image), of its own
+// build or another (`b`).
+int disk_count(const Package& p, const Build* b = nullptr) {
   int n = 0;
-  for (const KnownImage& k : p.images) n = std::max(n, k.disk);
+  for (const KnownImage& k : build_images(p, b)) n = std::max(n, k.disk);
   return n;
+}
+
+// "the November 1993 build of Opus 'n Bill Screen Saver", or the title.
+std::string build_title(const Package& p, const Build* b) {
+  return b ? std::string(b->label) + " of " + p.title : std::string(p.title);
 }
 
 ImageMatch by_image(std::span<const Package> registry, const std::vector<ImagePart>& parts) {
   ImageMatch m;
-  auto known = [&](const ImagePart& q) -> std::pair<const Package*, const KnownImage*> {
-    for (const Package& p : registry)
+  struct Known {
+    const Package* pkg = nullptr;
+    const Build* build = nullptr;
+    const KnownImage* image = nullptr;
+  };
+  auto known = [&](const ImagePart& q) -> Known {
+    for (const Package& p : registry) {
       for (const KnownImage& k : p.images)
-        if (q.md5 == k.md5) return {&p, &k};
-    return {nullptr, nullptr};
+        if (q.md5 == k.md5) return {&p, nullptr, &k};
+      for (const Build& b : p.builds)
+        for (const KnownImage& k : b.images)
+          if (q.md5 == k.md5) return {&p, &b, &k};
+    }
+    return {};
   };
   if (parts.size() == 1) {
-    auto [p, k] = known(parts.front());
-    if (!p) return m;
-    m.pkg = p;
-    m.complete = k->disk == 0;
-    if (k->disk) m.disks.push_back(k->disk);
+    const Known k = known(parts.front());
+    if (!k.pkg) return m;
+    m.pkg = k.pkg;
+    m.build = k.build;
+    m.complete = k.image->disk == 0;
+    if (k.image->disk) m.disks.push_back(k.image->disk);
     return m;
   }
   // Several images: a whole-release image among them names nothing (as
   // before disk sets), and neither does an unknown one; install disks of one
-  // package do, complete only as its whole set.
+  // package (of one build) do, complete only as its whole set.
   bool only_disks = !parts.empty();
   for (const ImagePart& q : parts) {
-    auto [p, k] = known(q);
-    if (!p || !k->disk) {
+    const Known k = known(q);
+    if (!k.pkg || !k.image->disk) {
       only_disks = false;
       continue;
     }
-    if (m.pkg && m.pkg != p) return {};  // two releases (run_import refuses them before)
-    m.pkg = p;
-    m.disks.push_back(k->disk);
+    // Two releases (run_import refuses them before), or two builds' disks.
+    if (m.pkg && (m.pkg != k.pkg || m.build != k.build)) return {};
+    m.pkg = k.pkg;
+    m.build = k.build;
+    m.disks.push_back(k.image->disk);
   }
   if (!m.pkg) return m;
   std::sort(m.disks.begin(), m.disks.end());
-  const int n = disk_count(*m.pkg);
+  const int n = disk_count(*m.pkg, m.build);
   bool each_once = int(m.disks.size()) == n;
   for (int i = 0; each_once && i < n; i++) each_once = m.disks[size_t(i)] == i + 1;
   m.complete = only_disks && each_once;
@@ -523,7 +548,13 @@ Identified identify(const SourceFs& fs, std::span<const Package> registry, const
     if (p.recipe == Recipe::tree) {
       if (auto loc = tree_location(fs, p)) matches.push_back(std::move(*loc));
     } else if (p.recipe == Recipe::intermission && p.delrina_installer()) {
-      if (delrina_fingerprint(fs, p)) matches.push_back(Identified{&p, fs.root(), ""});
+      // Its own fingerprint, or one of its other builds' (whose own file then
+      // makes the source that build's; else it is the build the package's
+      // fields describe).
+      const Build* build = nullptr;
+      for (const Build& b : p.builds)
+        if (!build && delrina_fingerprint(fs, p, b.marker)) build = &b;
+      if (build || delrina_fingerprint(fs, p, p.marker)) matches.push_back(Identified{&p, fs.root(), "", build});
     } else if (p.recipe == Recipe::is1) {
       if (is1_fingerprint(fs, p)) matches.push_back(Identified{&p, fs.root(), ""});
     } else if (p.recipe == Recipe::intermission) {
@@ -567,17 +598,22 @@ Identified identify(const SourceFs& fs, std::span<const Package> registry, const
     if (wanted && wanted != by_md5)
       invalid(std::string(one ? "this image is " : "these images are ") + by_md5->title +
               (one ? " (by its md5)" : " (by their md5s)") + ", not " + wanted->title);
-    // Its contents make it that release; an incomplete set of its install
-    // disks too, and the recipe then says which disk is missing.
+    // Its contents make it that release (the images' build of it); an
+    // incomplete set of its install disks too, and the recipe then says
+    // which disk is missing.
     for (Identified& m : matches)
-      if (m.pkg == by_md5) return std::move(m);
+      if (m.pkg == by_md5) {
+        m.build = image.build;
+        return std::move(m);
+      }
+    const std::string title = build_title(*by_md5, image.build);
     if (!image.complete) {
-      const std::string disks = disks_text(image.disks, disk_count(*by_md5));
-      invalid(std::string(one ? "this image is " : "these images hold ") + disks + " of " + by_md5->title +
+      const std::string disks = disks_text(image.disks, disk_count(*by_md5, image.build));
+      invalid(std::string(one ? "this image is " : "these images hold ") + disks + " of " + title +
               (one ? " (by its md5)" : " (by their md5s) but not the rest of it") +
               "; import every disk together (--image … --image …, or the ZIP they came in)");
     }
-    invalid(std::string(one ? "the image has the md5 of " : "the images have the md5s of ") + by_md5->title +
+    invalid(std::string(one ? "the image has the md5 of " : "the images have the md5s of ") + title +
             " but not its contents");
   }
   if (wanted) {
@@ -645,6 +681,11 @@ constexpr const char* kEngineMembers[] = {"AD_SND.DLL", "ADTASK.DLL", "ADW30.EXE
 // reference) and its IMX reader.
 constexpr const char* kIntermissionEngine[] = {"INTERMIS.EXE", "IMIMXPLY.IMQ"};
 
+// intermission, Delrina's installer: Intermission 4.0's data module forms
+// besides ASA, by extension, and the reader in ENGINE that plays each.
+constexpr std::pair<const char*, const char*> kDataModuleReaders[] = {
+    {".FLI", "IMFLIPLY.IMQ"}, {".MRF", "IMMRFPLY.IMQ"}, {".MSV", "IMMSVPLY.IMQ"}};
+
 // intermission: Intermission's own members the modules never use, listed but
 // never decoded — the readers of other products' formats (among them the
 // After Dark reader IMAD_PLY.IMQ and its sound support AD_SND.DLL, which on
@@ -687,11 +728,16 @@ class Importer {
  public:
   Importer(const ImportOptions& o, ImportResult& r) : o_(o), r_(r) {}
 
-  void set_package(const Package& p) {
+  void set_package(const Package& p, const Build* build = nullptr) {
     pkg_ = &p;
+    build_ = build;
     root_ = p.root;
     title_ = p.title;
   }
+  // What the identified build installs and is verified against: another
+  // build's (Package::builds), or the package's own.
+  std::span<const LooseFile> loose_files() const { return build_ ? build_->loose_files : pkg_->loose_files; }
+  std::span<const KnownFile> manifest() const { return build_ ? build_->manifest : pkg_->manifest; }
   // What the progress reports name before the source is identified (a
   // download of a known package).
   void set_title(const std::string& t) { title_ = t; }
@@ -883,7 +929,10 @@ class Importer {
     const Package& p = *pkg_;
     const std::string M = root_ + "/" + p.module_dir, E = root_ + "/ENGINE";
     std::string missing;
-    for (const char* a : p.required_archives) {
+    // Every install disk's tag file (another build's own disk files, when
+    // its copies have no tags).
+    const auto disks = build_ && !build_->disk_files.empty() ? build_->disk_files : p.required_archives;
+    for (const char* a : disks) {
       auto n = fs.child(id.dir, a);
       if (!n || n->is_dir) missing += std::string(missing.empty() ? "" : ", ") + a;
     }
@@ -1116,7 +1165,7 @@ class Importer {
   // the installer gave them, expanded when compressed. One the source lacks is
   // not planned: the manifest then reports it missing.
   void plan_loose_files(const SourceFs& fs, const Identified& id) {
-    for (const LooseFile& lf : pkg_->loose_files) {
+    for (const LooseFile& lf : loose_files()) {
       auto n = fs.child(id.dir, lf.from);
       if (!n || n->is_dir) {
         log("the source has no " + join(id.dir_path, lf.from));
@@ -1218,9 +1267,9 @@ class Importer {
   // an oversized file (a ZIP member recording 4 GB) from being streamed to
   // disk first.
   void check_sizes() const {
-    if (!o_.check_known || pkg_->manifest.empty()) return;
+    if (!o_.check_known || manifest().empty()) return;
     std::map<std::string_view, uint64_t> sizes;
-    for (const KnownFile& k : pkg_->manifest) sizes.emplace(k.path, k.size);
+    for (const KnownFile& k : manifest()) sizes.emplace(k.path, k.size);
     size_t mismatches = 0;
     std::string first_bad;
     for (const Planned& p : plan_) {
@@ -1301,7 +1350,7 @@ class Importer {
   // that matched) in between, so the manifest's entries for them count too.
   void classify(const fs::path& stage, bool image_known) {
     std::map<std::string, const KnownFile*> known;
-    for (const KnownFile& k : pkg_->manifest) known[k.path] = &k;
+    for (const KnownFile& k : manifest()) known[k.path] = &k;
     size_t mismatches = 0, unknown = 0;
     std::string first_bad;
     auto judge = [&](ImportedFile& f) {
@@ -1336,7 +1385,7 @@ class Importer {
 
     if (image_known) {
       r_.verified = "image";
-    } else if (pkg_->manifest.empty() || !o_.check_known) {
+    } else if (manifest().empty() || !o_.check_known) {
       r_.verified = "none";
     } else if (!mismatches && !unknown && r_.missing_known.empty()) {
       // Every file of the release is here and matched ("files" never means a
@@ -1425,13 +1474,20 @@ class Importer {
       return out;
     };
     // An IMQ module the registry puts in a module folder (a Delrina
-    // release's: its own reader, a module).
+    // release's: its own reader, a module); or a copy of a reader it also
+    // puts in ENGINE (Intermission 4.0's IMX reader, where its MultiSaver
+    // looks for its group's modules' reader).
     auto registry_module_imq = [&](const std::string& rel) {
-      for (const LooseFile& lf : p.loose_files)
-        if (ascii_upper(lf.to) == rel) return !is_intermission_reader(rel.substr(rel.rfind('/') + 1));
-      return false;
+      const std::string name = rel.substr(rel.rfind('/') + 1);
+      bool listed = false, in_engine = false;
+      for (const LooseFile& lf : loose_files()) {
+        listed = listed || ascii_upper(lf.to) == rel;
+        in_engine = in_engine || ascii_upper(lf.to) == "ENGINE/" + name;
+      }
+      return listed && (!is_intermission_reader(name) || in_engine);
     };
-    bool asa_modules = false;
+    bool asa_modules = false, imx_modules = false;
+    std::set<std::string> data_readers;  // the readers the module folders' data modules need (kDataModuleReaders)
     for (const std::string& d : folders) {
       for (const char* n : kNeverBesideModules)
         if (have.count(d + "/" + n)) fail("I1", d + "\\" + n + " would shadow the engine's");
@@ -1443,18 +1499,24 @@ class Importer {
           if (n == "INTERMIS.EXE" || (ends_with_i(n, ".IMQ") && !registry_module_imq(d + "/" + n)))
             fail("I1", d + "\\" + n + " belongs in ENGINE");
           asa_modules = asa_modules || ends_with_i(n, ".ASA");
+          imx_modules = imx_modules || ends_with_i(n, ".IMX");
+          for (const auto& [ext, reader] : kDataModuleReaders)
+            if (ends_with_i(n, ext)) data_readers.insert(reader);
         }
       // After Dark 2.0's own host too (the host replaces it; nothing loads it).
       if ((ad2 || isl) && have.count(d + "/AD.EXE")) fail("I1", d + "\\AD.EXE belongs in ENGINE");
     }
     if (imx) {
-      // The IMX reader (a Delrina release, which has no IMX module: the ASA
-      // reader, for its ASA animations) and the installer's C:\WINDOWS files;
-      // and nothing that would make the 16-bit lane take the package for an
-      // After Dark one.
-      if (!p.delrina_installer() && !have.count("ENGINE/IMIMXPLY.IMQ")) fail("I3", "no ENGINE\\IMIMXPLY.IMQ");
+      // The IMX reader (for a Delrina release, when it has an IMX module),
+      // the ASA reader for ASA animations and the other forms' readers for
+      // theirs, and the installer's C:\WINDOWS files; and nothing that would
+      // make the 16-bit lane take the package for an After Dark one.
+      if ((!p.delrina_installer() || imx_modules) && !have.count("ENGINE/IMIMXPLY.IMQ"))
+        fail("I3", "no ENGINE\\IMIMXPLY.IMQ");
       if (asa_modules && !have.count("ENGINE/IMASAPLY.IMQ")) fail("I3", "no ENGINE\\IMASAPLY.IMQ");
-      for (const LooseFile& lf : p.loose_files)
+      for (const std::string& reader : data_readers)
+        if (!have.count("ENGINE/" + reader)) fail("I3", "no ENGINE\\" + reader);
+      for (const LooseFile& lf : loose_files())
         if (std::string_view(lf.to).rfind("WINDOWS/", 0) == 0 && !have.count(ascii_upper(lf.to)))
           fail("I3", "no " + std::string(lf.to));
       for (const char* n : {"OLDMOD16.DLL", "ADTASK.DLL", "AD_SND.DLL"})
@@ -1570,6 +1632,7 @@ class Importer {
   const ImportOptions& o_;
   ImportResult& r_;
   const Package* pkg_ = nullptr;
+  const Build* build_ = nullptr;  // another build of pkg_ (Package::builds); nullptr: its own
   std::string root_, title_;
   std::vector<Planned> plan_;
   std::set<std::string> seen_;       // name_key of every planned path
@@ -1658,8 +1721,14 @@ std::string render_import_json_v2(const Source& src, const Package& p, const Imp
   j += "  \"tool\": \"" + std::string(kToolName) + "\",\n";
   j += "  \"importedUtc\": \"" + utc + "\",\n";
   j += "  \"package\": {\"id\": \"" + json_escape(p.id) + "\", \"title\": \"" + json_escape(p.title) +
-       "\", \"recipe\": \"" + recipe_name(p.recipe) + "\", \"root\": \"" +
-       json_escape(p.root) + "\"},\n";
+       "\", \"recipe\": \"" + recipe_name(p.recipe) + "\", \"root\": \"" + json_escape(p.root) + "\"";
+  // A release with several builds: which one this is, and what its row says of it.
+  if (!r.build.empty()) {
+    j += ", \"build\": \"" + json_escape(r.build) + "\"";
+    for (const Build& b : p.builds)
+      if (r.build == b.id && b.note) j += ", \"buildNote\": \"" + json_escape(b.note) + "\"";
+  }
+  j += "},\n";
   j += "  \"source\": {\n";
   j += "    \"kind\": \"" + std::string(kind) + "\",\n";
   j += "    \"format\": \"" + json_escape(r.format) + "\",\n";
@@ -1750,7 +1819,78 @@ struct Mirror {
     std::string md5;      // "" = unchecked
   };
   std::vector<Part> parts;
+  // Set: parts[0] is a tar, and the copy is these members of it (packages.h).
+  std::span<const DownloadMember> members;
 };
+
+// The members of a downloaded tar (packages.h DownloadMember), each taken
+// out into `dir` under its own file name and checked against its published
+// size and md5 (one already there with them is used as it is); nothing else
+// in the tar is read. A member that is not there, or not the published
+// file, is verify_failed (the next copy is tried); a tar that cannot be
+// read is source_invalid.
+std::vector<fs::path> take_tar_members(const fs::path& tar, std::span<const DownloadMember> members,
+                                       const fs::path& dir, Importer& imp) {
+  const std::string where = to_utf8(tar.filename().wstring());
+  std::vector<fs::path> out;
+  std::vector<std::string> names;
+  for (const DownloadMember& m : members) names.push_back(m.path);
+  std::vector<std::optional<TarEntry>> found;
+  bool searched = false;
+  std::error_code ec;
+  for (size_t i = 0; i < members.size(); i++) {
+    const DownloadMember& m = members[i];
+    const fs::path dest = dir / m.file_name;
+    if (fs::is_regular_file(dest, ec) && fs::file_size(dest, ec) == m.size && md5_file_hex(dest) == m.md5) {
+      imp.log("using the already-extracted " + to_utf8(dest.wstring()));
+      out.push_back(dest);
+      continue;
+    }
+    try {
+      if (!searched) {
+        found = find_tar_entries(tar, names, where);
+        searched = true;
+      }
+      if (!found[i])
+        throw ImportError(Status::verify_failed, where + " holds no " + m.path + " (not the published tar?)");
+      if (found[i]->size != m.size)
+        throw ImportError(Status::verify_failed, where + "!" + m.path + " is " + std::to_string(found[i]->size) +
+                                                     " bytes, not the published " + std::to_string(m.size));
+      fs::path part = dest;
+      part += L".part";
+      {
+        Handle w(CreateFileW(part.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
+        if (!w.valid())
+          throw ImportError(Status::error, "cannot create " + to_utf8(part.wstring()) + ": " +
+                                               win_error_string(GetLastError()));
+        Md5 h;
+        uint64_t done = 0;
+        read_tar_entry(tar, *found[i], [&](const uint8_t* p, size_t n) {
+          h.update(p, n);
+          DWORD wrote = 0;
+          if (!WriteFile(w.get(), p, DWORD(n), &wrote, nullptr) || wrote != n)
+            throw ImportError(Status::error, "write failed on " + to_utf8(part.wstring()) + ": " +
+                                                 win_error_string(GetLastError()));
+          done += n;
+          imp.progress(Progress::Phase::check_image, done, m.size, to_utf8(std::wstring(m.file_name)));
+        }, where);
+        if (h.finish_hex() != m.md5) {
+          w.reset();
+          fs::remove(part, ec);
+          throw ImportError(Status::verify_failed, where + "!" + m.path + " is not the published file (md5)");
+        }
+      }
+      DWORD err = 0;
+      if (!move_with_retry(part, dest, MOVEFILE_REPLACE_EXISTING, err))
+        throw ImportError(Status::error, "cannot write " + to_utf8(dest.wstring()) + ": " + win_error_string(err));
+      imp.log("took " + std::string(m.path) + " out of " + where + " (" + std::to_string(m.size) + " bytes, md5 checked)");
+    } catch (const TarError& e) {
+      throw ImportError(Status::source_invalid, e.what());
+    }
+    out.push_back(dest);
+  }
+  return out;
+}
 
 // A fetched copy: every part's file and md5, in order; the URL fetched is the
 // first part's.
@@ -1786,6 +1926,7 @@ Fetched fetch_download(const Source& src, std::span<const Package> registry, Imp
       m.parts.push_back({d.url, d.file_name, src.expected_md5.empty() ? d.size : 0,
                          src.expected_md5.empty() ? std::string(d.md5) : src.expected_md5});
       for (const DownloadPart& q : d.more_images) m.parts.push_back({q.url, q.file_name, q.size, q.md5});
+      m.members = d.members;
       mirrors.push_back(std::move(m));
     }
   }
@@ -1851,6 +1992,12 @@ Fetched fetch_download(const Source& src, std::span<const Package> registry, Imp
         base += dr.size;
       }
       f.md5_checked = !m.parts.front().md5.empty();
+      // A tar: the copy is the members taken out of it, each md5-checked.
+      if (!m.members.empty()) {
+        f.paths = take_tar_members(f.paths.front(), m.members, dir, imp);
+        f.md5s.clear();
+        for (const DownloadMember& q : m.members) f.md5s.push_back(q.md5);
+      }
       return f;
     } catch (const ImportError& e) {
       if (e.status() != Status::network && e.status() != Status::verify_failed) throw;
@@ -2022,19 +2169,23 @@ ImportResult run_import(const Source& src, const ImportOptions& opts) {
         // images of different releases never are: say so, rather than
         // whichever file the two happen to disagree on first.
         std::string first_id, first_title;
-        for (const ImagePart& q : r.parts)
-          for (const Package& pk : registry)
-            for (const KnownImage& k : pk.images) {
-              if (q.md5 != k.md5) continue;
-              if (first_id.empty()) {
-                first_id = pk.id;
-                first_title = pk.title;
-              } else if (first_id != pk.id) {
-                throw ImportError(Status::source_invalid,
-                                  "these images are two different releases (" + first_title + " and " + pk.title +
-                                      "); import each image on its own");
-              }
+        auto check = [&](const ImagePart& q, const Package& pk, std::span<const KnownImage> images) {
+          for (const KnownImage& k : images) {
+            if (q.md5 != k.md5) continue;
+            if (first_id.empty()) {
+              first_id = pk.id;
+              first_title = pk.title;
+            } else if (first_id != pk.id) {
+              throw ImportError(Status::source_invalid, "these images are two different releases (" + first_title +
+                                                            " and " + pk.title + "); import each image on its own");
             }
+          }
+        };
+        for (const ImagePart& q : r.parts)
+          for (const Package& pk : registry) {
+            check(q, pk, pk.images);
+            for (const Build& b : pk.builds) check(q, pk, b.images);
+          }
       }
       r.source = r.parts.front().path;
       for (size_t i = 1; i < r.parts.size(); i++) r.source += " + " + r.parts[i].path;
@@ -2061,12 +2212,15 @@ ImportResult run_import(const Source& src, const ImportOptions& opts) {
     Identified id = identify(*sfs, registry, image, r.parts.size(), src.package);
     const Package& pkg = *id.pkg;
     deluxe = pkg.is_deluxe();
-    imp.set_package(pkg);
+    imp.set_package(pkg, id.build);
     r.package_id = pkg.id;
     r.package_title = pkg.title;
-    // A known image of the release, or every one of its install disks.
-    r.iso_md5_known = image.complete && image.pkg == &pkg;
-    imp.log("identified " + std::string(pkg.title) + (id.dir_path.empty() ? "" : " (" + id.dir_path + ")"));
+    r.build = id.build ? id.build->id : pkg.build ? pkg.build : "";
+    // A known image of the release (of the build identified), or every one
+    // of its install disks.
+    r.iso_md5_known = image.complete && image.pkg == &pkg && image.build == id.build;
+    imp.log("identified " + build_title(pkg, id.build) + (id.dir_path.empty() ? "" : " (" + id.dir_path + ")"));
+    if (id.build && id.build->note) imp.log(std::string(id.build->label) + ": " + id.build->note);
     if (r.format == "zip" && r.iso_md5_known && r.parts.size() > 1)
       imp.log("ZIPs of the install disks' files, the known copies of " + std::string(pkg.title) + " (by their md5s)");
     else if (r.format == "zip" && r.iso_md5_known)
@@ -2083,12 +2237,12 @@ ImportResult run_import(const Source& src, const ImportOptions& opts) {
       imp.log("the images are the known install disks of " + std::string(pkg.title));
     else if (image.pkg == &pkg && !image.complete && image.every_disk) {
       // The whole set, and more: a second copy of a disk, or another image.
-      const size_t others = r.parts.size() - size_t(disk_count(pkg));
+      const size_t others = r.parts.size() - size_t(disk_count(pkg, image.build));
       imp.log("the images hold every install disk of " + std::string(pkg.title) + " (by md5) and " +
               (others == 1 ? std::string("another image") : std::to_string(others) + " other images") + " besides" +
               (opts.check_known ? "; checking files individually" : ""));
     } else if (image.pkg == &pkg && !image.complete)
-      imp.log("the source holds " + disks_text(image.disks, disk_count(pkg)) + " of " + pkg.title +
+      imp.log("the source holds " + disks_text(image.disks, disk_count(pkg, image.build)) + " of " + pkg.title +
               " (by md5), not the whole set" + (opts.check_known ? "; checking files individually" : ""));
     else if (!r.iso_md5.empty() && !r.iso_md5_known)
       imp.log("image md5 " + r.iso_md5 + " is not a known image of " + pkg.title +

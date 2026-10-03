@@ -1,0 +1,37 @@
+{ "version": 1,
+  "generator": "hand-written fixture for the LongAfterDark.scr tests: host controls (Intermission 4.0's Speed)",
+  "packages": [
+    { "id": "intermission", "title": "Intermission 4.0", "shortTitle": "Intermission", "modules": 3,
+      "cover": { "origin": "generated" } },
+    { "id": "deluxe", "title": "After Dark 4.0 Deluxe", "shortTitle": "Deluxe", "modules": 1,
+      "cover": { "origin": "generated" } } ],
+  "modules": [
+    { "id": "intermission.antmine", "displayName": "Ant Mine", "lane": "ne16",
+      "path": "packages/intermission/SAVER/ANTMINE.IMX", "about": "",
+      "controls": [
+        { "index": 0, "name": "Configure...", "kind": "button", "type": "button" },
+        { "index": 1, "name": "Speed:", "kind": "stringslider", "type": "slider",
+          "items": ["Slowest", "Slow", "Normal", "Fast", "Fastest"], "values": [6, 12, 25, 50, 100],
+          "default": 25, "defaultStop": 2, "host": "ADNE16IMXSPEED" } ],
+      "entry": "SAVERDRAW", "needs": ["INTRMLIB"], "system": ["GDI", "KERNEL", "USER"],
+      "package": "intermission", "packageTitle": "Intermission 4.0", "moduleName": "Ant Mine", "abi": "intermission" },
+    { "id": "intermission.dpig", "displayName": "Dancing Pig", "lane": "ne16",
+      "path": "packages/intermission/SAVER/DPIG.ASA", "about": "",
+      "controls": [
+        { "index": 0, "name": "Configure...", "kind": "button", "type": "button" } ],
+      "entry": "SAVERMAIN", "needs": ["INTRMLIB"], "system": ["GDI", "KERNEL", "USER"],
+      "package": "intermission", "packageTitle": "Intermission 4.0", "moduleName": "Dancing Pig", "abi": "intermission" },
+    { "id": "intermission.dragon", "displayName": "Dragon Kites", "lane": "ne16",
+      "path": "packages/intermission/SAVER/DRAGON.IMX", "about": "",
+      "controls": [
+        { "index": 0, "name": "Configure...", "kind": "button", "type": "button" },
+        { "index": 1, "name": "Speed:", "kind": "stringslider", "type": "slider",
+          "items": ["Slowest", "Slow", "Normal", "Fast", "Fastest"], "values": [6, 12, 25, 50, 100],
+          "default": 25, "defaultStop": 2, "host": "ADNE16IMXSPEED" } ],
+      "entry": "SAVERDRAW", "needs": ["INTRMLIB"], "system": ["GDI", "KERNEL", "USER"],
+      "package": "intermission", "packageTitle": "Intermission 4.0", "moduleName": "Dragon Kites", "abi": "intermission" },
+    { "id": "ad40.alpha", "displayName": "Alpha", "lane": "pe32", "path": "FILES/AD40/ALPHA.AD", "about": "",
+      "controls": [
+        { "index": 0, "name": "Speed", "type": "slider", "min": 0, "max": 100, "default": 50 } ],
+      "package": "deluxe", "packageTitle": "After Dark 4.0 Deluxe" }
+  ] }

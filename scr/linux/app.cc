@@ -1057,6 +1057,9 @@ void App::spawn() {
   };
   add_wine_env(spec.env);
   add_sound_env(spec.env, sound);
+  // Its host controls' variables at their defaults (Intermission 4.0's
+  // Speed: ADNE16IMXSPEED=25, Normal), in front: the player's own win.
+  if (m) spec.env.insert(spec.env.begin(), m->host_env.begin(), m->host_env.end());
   spec.sound = sound.on;
   spec.nice = role_ == HostRole::preview ? kPreviewNice : 0;
 
@@ -1082,10 +1085,15 @@ void App::spawn() {
     respawn_at_ = Clock::now() + restart_.spawn_failed();
     return;
   }
-  log_line("spawn gen=%llu module=%s path=%s size=%dx%d fps=%.0f caps=%d numlock=%d sound=%d volume=%d pid=%d%s",
+  std::string host_vars;   // " host=ADNE16IMXSPEED=25" (as the Windows saver logs them)
+  if (m) {
+    for (const auto& [k, v] : m->host_env) host_vars += (host_vars.empty() ? " host=" : ",") + k + "=" + v;
+  }
+  log_line("spawn gen=%llu module=%s path=%s size=%dx%d fps=%.0f caps=%d numlock=%d sound=%d volume=%d pid=%d%s%s",
            (unsigned long long)generation_, name.c_str(), test_pattern_ ? "--test-pattern" : module_win.c_str(), emu.w,
            emu.h, 1.0 / std::chrono::duration<double>(period).count(), caps_sent_, numlock_sent_, sound.on ? 1 : 0,
-           sound.on ? sound.volume : -1, (int)host_->pid(), spec.nice ? (" nice>=" + std::to_string(spec.nice)).c_str() : "");
+           sound.on ? sound.volume : -1, (int)host_->pid(), spec.nice ? (" nice>=" + std::to_string(spec.nice)).c_str() : "",
+           host_vars.c_str());
 }
 
 void App::kill_host() {

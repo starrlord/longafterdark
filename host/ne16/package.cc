@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cstring>
+#include <utility>
 
 #include "adw/core/log.h"
 #include "loader/ne.hh"
@@ -112,8 +113,26 @@ const char* form_name(ImxForm f) {
     case ImxForm::imx: return "imx";
     case ImxForm::asa: return "asa";
     case ImxForm::imq: return "imq";
+    case ImxForm::fli: return "fli";
+    case ImxForm::flc: return "flc";
+    case ImxForm::mrf: return "mrf";
+    case ImxForm::msv: return "msv";
   }
   return "?";
+}
+
+bool data_form(ImxForm f) { return f != ImxForm::imx && f != ImxForm::imq; }
+
+bool form_for_type(const char* type, ImxForm* form) {
+  static const std::pair<const char*, ImxForm> kTypes[] = {
+      {"FLI", ImxForm::fli}, {"FLC", ImxForm::flc}, {"MRF", ImxForm::mrf}, {"MSV", ImxForm::msv}};
+  for (const auto& [t, f] : kTypes) {
+    if (type && ieq(type, t)) {
+      *form = f;
+      return true;
+    }
+  }
+  return false;
 }
 
 KindProbe detect_kind(const loader::ne::Image& img, const std::string& file_name) {
@@ -191,6 +210,10 @@ const char* reader_file(ImxForm f) {
     case ImxForm::imx: return kImxReader;
     case ImxForm::asa: return kAsaReader;
     case ImxForm::imq: return nullptr;
+    case ImxForm::fli: return kFliReader;
+    case ImxForm::flc: return kFlcReader;
+    case ImxForm::mrf: return kMrfReader;
+    case ImxForm::msv: return kMsvReader;
   }
   return nullptr;
 }

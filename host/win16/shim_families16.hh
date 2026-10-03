@@ -34,6 +34,11 @@ void register_host_ad_snd(Runtime16& rt);
 
 // The saver window (full screen, visible): the HWND the lane hands OLDMOD16.
 uint16_t user16_saver_window(Runtime16& rt);
+// Gives a window CS_OWNDC's private DC from its next GetDC on (Delrina's
+// INTERMIS registered its saver window's class with CS_OWNDC): GetDC and
+// BeginPaint return the same DC with the attributes it was left with,
+// ReleaseDC and EndPaint keep it, DestroyWindow frees it.
+void user16_own_dc(Runtime16& rt, uint16_t hwnd);
 
 // A window class the guest registered (RegisterClass), for the real-dialog
 // layer (dialogs16.cc) to give real windows of that class. False when unknown.

@@ -29,6 +29,7 @@
 #include "geometry.h"
 #include "host_process.h"
 #include "input_rules.h"
+#include "live_preview.h"
 #include "log.h"
 #include "paths.h"
 #include "present.h"
@@ -487,6 +488,51 @@ void test_settings() {
   CHECK_EQ(format_cvset({}), std::string());
   CHECK_EQ(format_cvset({{2, 7}, {0, 50}, {1, -1}}), std::string("0=50,1=-1,2=7"));
 
+  // A host control's value (Intermission 4.0's Speed, catalog "host") is
+  // kept like any control value, [Module.<id>] <index>=<value>, so OK saves
+  // it, the next dialog shows it, and every start of the module's host reads
+  // it: the saver's windows, Random's, /p and Preview's (a /s run from a
+  // throwaway copy of the file, written by this same serializer). Never set,
+  // or after Restore defaults (the module's values erased), the default.
+  {
+    Catalog k;
+    std::string err;
+    CHECK(parse_catalog(fixture("catalog-speed.json"), k, &err));
+    const Module* dragon = k.find("intermission.dragon");
+    const Module* antmine = k.find("intermission.antmine");
+    CHECK(dragon && antmine);
+    if (dragon && antmine) {
+      using Env = std::vector<std::pair<std::wstring, std::wstring>>;
+      const std::string base = "[Saver]\r\nModule=random\r\n\r\n[Module.intermission.antmine]\r\n1=6\r\n";
+      Settings sp = parse_settings(base);
+      CHECK((host_control_values(*antmine, sp.controls).env == Env{{L"ADNE16IMXSPEED", L"6"}}));
+      CHECK((host_control_values(*dragon, sp.controls).env == Env{{L"ADNE16IMXSPEED", L"25"}}));   // never set
+      // The dialog moves Dragon Kites' slider to Fastest and saves.
+      sp.controls["intermission.dragon"][1] = 100;
+      const std::string text = serialize_settings(sp, base);
+      CHECK(text.find("[Module.intermission.dragon]\r\n1=100\r\n") != std::string::npos);
+      CHECK(text.find("[Module.intermission.antmine]\r\n1=6\r\n") != std::string::npos);
+      const Settings back = parse_settings(text);
+      CHECK(back == sp);
+      const HostControlValues v = host_control_values(*dragon, back.controls);
+      CHECK(v.cvset.empty() && (v.env == Env{{L"ADNE16IMXSPEED", L"100"}}));   // never ADCVSET
+      // A hand-edited value between stops snaps to the stop it reaches; one
+      // past the ends to the end.
+      CHECK((host_control_values(*dragon, parse_settings("[Module.intermission.dragon]\n1=49\n").controls).env ==
+             Env{{L"ADNE16IMXSPEED", L"25"}}));
+      CHECK((host_control_values(*dragon, parse_settings("[Module.intermission.dragon]\n1=-3\n").controls).env ==
+             Env{{L"ADNE16IMXSPEED", L"6"}}));
+      CHECK((host_control_values(*dragon, parse_settings("[Module.intermission.dragon]\n1=400\n").controls).env ==
+             Env{{L"ADNE16IMXSPEED", L"100"}}));
+      // Restore defaults: its section goes, and its host gets Normal again.
+      Settings restored = back;
+      restored.controls.erase("intermission.dragon");
+      const std::string after = serialize_settings(restored, text);
+      CHECK(after.find("[Module.intermission.dragon]") == std::string::npos);
+      CHECK((host_control_values(*dragon, parse_settings(after).controls).env == Env{{L"ADNE16IMXSPEED", L"25"}}));
+    }
+  }
+
   // Through the filesystem (atomic write + load).
   wchar_t tmp[MAX_PATH + 1];
   GetTempPathW(MAX_PATH, tmp);
@@ -764,6 +810,109 @@ void test_catalog() {
   }
   CHECK(c.modules.size() == 46 && c.modules[36].id == "marvel.kilo" && c.modules[45].id == "disney.tango");
 
+  // Host controls (catalog "host"): a control whose value goes to the host,
+  // in the variable it names, never to the module. Intermission 4.0's
+  // "Speed:" after its modules' Configure... buttons (ADNE16IMXSPEED, PACKAGES.md
+  // §7.5), as the fixture has it for two of them; its cartoon (Dancing Pig,
+  // paced by its own clock) has none, and an After Dark slider is the module's.
+  {
+    Catalog k;
+    CHECK(parse_catalog(fixture("catalog-speed.json"), k, &err));
+    CHECK_EQ(k.modules.size(), (size_t)4);
+    for (const char* id : {"intermission.dragon", "intermission.antmine"}) {
+      const Module* m = k.find(id);
+      CHECK(m && m->abi == kIntermissionAbi && m->controls.size() == 2);
+      if (!m || m->controls.size() != 2) continue;
+      const Control& b = m->controls[0];
+      CHECK(b.index == 0 && b.type == ControlType::button && !b.settable() && !b.for_host() && b.host.empty());
+      const Control& s = m->controls[1];
+      CHECK(s.index == 1 && s.name == "Speed:" && s.host == "ADNE16IMXSPEED" && s.for_host());
+      CHECK(s.type == ControlType::slider && s.stepped() && s.settable() && s.stop_count() == 5 && !s.has_bold);
+      CHECK((s.values == std::vector<int>{6, 12, 25, 50, 100}));
+      CHECK((s.items == std::vector<std::string>{"Slowest", "Slow", "Normal", "Fast", "Fastest"}));
+      // Normal by default (defaultStop 2), and like any string slider a
+      // value snaps to the last stop it reaches.
+      CHECK(s.def == 25 && s.stop_of(s.def) == 2 && s.value_label(s.def) == "Normal" && s.min == 6 && s.max == 100);
+      CHECK(s.clamp(30) == 25 && s.clamp(1) == 6 && s.clamp(100) == 100 && s.clamp(1000) == 100);
+      CHECK(s.value_label(100) == "Fastest" && s.value_label(6) == "Slowest");
+    }
+    const Module* pig = k.find("intermission.dpig");
+    CHECK(pig && pig->controls.size() == 1 && !pig->controls[0].for_host());
+    const Module* alpha = k.find("ad40.alpha");
+    CHECK(alpha && alpha->controls.size() == 1 && !alpha->controls[0].for_host() && alpha->controls[0].settable());
+  }
+  // What a host control may name: one of the host's own variables ("AD", a
+  // capital or digit, then capitals, digits and underscores), and none the
+  // front end sets itself at every start.
+  CHECK(host_variable_ok("ADNE16IMXSPEED") && host_variable_ok("ADX") && host_variable_ok("AD1") &&
+        host_variable_ok("ADFOO_BAR") && host_variable_ok("ADDRAWMIPS"));
+  for (const char* bad : {"", "A", "AD", "AD_", "AD_ASSETS_DIR", "AD_LOCALAPPDATA", "adne16imxspeed", "Adne16imxspeed",
+                          "ADne16", "PATH", "XADFOO", "ADFOO=1", "ADFOO BAR", "ADFOO-BAR", "ADFOO\xC3\x89", "ADSTREAM",
+                          "ADSCREENW", "ADSCREENH", "ADCVSET", "ADCAPS", "ADNUMLOCK", "ADSTATE", "ADSEEDIMG", "ADSOUND",
+                          "ADVOLUME", "ADAUDIOOUT", "ADSTATUSHANDLE", "ADSTATUSLOG"}) {
+    if (!host_variable_ok(bad)) continue;
+    fprintf(stderr, "catalog: host_variable_ok(\"%s\") is true\n", bad);
+    CHECK(false);
+  }
+  // Anything else -- not a string, a name it may not set, one an earlier
+  // control in the file took, a control without a value (a button, an
+  // unknown kind, a popup without items) -- is left out, the rest kept; an
+  // empty "host" is the module's own control.
+  CHECK(parse_catalog(R"({"modules":[{"id":"x","path":"X.IMX","controls":[
+      {"index":0,"name":"Configure...","kind":"button","type":"button"},
+      {"index":12,"name":"Box","type":"checkbox","default":5,"host":"ADBOX"},
+      {"index":1,"name":"Speed:","type":"slider","items":["Slow","Fast"],"values":[10,90],"defaultStop":1,"host":"ADSPEEDA"},
+      {"index":2,"name":"Own","type":"slider","min":0,"max":9,"default":3,"host":""},
+      {"index":3,"name":"Lower","type":"checkbox","default":1,"host":"adspeedb"},
+      {"index":4,"name":"Theirs","type":"checkbox","default":1,"host":"ADSTATE"},
+      {"index":5,"name":"Path","type":"checkbox","default":1,"host":"PATH"},
+      {"index":6,"name":"Number","type":"checkbox","default":1,"host":7},
+      {"index":7,"name":"Again","type":"checkbox","default":0,"host":"ADSPEEDA"},
+      {"index":8,"name":"Press","type":"button","host":"ADPRESS"},
+      {"index":9,"name":"Empty","type":"popup","items":[],"host":"ADEMPTY"},
+      {"index":10,"name":"Odd","type":"dial","default":1,"host":"ADODD"},
+      {"index":11,"name":"Pick","type":"popup","items":["a","b","c"],"default":9,"host":"ADPICK"},
+      {"index":13,"name":"Null","type":"checkbox","host":null}]}]})",
+                      c, &err));
+  CHECK(c.modules.size() == 1);
+  if (c.modules.size() == 1) {
+    const Module& m = c.modules[0];
+    std::vector<int> kept;
+    for (const Control& k : m.controls) kept.push_back(k.index);
+    CHECK((kept == std::vector<int>{0, 1, 2, 11, 12}));
+    CHECK(m.control(1) && m.control(1)->host == "ADSPEEDA" && m.control(1)->def == 90);
+    CHECK(m.control(2) && !m.control(2)->for_host() && m.control(2)->settable());
+    CHECK(m.control(11) && m.control(11)->host == "ADPICK" && m.control(11)->def == 2);
+    CHECK(m.control(12) && m.control(12)->host == "ADBOX" && m.control(12)->def == 1);
+    // What its host gets (host_control_values): never set, each host
+    // control's variable at its default, by index, and nothing in ADCVSET.
+    using Env = std::vector<std::pair<std::wstring, std::wstring>>;
+    HostControlValues v = host_control_values(m, nullptr);
+    CHECK(v.cvset.empty());
+    CHECK((v.env == Env{{L"ADSPEEDA", L"90"}, {L"ADPICK", L"2"}, {L"ADBOX", L"1"}}));
+    // Set: clamped by the catalog (a string slider snaps to its stop); a
+    // host control's value never reaches ADCVSET, nor a button's, nor a
+    // value for a slot the catalog doesn't list (or left out).
+    const std::map<int, int> set = {{0, 4}, {1, 50}, {2, 12}, {3, 0}, {11, 1}, {12, 0}, {40, 1}};
+    v = host_control_values(m, &set);
+    CHECK_EQ(v.cvset, std::string("2=9"));
+    CHECK((v.env == Env{{L"ADSPEEDA", L"10"}, {L"ADPICK", L"1"}, {L"ADBOX", L"0"}}));
+    // ...from every module's values, as the saver and the dialog keep them.
+    const std::map<std::string, std::map<int, int>> all = {{"x", {{1, 10}}}, {"y", {{1, 90}, {11, 0}}}};
+    CHECK((host_control_values(m, all).env == Env{{L"ADSPEEDA", L"10"}, {L"ADPICK", L"2"}, {L"ADBOX", L"1"}}));
+    CHECK((host_control_values(m, std::map<std::string, std::map<int, int>>{}) == host_control_values(m, nullptr)));
+    CHECK_EQ(describe_env(v.env), std::string("ADSPEEDA=10,ADPICK=1,ADBOX=0"));
+    CHECK(describe_env({}).empty());
+  }
+  // A module without host controls: ADCVSET as before, no variables.
+  if (const Module* rings = parse_catalog(fixture("catalog-win.json"), c, &err) ? c.find("test.rings") : nullptr) {
+    const std::map<int, int> set = {{0, 75}, {1, 0}, {2, 2}};
+    const HostControlValues v = host_control_values(*rings, &set);
+    CHECK(v.cvset == "0=75,1=0,2=2" && v.env.empty());
+  } else {
+    CHECK(false);
+  }
+
   CHECK(resolve_module_path(L"C:\\a\\win", "FILES/AD40/X.AD") == L"C:\\a\\win\\FILES\\AD40\\X.AD");
   CHECK(resolve_module_path(L"C:\\a\\win\\", "/FILES/X.AD") == L"C:\\a\\win\\FILES\\X.AD");
   CHECK(resolve_module_path(L"C:\\a\\win", "D:/abs/X.AD") == L"D:\\abs\\X.AD");
@@ -787,9 +936,10 @@ void test_catalog() {
   for (size_t i = 0; i < std::min(real.modules.size(), mods.size()); ++i) {
     const Module& m = real.modules[i];
     CHECK(m.lane == "pe32" || m.lane == "ne16");
-    // After Dark's module ABI, or Intermission's (Star Wars Screen
-    // Entertainment's IMX modules, on the 16-bit lane).
-    CHECK(m.abi == kAfterDarkAbi || (m.abi == "intermission" && m.lane == "ne16"));
+    // After Dark's module ABI, or Intermission's (the Intermission
+    // releases' modules) or a Windows 3.1 screen-saver program's (Johnny
+    // Castaway's), on the 16-bit lane.
+    CHECK(m.abi == kAfterDarkAbi || ((m.abi == "intermission" || m.abi == kScrnsaveAbi) && m.lane == "ne16"));
     CHECK(!m.display_name.empty() && !m.path.empty());
     const auto& ctls = mods[i]->at("controls").as_list();
     CHECK_EQ(m.controls.size(), ctls.size());
@@ -1384,6 +1534,104 @@ void test_env() {
   CHECK(numlock_in(lacks, false) == L"(none)" && numlock_in(lacks, true) == L"(none)");
   SetEnvironmentVariableW(L"ADNUMLOCK", nullptr);
 
+  // Host controls (catalog "host": Intermission 4.0's Speed). Every start of
+  // a module's host passes its host controls' variables, at the values the
+  // start has (catalog.h host_control_values; add_host_control_env), on top
+  // of anything inherited: the saver's windows (from settings.ini; Random,
+  // /p and Preview's /s alike), the dialog's live preview and thumbnails
+  // (from its values, saved or not) and its module buttons (--configure).
+  {
+    Catalog k;
+    std::string err;
+    CHECK(parse_catalog(fixture("catalog-speed.json"), k, &err));
+    const Module* dragon = k.find("intermission.dragon");
+    const Module* pig = k.find("intermission.dpig");
+    const Module* alpha = k.find("ad40.alpha");
+    CHECK(dragon && pig && alpha);
+    SetEnvironmentVariableW(L"ADNE16IMXSPEED", L"77");   // inherited by whoever started the saver
+    auto var_in = [](const std::vector<std::pair<std::wstring, std::wstring>>& changes, const wchar_t* name) {
+      std::vector<std::pair<std::wstring, std::wstring>> env = changes;
+      add_host_defaults(env);   // what HostProcess::start and HostTool::start add
+      for (auto& [key, val] : parse_block(build_environment_block(env))) {
+        if (CompareStringOrdinal(key.c_str(), -1, name, -1, TRUE) == CSTR_EQUAL) return val;
+      }
+      return std::wstring(L"(none)");
+    };
+    if (dragon && pig && alpha) {
+      const Settings saved = parse_settings("[Module.intermission.dragon]\r\n1=50\r\n[Module.ad40.alpha]\r\n0=20\r\n");
+      // The saver's window (/s, /p, Preview): its own variables, then the
+      // module's host controls' put in front.
+      auto saver_env = [&](const Module& m) {
+        const HostControlValues v = host_control_values(m, saved.controls);
+        std::vector<std::pair<std::wstring, std::wstring>> env = {
+            {L"ADSTREAM", L"1"}, {L"ADSCREENW", L"640"}, {L"ADSCREENH", L"480"}, {L"ADCVSET", widen(v.cvset)}};
+        add_sound_env(env, SoundChoice{});
+        add_host_control_env(env, v.env);
+        return env;
+      };
+      CHECK(var_in(saver_env(*dragon), L"ADNE16IMXSPEED") == L"50");
+      CHECK(var_in(saver_env(*dragon), L"ADCVSET") == L"(none)");   // its only own control is a button
+      // A module without the control gets nothing from it (an inherited
+      // value passes, as any variable the saver doesn't set does).
+      CHECK(var_in(saver_env(*alpha), L"ADNE16IMXSPEED") == L"77" && var_in(saver_env(*alpha), L"ADCVSET") == L"0=20");
+      CHECK(var_in(saver_env(*pig), L"ADNE16IMXSPEED") == L"77");
+      // The dialog (live preview, thumbnails, module buttons): its values,
+      // an unsaved move included; never set, the default.
+      std::map<std::string, std::map<int, int>> edits = saved.controls;
+      edits["intermission.dragon"][1] = 12;
+      std::vector<std::pair<std::wstring, std::wstring>> tool = {{L"ADCVSET", widen(host_control_values(*dragon, edits).cvset)}};
+      add_host_control_env(tool, host_control_values(*dragon, edits).env);
+      CHECK(var_in(tool, L"ADNE16IMXSPEED") == L"12");
+      edits.erase("intermission.dragon");   // Restore defaults
+      std::vector<std::pair<std::wstring, std::wstring>> fresh;
+      add_host_control_env(fresh, host_control_values(*dragon, edits).env);
+      CHECK(var_in(fresh, L"ADNE16IMXSPEED") == L"25");
+    }
+    // In front of the start's own changes: a start's own variable wins over
+    // a host control's of the same name (the catalog never has one,
+    // host_variable_ok, but a start must not depend on that).
+    std::vector<std::pair<std::wstring, std::wstring>> own = {{L"ADSTREAM", L"1"}, {L"ADSTATE", L"C:\\state"}};
+    add_host_control_env(own, {{L"ADSTREAM", L"0"}, {L"ADSTATE", L"elsewhere"}, {L"ADNE16IMXSPEED", L"6"}});
+    CHECK(own.size() == 5 && own[0].first == L"ADSTREAM" && own[2].first == L"ADNE16IMXSPEED");
+    CHECK(var_in(own, L"ADSTREAM") == L"1" && var_in(own, L"ADSTATE") == L"C:\\state" &&
+          var_in(own, L"ADNE16IMXSPEED") == L"6");
+    SetEnvironmentVariableW(L"ADNE16IMXSPEED", nullptr);
+
+    // The live preview starts the module again when what its host is started
+    // with changes (live_preview.h same_target): moving the Speed slider
+    // changes the target's variables, as moving a module's own control
+    // changes its ADCVSET; its name or its thumbnail's file don't.
+    if (dragon) {
+      LiveTarget t;
+      t.id = dragon->id;
+      t.abi = dragon->abi;
+      t.host_exe = L"C:\\lad\\adhostwin.exe";
+      t.module_path = L"C:\\assets\\win\\packages\\intermission\\SAVER\\DRAGON.IMX";
+      t.win_dir = L"C:\\assets\\win";
+      HostControlValues v = host_control_values(*dragon, nullptr);
+      t.cvset = v.cvset;
+      t.env = v.env;
+      LiveTarget same = t;
+      same.name = L"Dragon Kites";
+      same.thumb_path = L"C:\\thumbs\\intermission.dragon.v2.png";
+      CHECK(same_target(t, same));
+      const std::map<int, int> fastest = {{1, 100}}, normal = {{1, 25}}, button = {{0, 1}};
+      LiveTarget moved = t;
+      moved.env = host_control_values(*dragon, &fastest).env;
+      CHECK(!same_target(t, moved) && moved.cvset == t.cvset);
+      LiveTarget back = t;   // moved back to Normal (set, now): the same run
+      back.env = host_control_values(*dragon, &normal).env;
+      CHECK(same_target(t, back));
+      LiveTarget pressed = t;   // a button's slot carries no value: nothing to restart for
+      pressed.cvset = host_control_values(*dragon, &button).cvset;
+      pressed.env = host_control_values(*dragon, &button).env;
+      CHECK(same_target(t, pressed));
+      LiveTarget own_control = t;
+      own_control.cvset = "0=30";
+      CHECK(!same_target(t, own_control));
+    }
+  }
+
   CHECK(quote_arg(L"plain") == L"plain");
   CHECK(quote_arg(L"a b") == L"\"a b\"");
   CHECK(quote_arg(L"C:\\dir with space\\") == L"\"C:\\dir with space\\\\\"");
@@ -1770,12 +2018,12 @@ void test_ui() {
   }
 
   // Status text: no closing full stop (the releases' own line is checked in
-  // the releases suite). Not every release is After Dark's: the words fit all sixteen.
+  // the releases suite). Not every release is After Dark's: the words fit all twenty.
   CHECK(assets_summary({}) == L"Nothing imported yet");
   // The not-imported welcome: what importing does.
   CHECK(welcome_text().find(L"The screen saver runs the original modules of After Dark and Star Wars Screen "
                             L"Entertainment from your own discs.\n\n"
-                            L"Import them from any of your discs (sixteen releases are supported), a disc image, or "
+                            L"Import them from any of your discs (twenty releases are supported), a disc image, or "
                             L"the Internet Archive download.") == 0);
   CHECK(welcome_text().find(L"After Dark discs") == std::wstring::npos);
   Catalog c;
@@ -1883,16 +2131,17 @@ void test_ui() {
   // doesn't show, there was no room for it.
   {
     HDC dc = CreateCompatibleDC(nullptr);
-    // The sixteen releases' line, "328 modules from 16 releases", is as
-    // long as the fifteen's ("327 modules from 15 releases"), the
+    // The twenty releases' line, "429 modules from 20 releases", is as
+    // long as the sixteen's ("328 modules from 16 releases"), the
+    // fifteen's ("327 modules from 15 releases"), the
     // fourteen's ("314 modules from 14 releases") and the
     // twelve's ("284 modules from 12 releases"), a digit longer than the
     // seven's ("232 modules from 7 releases"), whose digits were
     // already wider in the caption face, Segoe UI Variable Small, than the
     // six's ("216 modules from 6 releases").
-    const wchar_t* texts[] = {L"Nothing imported yet", L"328 modules from 16 releases",
+    const wchar_t* texts[] = {L"Nothing imported yet", L"429 modules from 20 releases",
                               L"84 modules from After Dark 4.0 Deluxe",
-                              L"328 modules from 16 releases · 2 missing — import again to restore"};
+                              L"429 modules from 20 releases · 2 missing — import again to restore"};
     int shown = 0, hidden = 0, min_twelve = 0;
     std::string min_twelve_at;   // the scales it fits the narrowest window at
     for (int dpi = 96; dpi <= 240; dpi += 24) {
@@ -1949,7 +2198,7 @@ void test_ui() {
           // The status line it sits beside is never under it.
           CHECK(C.box.x > in.assets_right);
         }
-        // Where it matters: with sixteen releases it shows at the first-open
+        // Where it matters: with twenty releases it shows at the first-open
         // size (with room to spare) at every scale; one release's long title
         // and the assets line at its longest (files missing) leave it no room
         // in the minimum window. (In the minimum window beside the releases'
@@ -1977,7 +2226,7 @@ void test_ui() {
         }
       }
     }
-    printf("ui: the credit fits beside \"328 modules from 16 releases\" in the narrowest window at %d of 7 scales (%s)\n",
+    printf("ui: the credit fits beside \"429 modules from 20 releases\" in the narrowest window at %d of 7 scales (%s)\n",
            min_twelve, min_twelve_at.c_str());
     CHECK(shown > 0 && hidden > 0);
     DeleteDC(dc);
@@ -2237,6 +2486,39 @@ void test_ui() {
     c = probe_capabilities(g_fakehost);
     CHECK(c.known && !c.numlock && !c.takes_numlock_env() && c.line.find("numlock") == std::string::npos);
     SetEnvironmentVariableW(L"FAKEHOST_NUMLOCK", nullptr);
+
+    // A module button's run (--configure) for an Intermission 4.0 module: its
+    // host gets the Speed control's variable as every start of its host does
+    // (the dialog's value, unsaved included), never in ADCVSET.
+    Catalog k;
+    std::string err;
+    const Module* dragon = parse_catalog(fixture("catalog-speed.json"), k, &err) ? k.find("intermission.dragon") : nullptr;
+    CHECK(dragon != nullptr);
+    if (dragon) {
+      const std::wstring log = join_path(temp_dir(), L"adscr-unit-configure-" + std::to_wstring(GetCurrentProcessId()) + L".log");
+      DeleteFileW(log.c_str());
+      SetEnvironmentVariableW(L"FAKEHOST_LOG", log.c_str());
+      SetEnvironmentVariableW(L"FAKEHOST_CONFIGURE_MS", L"0");
+      SetEnvironmentVariableW(L"ADNE16IMXSPEED", L"77");   // inherited: replaced
+      const std::map<int, int> edits = {{1, 50}};
+      const HostControlValues v = host_control_values(*dragon, &edits);
+      std::vector<std::pair<std::wstring, std::wstring>> env = {{L"ADCVSET", widen(v.cvset)}};
+      add_host_control_env(env, v.env);
+      HostTool t;
+      std::string out;
+      DWORD code = 1;
+      CHECK(t.start(g_fakehost, configure_args(L"C:\\assets\\win\\DRAGON.IMX", 0, 0), env, nullptr));
+      CHECK(t.finish(10000, &out, &code) && code == 0);
+      std::string text;
+      read_file(log, text);
+      CHECK(text.find("configure\t") != std::string::npos && text.find("\tADNE16IMXSPEED=50") != std::string::npos);
+      CHECK(text.find("\tADCVSET=\t") != std::string::npos);
+      if (g_failures) fprintf(stderr, "---- fakehost log\n%s\n", text.c_str());
+      SetEnvironmentVariableW(L"ADNE16IMXSPEED", nullptr);
+      SetEnvironmentVariableW(L"FAKEHOST_CONFIGURE_MS", nullptr);
+      SetEnvironmentVariableW(L"FAKEHOST_LOG", nullptr);
+      DeleteFileW(log.c_str());
+    }
   }
 
   // A group header in the module list (layout_group_header): the count and
@@ -2988,6 +3270,7 @@ void test_strip_wrap() {
   // row holds 9: 8 and 2, not 5 and 5); compact ones are not capped.
   CHECK((strip_grid(8, false, design_area) == StripGrid{1, 8}) && (strip_grid(9, false, design_area) == StripGrid{2, 8}));
   CHECK((strip_grid(15, false, design_area) == StripGrid{2, 8}) && (strip_grid(16, false, design_area) == StripGrid{2, 8}));
+  CHECK((strip_grid(20, false, design_area) == StripGrid{3, 8}));   // the twenty releases: 8, 8 and 4
   CHECK((strip_grid(10, false, 1024) == StripGrid{2, 8}) && (strip_grid(15, false, 1024) == StripGrid{2, 8}));
   CHECK((strip_grid(14, true, 1024) == StripGrid{1, 14}));
   const double min_area = kMinClientW - 48 - kStripStatusW - kStripStatusGap;   // 636
@@ -3062,6 +3345,8 @@ void test_strip_wrap() {
       {9, kDesignClientW, kDesignClientHStrip, StripMode::compact, true, 1},   // 9 need two: compact, on one
       {15, kDesignClientW, 952, StripMode::regular, true, 2},   // the first-open size: 8 and 7
       {16, kDesignClientW, 952, StripMode::regular, true, 2},   // sixteen releases at the first-open size: 8 and 8
+      {20, kDesignClientW, 1068, StripMode::regular, true, 3},  // twenty releases at the first-open size: 8, 8 and 4
+      {20, kDesignClientW, 952, StripMode::compact, true, 2},   // too short for three regular rows: two compact
       {10, 1336, 952, StripMode::regular, true, 2},             // 8 and 2 where 9 would fit
       {7, kDesignClientW, kDesignClientHStrip, StripMode::regular, true, 1},
       {7, kMinClientW, kMinClientHStrip, StripMode::compact, true, 1},

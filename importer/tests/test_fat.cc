@@ -332,14 +332,18 @@ int main(int argc, char** argv) {
     parts.push_back(open_image(dir / L"disk1.img"));
     parts.push_back(open_image(dir / L"disk2.img"));
     auto u = union_of(std::move(parts));
+    // Another size is refused when the file is read, never when it is only
+    // listed (what no recipe reads, a BBS's notes, never stops an import).
     bool size_threw = false;
     try {
       u->list(u->root());
+      u->read_all(*u->find("SIZED.TXT"));
     } catch (const ImportError& e) {
-      size_threw = true;
+      size_threw = std::string(e.what()).find("SIZED.TXT differs between the images (size)") != std::string::npos;
       fprintf(stderr, "  union, same name different size -> %s\n", e.what());
     }
     CHECK(size_threw);
+    CHECK(u->read_all(*u->find("SHARED.PKG")) == text("same bytes"));
     // Without the size clash: the listing merges, the byte clash shows on read.
     test::FatBuilder e1 = test::FatBuilder::floppy144(), e2 = test::FatBuilder::floppy144();
     e1.file("DISK.1", text("1"));
@@ -436,6 +440,22 @@ int main(int argc, char** argv) {
     test::write_bytes(dir / L"single.zip", single.build());
     auto only = floppy_images_in_zip(dir / L"single.zip");
     CHECK(only.size() == 1 && *only[0].bytes == one);
+    // The images in a folder (the Internet Archive's ZIP of Intermission
+    // 4.0's floppies, "Intermission 4.0/ITM4W-D1.IMA"), its own entry beside
+    // them, as a 7z's may be: named with their folder.
+    test::ZipBuilder in_folder;
+    in_folder.password = "";
+    in_folder.add("A Product 1.0/", {}, false, false);
+    in_folder.add("A Product 1.0/DISK-1.IMA", one, true, false);
+    in_folder.add("A Product 1.0/DISK-2.IMA", two, true, false);
+    in_folder.add("A Product 1.0/scans/label.jpg", text("a scan"), true, false);
+    test::write_bytes(dir / L"in-folder.zip", in_folder.build());
+    ignored.clear();
+    auto folder_images = floppy_images_in_zip(dir / L"in-folder.zip", &ignored);
+    CHECK(folder_images.size() == 2 && folder_images[0].name == "A Product 1.0/DISK-1.IMA" &&
+          *folder_images[0].bytes == one && folder_images[1].name == "A Product 1.0/DISK-2.IMA" &&
+          *folder_images[1].bytes == two);
+    CHECK((ignored == std::vector<std::string>{"A Product 1.0/scans/label.jpg"}));
     // A password-protected or damaged floppy-sized member is refused, not
     // skipped: it may be one of the disks.
     auto refused_zip = [&](const wchar_t* name, const std::vector<uint8_t>& zip, const char* want,

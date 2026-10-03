@@ -82,9 +82,10 @@ AssetCounts count_assets(const Catalog& c, const std::vector<bool>& present);
 std::wstring assets_summary(const AssetCounts& a);
 
 // The not-imported welcome's text (under "Welcome to Long After Dark"): what
-// importing does, for every release (eleven of After Dark modules, and three
-// of Delrina Intermission's: Star Wars Screen Entertainment, The Far Side,
-// Dilbert).
+// importing does, for every release (eleven of After Dark modules, seven of
+// Delrina Intermission's: Star Wars Screen Entertainment, The Far Side,
+// Dilbert, both Opus 'n Bill releases, The Flintstones and Intermission 4.0
+// itself; and Johnny Castaway).
 std::wstring welcome_text();
 
 // ---- string-slider stops ---------------------------------------------------------
@@ -342,7 +343,8 @@ WindowLayout layout_window(const LayoutInput& in);
 // with the strip (two or more releases) the band of its regular covers'
 // rows at the first-open width over it, so the columns have their design
 // heights: 836 (kDesignClientHStrip) for one row of covers (up to eight
-// releases), 952 for two (up to sixteen).
+// releases), 952 for two (up to sixteen), 1068 for three (up to twenty-four:
+// the twenty releases' 8, 8 and 4).
 int design_client_h(int strip_tiles);
 
 // ---- the footer's credit ---------------------------------------------------------------

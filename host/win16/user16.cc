@@ -94,6 +94,11 @@ struct Wnd16 {
   uint32_t style = 0, exstyle = 0;
   bool visible = true, enabled = true, invalid = false;
   bool erase = false;  // an application task's window: BeginPaint sends WM_ERASEBKGND first
+  // CS_OWNDC (user16_own_dc): the window's private DC, which GetDC and
+  // BeginPaint hand out with every attribute it was left with, and which
+  // ReleaseDC and EndPaint leave alone. 0 until the first GetDC.
+  bool owndc = false;
+  uint16_t own_dc = 0;
   std::map<int16_t, uint16_t> words;
   std::map<std::string, uint16_t> props;
 };
@@ -227,6 +232,31 @@ Wnd16* wnd(Call16& c, uint16_t h) {
   return it == w.end() ? nullptr : &it->second;
 }
 
+// The DC GetDC and BeginPaint hand out: a fresh screen DC, or a CS_OWNDC
+// window's private one, made at the first call and kept (the window's other
+// DCs are its own business). *fresh: the DC is new.
+uint16_t window_dc(Call16& c, uint16_t h, bool* fresh) {
+  Gdi16& g = c.rt.state<Gdi16>();
+  Wnd16* w = wnd(c, h);
+  *fresh = true;
+  if (w && w->owndc) {
+    if (w->own_dc && g.dc(w->own_dc)) {
+      *fresh = false;
+      return w->own_dc;
+    }
+    w->own_dc = g.create_screen_dc(h);
+    return w->own_dc;
+  }
+  return g.create_screen_dc(h);
+}
+
+// ReleaseDC's and EndPaint's: a private DC stays with its window.
+void release_window_dc(Call16& c, uint16_t h, uint16_t dc) {
+  Wnd16* w = wnd(c, h);
+  if (w && w->owndc && dc && dc == w->own_dc) return;
+  c.rt.state<Gdi16>().release_dc(dc);
+}
+
 int screen_w(Runtime16& rt) { return rt.display() ? rt.display()->width() : 640; }
 int screen_h(Runtime16& rt) { return rt.display() ? rt.display()->height() : 480; }
 
@@ -253,6 +283,8 @@ bool destroy_window(Runtime16& rt, uint16_t h) {
   UserState& s = us(rt);
   if (!s.windows.count(h) || h == s.saver || h == s.desktop) return false;
   send(rt, h, WM_DESTROY, 0, 0);
+  auto it = s.windows.find(h);
+  if (it != s.windows.end() && it->second.own_dc) rt.state<Gdi16>().release_dc(it->second.own_dc);
   s.windows.erase(h);
   // Its timers die with it, as Windows' did.
   s.timers.erase(std::remove_if(s.timers.begin(), s.timers.end(), [&](const Timer16& t) { return s.app_task && t.hwnd == h; }),
@@ -824,6 +856,12 @@ uint16_t user16_saver_window(Runtime16& rt) {
   return s.saver;
 }
 
+void user16_own_dc(Runtime16& rt, uint16_t hwnd) {
+  UserState& s = us(rt);
+  auto it = s.windows.find(hwnd);
+  if (it != s.windows.end()) it->second.owndc = true;
+}
+
 bool user16_class(Runtime16& rt, std::string_view name, Class16View* out) {
   UserState& s = us(rt);
   auto it = s.classes.find(upper16(name));
@@ -1289,12 +1327,18 @@ void register_user16(Runtime16& rt) {
     }
     write16(c.rt, p, pt);
   });
+  // GetDC(hwnd): a DC for the window — a CS_OWNDC window's private DC, with
+  // the attributes it was left with (Intermission's FLI reader selects its
+  // palette into the saver window's once and draws through it ever after).
   r.impl(U, "GetDC", [](Call16& c) {
     uint16_t h = c.w();
     Gdi16& g = c.rt.state<Gdi16>();
-    uint16_t dc = g.create_screen_dc(h);
+    bool fresh = true;
+    uint16_t dc = window_dc(c, h, &fresh);
     Wnd16* w = wnd(c, h);
-    if (dc && w && (w->rect.left || w->rect.top)) SetViewportOrgEx(g.host_dc(dc), w->rect.left, w->rect.top, nullptr);
+    if (dc && fresh && w && (w->rect.left || w->rect.top)) {
+      SetViewportOrgEx(g.host_dc(dc), w->rect.left, w->rect.top, nullptr);
+    }
     // The DC origin GetDCOrg reports: the window's corner on the screen.
     if (Dc16* d = g.dc(dc)) {
       d->org_x = w ? int16_t(w->rect.left) : 0;
@@ -1302,16 +1346,18 @@ void register_user16(Runtime16& rt) {
     }
     c.ret(dc);
   });
+  // ReleaseDC(hwnd, hdc): 1; a private DC stays as it is.
   r.impl(U, "ReleaseDC", [](Call16& c) {
-    c.w();
-    c.rt.state<Gdi16>().release_dc(c.w());
+    uint16_t h = c.w(), dc = c.w();
+    release_window_dc(c, h, dc);
     c.ret(1);
   });
   r.impl(U, "BeginPaint", [](Call16& c) {
     uint16_t h = c.w();
     uint32_t ps = c.ptr();
     Wnd16* w = wnd(c, h);
-    uint16_t dc = c.rt.state<Gdi16>().create_screen_dc(h);
+    bool fresh = true;
+    uint16_t dc = window_dc(c, h, &fresh);
     // PAINTSTRUCT: hdc, fErase, rcPaint, fRestore, fIncUpdate, rgbReserved[16] (32 bytes).
     uint8_t zero[32] = {};
     c.rt.write_bytes(ps, zero, sizeof(zero));
@@ -1332,9 +1378,9 @@ void register_user16(Runtime16& rt) {
     c.ret(dc);
   });
   r.impl(U, "EndPaint", [](Call16& c) {
-    c.w();
+    uint16_t h = c.w();
     uint32_t ps = c.ptr();
-    c.rt.state<Gdi16>().release_dc(c.rt.rd16(ps));
+    release_window_dc(c, h, c.rt.rd16(ps));
   });
   r.impl(U, "InvalidateRect", [](Call16& c) {
     Wnd16* w = wnd(c, c.w());
@@ -1353,6 +1399,11 @@ void register_user16(Runtime16& rt) {
     if (w && w->invalid && w->proc) send(c.rt, h, WM_PAINT, 0, 0);
   });
   r.impl(U, "GetSystemMetrics", [](Call16& c) { c.ret(sys_metric(c.rt, c.sw())); });
+  // GetDialogBaseUnits(): MAKELONG(width, height) of a dialog base unit,
+  // which Windows 3.1's USER took from the System font (the average of the
+  // letters' widths and the font's height): 8 × 16 on a VGA, the emulated
+  // display. IMAD_PLY, Intermission's After Dark reader, asks at its QUERY.
+  r.impl(U, "GetDialogBaseUnits", [](Call16& c) { c.ret32(MAKELONG(8, 16)); });
   r.impl(U, "GetSysColor", [](Call16& c) { c.ret32(sys_color(c.sw())); });
   r.impl(U, "SystemParametersInfo", [](Call16& c) { c.ret(0); });
   // Percent of the USER/GDI heaps free: plenty (modules refuse to start below a threshold).

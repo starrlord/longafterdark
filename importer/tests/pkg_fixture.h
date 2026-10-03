@@ -33,6 +33,8 @@
 #include <deque>
 #include <functional>
 #include <map>
+#include <set>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -1201,6 +1203,204 @@ inline PkgFixture dilbert_fixture() {
                           "dilbert.wedgies"});
 }
 
+// ---- Delrina's Intermission Installer: the twentieth's four releases ------------------------
+//
+// The Opus 'n Bill Screen Saver (both builds), On the Road Again, The
+// Flintstones (both builds) and Intermission 4.0, made up from their
+// registry rows' own loose-file tables (packages.cc): every file the table
+// installs, stored as the table says (SZDD, the shared libraries with a
+// version stamp), with made-up bytes of its kind — ASA animations, IMQ and
+// IMX modules, FLI animations (Autodesk's magic, AF12), MRF and MSV data,
+// pictures, libraries, readers — on the disks of the real split; every
+// disk's tag file; and decoys beside them that must never be opened (the
+// installer, the other readers, AD_SND, a BBS's notes...).
+
+// An FLI animation of our own: Autodesk's header shape (size, then the
+// magic AF12 of the FLC variant Intermission 4.0's carry), made-up frames.
+inline std::vector<uint8_t> fli_animation(const std::string& name) {
+  std::vector<uint8_t> v = {0x00, 0x04, 0x00, 0x00, 0x12, 0xAF, 0x02, 0x00, 0x40, 0x01, 0xC8, 0x00};
+  auto body = blob("a made-up flic " + name, 1012);
+  v.insert(v.end(), body.begin(), body.end());
+  return v;
+}
+
+// The made-up bytes of one file of a Delrina release's table, by its kind.
+inline std::vector<uint8_t> delrina_file_bytes(const std::string& name) {
+  const std::vector<std::string> ui = {"KERNEL", "USER", "GDI"};
+  auto with = [&](std::vector<std::string> extra) {
+    std::vector<std::string> r = ui;
+    r.insert(r.end(), extra.begin(), extra.end());
+    return r;
+  };
+  const std::string stem = name.substr(0, name.find('.'));
+  auto ext = [&](const char* e) { return name.size() > 4 && name.compare(name.size() - 4, 4, e) == 0; };
+  if (ext(".ASA")) return asa_animation(stem);
+  if (ext(".FLI")) return fli_animation(stem);
+  if (ext(".MRF") || ext(".MSV") || ext(".BMP")) return blob("made-up data " + name, 700);
+  if (ext(".IMX")) {
+    // A photo viewer imports the fractal decoder beside it; one module the
+    // sprite library.
+    if (stem == "PHOTO" || stem == "FM-PHOTO") return imx_module(stem, with({"INTRMLIB", "DECO"}));
+    if (stem == "PALETTE") return imx_module(stem, with({"ANTSW"}));
+    return imx_module(stem, with({"INTRMLIB"}));
+  }
+  if (ext(".IMQ")) {
+    // A reader (IM???PLY.IMQ; the same bytes wherever the table puts it).
+    if (name.size() == 12 && name.compare(0, 2, "IM") == 0 && name.compare(5, 7, "PLY.IMQ") == 0)
+      return imq_module(stem, with({"ANTSW", "INTRMLIB"}));
+    return imq_module(stem, with({"INTRMLIB", "ANTSW", "MMSYSTEM"}));
+  }
+  if (name == "INTRMLIB.DLL") return ne_dll("INTRMLIB", with({"ANTSW"}));
+  if (name == "ANTSW.DLL") return ne_dll("ANTSW", with({"MMSYSTEM"}));
+  if (name == "MEMMIDI.DLL") return ne_dll("MEMMIDI", {"KERNEL", "MMSYSTEM"});
+  if (ext(".DLL")) return ne_dll(stem, ui);
+  return blob("the Intermission control panel of " + name);
+}
+
+// A Delrina release made up from its registry row's table (another build's,
+// `build`, when set): files on the disks `disk_of` gives, `decoys` beside
+// them, every disk's tag file but those in `no_tags`; the catalog ids it must
+// list, sorted.
+inline PkgFixture delrina_table_fixture(const std::string& id, const char* build, int (*disk_of)(const std::string&),
+                                        int disks, const std::vector<std::string>& decoys,
+                                        const std::set<int>& no_tags = {}) {
+  using S = DelrinaFile::Stored;
+  const adw::import::Package* p = adw::import::find_package(id);
+  std::span<const adw::import::LooseFile> table = p->loose_files;
+  for (const adw::import::Build& b : p->builds)
+    if (build && std::string_view(b.id) == build) table = b.loose_files;
+  std::vector<DelrinaFile> files;
+  std::vector<std::string> ids;
+  for (const adw::import::LooseFile& lf : table) {
+    const std::string name = lf.from, to = lf.to;
+    const bool dll = name.size() > 4 && name.compare(name.size() - 4, 4, ".DLL") == 0;
+    const S stored = lf.codec == adw::import::Codec::plain ? S::plain : dll ? S::stamped : S::szdd;
+    files.push_back({name, disk_of(name), delrina_file_bytes(name), stored, to});
+    const std::string ext = name.substr(name.find('.'));
+    const bool reader = name.size() == 12 && name.compare(0, 2, "IM") == 0 && name.compare(5, 7, "PLY.IMQ") == 0;
+    if (to.rfind("SAVER/", 0) == 0 && !reader &&
+        (ext == ".ASA" || ext == ".IMQ" || ext == ".IMX" || ext == ".FLI" || ext == ".MRF" || ext == ".MSV")) {
+      std::string lower = name.substr(0, name.find('.'));
+      for (char& c : lower) c = char(tolower((unsigned char)c));
+      ids.push_back(id + "." + lower);
+    }
+  }
+  for (const std::string& d : decoys) files.push_back({d, disk_of(d), blob("decoy " + d, 200), S::plain, ""});
+  std::sort(ids.begin(), ids.end());
+  PkgFixture f = delrina_fixture(id, files, disks, ids);
+  for (int k : no_tags) f.source.erase("DISK" + std::to_string(k));
+  return f;
+}
+
+// The decoys every one of the four ships beside its table's files.
+inline std::vector<std::string> delrina_decoys(std::vector<std::string> more) {
+  std::vector<std::string> v = {"IMINST2.EXE", "IMINST3.EXE", "IMAD_PLY.IMQ", "IMFLCPLY.IMQ", "IMNSSPLY.IMQ",
+                                "AD_SND.DLL",  "IWLIB.DLL",   "NETPASS.EXE",  "SSINTERM.SCR", "INTERMIS.TXT",
+                                "INSTALL.BMP", "LASTDISK.ASA", "ANTHOOK.386", "IMCPL.CPL",    "USERINST.EXE"};
+  v.insert(v.end(), more.begin(), more.end());
+  return v;
+}
+
+// The Opus 'n Bill Screen Saver's September 1993 disks (the BBS copies'
+// split): the modules over three disks, the libraries and readers on disk 1.
+inline int opus_disk(const std::string& name) {
+  static const std::map<std::string, int> disk = {
+      {"DISK2", 2},        {"OPUSMESS.ASA", 2}, {"PUDDYLUV.ASA", 2}, {"SILIBILL.ASA", 2}, {"SWINGER.ASA", 2},
+      {"VELOC.ASA", 2},    {"DISK3", 3},        {"BASSELOP.ASA", 3}, {"BILLFISH.ASA", 3}, {"MALELAM.ASA", 3},
+      {"MICROIBM.ASA", 3}, {"NIGHTCAT.ASA", 3}, {"OPUSBATH.ASA", 3}, {"LASTDISK.ASA", 3}, {"ANTHOOK.386", 3},
+      {"IMCPL.CPL", 3},    {"USERINST.EXE", 3}, {"AD_SND.DLL", 3}};
+  auto it = disk.find(name);
+  return it == disk.end() ? 1 : it->second;
+}
+inline PkgFixture opus_fixture() {
+  return delrina_table_fixture("opus", nullptr, opus_disk, 3, delrina_decoys({"INSTALL.EXE", "INTERMSN.HLP"}));
+}
+
+// Its November 1993 build's disks (the other BBS copy's split): VELOC2 and
+// the clock on disk 1, the censored toasters on disk 2, Opus's Moment on 3.
+inline int opus_1993_11_disk(const std::string& name) {
+  static const std::map<std::string, int> disk = {
+      {"DISK2", 2},        {"BILLFISH.ASA", 2}, {"BUGS.ASA", 2},     {"CTOAST.ASA", 2},   {"OPUSBATH.ASA", 2},
+      {"PENGUIN.ASA", 2},  {"SWINGER.ASA", 2},  {"DISK3", 3},        {"BASSELOP.ASA", 3}, {"BERSERK.ASA", 3},
+      {"BUNGEE2.ASA", 3},  {"MALELAM.ASA", 3},  {"SILIBILL.ASA", 3}, {"LASTDISK.ASA", 3}, {"ANTHOOK.386", 3},
+      {"IMCPL.CPL", 3},    {"USERINST.EXE", 3}, {"AD_SND.DLL", 3}};
+  auto it = disk.find(name);
+  return it == disk.end() ? 1 : it->second;
+}
+inline PkgFixture opus_1993_11_fixture() {
+  return delrina_table_fixture("opus", "1993-11", opus_1993_11_disk, 3, delrina_decoys({"INSTALL.EXE"}));
+}
+
+// On the Road Again's disks: its only copy keeps them together, so a split
+// of our own (the trek, the libraries and readers on disk 1).
+inline int opusroad_disk(const std::string& name) {
+  static const std::map<std::string, int> disk = {
+      {"DISK2", 2},        {"ANTS.ASA", 2},     {"BUTTHEAD.ASA", 2}, {"HAIRBALL.ASA", 2}, {"INFOHWY.ASA", 2},
+      {"DISK3", 3},        {"JUNGLE.ASA", 3},   {"MIDNITCC.ASA", 3}, {"OPUSFLY2.ASA", 3}, {"PISTACH4.ASA", 3},
+      {"BUTTWIPE.IMQ", 3}, {"DISK4", 4},        {"RATRACE2.ASA", 4}, {"SINGIN2.ASA", 4},  {"TAXTHIS.ASA", 4},
+      {"UNRIDER.ASA", 4},  {"OB-SKATE.IMQ", 4}, {"OB-SPACE.IMQ", 4}, {"LASTDISK.ASA", 4}, {"DIBDLL.DLL", 4}};
+  auto it = disk.find(name);
+  return it == disk.end() ? 1 : it->second;
+}
+inline PkgFixture opusroad_fixture() {
+  return delrina_table_fixture("opusroad", nullptr, opusroad_disk, 4,
+                               delrina_decoys({"SETUP.EXE", "PACKING.LST", "ICONDLL.DLL", "ANTSW2.DLL", "MAPI.DLL",
+                                               "INTERMIS.LIB", "IMSEQPLY.IMQ"}));
+}
+
+// The Flintstones' June 1994 disks (the BBS copy's split): CARS and the
+// drive-in on disk 1, the logo, DINORDS and the paper boy on disk 2, the
+// rest on disk 3.
+inline int flintstones_disk(const std::string& name) {
+  static const std::map<std::string, int> disk = {
+      {"DISK2", 2},        {"DINORDS.ASA", 2},  {"LOGO.ASA", 2},     {"PAPERBOY.IMQ", 2}, {"DISK3", 3},
+      {"DIBDLL.DLL", 3},   {"DICTABRD.IMQ", 3}, {"FM-BIRDY.IMQ", 3}, {"FM-BOULD.IMX", 3}, {"FM-BOWL.IMQ", 3},
+      {"FM-CLOCK.IMQ", 3}, {"FM-CRANE.IMQ", 3}, {"FM-CRITT.IMX", 3}, {"FM-FEET.IMX", 3},  {"FM-MOBIL.IMQ", 3},
+      {"FMPADROK.IMX", 3}, {"LASTDISK.ASA", 3}, {"ANTHOOK.386", 3},  {"IMCPL.CPL", 3},    {"USERINST.EXE", 3},
+      {"AD_SND.DLL", 3}};
+  auto it = disk.find(name);
+  return it == disk.end() ? 1 : it->second;
+}
+inline PkgFixture flintstones_fixture() {
+  return delrina_table_fixture("flintstones", nullptr, flintstones_disk, 3,
+                               delrina_decoys({"SETUP.EXE", "SEEME!.COM"}));
+}
+
+// Its May 1994 build's disks (the BBS copy's split, which has no tag file
+// on disks 2 and 3): the photo shoot on disk 1, the IMQ modules on disk 2,
+// the animations on disk 3, its damaged CARS.ASA among them (a decoy: never
+// opened).
+inline int flintstones_1994_05_disk(const std::string& name) {
+  static const std::map<std::string, int> disk = {
+      {"DICTABRD.IMQ", 2}, {"DRIVEIN.IMQ", 2}, {"FM-CLOCK.IMQ", 2}, {"FM-CRANE.IMQ", 2}, {"PAPERBOY.IMQ", 2},
+      {"IMASAPLY.IMQ", 2}, {"IMIMXPLY.IMQ", 2}, {"IMAD_PLY.IMQ", 2}, {"IMFLCPLY.IMQ", 2}, {"IMNSSPLY.IMQ", 2},
+      {"CARS.ASA", 3},     {"DINORDS.ASA", 3}, {"LOGO.ASA", 3},     {"THEME.ASA", 3}};
+  auto it = disk.find(name);
+  return it == disk.end() ? 1 : it->second;
+}
+inline PkgFixture flintstones_1994_05_fixture() {
+  return delrina_table_fixture("flintstones", "1994-05", flintstones_1994_05_disk, 3,
+                               delrina_decoys({"SETUP.EXE", "CARS.ASA", "H3LLO2U.NFO"}), {2, 3});
+}
+
+// Intermission 4.0's three floppies (the images' split): the ASA
+// animations, the shark, the mix, the pictures, the libraries and every
+// reader on disk 1; the FLI animations on disk 2; the IMX modules and the
+// morph on disk 3.
+inline int intermission_disk(const std::string& name) {
+  auto ext = [&](const char* e) { return name.size() > 4 && name.compare(name.size() - 4, 4, e) == 0; };
+  if (name == "DISK2" || ext(".FLI")) return 2;
+  if (name == "DISK3" || ext(".IMX") || ext(".MRF") || name == "LASTDISK.ASA" || name == "ANTHOOK.386" ||
+      name == "IMCPL.CPL" || name == "USERINST.EXE" || name == "AD_SND.DLL")
+    return 3;
+  return 1;
+}
+inline PkgFixture intermission_fixture() {
+  return delrina_table_fixture("intermission", nullptr, intermission_disk, 3,
+                               delrina_decoys({"INSTALL.EXE", "CURTCALL.EXE", "IMIW_PLY.IMQ", "IMSEQPLY.IMQ",
+                                               "IMMRFPLY.HLP", "INTERMIS.HLP"}));
+}
+
 // ---- InstallShield 2 compressed libraries: Marvel Comics Screen Posters, Snoopy's Screen Savers ----
 
 // A member of a made-up library: its name, the bytes it holds (its recorded
@@ -1636,7 +1836,9 @@ struct TestRegistry {
   std::deque<std::vector<adw::import::KnownImage>> images;
   std::deque<std::vector<adw::import::Download>> download_lists;
   std::deque<std::vector<adw::import::DownloadPart>> part_lists;
+  std::deque<std::vector<adw::import::DownloadMember>> member_lists;
   std::deque<std::vector<adw::import::CoverSource>> cover_lists;
+  std::deque<std::vector<adw::import::Build>> build_lists;
 
   TestRegistry() {
     auto b = adw::import::builtin_packages();
@@ -1646,7 +1848,37 @@ struct TestRegistry {
       p.images = {};
       p.downloads = {};
       p.covers = {};
+      // Another build's own manifest and images too.
+      if (!p.builds.empty()) {
+        build_lists.emplace_back(p.builds.begin(), p.builds.end());
+        for (auto& x : build_lists.back()) {
+          x.manifest = {};
+          x.images = {};
+        }
+        p.builds = build_lists.back();
+      }
     }
+  }
+  // Another build of `id` (Package::builds), to give its manifest and images.
+  adw::import::Build& build(const std::string& id, const std::string& build_id) {
+    const std::span<const adw::import::Build> builds = get(id).builds;
+    for (auto& list : build_lists)
+      if (list.data() == builds.data())
+        for (auto& b : list)
+          if (build_id == b.id) return b;
+    abort();
+  }
+  void build_manifest(const std::string& id, const std::string& build_id, std::vector<adw::import::KnownFile> m) {
+    manifests.push_back(std::move(m));
+    build(id, build_id).manifest = manifests.back();
+  }
+  void build_disk_images(const std::string& id, const std::string& build_id,
+                         const std::vector<std::pair<std::string, uint64_t>>& disks) {
+    std::vector<adw::import::KnownImage> v;
+    int k = 0;
+    for (const auto& [md5, size] : disks) v.push_back({keep(md5), size, "synthetic floppy", "", ++k});
+    images.push_back(std::move(v));
+    build(id, build_id).images = images.back();
   }
   // Cover sources for `id` (COVERS.md §2.2), in the order tried.
   void covers(const std::string& id, std::vector<adw::import::CoverSource> sources) {
@@ -1694,6 +1926,13 @@ struct TestRegistry {
     uint64_t size;
     std::string md5;
   };
+  // A member taken out of a tar copy (packages.h DownloadMember).
+  struct Member {
+    std::string path;
+    std::wstring file;
+    uint64_t size;
+    std::string md5;
+  };
   struct Copy {
     std::string url;
     std::wstring file;
@@ -1701,6 +1940,7 @@ struct TestRegistry {
     std::string md5;
     std::string kind = "image";
     std::vector<Part> more = {};
+    std::vector<Member> members = {};
   };
   void downloads(const std::string& id, const std::vector<Copy>& copies) {
     std::vector<adw::import::Download> d;
@@ -1712,7 +1952,14 @@ struct TestRegistry {
         part_lists.push_back(std::move(parts));
         more = part_lists.back();
       }
-      d.push_back({keep(c.url), keep(c.file), c.size, keep(c.md5), keep(c.kind), more});
+      std::span<const adw::import::DownloadMember> members;
+      if (!c.members.empty()) {
+        std::vector<adw::import::DownloadMember> m;
+        for (const Member& q : c.members) m.push_back({keep(q.path), keep(q.file), q.size, keep(q.md5)});
+        member_lists.push_back(std::move(m));
+        members = member_lists.back();
+      }
+      d.push_back({keep(c.url), keep(c.file), c.size, keep(c.md5), keep(c.kind), more, members});
     }
     download_lists.push_back(std::move(d));
     get(id).downloads = download_lists.back();

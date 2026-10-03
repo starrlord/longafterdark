@@ -382,16 +382,11 @@ std::wstring window_text(HWND h) {
   return s;
 }
 
-std::string module_cvset(const State& st, const Module& m) {
-  // As the saver sends it: only values the user has set, clamped by the catalog.
-  std::map<int, int> cv;
-  if (auto it = st.controls.find(m.id); it != st.controls.end()) {
-    for (auto [idx, val] : it->second) {
-      if (const Control* c = m.control(idx); c && c->settable()) cv[idx] = c->clamp(val);
-    }
-  }
-  return format_cvset(cv);
-}
+// As the saver starts the module's host, from what the dialog shows, saved or
+// not: ADCVSET, only values the user has set, clamped by the catalog; the
+// host controls' variables (Intermission 4.0's Speed), at their defaults
+// when never set.
+HostControlValues module_values(const State& st, const Module& m) { return host_control_values(m, st.controls); }
 
 // ---- live preview -------------------------------------------------------------------
 
@@ -439,7 +434,11 @@ void refresh_preview(State& st) {
   t.host_exe = host_exe_path();
   t.module_path = resolve_module_path(st.win_dir, m.path);
   t.win_dir = st.win_dir;
-  t.cvset = module_cvset(st, m);
+  // A control moved changes these, and the preview starts the module again
+  // with the new values (same_target).
+  HostControlValues values = module_values(st, m);
+  t.cvset = std::move(values.cvset);
+  t.env = std::move(values.env);
   t.name = widen(m.name);
   // A thumbnail for the list, for a module that has no picture yet.
   if (!st.icons.has_picture(m, st.win_dir)) t.thumb_path = st.icons.thumb_path(m.id);
@@ -2440,8 +2439,9 @@ void schedule_thumbnails(State& st) {
       const Module& m = st.catalog.modules[mi];
       if (!is_present(st, mi) || run_state(st, m) != ModuleRun::runs) continue;
       if (st.icons.has_picture(m, st.win_dir)) continue;
+      HostControlValues values = module_values(st, m);
       jobs.push_back(ThumbJob{m.id, host, resolve_module_path(st.win_dir, m.path), st.win_dir, st.icons.thumb_path(m.id),
-                              module_cvset(st, m), m.abi, m.screen});
+                              std::move(values.cvset), m.abi, m.screen, std::move(values.env)});
     }
   }
   if (!st.probing) st.thumbgen_ran = true;
@@ -2617,13 +2617,16 @@ void start_configure(State& st, int module_index, int slot) {
   std::wstring err;
   const std::wstring path = resolve_module_path(st.win_dir, m.path);
   // The dialog's current values, unsaved edits included: the module's
-  // dialog starts from what the user sees here.
-  const std::string cvset = module_cvset(st, m);
+  // dialog starts from what the user sees here (its host controls' too, as
+  // every start of its host gets them).
+  const HostControlValues values = module_values(st, m);
+  const std::string& cvset = values.cvset;
   std::vector<std::pair<std::wstring, std::wstring>> env = {
       {L"AD_ASSETS_DIR", assets_root()},
       {L"ADCVSET", widen(cvset)},
       {L"ADSTATE", state_dir()},
   };
+  add_host_control_env(env, values.env);
   st.button_notes[m.id].erase(c.index);
   st.button_ok[m.id].erase(c.index);
   if (!tool->start(host_exe_path(), configure_args(path, c.index, (uintptr_t)st.dlg), env, &err)) {
@@ -2635,7 +2638,8 @@ void start_configure(State& st, int module_index, int slot) {
   st.configuring = true;
   st.configure_id = m.id;
   st.configure_slot = c.index;
-  log_line("dialog: configure %s button %d cvset=%s pid=%lu", m.id.c_str(), c.index, cvset.c_str(), tool->pid);
+  log_line("dialog: configure %s button %d cvset=%s pid=%lu%s%s", m.id.c_str(), c.index, cvset.c_str(), tool->pid,
+           values.env.empty() ? "" : " host=", describe_env(values.env).c_str());
   if (st.preview) live_preview_pause(st.preview, true);
   if (st.thumbgen) st.thumbgen->pause(true);
   EnableWindow(st.dlg, FALSE);
