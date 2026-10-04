@@ -169,6 +169,21 @@ struct Catalog {
 bool parse_catalog(const std::string& json_text, Catalog& out, std::string* error);
 bool load_catalog(const std::wstring& path, Catalog& out, std::string* error);
 
+// The module a name on the command line means (/window's /module, args.h),
+// by the rules of the Linux player's --module (scr/linux/catalog.h
+// resolve_module), so a name means the same module to both:
+//  1. an id, exactly (case-insensitive): "ad40.toasters";
+//  2. a catalog path, exactly (case-insensitive, either slash);
+//  3. a name, exactly (case-insensitive): the catalog's displayName or
+//     moduleName, or the name the settings window lists ("Flying Toasters!");
+//  4. the part of an id after its release: "toasters" for "ad40.toasters".
+// The first rule that matches decides; a rule that matches several modules
+// (Flying Toasters is in several releases) makes the name ambiguous: null,
+// with the candidates in *ambiguous, unless all but one of them are
+// byte-identical copies of that one (sameAs), which is then the module.
+// Nothing matching: null, none.
+const Module* resolve_module(const Catalog& c, const std::string& name, std::vector<const Module*>* ambiguous);
+
 // Whether a host control may name `name` (catalog `host`): one of the host's
 // own variables, "AD" and a capital letter or digit, then capitals, digits
 // and underscores ("ADNE16IMXSPEED"), and none of those the front end sets

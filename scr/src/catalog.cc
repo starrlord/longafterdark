@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <exception>
+#include <functional>
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
@@ -175,6 +176,55 @@ std::string describe_env(const std::vector<std::pair<std::wstring, std::wstring>
 
 const Module* Catalog::find(const std::string& id) const {
   for (const auto& m : modules) if (m.id == id) return &m;
+  return nullptr;
+}
+
+const Module* resolve_module(const Catalog& c, const std::string& name, std::vector<const Module*>* ambiguous) {
+  if (ambiguous) ambiguous->clear();
+  if (name.empty()) return nullptr;
+  auto path_of = [](std::string s) {
+    for (char& ch : s) if (ch == '\\') ch = '/';
+    return s;
+  };
+  const std::string want_path = path_of(name);
+  const std::function<bool(const Module&)> rules[] = {
+      [&](const Module& m) { return iequals(m.id, name); },
+      [&](const Module& m) { return iequals(path_of(m.path), want_path); },
+      [&](const Module& m) {
+        return iequals(m.display_name, name) || iequals(m.name, name) ||
+               (!m.module_name.empty() && iequals(m.module_name, name));
+      },
+      [&](const Module& m) {
+        const size_t dot = m.id.find('.');
+        return dot != std::string::npos && iequals(std::string_view(m.id).substr(dot + 1), name);
+      },
+  };
+  // The first rule that matches anything decides.
+  for (const auto& matches : rules) {
+    std::vector<const Module*> hits;
+    for (const Module& m : c.modules) {
+      if (matches(m)) hits.push_back(&m);
+    }
+    if (hits.empty()) continue;
+    if (hits.size() == 1) return hits[0];
+    // Several: when all but one are byte-identical copies of it (sameAs),
+    // they are one module, and the name means that one.
+    const Module* first = nullptr;
+    size_t originals = 0;
+    for (const Module* m : hits) {
+      if (m->same_as.empty()) {
+        ++originals;
+        first = m;
+      }
+    }
+    bool all_copies_of_first = originals == 1;
+    for (const Module* m : hits) {
+      if (all_copies_of_first && m != first && m->same_as != first->id) all_copies_of_first = false;
+    }
+    if (all_copies_of_first) return first;
+    if (ambiguous) *ambiguous = hits;
+    return nullptr;
+  }
   return nullptr;
 }
 

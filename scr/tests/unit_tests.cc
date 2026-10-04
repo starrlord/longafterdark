@@ -1,7 +1,7 @@
 // Unit tests for the window-free parts of LongAfterDark.scr.
 //   scr_unit <suite>… [--fakeimport <exe>]
 //     suites: args parser settings catalog geometry rotation convert env layout dialog ui input seed releases
-//     paths sound
+//     paths sound present window
 //     [--fakehost <exe>]  (ui: the lane probe runs against it)
 #include <windows.h>
 #include <shlobj.h>
@@ -37,6 +37,7 @@
 #include "settings.h"
 #include "sound.h"
 #include "ui_model.h"
+#include "window_mode.h"
 #include "adw/core/data_root.h"
 #include "adw/ui/theme.h"
 
@@ -116,6 +117,91 @@ void test_args() {
   // "/s 1234": a stray number after /s is harmless.
   a = A({L"/s", L"1234"});
   CHECK(a.mode == Mode::run && a.valid);
+  // None of these is an error.
+  for (auto* s : {L"", L"/s", L"/p:1234", L"/c", L"/a", L"/x", L"junk", L"/"}) CHECK(A({s}).error.empty());
+  // A word that only starts with a Windows switch's letter is not that switch.
+  CHECK(A({L"/start"}).mode == Mode::settings && A({L"/sizes"}).mode == Mode::settings);
+  CHECK(A({L"/coffee", L"/s"}).mode == Mode::run);
+
+  // /window and its options (args.h), in any order, '-' or "--" for '/'.
+  a = A({L"/window"});
+  CHECK(a.mode == Mode::window && a.error.empty() && a.width == 1280 && a.height == 720 && a.module.empty() &&
+        !a.random);
+  a = A({L"/window", L"/size", L"1920x1080", L"/random"});
+  CHECK(a.mode == Mode::window && a.error.empty() && a.width == 1920 && a.height == 1080 && a.random);
+  a = A({L"-RANDOM", L"--size=800X600", L"/Window", L"/module:ad40.toasters"});
+  CHECK(a.mode == Mode::window && a.error.empty() && a.width == 800 && a.height == 600 && a.random &&
+        a.module == L"ad40.toasters");
+  a = A({L"/window", L"/module", L"Flying Toasters!"});
+  CHECK(a.mode == Mode::window && a.error.empty() && a.module == L"Flying Toasters!" && !a.random);
+  a = A({L"/module=intermission.dragon", L"/window", L"/size", L"160x120"});
+  CHECK(a.error.empty() && a.module == L"intermission.dragon" && a.width == 160 && a.height == 120);
+  a = A({L"/window", L"/size:7680x4320"});
+  CHECK(a.error.empty() && a.width == 7680 && a.height == 4320);
+  // The same /size or /module twice is no conflict.
+  a = A({L"/window", L"/size:640x480", L"/size", L"640x480", L"/module", L"x", L"/module=x", L"/random", L"/random"});
+  CHECK(a.error.empty() && a.width == 640 && a.height == 480 && a.module == L"x" && a.random);
+
+  // What a user can get wrong: Args::error says what, in words.
+  auto error_has = [](std::initializer_list<const wchar_t*> v, const wchar_t* words) {
+    Args e = A(v);
+    const bool ok = !e.error.empty() && e.error.find(words) != std::wstring::npos;
+    if (!ok) fprintf(stderr, "  error: \"%ls\" (wanted \"%ls\")\n", e.error.c_str(), words);
+    return ok;
+  };
+  CHECK(error_has({L"/window", L"/size"}, L"/size needs the window's size"));
+  CHECK(error_has({L"/window", L"/size", L"/random"}, L"/size needs the window's size"));
+  CHECK(error_has({L"/window", L"/size", L"-1920x1080"}, L"/size needs the window's size"));
+  for (auto* bad : {L"big", L"1920", L"1920x", L"x1080", L"1920 x 1080", L"1920x1080x2", L"192000x1080",
+                    L"+1920x1080", L"19.2x10.8", L"0x0"}) {
+    if (std::wstring(bad) == L"0x0") {
+      CHECK(error_has({L"/window", L"/size", bad}, L"/size 0x0 is too small: 160x120 at least."));
+    } else {
+      CHECK(error_has({L"/window", L"/size", bad}, (std::wstring(L"not \"") + bad + L"\"").c_str()));
+    }
+  }
+  CHECK(error_has({L"/window", L"/size", L"159x120"}, L"/size 159x120 is too small: 160x120 at least."));
+  CHECK(error_has({L"/window", L"/size", L"160x119"}, L"too small"));
+  CHECK(error_has({L"/window", L"/size", L"7681x4320"}, L"/size 7681x4320 is too large: 7680x4320 at most."));
+  CHECK(error_has({L"/window", L"/size", L"7680x4321"}, L"too large"));
+  CHECK(error_has({L"/window", L"/size", L"800x600", L"/size", L"1024x768"}, L"One /size at a time (800x600 and 1024x768)."));
+  CHECK(error_has({L"/window", L"/module"}, L"/module needs a module"));
+  CHECK(error_has({L"/window", L"/module:"}, L"/module needs a module"));
+  CHECK(error_has({L"/window", L"/module", L"/random"}, L"/module needs a module"));
+  CHECK(error_has({L"/window", L"/module", L"a", L"-module", L"b"}, L"One module at a time (\"a\" and \"b\")."));
+  CHECK(error_has({L"/window", L"/module", L"Flying", L"Toasters!"}, L"\"Toasters!\" is not a switch"));
+  CHECK(error_has({L"/window", L"/sizes", L"1920x1080"}, L"There is no switch \"/sizes\"."));
+  CHECK(error_has({L"/window", L"--frobnicate"}, L"There is no switch \"--frobnicate\"."));
+  CHECK(error_has({L"/window:1"}, L"/window takes no value"));
+  CHECK(error_has({L"/window", L"/random=yes"}, L"/random takes no value"));
+  // The Windows switches are ways of running of their own.
+  CHECK(error_has({L"/window", L"/s"}, L"/window runs in a window, not as /s: leave one of them out."));
+  CHECK(error_has({L"/p", L"1234", L"/window"}, L"not as /p"));
+  CHECK(error_has({L"/c:99", L"/window"}, L"not as /c:99"));
+  // /window's options without it.
+  for (auto v : {std::vector<const wchar_t*>{L"/size", L"1920x1080"}, {L"/random"}, {L"/module", L"x"},
+                 {L"/s", L"/random"}}) {
+    std::vector<std::wstring> argv(v.begin(), v.end());
+    Args e = parse_args(argv);
+    CHECK(e.error.find(L"/size, /module and /random go with /window") != std::wstring::npos);
+  }
+
+  // /help and /? in any company: the usage, never an error.
+  for (auto* s : {L"/?", L"-?", L"/help", L"--help", L"/HELP"}) {
+    a = A({s});
+    CHECK(a.mode == Mode::help && a.error.empty());
+  }
+  a = A({L"/window", L"/size", L"bad", L"/?"});
+  CHECK(a.mode == Mode::help && a.error.empty());
+  CHECK(A({L"/s", L"/help"}).mode == Mode::help);
+  const std::wstring usage = usage_text();
+  for (auto* s : {L"/window", L"/size WxH", L"/module", L"/random", L"/s:", L"/c,", L"/p <window>", L"/a <window>",
+                  L"/help", L"/?", L"1280x720", L"160x120 to 7680x4320", L"LongAfterDark.exe /window /size 1920x1080 /random"}) {
+    CHECK(usage.find(s) != std::wstring::npos);
+  }
+  const std::wstring m = usage_message(L"Something is wrong.");
+  CHECK(m.rfind(L"Something is wrong.\n\n", 0) == 0 && m.find(L"/help says") != std::wstring::npos &&
+        m.size() < usage.size());
 }
 
 // ---- frame parser ------------------------------------------------------------------
@@ -4829,6 +4915,146 @@ void test_present() {
   CHECK(!render_frame_bgr(solid, 0, 8, RectI{0, 0, 8, 8}, false, Filter::smooth, bgr));
 }
 
+// ---- window mode (window_mode.h) ---------------------------------------------------
+
+void test_window() {
+  Catalog c;
+  std::string err;
+  // A name with a ')' in it: the raw string needs a delimiter of its own.
+  CHECK(parse_catalog(R"json({"version":1,"modules":[
+    {"id":"ad40.toasters","displayName":"Flying Toasters!","path":"FILES/AD40/TOASTERS.AD","lane":"pe32","package":"deluxe"},
+    {"id":"ad10.toasters","displayName":"Flying Toasters! (10th Anniversary)","moduleName":"Flying Toasters!",
+     "path":"packages/ad10/TOASTERS.AD","lane":"pe32","package":"ad10","sameAs":"ad40.toasters"},
+    {"id":"ad32.toaster3","displayName":"Flying Toasters Pro (After Dark 3.2)","moduleName":"Flying Toasters Pro",
+     "path":"packages/ad32/TOASTER3.AD","lane":"ne16","package":"ad32"},
+    {"id":"classic.toast3","displayName":"Flying Toasters Pro","path":"FILES/CLASSIC/TOAST3.AD","lane":"ne16",
+     "package":"deluxe"},
+    {"id":"intermission.dragon","displayName":"Dragon","path":"packages/intermission/DRAGON.IM","lane":"ne16",
+     "package":"intermission","abi":"intermission"},
+    {"id":"opus.dragon","displayName":"Opus's Dragon","path":"packages/opus/DRAGON.IM","lane":"ne16","package":"opus",
+     "abi":"intermission"}]})json",
+                      c, &err));
+  CHECK_EQ(c.modules.size(), (size_t)6);
+
+  // /module's name: the Linux player's rules (resolve_module).
+  std::vector<const Module*> several;
+  auto id_of = [&](const char* name) {
+    const Module* m = resolve_module(c, name, &several);
+    return m ? m->id : std::string("-");
+  };
+  CHECK_EQ(id_of("ad40.toasters"), std::string("ad40.toasters"));                   // 1. an id
+  CHECK_EQ(id_of("AD32.Toaster3"), std::string("ad32.toaster3"));
+  CHECK_EQ(id_of("packages\\ad32\\toaster3.ad"), std::string("ad32.toaster3"));    // 2. a path
+  CHECK_EQ(id_of("FILES/AD40/TOASTERS.AD"), std::string("ad40.toasters"));
+  // 3. a name: "Flying Toasters!" is the Deluxe module's name and the 10th
+  // Anniversary's moduleName, a byte-identical copy of it (sameAs): one module.
+  CHECK_EQ(id_of("flying toasters!"), std::string("ad40.toasters"));
+  CHECK(several.empty());
+  CHECK_EQ(id_of("Flying Toasters! (10th Anniversary)"), std::string("ad10.toasters"));
+  // ...and two modules that are not copies: ambiguous, the candidates listed.
+  CHECK_EQ(id_of("Flying Toasters Pro"), std::string("-"));
+  CHECK(several.size() == 2 && several[0]->id == "ad32.toaster3" && several[1]->id == "classic.toast3");
+  // A name comes before an id's last part ("dragon" would be two of those).
+  CHECK_EQ(id_of("dragon"), std::string("intermission.dragon"));
+  CHECK_EQ(id_of("Opus's Dragon"), std::string("opus.dragon"));
+  // 4. an id's last part: two toasters, one the other's copy.
+  CHECK_EQ(id_of("toasters"), std::string("ad40.toasters"));
+  CHECK_EQ(id_of("TOAST3"), std::string("classic.toast3"));
+  CHECK_EQ(id_of("toasters 2k"), std::string("-"));
+  CHECK(several.empty());
+  CHECK_EQ(id_of(""), std::string("-"));
+
+  // ...and what the user is told.
+  auto all = [](const std::string&) { return true; };
+  WindowModule wm = window_module(c, L"Flying Toasters!", all);
+  CHECK(wm.module && wm.module->id == "ad40.toasters" && wm.error.empty());
+  wm = window_module(c, L"flying toasters pro", all);
+  CHECK(!wm.module && wm.error == L"\"flying toasters pro\" names several modules (ad32.toaster3, classic.toast3): "
+                                  L"name one by its id, as in /module ad32.toaster3.");
+  wm = window_module(c, L"Bad Dog", all);
+  CHECK(!wm.module && wm.error == L"There is no module \"Bad Dog\" among the 6 imported. Name one by its id (such as "
+                                  L"ad40.toasters) or by its name as the settings window lists it (such as "
+                                  L"\"Flying Toasters!\").");
+  wm = window_module(c, L"dragon", [](const std::string& id) { return id != "intermission.dragon"; });
+  CHECK(!wm.module && wm.error == L"\"Dragon\" (intermission.dragon) is in the catalog, but its file is missing: "
+                                  L"import its release again.");
+  // The examples are of a name that means one module.
+  Catalog dogs;
+  CHECK(parse_catalog(R"({"modules":[{"id":"ad40.baddog","displayName":"Bad Dog!","path":"a"},
+    {"id":"ad32.baddog","displayName":"Bad Dog!","path":"b"},{"id":"ad32.boris","displayName":"Boris","path":"c"}]})",
+                      dogs, &err));
+  wm = window_module(dogs, L"Rex", all);
+  CHECK(wm.error.find(L"(such as ad32.boris)") != std::wstring::npos &&
+        wm.error.find(L"(such as \"Boris\")") != std::wstring::npos);
+  wm = window_module(Catalog{}, L"Dragon", all);
+  CHECK(!wm.module && wm.error.find(L"No release is imported yet, so there is no module \"Dragon\".") == 0);
+  // Two builds of one name in one release: the settings list's label
+  // ("Bad Dog! (Classic)") names the Classic one.
+  Catalog builds;
+  CHECK(parse_catalog(R"({"packages":[{"id":"ad40","title":"After Dark 4.0 Deluxe"}],"modules":[
+    {"id":"ad40.baddog","displayName":"Bad Dog!","lane":"pe32","path":"a","package":"ad40"},
+    {"id":"ad40.baddog3","displayName":"Bad Dog!","lane":"ne16","path":"b","package":"ad40"}]})",
+                      builds, &err));
+  wm = window_module(builds, L"Bad Dog! (Classic)", all);
+  CHECK(wm.module && wm.module->id == "ad40.baddog3" && wm.error.empty());
+  wm = window_module(builds, L"bad dog! (classic)", all);
+  CHECK(wm.module && wm.module->id == "ad40.baddog3");
+  wm = window_module(builds, L"Bad Dog!", all);
+  CHECK(!wm.module && wm.error.find(L"names several modules (ad40.baddog, ad40.baddog3)") != std::wstring::npos);
+
+  // What it plays (window_settings). The settings: one module chosen, with
+  // the Random checklist kept aside (RandomizeSaved).
+  Settings single;
+  single.module = "ad40.toasters";
+  single.randomize_saved = {"ad40.toasters", "intermission.dragon"};
+  single.duration_min = 2;
+  CHECK(window_settings(single, c, "", false) == single);   // neither: what /s plays
+  Settings w = window_settings(single, c, "opus.dragon", false);
+  CHECK(w.module == "opus.dragon" && w.randomize.empty() && !w.rotates());
+  w = window_settings(single, c, "", true);
+  CHECK(w.is_random() && w.randomize == single.randomize_saved && w.rotates() && w.duration_min == 2);
+  w = window_settings(single, c, "opus.dragon", true);
+  CHECK(w.module == "opus.dragon" && w.has_lead() && w.randomize == single.randomize_saved);
+  RotationPlan plan = effective_rotation(w, c);
+  CHECK(plan.lead == "opus.dragon" && plan.ids == std::vector<std::string>({"ad40.toasters", "intermission.dragon"}));
+  // Nothing checked (RandomizeSaved=-): every module.
+  Settings none = single;
+  none.randomize_saved.clear();
+  none.randomize_saved_none = true;
+  w = window_settings(none, c, "", true);
+  CHECK(w.is_random() && w.randomize.empty() && w.rotates());
+  w = window_settings(none, c, "opus.dragon", true);
+  CHECK(w.module == "opus.dragon" && w.randomize.size() == 6 && w.has_lead());
+  // The settings on Random with a list: /random keeps it; /module alone plays one.
+  Settings random;
+  random.randomize = {"classic.toast3", "opus.dragon"};
+  random.collections = {"deluxe"};
+  w = window_settings(random, c, "", true);
+  CHECK(w.is_random() && w.randomize == random.randomize && w.collections == random.collections);
+  w = window_settings(random, c, "intermission.dragon", false);
+  CHECK(w.module == "intermission.dragon" && w.randomize.empty() && !w.rotates());
+  // Every module checked (an empty list) with a lead: spelled out, in catalog order.
+  w = window_settings(Settings{}, c, "intermission.dragon", true);
+  CHECK(w.has_lead() && w.randomize.size() == 6 && w.randomize.front() == "ad40.toasters");
+
+  // The window's outer size: the client area in physical pixels whatever the
+  // DPI, inside a frame that scales (AdjustWindowRectExForDpi: the sizing
+  // border and its padding either side, the caption above).
+  for (UINT dpi : {96u, 144u}) {
+    const int side = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+    const int top = GetSystemMetricsForDpi(SM_CYCAPTION, dpi) + GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) +
+                    GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+    for (SizeI client : {SizeI{1920, 1080}, SizeI{1280, 720}, SizeI{160, 120}}) {
+      const SizeI outer = window_size_for_client(client, dpi);
+      CHECK_EQ(outer.w, client.w + 2 * side);
+      CHECK_EQ(outer.h, client.h + top + side);
+    }
+  }
+  const SizeI at100 = window_size_for_client({1920, 1080}, 96), at150 = window_size_for_client({1920, 1080}, 144);
+  CHECK(at100.w > 1920 && at100.h > 1080 && at150.w > at100.w && at150.h > at100.h);
+  CHECK(at150.w - 1920 < 1920 / 2);   // the frame scales, not the client area
+}
+
 int main(int argc, char** argv) {
   // Never the user's data folder: this process and every one it starts
   // resolve %LOCALAPPDATA% to a scratch base (data_root.h AD_LOCALAPPDATA),
@@ -4842,7 +5068,7 @@ int main(int argc, char** argv) {
       {"convert", test_convert},   {"env", test_env},         {"layout", test_layout},
       {"dialog", test_dialog},     {"ui", test_ui},           {"input", test_input},
       {"seed", test_seed},         {"releases", test_releases}, {"paths", test_paths},
-      {"sound", test_sound},       {"present", test_present},
+      {"sound", test_sound},       {"present", test_present}, {"window", test_window},
   };
   std::vector<std::string> run;
   for (int i = 1; i < argc; ++i) {

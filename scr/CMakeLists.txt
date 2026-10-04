@@ -21,6 +21,7 @@ add_library(adw_scr STATIC
   src/settings.cc
   src/sound.cc
   src/ui_model.cc
+  src/window_mode.cc
 )
 target_include_directories(adw_scr PUBLIC src)
 # The host status record (INTERACTION.md §3.4) is read through core's
@@ -95,6 +96,15 @@ set_source_files_properties(res/afterdark.rc PROPERTIES
 set_property(SOURCE res/afterdark.rc APPEND PROPERTY COMPILE_OPTIONS --codepage=65001)
 ad_scr_program(LongAfterDark LongAfterDark 0)
 ad_scr_program(LongAfterDarkTest LongAfterDark-test 1)
+# LongAfterDark.exe beside it: the same program under another name, which
+# package.sh ships too. Windows starts a .scr with /S and nothing else,
+# whatever follows its name (the scrfile association is "%1" /S: PowerShell,
+# a shortcut and Start-Process all go through it), so the switches a user
+# types (/window and the rest, src/args.h) reach the saver only as an .exe.
+add_custom_command(TARGET LongAfterDark POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:LongAfterDark>"
+          "$<TARGET_FILE_DIR:LongAfterDark>/LongAfterDark.exe"
+  VERBATIM)
 
 # ---- tests -----------------------------------------------------------------------
 add_executable(scr_fakehost tests/fakehost.cc)
@@ -119,7 +129,8 @@ target_include_directories(scr_smoke PRIVATE res)
 target_link_libraries(scr_smoke PRIVATE adw_scr adw_ui user32 gdi32 comctl32 windowscodecs ole32 oleaut32 dwmapi version)
 target_link_options(scr_smoke PRIVATE -municode)
 
-foreach(_t args parser settings catalog geometry rotation convert env layout input seed releases paths sound present)
+foreach(_t args parser settings catalog geometry rotation convert env layout input seed releases paths sound present
+           window)
   add_test(NAME scr_unit_${_t} COMMAND scr_unit ${_t})
 endforeach()
 # Starts fakeimport.exe the way the dialog starts adimport.exe.
@@ -153,7 +164,7 @@ foreach(_t run preview preview-parent-gone not-imported host-missing respawn sta
            config-buttons config-speed
            config-collections config-cover config-remove rotate-collections config-details data-root
            sound sound-wake config-sound present config-abi rotate-abi rotate-abi-wait screen-abi screen-field numlock
-           config-credit config-twelve rotate-monitors config-monitors config-stretch)
+           config-credit config-twelve rotate-monitors config-monitors config-stretch window)
   add_test(NAME scr_smoke_${_t} COMMAND scr_smoke ${_t} ${_smoke_args})
   set_tests_properties(scr_smoke_${_t} PROPERTIES LABELS gui SKIP_RETURN_CODE 77 TIMEOUT 90)
 endforeach()

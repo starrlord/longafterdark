@@ -45,6 +45,7 @@
 #include "settings.h"
 #include "sound.h"
 #include "ui_model.h"
+#include "window_mode.h"
 
 namespace fs = std::filesystem;
 using namespace adw::scr;
@@ -6899,6 +6900,179 @@ int test_e2e_sound(const Opts& o) {
   return 0;
 }
 
+// ---- window mode (window_mode.h) --------------------------------------------------
+
+// Process `pid`'s visible top-level window of class `cls`, or nullptr.
+HWND window_of(DWORD pid, const wchar_t* cls) {
+  struct Find { DWORD pid; const wchar_t* cls; HWND found; } f{pid, cls, nullptr};
+  EnumWindows([](HWND h, LPARAM lp) -> BOOL {
+    auto* f = reinterpret_cast<Find*>(lp);
+    DWORD p = 0;
+    GetWindowThreadProcessId(h, &p);
+    wchar_t cls[64] = {};
+    GetClassNameW(h, cls, 64);
+    if (p == f->pid && IsWindowVisible(h) && wcscmp(cls, f->cls) == 0) {
+      f->found = h;
+      return FALSE;
+    }
+    return TRUE;
+  }, reinterpret_cast<LPARAM>(&f));
+  return f.found;
+}
+
+std::wstring text_of(HWND h) {
+  std::wstring buf(4096, L'\0');
+  SendMessageW(h, WM_GETTEXT, buf.size(), (LPARAM)buf.data());   // marshalled across processes
+  buf.resize(wcslen(buf.c_str()));
+  return buf;
+}
+
+// /window (window_mode.h): an ordinary window titled "Long After Dark", of
+// a class of its own, with the client area /size asked for, which keys,
+// clicks, moves and a deactivation never end and its close button does,
+// taking its host with it. The host hears no Caps Lock (ADCAPS=0), and a new
+// shape gives an After Dark module a screen of that shape. Then /random,
+// rotating under the same title, and the command lines it refuses: a message
+// box says why (dismissed here), and no host starts.
+int test_window(const Opts& o) {
+  Work w = prepare(o, "window");
+  EnvList env = base_env(o, w);
+  env.push_back({L"AD_SCR_TEST_IGNORE_INPUT", L""});   // nothing may end it, whatever the input
+  int step = 0;
+  HWND win = nullptr;
+  ULONGLONG at = 0;
+  RunResult r = run_scr(o, L"/window /size 640x400 /module \"test stripes\"", env, 60000, [&](DWORD pid) {
+    if (step == 0) {
+      // The window, a second after its host started.
+      win = window_of(pid, kWindowModeClass);
+      if (!win || host_events(w, "start").empty()) return;
+      if (!at) at = GetTickCount64();
+      if (GetTickCount64() - at < 1000) return;
+      CHECK(text_of(win) == kWindowModeTitle);
+      RECT cr{};
+      GetClientRect(win, &cr);
+      if (cr.right != 640 || cr.bottom != 400) failf("client area %ldx%ld, not 640x400", cr.right, cr.bottom);
+      const LONG style = GetWindowLongW(win, GWL_STYLE), ex = GetWindowLongW(win, GWL_EXSTYLE);
+      CHECK((style & WS_OVERLAPPEDWINDOW) == WS_OVERLAPPEDWINDOW && !(style & WS_POPUP));
+      CHECK(!(ex & WS_EX_TOPMOST) && !(ex & WS_EX_TOOLWINDOW));
+      CHECK(GetWindow(win, GW_OWNER) == nullptr);   // a taskbar button of its own
+      CHECK(GetClassLongPtrW(win, GCLP_HICON) != 0);
+      // Input of every kind the full-screen saver ends at.
+      for (UINT vk : {(UINT)'A', (UINT)VK_SPACE, (UINT)VK_ESCAPE, (UINT)VK_CAPITAL, (UINT)VK_NUMLOCK}) {
+        PostMessageW(win, WM_KEYDOWN, vk, 1);
+        PostMessageW(win, WM_KEYUP, vk, 0xC0000001);
+      }
+      for (int i = 0; i < 5; ++i) PostMessageW(win, WM_MOUSEMOVE, 0, MAKELPARAM(10 + 100 * i, 10 + 70 * i));
+      PostMessageW(win, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(320, 200));
+      PostMessageW(win, WM_LBUTTONUP, 0, MAKELPARAM(320, 200));
+      PostMessageW(win, WM_MOUSEWHEEL, MAKEWPARAM(0, WHEEL_DELTA), MAKELPARAM(320, 200));
+      PostMessageW(win, WM_ACTIVATEAPP, FALSE, 0);
+      at = GetTickCount64();
+      step = 1;
+    } else if (step == 1) {
+      // Still there; then a 4:3 shape (the same frame around it).
+      if (GetTickCount64() - at < 1500) return;
+      CHECK(IsWindow(win) && IsWindowVisible(win));
+      CHECK(count_in_log(w.scr_log, "input:") == 0 && count_in_log(w.scr_log, "exit code") == 0);
+      RECT wr{}, cr{};
+      GetWindowRect(win, &wr);
+      GetClientRect(win, &cr);
+      SetWindowPos(win, nullptr, 0, 0, 640 + (wr.right - wr.left - cr.right), 480 + (wr.bottom - wr.top - cr.bottom),
+                   SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+      step = 2;
+    } else if (step == 2) {
+      // Its module starts again at 640x480 once the size has settled.
+      if (host_events(w, "start").size() < 2) return;
+      PostMessageW(win, WM_CLOSE, 0, 0);
+      step = 3;
+    }
+  });
+  if (!expect_exit(w, r, 0)) return 1;
+  CHECK(step == 3);
+  auto starts = host_events(w, "start");
+  CHECK(starts.size() == 2);
+  const SizeI wide = emulated_screen_size(640.0 / 400.0, 1.0);
+  for (size_t i = 0; i < starts.size(); ++i) {
+    auto& s = starts[i];
+    CHECK(ends_with(s["module"], "TESTSTRP.AD"));
+    CHECK(s["ADCAPS"] == "0");
+    CHECK(s["ADSEEDIMG"].empty());   // never a picture of the desktop
+    CHECK(s["ADSCREENW"] == std::to_string(i == 0 ? wide.w : 640) && s["ADSCREENH"] == "480");
+  }
+  CHECK(count_in_log(w.scr_log, "start /window") == 1);
+  CHECK(count_in_log(w.scr_log, "window: resized to 640x480; test.stripes starts again at 640x480") == 1);
+  CHECK(count_in_log(w.scr_log, "display: kept on (power request)") == 1);
+  CHECK(count_in_log(w.scr_log, "exit code=0 reason=WM_CLOSE") == 1);
+  CHECK(count_in_log(w.scr_log, "input:") == 0);
+  check_hosts_gone(w);
+  if (g_failures) dump_logs(w);
+
+  // /random: the settings' Random list in turn (AD_SCR_TEST_ROTATE_MS for its
+  // pace), the title the same throughout; 1280x720 unless /size says. Its
+  // hosts play the settings' sound, as /s's primary window's do (fakehost
+  // makes none).
+  Work w2 = prepare(o, "window-random");
+  edit_settings(w2, [](Settings& s) {
+    s.sound = true;
+    s.volume = 35;
+  });
+  EnvList env2 = base_env(o, w2);
+  env2.push_back({L"AD_SCR_TEST_ROTATE_MS", L"1200"});
+  env2.push_back({kSoundOverrideEnv, L""});
+  std::set<std::wstring> titles;
+  r = run_scr(o, L"-window --random", env2, 60000, [&](DWORD pid) {
+    HWND h = window_of(pid, kWindowModeClass);
+    if (!h) return;
+    titles.insert(text_of(h));
+    if (host_events(w2, "start").size() >= 3) PostMessageW(h, WM_CLOSE, 0, 0);
+  });
+  if (!expect_exit(w2, r, 0)) return 1;
+  starts = host_events(w2, "start");
+  CHECK(starts.size() >= 3);
+  std::set<std::string> played;
+  for (auto& s : starts) {
+    played.insert(s["module"].substr(s["module"].find_last_of("\\/") + 1));
+    CHECK(s["ADSCREENW"] == std::to_string(emulated_screen_size(1280.0 / 720.0, 1.0).w));
+    CHECK(s["ADSOUND"] == "1" && s["ADVOLUME"] == "35");
+  }
+  CHECK(played == std::set<std::string>({"TESTRING.AD", "TESTSTRP.AD"}));
+  CHECK(titles == std::set<std::wstring>({kWindowModeTitle}));
+  check_hosts_gone(w2);
+  if (g_failures) dump_logs(w2);
+
+  // What it refuses, in a message box, before any window or host.
+  struct Refusal {
+    const wchar_t* args;
+    const wchar_t* words;
+    DWORD code;
+  };
+  for (const Refusal& x : {Refusal{L"/window /size 10x10", L"/size 10x10 is too small: 160x120 at least.", 1},
+                           Refusal{L"/window /module \"Bad Dog\"", L"There is no module \"Bad Dog\" among the", 1},
+                           Refusal{L"/size 1920x1080", L"/size, /module and /random go with /window", 1},
+                           Refusal{L"/window /s", L"/window runs in a window, not as /s", 1},
+                           Refusal{L"/?", L"/window: in an ordinary window titled \"Long After Dark\"", 0}}) {
+    Work wx = prepare(o, "window-refused");
+    std::wstring said, title;
+    bool windowed = false;
+    r = run_scr(o, x.args, base_env(o, wx), 30000, [&](DWORD pid) {
+      if (window_of(pid, kWindowModeClass)) windowed = true;
+      HWND box = find_dialog(pid);
+      if (!box) return;
+      if (said.empty()) {
+        title = text_of(box);
+        said = text_of(GetDlgItem(box, 0xFFFF));   // a message box's text
+      }
+      // Its OK button, pressed as a user would (a bare WM_COMMAND is ignored).
+      if (HWND ok = FindWindowExW(box, nullptr, L"Button", nullptr)) PostMessageW(ok, BM_CLICK, 0, 0);
+    });
+    if (!expect_exit(wx, r, x.code)) continue;
+    if (said.find(x.words) == std::wstring::npos) failf("%ls: the message box said \"%ls\"", x.args, said.c_str());
+    CHECK(title == L"Long After Dark" && !windowed);
+    CHECK(host_events(wx, "start").empty());
+  }
+  return 0;
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv) {
@@ -6983,6 +7157,7 @@ int wmain(int argc, wchar_t** argv) {
       {L"sound", test_sound},
       {L"sound-wake", test_sound_wake},
       {L"config-sound", test_config_sound},
+      {L"window", test_window},
   };
   // Nothing started from here may touch the user's data folder: whatever a
   // test leaves to the defaults lands in a scratch base.

@@ -4,6 +4,7 @@
 #include <wtsapi32.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -29,6 +30,7 @@
 #include "settings.h"
 #include "sound.h"
 #include "test_hooks.h"
+#include "window_mode.h"
 
 namespace adw::scr {
 
@@ -44,6 +46,14 @@ constexpr UINT WM_APP_TESTEXIT = WM_APP + 3;
 // saver's thread rather than to a window: a relayout may retire any window,
 // the first one included, and a message queued for it goes with it.
 constexpr UINT WM_APP_CAPS = WM_APP + 4;
+// The one answer the probe thread posted (App::run probes once a run): a
+// WM_APP_CAPS whose lParam is anything else (another program's broadcast)
+// is not ours and is never freed.
+std::atomic<LPARAM> g_caps_posted{0};
+bool take_caps_post(LPARAM lp) {
+  LPARAM expected = lp;
+  return lp != 0 && g_caps_posted.compare_exchange_strong(expected, 0);
+}
 // The longest the first hosts wait for that answer, when Random needs it
 // (App::caps_gate): past it, the rotation keeps every module.
 constexpr UINT kCapsWaitMs = 2000;
@@ -51,10 +61,14 @@ constexpr UINT_PTR kTimerWatchdog = 1;
 constexpr UINT_PTR kTimerRotate = 2;
 constexpr UINT_PTR kTimerTestDisplay = 3;
 constexpr UINT_PTR kTimerRotateRetry = 4;
+constexpr UINT_PTR kTimerResized = 5;
 // Windows sends WM_DISPLAYCHANGE in bursts while it reconfigures (to every
 // top-level window, often for several intermediate modes); the windows are
 // re-planned once it has been quiet this long.
 constexpr UINT kRelayoutSettleMs = 500;
+// A /window window whose size stopped changing this long ago (a drag, a
+// maximize) gets a new emulated screen if its shape asks for one.
+constexpr UINT kResizeSettleMs = 500;
 // Caps Lock (and Num Lock, for a host that keeps it) is re-checked this often
 // (INTERACTION.md §4.1), and the input owner's status with it.
 constexpr UINT kCapsCheckMs = 250;
@@ -214,6 +228,8 @@ class SaverWindow {
 
   bool create_fullscreen(const RECT& rc);
   bool create_preview(HWND parent);
+  // /window: an ordinary window with a client area of `client` physical pixels.
+  bool create_windowed(SizeI client);
   void start();
   // Builds the rotation (or, when every monitor follows one, joins it) and
   // starts the first host; start() does it at once unless the App still
@@ -287,6 +303,11 @@ class SaverWindow {
   // The screen a host of module `m` gets in this window (null: a module not
   // known yet): module_screen's rule on its monitor, or /p's 320x240.
   ModuleScreen screen_for(const Module* m) const;
+  // /window: its client area is now `w` x `h`; resize_settled() once that
+  // has lasted kResizeSettleMs.
+  void resized(int w, int h);
+  void resize_settled();
+  LRESULT handle_windowed(UINT msg, WPARAM wp, LPARAM lp, bool* handled);
   void spawn();
   void watchdog();
   void rotate();
@@ -309,7 +330,7 @@ class SaverWindow {
   bool runs_host_;
   std::wstring message_;
   HWND parent_ = nullptr;          // preview only
-  RECT rc_{};                      // full screen: the monitor it covers
+  RECT rc_{};                      // full screen: the monitor it covers; /window: its client area
   bool retiring_ = false;          // being destroyed by a relayout, not by an exit
   double aspect_ = 4.0 / 3.0;
   // What it plays: a rotation of its own (DifferentPerMonitor, or the one
@@ -385,7 +406,8 @@ struct PendingHold {
 
 class App {
  public:
-  App(const Args& a, HINSTANCE hi) : args(a), hinst(hi), preview(a.mode == Mode::preview) {}
+  App(const Args& a, HINSTANCE hi)
+      : args(a), hinst(hi), preview(a.mode == Mode::preview), windowed(a.mode == Mode::window) {}
   int run();
   // Never blocks: it can run inside a message another thread is waiting on
   // (a /p child's WM_DESTROY is sent by the control panel's DestroyWindow,
@@ -405,6 +427,8 @@ class App {
 
   // ---- input (INTERACTION.md §4) ----
   // The input owner: the primary monitor's window (the first in /s order).
+  // /window's one window is its owner too, for its sound alone: no input
+  // ever reaches its host (handle_windowed).
   SaverWindow* owner() const { return preview || windows.empty() ? nullptr : windows.front().get(); }
   OwnerStatus owner_status() const;
   void on_key(int vk, bool down, bool sys);
@@ -453,6 +477,13 @@ class App {
   Args args;
   HINSTANCE hinst;
   bool preview;
+  // /window (window_mode.h): one ordinary window that only its close button
+  // (or Alt+F4) ends. No input wakes it, the cursor stays, nothing is
+  // clipped, Caps Lock and Num Lock do nothing (every host starts with both
+  // off and hears neither), and the display is kept awake while it is open.
+  bool windowed;
+  HANDLE awake = nullptr;                  // /window's power request (keep_awake)
+  bool awake_legacy = false;               // ...or SetThreadExecutionState's, when none could be made
   Hooks hooks;
   Settings settings;
   Catalog catalog;
@@ -541,6 +572,10 @@ class App {
 
  private:
   bool load();
+  // /window's /module and /random over the settings just read (window_settings).
+  // False when /module names nothing it can play: a message box said why.
+  bool window_choice();
+  void keep_awake(bool on);
   void capture_seeds(const std::vector<Monitor>& mons);
   void start_input();
   void evaluate(const InputEvent& ev, uint64_t n, long dx = 0, long dy = 0);
@@ -598,6 +633,62 @@ bool SaverWindow::create_preview(HWND parent) {
   CreateWindowExW(0, kClassName, L"Long After Dark preview", WS_CHILD | WS_VISIBLE, 0, 0, rc.right, rc.bottom, parent,
                   nullptr, app_.hinst, this);
   return hwnd != nullptr;
+}
+
+bool SaverWindow::create_windowed(SizeI client) {
+  rc_ = {0, 0, client.w, client.h};
+  aspect_ = (double)client.w / client.h;
+  // Made hidden at the system DPI's size, then sized again for the DPI of
+  // the monitor Windows placed it on (the frame scales, the client area
+  // keeps its pixels). The second time also lets it outgrow that monitor:
+  // its WM_GETMINMAXINFO, which allows that, isn't ours during creation.
+  const SizeI first = window_size_for_client(client, GetDpiForSystem());
+  CreateWindowExW(kWindowModeExStyle, kWindowModeClass, kWindowModeTitle, kWindowModeStyle, CW_USEDEFAULT, CW_USEDEFAULT,
+                  first.w, first.h, nullptr, nullptr, app_.hinst, this);
+  if (!hwnd) return false;
+  const SizeI outer = window_size_for_client(client, GetDpiForWindow(hwnd));
+  SetWindowPos(hwnd, nullptr, 0, 0, outer.w, outer.h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+  RECT cr{};
+  GetClientRect(hwnd, &cr);
+  last_log("window: client %ldx%ld (asked %dx%d) at %u dpi, outer %dx%d", cr.right, cr.bottom, client.w, client.h,
+           GetDpiForWindow(hwnd), outer.w, outer.h);
+  // SW_SHOWDEFAULT: as a shortcut's "Run" says (normal, minimized, maximized).
+  ShowWindow(hwnd, SW_SHOWDEFAULT);
+  return true;
+}
+
+void SaverWindow::resized(int w, int h) {
+  if (w <= 0 || h <= 0) return;
+  if (rc_.right == w && rc_.bottom == h) return;
+  rc_ = {0, 0, w, h};
+  aspect_ = (double)w / h;
+  // New letterbox, and a new upscale factor for the HALFTONE budget to judge.
+  last_fit_ = {-1, -1, -1, -1};
+  halftone_upscale_ = true;
+  halftone_samples_ = 0;
+  halftone_ms_ = 0;
+  InvalidateRect(hwnd, nullptr, FALSE);
+  // While the size changes, the host's frames are only scaled to it.
+  if (host_) SetTimer(hwnd, kTimerResized, kResizeSettleMs, nullptr);
+}
+
+// The size has settled: a host whose emulated screen this window's shape
+// would no longer give its module (an After Dark module's follows the
+// shape, as a monitor's does: emulated_screen_size) starts again at the new
+// one; a module with a screen of its own (640x480) never does.
+void SaverWindow::resize_settled() {
+  KillTimer(hwnd, kTimerResized);
+  if (!host_ || !rotation_ || rotation_->empty() || app_.exiting) return;
+  const ModuleScreen now = screen_for(app_.catalog.find(rotation_->current()));
+  if (now == screen_) return;
+  last_log("window: resized to %ldx%ld; %s starts again at %dx%d (was %dx%d)", rc_.right, rc_.bottom,
+           rotation_->current().c_str(), now.emu.w, now.emu.h, screen_.emu.w, screen_.emu.h);
+  kill_host(false);
+  if (current_) current_.reset();
+  InvalidateRect(hwnd, nullptr, FALSE);
+  failures_ = 0;
+  respawn_pending_ = false;
+  spawn();
 }
 
 void SaverWindow::start() {
@@ -677,7 +768,8 @@ ModuleScreen SaverWindow::screen_for(const Module* m) const {
   // too, as it does a 4:3 monitor.
   if (app_.preview) return ModuleScreen{{320, 240}, true};
   // Its own screen when it has one (its catalog "screen", or its ABI's),
-  // else the Resolution setting on this monitor.
+  // else the Resolution setting on this monitor (/window: on its client
+  // area's shape, as on a monitor of that shape).
   return module_screen(m ? own_screen(m->abi, m->screen) : SizeI{}, aspect_, app_.settings.scale);
 }
 
@@ -1022,8 +1114,10 @@ void SaverWindow::present_latest() {
   }
   auto t0 = Clock::now();
   bool halftone_up = false;
-  const bool via_d2d = present_d2d(*f);
-  if (!via_d2d) {
+  // A minimized /window draws nothing; it keeps the frame for when it is back.
+  const bool shown = !(app_.windowed && IsIconic(hwnd));
+  const bool via_d2d = shown && present_d2d(*f);
+  if (!via_d2d && shown) {
     if (HDC dc = GetDC(hwnd)) {
       halftone_up = paint_frame(dc, *f, false);
       ReleaseDC(hwnd, dc);
@@ -1208,8 +1302,59 @@ void SaverWindow::draw_message(HDC dc, const std::wstring& text) {
   DeleteObject(font);
 }
 
+// /window: an ordinary window. Its keys, clicks and moves go where any
+// window's go (DefWindowProc: Alt+F4 closes it, Alt opens its system menu)
+// and never to the host, and nothing about the session or the display ends it.
+LRESULT SaverWindow::handle_windowed(UINT msg, WPARAM wp, LPARAM lp, bool* handled) {
+  *handled = true;
+  switch (msg) {
+    case WM_SIZE:
+      if (wp != SIZE_MINIMIZED) resized(LOWORD(lp), HIWORD(lp));
+      return 0;
+    case WM_GETMINMAXINFO: {
+      // /size's limits, at this DPI: a client area larger than the monitor
+      // (OBS captures all of it) is fine, which Windows' own limit is not.
+      auto* mm = reinterpret_cast<MINMAXINFO*>(lp);
+      const UINT dpi = GetDpiForWindow(hwnd);
+      const SizeI lo = window_size_for_client({kWindowMinW, kWindowMinH}, dpi);
+      const SizeI hi = window_size_for_client({kWindowMaxW, kWindowMaxH}, dpi);
+      mm->ptMinTrackSize = {lo.w, lo.h};
+      mm->ptMaxTrackSize = {hi.w, hi.h};
+      return 0;
+    }
+    case WM_GETDPISCALEDSIZE: {
+      // Dragged onto a monitor of another DPI: the frame takes its scale,
+      // the client area keeps its pixels (WM_DPICHANGED then applies this).
+      RECT cr{};
+      GetClientRect(hwnd, &cr);
+      const SizeI outer = window_size_for_client({(int)cr.right, (int)cr.bottom}, (UINT)wp);
+      auto* sz = reinterpret_cast<SIZE*>(lp);
+      sz->cx = outer.w;
+      sz->cy = outer.h;
+      return TRUE;
+    }
+    case WM_DPICHANGED: {
+      const RECT* r = reinterpret_cast<const RECT*>(lp);
+      SetWindowPos(hwnd, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+      return 0;
+    }
+    case WM_SYSCOMMAND:
+      // The screen saver never starts over it (the power request keeps it
+      // from starting anyway: App::keep_awake).
+      if ((wp & 0xFFF0) == SC_SCREENSAVE) return 0;
+      break;
+  }
+  *handled = false;
+  return 0;
+}
+
 LRESULT SaverWindow::handle(UINT msg, WPARAM wp, LPARAM lp) {
-  if (!app_.preview) {
+  if (app_.windowed) {
+    bool handled = false;
+    const LRESULT r = handle_windowed(msg, wp, lp, &handled);
+    if (handled) return r;
+  } else if (!app_.preview) {
     // Real input is ignored while a test script drives the rules.
     const bool real_input = !app_.scripted();
     switch (msg) {
@@ -1332,17 +1477,29 @@ LRESULT SaverWindow::handle(UINT msg, WPARAM wp, LPARAM lp) {
       } else if (wp == kTimerTestDisplay) {
         KillTimer(hwnd, kTimerTestDisplay);
         app_.set_display_on(true);
+      } else if (wp == kTimerResized) {
+        resize_settled();
       }
       return 0;
+    case WM_APP_CAPS: {
+      // /window's: posted to its window, which a sizing loop keeps
+      // dispatching to, where it would drop a thread message (App::run).
+      MSG m{};
+      m.message = msg;
+      m.lParam = lp;
+      app_.on_thread_message(m);
+      return 0;
+    }
     case WM_CLOSE:
       app_.request_exit(kExitOk, "WM_CLOSE");
       return 0;
     case WM_DESTROY:
-      if (!parent_) WTSUnRegisterSessionNotification(hwnd);
+      if (!parent_ && !app_.windowed) WTSUnRegisterSessionNotification(hwnd);
       KillTimer(hwnd, kTimerWatchdog);
       KillTimer(hwnd, kTimerRotate);
       KillTimer(hwnd, kTimerRotateRetry);
       KillTimer(hwnd, kTimerTestDisplay);
+      KillTimer(hwnd, kTimerResized);
       hwnd = nullptr;
       // A preview dies with the control panel's window; that ends us too.
       // A monitor that went away only ends its own window.
@@ -1386,7 +1543,8 @@ bool App::load() {
                       : L"The Long After Dark host (adhostwin.exe) is missing — it belongs next to LongAfterDark.scr.";
     message_code = kExitHostMissing;
   }
-  log_line("mode=%s catalog=%s modules=%zu available=%zu host=%s module=%s", preview ? "preview" : "run",
+  log_line("mode=%s catalog=%s modules=%zu available=%zu host=%s module=%s",
+           preview ? "preview" : windowed ? "window" : "run",
            narrow(catalog_path()).c_str(), catalog.modules.size(), available.size(), narrow(host_exe).c_str(),
            settings.module.c_str());
   if (!hooks.input_script.empty()) {
@@ -1480,18 +1638,20 @@ int App::run() {
   hooks = read_hooks();
   sound_forced_off = adw::scr::sound_forced_off();
   load();
+  if (windowed && !window_choice()) return kExitBadArgs;
   seed = hooks.seed >= 0 ? (uint32_t)hooks.seed : (uint32_t)GetTickCount64() ^ (GetCurrentProcessId() << 16);
   // Random plays the same module on every monitor unless DifferentPerMonitor
-  // gives each one a rotation of its own.
-  shared = settings.rotates() && !settings.different_per_monitor;
+  // gives each one a rotation of its own. /window's one window has its own,
+  // on a timer of its window's (which a sizing loop keeps delivering).
+  shared = settings.rotates() && !settings.different_per_monitor && !windowed;
 
   WNDCLASSEXW wc{};
   wc.cbSize = sizeof(wc);
   wc.lpfnWndProc = wndproc;
   wc.hInstance = hinst;
-  wc.hIcon = LoadIconW(hinst, MAKEINTRESOURCEW(100));
-  wc.hCursor = preview ? LoadCursorW(nullptr, IDC_ARROW) : nullptr;
-  wc.lpszClassName = kClassName;
+  wc.hIcon = LoadIconW(hinst, MAKEINTRESOURCEW(100));   // its caption and taskbar button take the small size from it
+  wc.hCursor = preview || windowed ? LoadCursorW(nullptr, IDC_ARROW) : nullptr;
+  wc.lpszClassName = windowed ? kWindowModeClass : kClassName;
   RegisterClassExW(&wc);
 
   job = create_kill_on_close_job();
@@ -1508,6 +1668,23 @@ int App::run() {
     auto w = std::make_unique<SaverWindow>(*this, 0, ok_host, message);
     if (!w->create_preview(parent)) return kExitBadArgs;
     windows.push_back(std::move(w));
+  } else if (windowed) {
+    // No last-exit log (that is /s's, and several windows may be open at
+    // once): AD_SCR_LOG has these lines.
+    last_log("start /window build=%s %s size=%dx%d module=%s rotates=%d available=%zu/%zu host=%s settings=%s "
+             "state=%s",
+             __DATE__, __TIME__, args.width, args.height, settings.module.c_str(), settings.rotates() ? 1 : 0,
+             available.size(), catalog.modules.size(), narrow(host_exe).c_str(), narrow(settings_path()).c_str(),
+             narrow(state_dir()).c_str());
+    if (sound_forced_off) last_log("sound: off (AD_SCR_SOUND=0)");
+    else if (!settings.sound) last_log("sound: off (Sound=0)");
+    else last_log("sound: volume %d", std::clamp(settings.volume, 0, 100));
+    // Every module starts on black: never on a picture of the desktop (§8),
+    // which a stream would show.
+    auto w = std::make_unique<SaverWindow>(*this, next_window_index++, ok_host, message);
+    if (!w->create_windowed({args.width, args.height})) return kExitBadArgs;
+    windows.push_back(std::move(w));
+    keep_awake(true);
   } else {
     // The last-exit log (INTERACTION.md §9.1): always on, one per /s run.
     last_log_open(last_exit_log_path());
@@ -1552,10 +1729,17 @@ int App::run() {
   // the windows may be gone or new by then.
   if (message.empty() && (!preview || caps_gate)) {
     const DWORD to = GetCurrentThreadId();
+    // /window's one window lives as long as the run: the answer goes to it
+    // (handle), so a sizing loop can't drop it.
+    const HWND to_window = windowed ? windows.front()->hwnd : nullptr;
     std::wstring exe = host_exe;
-    std::thread([to, exe] {
+    std::thread([to, to_window, exe] {
       auto* caps = new HostCapabilities(probe_capabilities(exe, 5000));
-      if (!PostThreadMessageW(to, WM_APP_CAPS, 0, reinterpret_cast<LPARAM>(caps))) delete caps;
+      const LPARAM lp = reinterpret_cast<LPARAM>(caps);
+      g_caps_posted.store(lp);
+      if (!(to_window ? PostMessageW(to_window, WM_APP_CAPS, 0, lp) : PostThreadMessageW(to, WM_APP_CAPS, 0, lp))) {
+        if (take_caps_post(lp)) delete caps;
+      }
     }).detach();
   }
   if (caps_gate) {
@@ -1573,8 +1757,64 @@ int App::run() {
   }
   request_exit(exit_code);   // no-op unless the loop ended some other way
   teardown();
-  if (!preview && !cursor_visible) ShowCursor(TRUE);
+  if (!preview && !windowed && !cursor_visible) ShowCursor(TRUE);
   return exit_code;
+}
+
+bool App::window_choice() {
+  std::string id;
+  if (!args.module.empty()) {
+    const WindowModule m = window_module(catalog, args.module, [this](const std::string& x) { return is_available(x); });
+    if (!m.module) {
+      log_line("window: /module %s: %s", narrow(args.module).c_str(), narrow(m.error).c_str());
+      show_usage(m.error);
+      return false;
+    }
+    id = m.module->id;
+  }
+  settings = window_settings(settings, catalog, id, args.random);
+  log_line("window: module=%s randomize=%zu rotates=%d (/module %s, /random %d)", settings.module.c_str(),
+           settings.randomize.size(), settings.rotates() ? 1 : 0, id.empty() ? "-" : id.c_str(), args.random ? 1 : 0);
+  return true;
+}
+
+// /window keeps the display on while it is open, as a video player does: a
+// "be right back" screen must not let the monitor sleep, nor the screen
+// saver start or the session lock on their own over it. A power request
+// (powercfg /requests lists it, with this reason) for the display, whose
+// effects Windows documents (POWER_REQUEST_TYPE: the display stays on, no
+// screen saver starts and the session doesn't lock after a while without
+// input), and for the system (no sleep). SetThreadExecutionState asks the
+// same where the request can't be made. Win+L, the power button and a
+// closed lid still do what they do.
+void App::keep_awake(bool on) {
+  if (on) {
+    REASON_CONTEXT why{};
+    why.Version = POWER_REQUEST_CONTEXT_VERSION;
+    why.Flags = POWER_REQUEST_CONTEXT_SIMPLE_STRING;
+    why.Reason.SimpleReasonString = const_cast<LPWSTR>(L"Long After Dark is showing in a window (/window)");
+    awake = PowerCreateRequest(&why);
+    if (awake == INVALID_HANDLE_VALUE) awake = nullptr;
+    if (awake && PowerSetRequest(awake, PowerRequestDisplayRequired) &&
+        PowerSetRequest(awake, PowerRequestSystemRequired)) {
+      last_log("display: kept on (power request)");
+      return;
+    }
+    const DWORD err = GetLastError();
+    if (awake) CloseHandle(awake);   // closing it clears whatever it set
+    awake = nullptr;
+    awake_legacy = SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED) != 0;
+    last_log("display: power request failed (%lu); SetThreadExecutionState %s", err, awake_legacy ? "ok" : "failed");
+    return;
+  }
+  if (awake) {
+    PowerClearRequest(awake, PowerRequestDisplayRequired);
+    PowerClearRequest(awake, PowerRequestSystemRequired);
+    CloseHandle(awake);
+    awake = nullptr;
+  }
+  if (awake_legacy) SetThreadExecutionState(ES_CONTINUOUS);
+  awake_legacy = false;
 }
 
 void App::request_exit(int code, const char* why) {
@@ -1587,6 +1827,7 @@ void App::request_exit(int code, const char* why) {
     UnregisterPowerSettingNotification(power_notify);
     power_notify = nullptr;
   }
+  if (windowed) keep_awake(false);
   if (clip_active) {
     ClipCursor(nullptr);
     clip_active = false;
@@ -1674,7 +1915,7 @@ RotationStart App::rotation_start() {
     for (const auto& id : effective_collections(s.collections, catalog)) f += (f.empty() ? "" : ",") + id;
     log_line("rotation: %zu module(s), collections=%s", r.ids.size(), f.empty() ? "all" : f.c_str());
     if (h.left_out) last_log("rotation: left out %zu module(s) this host can't run", h.left_out);
-    if (!preview) {
+    if (!preview && !windowed) {
       last_log("rotation: %s", shared ? "the same module on every monitor, switching together"
                                       : "a different module on each monitor (DifferentPerMonitor=1)");
     }
@@ -1783,8 +2024,9 @@ bool App::on_thread_message(const MSG& msg) {
     // The probe's answer (App::run): no window of ours is its target, so a
     // relayout can't lose it. (A modal loop would drop a thread message; the
     // saver runs none.)
+    if (!take_caps_post(msg.lParam)) return true;   // not the probe's: leave it alone
     std::unique_ptr<HostCapabilities> caps(reinterpret_cast<HostCapabilities*>(msg.lParam));
-    if (caps) on_capabilities(*caps);
+    on_capabilities(*caps);
     return true;
   }
   if (msg.message != WM_TIMER) return false;
@@ -1954,11 +2196,13 @@ void App::start_input() {
 }
 
 int App::caps_toggle() const {
+  if (windowed) return 0;   // no games in a window: every module starts as if it were off
   if (scripted()) return synthetic_caps;
   return (GetKeyState(VK_CAPITAL) & 1) ? 1 : 0;
 }
 
 int App::numlock_toggle() const {
+  if (windowed) return 0;
   if (scripted()) return synthetic_numlock;
   return (GetKeyState(VK_NUMLOCK) & 1) ? 1 : 0;
 }
@@ -1976,6 +2220,7 @@ OwnerStatus App::owner_status() const {
 }
 
 bool App::owner_playing_no_rotate() const {
+  if (windowed) return false;   // nobody plays: the rotation keeps time
   OwnerStatus st = owner_status();
   return st.interactive() && !st.rotate_ok();
 }
@@ -2013,7 +2258,7 @@ void App::evaluate(const InputEvent& ev, uint64_t n, long dx, long dy) {
 }
 
 void App::check_caps() {
-  if (exiting) return;
+  if (exiting || windowed) return;   // /window: its hosts hear no input
   SaverWindow* o = owner();
   if (!o || !o->host()) return;
   const int now = caps_toggle();
@@ -2028,7 +2273,7 @@ void App::check_caps() {
 void App::check_numlock() {
   // Only a host that numbers NUMLOCK lines hears one: another would leave the
   // input lines' numbers behind the saver's count (dialog_support.h).
-  if (exiting || !host_caps.takes_numlock_lines()) return;
+  if (exiting || windowed || !host_caps.takes_numlock_lines()) return;
   SaverWindow* o = owner();
   if (!o || !o->host()) return;
   const int now = numlock_toggle();
@@ -2145,7 +2390,9 @@ void App::update_cursor(const OwnerStatus& st) {
 void App::on_cursor(HWND) { SetCursor(cursor_visible ? LoadCursorW(nullptr, IDC_ARROW) : nullptr); }
 
 void App::poll_status() {
-  if (preview || exiting) return;
+  // /window never ends but by its close button: not even when a module asks
+  // to wake the saver (ADWS_WAKE).
+  if (preview || windowed || exiting) return;
   SaverWindow* o = owner();
   OwnerStatus st = owner_status();
   if (st.wake()) {
@@ -2290,6 +2537,13 @@ int run_saver(const Args& args, void* hinstance) {
   if (args.mode == Mode::preview && !args.valid) return kExitBadArgs;
   App app(args, static_cast<HINSTANCE>(hinstance));
   return app.run();
+}
+
+void show_usage(const std::wstring& problem) {
+  if (!problem.empty()) log_line("usage: %s", narrow(problem).c_str());
+  const std::wstring text = problem.empty() ? usage_text() : usage_message(problem);
+  MessageBoxW(nullptr, text.c_str(), L"Long After Dark",
+              MB_OK | MB_SETFOREGROUND | (problem.empty() ? MB_ICONINFORMATION : MB_ICONERROR));
 }
 
 } // namespace adw::scr
