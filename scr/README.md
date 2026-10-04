@@ -55,7 +55,8 @@ there makes it), and with `AD_SETTINGS` and `AD_ASSETS_DIR` both set the
 saver keeps nothing there.
 
 **Names.** The saver's windows are of class `LongAfterDarkSaver` (the `/s`
-and `/p` windows), `LongAfterDarkLivePreview` and
+and `/p` windows), `LongAfterDarkWindow` (the `/window` window, **Window
+mode**), `LongAfterDarkLivePreview` and
 `LongAfterDarkThumbnailQueue`; its temporary files are
 `%TEMP%\LongAfterDark-preview-<pid>.ini` and the desktop captures,
 `%TEMP%\LongAfterDark-seed-<pid>-<window>.ppm` for a window that may start
@@ -68,8 +69,11 @@ desktop**).
 
 ## Command line
 
-These are the standard screen saver switches. Case doesn't matter, `-` works
-like `/`, and the window handle can be written as `/p 1234`, `/p:1234` or `/p1234`.
+The standard screen saver switches, and Long After Dark's own for **Window
+mode** (`src/args.h`). Case doesn't matter, `-` works like `/` (and `--`
+for the long ones), and the window handle can be written as `/p 1234`,
+`/p:1234` or `/p1234`. The first of `/s`, `/p`, `/c` and `/a` decides; a
+word that merely starts with one of their letters (`/start`) is none of them.
 
 | Switch | What it does |
 |---|---|
@@ -77,6 +81,31 @@ like `/`, and the window handle can be written as `/p 1234`, `/p:1234` or `/p123
 | `/p <HWND>` | Live preview inside that window at 320×240 (for every module: see **Emulated screen**). It exits when the window goes away. |
 | `/c[:HWND]` or nothing | Opens the settings dialog. |
 | `/a` | Ignored (Windows 9x password change). |
+| `/window` | **Window mode**: an ordinary window instead of the full screen. |
+| `/size WxH` | With `/window`: its client area in physical pixels, 160×120 to 7680×4320 (default 1280×720). |
+| `/module <id or name>` | With `/window`: that module, by id or by name as the settings dialog lists it; a name several releases share needs the id, which the message box lists (**Window mode**). |
+| `/random` | With `/window`: the settings' Random rotation, after `/module`'s module if there is one. |
+| `/help`, `/?` | A message box with the usage of every switch; exits 0. |
+
+`/size` and `/module` take their value after a space, `:` or `=`;
+`/window` and `/random` take none. They go in any order. Without
+`/window`, `/size`, `/module` and `/random` are an error; with it, so are
+`/s`, `/p`, `/c` and `/a`, an unknown switch and a stray word. A command
+line in error, or a `/module` that names no module the saver can play,
+gets a message box saying what is wrong, with the switches in short
+(`usage_message`), and the saver exits 1 without a window or a host. Other
+command lines skip what they don't know, as before.
+
+Windows starts a `.scr` with `/S` and nothing else, whatever follows its
+name: the `scrfile` association's open command is `"%1" /S`, and
+PowerShell (`.\LongAfterDark.scr …`, `& "<path>"`, `Start-Process`), a
+shortcut and the Run box all go through it. The release therefore ships
+the same file a second time as `LongAfterDark.exe` (the build's post-build
+step, `tools/package.sh`), which gets its command line as written. Nothing
+depends on the program's own name: `adhostwin.exe` and `adimport.exe` are
+looked for next to whichever file runs, the settings dialog's **Preview**
+starts that same file with `/s`, and `LongAfterDark.exe` without switches
+opens the settings dialog as the `.scr` does.
 
 ## Ending the saver and playing
 
@@ -149,6 +178,84 @@ module, the host's capabilities), every spawn, host exit, respawn, rotation
 and play start/end, and the exit reason, at most 200 lines (the first ones and
 the latest ones are kept). It is always on, so a report of the saver ending
 early comes with its cause.
+
+## Window mode
+
+`LongAfterDark.exe /window` shows the modules in an ordinary window, for a
+streamer's "be right back" screen captured by OBS (Window Capture,
+`[LongAfterDark.exe]: Long After Dark`, Windows 10 capture method; README.md
+says how). The command line is in **Command line**; the window-free parts
+(class, title, styles, the outer size for a client area, what `/module`
+names and what the window plays) are in `src/window_mode.h`, the rest in
+`saver.cc` (`App::windowed`, `SaverWindow::create_windowed`,
+`handle_windowed`).
+
+* **The window:** class `LongAfterDarkWindow` (its own: not the full-screen
+  saver's `LongAfterDarkSaver` nor the settings dialog's), title exactly
+  "Long After Dark", which never changes (not when Random moves on),
+  `WS_OVERLAPPEDWINDOW` without `WS_EX_TOPMOST` or `WS_EX_TOOLWINDOW` and
+  without an owner, so it has a taskbar button and is in Alt+Tab, the
+  app's icon, the arrow pointer. It opens where Windows places a new window
+  (`SW_SHOWDEFAULT`: a shortcut's Run setting applies). Several can run at
+  once, each with its own hosts.
+* **Its size:** the client area is `/size` in physical pixels whatever the
+  DPI (the process is per-monitor-v2): made at the system DPI, the window
+  is sized again for the DPI of the monitor it lands on
+  (`AdjustWindowRectExForDpi`), keeps its client size when dragged to a
+  monitor of another DPI (`WM_GETDPISCALEDSIZE`), and may be larger than
+  its monitor (`WM_GETMINMAXINFO` raises the track size to 7680×4320's, and
+  holds it to 160×120's at least). The log says `window: client 1920x1080
+  (asked 1920x1080) at 144 dpi, outer 1942x1136`.
+* **Resizing** scales the current frames into the new client area at once
+  (the letterbox and Direct2D's render target follow the size). Once the
+  size has not changed for 500 ms, a host whose emulated screen the new
+  shape would no longer give its module starts that module again at the new
+  one (`window: resized to 1440x1080; ad40.toasters starts again at 640x480
+  (was 856x480)`): an After Dark module's screen follows the client area's
+  shape as it follows a monitor's (**Emulated screen**), so the same shape at
+  another size, a drag back and forth, and any module with a 640×480 screen
+  of its own restart nothing. Minimized, it draws nothing and its host runs on.
+* **What it plays:** the settings file it reads, as `/s` (Resolution,
+  Stretch to fit, each module's control values and host controls such as
+  Intermission 4.0's Speed in `ADNE16IMXSPEED`, Sound and Volume:
+  `sound_for` treats the window as the primary monitor's), with `/module`
+  and `/random` applied over it (`window_settings`): `/module` alone is
+  that module and nothing else; `/random` is the dialog's Random checklist
+  (`dialog_checklist`, the one kept in `RandomizeSaved` when a single module
+  is chosen; nothing checked means every module) under Collections,
+  changing every `DurationMin`, and with `/module` that module leads it.
+  `Monitors`, `DifferentPerMonitor` and `StartFromDesktop` don't apply:
+  every module starts on black (no desktop capture, which a stream would
+  show). The rotation is the window's own (its timer is the window's, which
+  a sizing loop keeps delivering; so does the host's `--capabilities`
+  answer, posted to the window). A `/module` the catalog doesn't have, a
+  name several releases share (it needs the id; the message box lists the
+  ids), or a module whose file is missing gets a message box before any
+  window or host.
+* **Input:** none ends it and none reaches the host (`docs/INTERACTION.md`
+  §4.6). Every host starts with `ADCAPS=0` (and `ADNUMLOCK=0` when it takes
+  it) and hears no `KEY`, `CAPS`, `NUMLOCK` or `MOUSE` line; the status
+  record is not read, so a module's wake request ends nothing and the
+  rotation never waits; the cursor is never hidden and never clipped.
+  Switching away, a lock, a display change or the display going off end
+  nothing, and the hosts are not paused for the display. Only `WM_CLOSE`
+  ends it: the hosts hear `QUIT` (the sound host first), and the saver's
+  kill-on-close Job takes any that lingers.
+* **The display:** a power request (`PowerCreateRequest` with
+  `PowerRequestDisplayRequired` and `PowerRequestSystemRequired`, reason
+  "Long After Dark is showing in a window (/window)") from the window's
+  creation to its exit, `SetThreadExecutionState(ES_CONTINUOUS |
+  ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED)` should that fail. Windows
+  documents only that the display request keeps the display on ("The
+  display remains on even if there is no user input"); keeping the screen
+  saver from starting and the session from locking after a time without
+  input is the expected effect, not something Microsoft's page states, and
+  is untested on a real desktop. On battery, Modern Standby ends the
+  system-required part five minutes after the sleep timeout. The window
+  also answers `SC_SCREENSAVE` with 0. The log says `display: kept on
+  (power request)`.
+* **Logs:** `AD_SCR_LOG` gets every line (`mode=window`, `start /window`,
+  the spawns); there is no last-exit log, which is `/s`'s alone.
 
 ## The settings dialog
 
@@ -919,9 +1026,10 @@ with `AD_HOST_EXE` pointing at its `adhostwin.exe`.
 AD_BUILD_DIR=build/win-scr AD_COMPONENTS="host/core;host/loader;scr" bash tools/build.sh
 ```
 
-This builds `LongAfterDark.scr` (the screen saver that ships),
-`LongAfterDark-test.scr` (the same with the test hooks, which the smoke tests
-run) and runs the tests. With `host/loader` in the
+This builds `LongAfterDark.scr` (the screen saver that ships), with
+`LongAfterDark.exe` beside it (the same file, copied after the link: **Command
+line**), `LongAfterDark-test.scr` (the same with the test hooks, which the
+smoke tests run) and runs the tests. With `host/loader` in the
 build the dialog shows each module's own icon; without it, thumbnails and the moon.
 The dialog's look (palettes, fonts, the custom-drawn controls, the header
 band, cover drawing and the off-screen capture) is `adw_ui`
@@ -937,7 +1045,13 @@ No test touches the user's data folder: `scr_unit` and `scr_smoke` point
 start, and the `catalog` suite's look at this machine's generated catalog
 only reads it.
 
-* **Unit tests:** `scr_unit_*` cover argument parsing, the P8/P6 stream parser
+* **Unit tests:** `scr_unit_*` cover argument parsing (with window mode's
+  switches in any order and spelling, each mistake's message, and `/help`
+  over any error), window mode (`window`: `/module`'s lookup by the Linux
+  player's rules, with `sameAs` copies as one module and the messages for an
+  ambiguous name, an unknown one, a missing file and no catalog; what the
+  window plays from the settings with and without `/module` and `/random`;
+  the window's outer size for its client area at 96 and 144 DPI), the P8/P6 stream parser
   (including headers claiming frames past 8192 on an axis or 4096×4096 in
   all, which are resynced past rather than waited on), the settings.ini
   round-trip (`DifferentPerMonitor` too: missing is 0, read leniently,
@@ -1372,6 +1486,17 @@ only reads it.
   on its primary window's host alone while the live preview, thumbnails and
   the capabilities probe stayed silent; OK wrote `Sound=0 Volume=61
   SoundMonitor=primary` keeping the rest, and the next dialog showed them).
+  Window mode: `window` (`/window /size 640x400 /module "test stripes"`: a
+  visible `LongAfterDarkWindow` titled "Long After Dark" with a 640×400
+  client area, an overlapped, unowned, not topmost window with the icon;
+  posted keys (Caps Lock and Num Lock among them), clicks, moves, the wheel
+  and a deactivation end nothing and log no `input:`; resized to 4:3, its
+  module starts again at 640×480 once the size settles; `WM_CLOSE` ends it
+  with 0 and its hosts; every host had `ADCAPS=0` and no seed; then
+  `-window --random` rotating through the settings' list under the same
+  title at 1280×720's screen, its hosts with the settings' sound
+  (`ADSOUND=1 ADVOLUME=35`), and four command lines it refuses and `/?`,
+  each a message box, read and dismissed, with no window and no host).
 
 Two opt-in tests run the real `adhostwin.exe` (the build's own, with its
 lanes) on real modules: set `AD_E2E=1` and `AD_E2E_ASSETS=<an assets root>`

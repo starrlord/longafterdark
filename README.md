@@ -210,7 +210,9 @@ without it, with nine modules.
    programs aren't code-signed yet, so Windows may warn that they come from
    an unknown publisher: click **More info**, then **Run anyway**. It is
    three programs, which must stay together in one folder:
-   - `LongAfterDark.scr`: the screen saver and its settings window;
+   - `LongAfterDark.scr`: the screen saver and its settings window (and
+     `LongAfterDark.exe`, the same program, to show it
+     [in a window](#use-it-as-a-be-right-back-screen-in-obs));
    - `adhostwin.exe`: the emulator that runs the modules;
    - `adimport.exe`: the importer.
 2. **Import your releases.** Double-click `adimport.exe` (or click **Import…**
@@ -286,6 +288,48 @@ without it, with nine modules.
   File Explorer's address bar): the imported releases, downloads, your
   settings and what the modules save themselves, such as message texts and
   high scores.
+
+## Use it as a "be right back" screen in OBS
+
+`LongAfterDark.exe`, the same program as `LongAfterDark.scr`, can show the
+modules in an ordinary window titled **Long After Dark**, for OBS to
+capture. From PowerShell, in the folder you unzipped:
+
+```powershell
+.\LongAfterDark.exe /window /size 1920x1080 /random
+```
+
+- `/window` opens the window. Keys and the mouse never close it, and Caps
+  Lock starts no game: close it as you would any window. While it is open,
+  Windows keeps the display on, which should also keep the screen saver
+  from starting.
+- `/size WxH` is the size of the picture inside the window, in pixels:
+  1280x720 unless you say. The window can be resized; the picture follows.
+- `/module` shows one module, by its id or by its name as the settings
+  window lists it, in quotes if it has spaces: `/module ad40.toasters`, or
+  `/module "Flying Toasters!"`. A name several releases share needs the id
+  (the program lists the ids).
+- `/random` changes module as **Random** does in the settings window: the
+  modules checked there, as often as it says. With `/module`, that module
+  plays first.
+- With neither, the window shows what the screen saver would. Each
+  module's own settings, the resolution, **Stretch to fit the screen** and
+  the sound settings apply as they do to the screen saver.
+- `LongAfterDark.exe /help` lists the switches.
+
+Use the `.exe`: Windows starts a `.scr` with `/S` and nothing else,
+whatever follows its name, so `LongAfterDark.scr /window` runs the screen
+saver full screen.
+
+In OBS, add a **Window Capture** source with **Window**
+`[LongAfterDark.exe]: Long After Dark`, **Capture Method** **Windows 10
+(1903 and up)**, and **Window Match Priority** **Match title, otherwise
+find window of same type**, so that it finds the window again each time
+you open it (the settings window and the program's messages are titled
+Long After Dark too, but only this window is of its type). Untick
+**Capture Cursor**: the window never hides the pointer, so it would show
+on the stream whenever it rests over the window. For the modules' sound,
+add an **Application Audio Capture** source for the same window.
 
 ## On Linux
 

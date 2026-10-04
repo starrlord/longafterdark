@@ -187,7 +187,8 @@ bash tools/package.sh       # Release build in build/win-release, staged for ins
   needs).
 * **`package.sh`** builds only the three shipped programs in Release (in
   `AD_BUILD_DIR`, default `build/win-release`; no test programs, no tests
-  run) and stages `LongAfterDark.scr`, `adhostwin.exe`, `adimport.exe`, a
+  run) and stages `LongAfterDark.scr` (and the same file again as
+  `LongAfterDark.exe`, for window mode), `adhostwin.exe`, `adimport.exe`, a
   `README.txt` for users, `LICENSE.txt` and, in `licenses\`, the licence
   texts of the code built into the programs (resource_dasm, phosg, zlib,
   LLVM, the mingw-w64 runtime) with a `NOTICE.txt` saying which is whose, in

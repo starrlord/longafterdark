@@ -115,6 +115,7 @@ devices when it starts.
    | `adimport.exe` | the importer, which copies the modules from your discs |
    | `longafterdark.xml` | the player's entry for XScreenSaver's settings |
    | `LongAfterDark.scr` | the Windows screen saver (for Windows) |
+   | `LongAfterDark.exe` | the same, for its window mode (for Windows) |
    | `README.txt`, `LICENSE.txt`, `licenses/` | a short guide, and the licences |
 
 2. Keep the programs together: `longafterdark` looks for `adhostwin.exe`

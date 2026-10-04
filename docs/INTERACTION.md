@@ -426,7 +426,7 @@ struct AdwHostStatusV1 {           // 64 bytes
 
 ---
 
-## 4. The saver's rules (`/s`; `/p` takes no input)
+## 4. The saver's rules (`/s`; `/p` and `/window` take no input, §4.6)
 
 ### 4.1 Caps Lock tracking
 
@@ -635,6 +635,50 @@ to a host whose `--capabilities` answer (asked for in the background) says
   out, as the Windows saver pauses its hosts, and a host that ended starts
   again only once the monitor is back on (`--test-display-off <ms>` plays
   a power-off for the tests).
+
+### 4.6 Window mode (`/window`)
+
+`LongAfterDark.exe /window` (`scr/README.md`, "Window mode") is an
+ordinary window for a recorder such as OBS to capture as a "be right back"
+screen. None of the rules above apply to it:
+
+* **No input ends it, and none reaches the host.** Keys, clicks, the wheel
+  and moves go to `DefWindowProc`, as any window's do (Alt+F4 closes it,
+  Alt opens its system menu); no `KEY`, `CAPS`, `NUMLOCK` or `MOUSE` line
+  is ever sent and nothing is held. Switching away, a locked session or a
+  display that goes off end nothing either, and the hosts are never paused
+  for the display (a stream goes on with the monitor off). Only
+  `WM_CLOSE` ends it: the close button, Alt+F4, the taskbar's Close
+  window.
+* **No games.** Every host starts with `ADCAPS=0` and, for a host that
+  takes it, `ADNUMLOCK=0`, whatever the keyboard's toggles are, and hears
+  no change of them: Caps Lock and Num Lock do nothing in the window. So
+  no module plays, the rotation never waits for a game, and the status
+  record is never read (a module's `ADWS_WAKE` is ignored too).
+* **The pointer** is the class's arrow over the window, never hidden, and
+  `ClipCursor` is never called.
+* **No desktop seed** (§8): every module starts on black, never on a
+  capture of the desktop, which a stream would show.
+* **The display stays on.** From its creation to its exit the window holds
+  a power request (`PowerCreateRequest`, reason "Long After Dark is
+  showing in a window (/window)", with `PowerRequestDisplayRequired` and
+  `PowerRequestSystemRequired`), as a video player holds one. Windows
+  documents only that a display-required request (`POWER_REQUEST_TYPE`)
+  keeps the display on ("The display remains on even if there is no user
+  input"); keeping a screen saver from starting and the session from
+  locking after a period without input is the expected effect, not
+  something that page states (**UNVERIFIED**, below). Requests
+  end at a sleep the user asks for (Start → Sleep, the power button, the
+  lid), and on battery on a Modern Standby PC the system-required part
+  ends five minutes after the sleep timeout. `SetThreadExecutionState`,
+  whose page still says "This function does not stop the screen saver from
+  executing", stands in (`ES_CONTINUOUS | ES_DISPLAY_REQUIRED |
+  ES_SYSTEM_REQUIRED`) only if the request can't be made. The window also
+  answers `SC_SCREENSAVE` with 0 while it has the foreground. **UNVERIFIED**
+  on a real desktop: no automated check here waits out a screen saver
+  timeout, which would start a screen saver on the user's screen; the
+  saver's log says `display: kept on (power request)` (EMPIRICAL: the
+  `scr_smoke_window` test and the hidden-desktop runs of 2026-10-04).
 
 ---
 

@@ -85,6 +85,9 @@ describes: `bash tools/package.sh` stages the same files in
 `build/dist/LongAfterDark/`. The zip's folder holds:
 
 - **LongAfterDark.scr**: the screen saver and its settings window.
+- **LongAfterDark.exe**: the same program again, under the name that
+  shows it in a window
+  ([Show it in a window](#show-it-in-a-window-a-be-right-back-screen)).
 - **adhostwin.exe**: the emulator. The screen saver starts one for each
   monitor.
 - **adimport.exe**: copies the modules from your discs.
@@ -425,6 +428,79 @@ it starts the Starfleet Academy exam: type the number of your answer (1 to
 4, on the top row or the keypad). Num Lock again stops the exam, and
 moving the mouse ends it, and the screen saver with it.
 
+## Show it in a window (a "be right back" screen)
+
+`LongAfterDark.exe` is the screen saver again, under another name. With
+`/window` it shows the modules in an ordinary window instead of full
+screen, for OBS, or any other program that captures a window, to show
+while you are away. From PowerShell, in the programs' folder:
+
+```powershell
+.\LongAfterDark.exe /window /size 1920x1080 /random
+```
+
+| Switch | What it does |
+|---|---|
+| `/window` | An ordinary window titled **Long After Dark**, with a taskbar button, which you can move, resize, minimize and maximize. |
+| `/size WxH` | The size of the picture inside the window, in pixels whatever the display scaling: 1280x720 unless you say, from 160x120 to 7680x4320. The window may be larger than the screen. |
+| `/module <module>` | That module: its id, such as `ad40.toasters`, or its name as the settings window lists it, in quotes if it has spaces (`"Flying Toasters!"`). A name several releases share needs the id (the program lists the ids). |
+| `/random` | The modules **Random** plays in the settings window (those checked there, in the releases selected), changing as often as **Change module every** says. With `/module`, that module plays first. |
+| `/help` or `/?` | A message listing the switches. |
+
+The switches go in any order, and `-` works as well as `/`. With neither
+`/module` nor `/random`, the window shows what the screen saver would. Each
+module's own settings (its options, Intermission 4.0's Speed), the
+Resolution, **Stretch to fit the screen** and the sound apply as they do
+to the screen saver; the monitor settings don't, as it is one window. Every
+module starts on black, never on a picture of your desktop. With
+`/window`, a switch it doesn't know, a size out of range or a module it
+can't find opens a message saying what is wrong, and nothing runs; without
+`/window`, a switch it doesn't know is skipped and the settings window
+opens, as Windows' own screen savers do.
+
+Windows starts a `.scr` with `/S` and nothing else, whatever is written
+after its name (from PowerShell, a shortcut and Start-Process alike), so
+these switches work only with `LongAfterDark.exe`. Run without switches,
+it opens the settings window, as the `.scr` does.
+
+The window stays open whatever the keyboard and the mouse do: no key,
+click or move closes it, Caps Lock and Num Lock start no game, and the
+pointer is never hidden or held. Close it with its close button, Alt+F4,
+or **Close window** on its taskbar button's right-click menu (clicking the
+taskbar button only minimizes and restores it). While it is open, the
+window holds a "display required" power request, as a video player does,
+which Windows documents as keeping the display on even without input
+(`powercfg /requests`, as an administrator, lists it). That should also
+keep the screen saver from starting and the computer from locking after a
+while, though this has not been tested on a real desktop.
+On battery, a laptop with Modern Standby ends the request's
+"system required" part five minutes after the sleep timeout.
+Win+L, Sleep, the power button and a laptop's lid still do what they do.
+Several windows can be open at once, each with its own switches.
+
+Resizing the window scales the picture to the new size. Once the size
+settles, a module whose screen follows the display's shape (After Dark's)
+starts again in the new shape; a module with a 640x480 screen of its own
+(Intermission's, both Star Trek releases', ScreamSavers', Marvel's, Johnny
+Castaway) keeps its shape, with bars, unless **Stretch to fit the screen**
+is checked.
+
+In OBS, add a **Window Capture** source:
+
+- **Window:** `[LongAfterDark.exe]: Long After Dark`;
+- **Capture Method:** **Windows 10 (1903 and up)**;
+- **Window Match Priority:** **Match title, otherwise find window of same
+  type**, so that the source finds the window again each time you open it
+  (the settings window and the program's messages are titled Long After
+  Dark too, but only window-mode windows are of this type);
+- **Capture Cursor:** unticked, as the window never hides the pointer,
+  which would otherwise show on the stream whenever it rests over the
+  window.
+
+The window plays sound as the primary monitor's screen saver does (Sound
+and Volume in the settings window). For the stream to have it, add an
+**Application Audio Capture** source for the same window.
+
 ## Where your files are
 
 Everything is in `%LOCALAPPDATA%\LongAfterDark` (paste that into Explorer's
@@ -441,9 +517,10 @@ address bar):
 
 ## Updating
 
-Close the settings window and make sure the screen saver is not running
-(Windows locks running programs), then replace the three programs with the
-new versions. Imported releases, downloads and settings are kept.
+Close the settings window and make sure the screen saver (and any window
+of it) is not running (Windows locks running programs), then replace the
+programs, `LongAfterDark.exe` with them, with the new versions. Imported
+releases, downloads and settings are kept.
 `adimport --version` says which version you have, and so does each
 program's Properties → Details in Explorer.
 

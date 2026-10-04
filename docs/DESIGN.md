@@ -627,6 +627,7 @@ the folder is replaced whole, so the saver must not be running):
 
 ```
 LongAfterDark.scr   the screen saver and its settings window; finds the other two beside itself
+LongAfterDark.exe   the same file, the name its window mode's switches reach it under (scr/README.md)
 adhostwin.exe       the host (one per monitor, preview, thumbnail or module button)
 adimport.exe        the importer (command line and --gui)
 README.txt          for users: import, covers, install, settings, where the files are

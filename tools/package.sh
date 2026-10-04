@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Build the three programs (Release) and stage Long After Dark, ready to run:
-#   build/dist/LongAfterDark/{LongAfterDark.scr, adhostwin.exe, adimport.exe,
-#                             README.txt, LICENSE.txt, licenses/}
+#   build/dist/LongAfterDark/{LongAfterDark.scr, LongAfterDark.exe, adhostwin.exe,
+#                             adimport.exe, README.txt, LICENSE.txt, licenses/}
+# LongAfterDark.exe is LongAfterDark.scr again under the name its window
+# mode's switches reach it by (Windows starts a .scr with /S alone).
 #   bash tools/package.sh
 # On Linux (a cross build) the folder also holds the Linux player,
 # longafterdark (tools/build-player.sh), and longafterdark.xml, its entry
@@ -69,6 +71,8 @@ rm -rf "$DIST"
 trap 'rm -rf "$DIST"' EXIT
 mkdir -p "$DIST/licenses"
 cp "$SCR" "$DIST/LongAfterDark.scr"
+# The same file again: "LongAfterDark.exe /window ..." (scr/src/args.h).
+cp "$SCR" "$DIST/LongAfterDark.exe"
 cp "$BUILD/host/core/adhostwin.exe" "$BUILD/importer/adimport.exe" "$DIST/"
 if [ "$LINUX" -eq 1 ]; then
   cp "$PLAYER" "$DIST/longafterdark"
@@ -94,7 +98,8 @@ cat <<EOF
 Long After Dark: third-party software
 =====================================
 
-The three programs (LongAfterDark.scr, adhostwin.exe, adimport.exe) are
+The three programs (LongAfterDark.scr, also there as LongAfterDark.exe,
+adhostwin.exe and adimport.exe) are
 linked statically, so each carries inside it the parts of the code below
 that it uses. The full licence texts are in this folder (UNARJ's terms,
 which have no file of their own, are quoted below).
@@ -242,6 +247,7 @@ folder holds:
   adimport.exe        copies the modules from your discs, under Wine
   longafterdark.xml   longafterdark's entry for XScreenSaver's settings
   LongAfterDark.scr   the Windows screen saver (for Windows only)
+  LongAfterDark.exe   the same, for its window mode (for Windows only)
 
 Keep longafterdark, adhostwin.exe and adimport.exe together: the player
 looks for the other two in the folder it is really in.
@@ -472,10 +478,12 @@ No file of any of these releases is included: you import them from your
 own copies (and are responsible for sourcing them legally). Requires 64-bit
 Windows on an x64 PC.
 
-This folder holds three programs. Keep them together: the screen saver looks
-for the other two next to itself.
+This folder holds three programs in four files (the screen saver is there
+twice). Keep them together: the screen saver, under either name, looks for
+adhostwin.exe and adimport.exe next to itself.
 
   LongAfterDark.scr   the screen saver and its settings window
+  LongAfterDark.exe   the same program, to run it in a window (see 5)
   adhostwin.exe       the emulator; the screen saver starts one per monitor
   adimport.exe        copies the modules from your discs
 
@@ -621,6 +629,38 @@ for the other two next to itself.
    of your answer; moving the mouse ends the exam and the screen saver.
    Locking the computer (Win+L) always ends it.
 
+5. Show it in a window (a "be right back" screen in OBS)
+
+   LongAfterDark.exe, the same program as LongAfterDark.scr, shows the
+   modules in an ordinary window titled "Long After Dark" instead of full
+   screen, for OBS to capture. From PowerShell, in this folder:
+     .\LongAfterDark.exe /window /size 1920x1080 /random
+   /size is the size of the picture inside the window in pixels (1280x720
+   unless you say). /module shows one module, by its id or by its name as
+   the settings window lists it, in quotes if it has spaces:
+   /module ad40.toasters, /module "Flying Toasters!" (a name several
+   releases share needs the id; the program lists the ids). /random
+   changes module as Random in the settings does, as often as it says
+   (with /module, that module first). With neither, the window shows what
+   the screen saver would. "LongAfterDark.exe /help" lists the switches.
+   Windows starts a .scr with /S alone, whatever follows its name, so they
+   work only with the .exe.
+
+   Keys and the mouse never close the window, and Caps Lock starts no
+   game; close it as any other window. While it is open Windows keeps the
+   display on, which should also keep the screen saver from starting.
+   Several can be open at once.
+
+   In OBS, add a Window Capture source: Window "[LongAfterDark.exe]: Long
+   After Dark", Capture Method "Windows 10 (1903 and up)", Window Match
+   Priority "Match title, otherwise find window of same type" (the settings
+   window and the program's messages are titled Long After Dark too, but
+   only this window is of its type), and "Capture Cursor" unticked (the
+   window never hides the pointer, so it would show on the stream). The
+   window plays sound as the screen saver does (Sound and Volume in its
+   settings); an Application Audio Capture source for the same window puts
+   it in the stream.
+
 Where your files are
 
    Everything is in %LOCALAPPDATA%\LongAfterDark (paste that into Explorer's
@@ -632,8 +672,9 @@ Where your files are
 Updating
 
    Close the settings window, make sure the screen saver is not running, and
-   replace the three programs with the new ones. Imported releases, downloads
-   and settings are kept.
+   replace the programs (LongAfterDark.scr and LongAfterDark.exe,
+   adhostwin.exe, adimport.exe) with the new ones. Imported releases,
+   downloads and settings are kept.
 
 Status
 

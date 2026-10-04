@@ -1,8 +1,8 @@
 # Third-party software
 
 Long After Dark ships three programs: `LongAfterDark.scr` (the screen
-saver), `adhostwin.exe` (the emulation host) and `adimport.exe` (the
-importer). The Linux zip adds a fourth, `longafterdark`, the Linux player
+saver, shipped a second time as `LongAfterDark.exe`), `adhostwin.exe` (the
+emulation host) and `adimport.exe` (the importer). The Linux zip adds a fourth, `longafterdark`, the Linux player
 ([below](#the-linux-player-longafterdark-linux-zip-only)). They build in
 some code this project did not write. This file says what it is, under
 what licence it is redistributed, and where to get its source.
