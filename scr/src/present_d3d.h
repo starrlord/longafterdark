@@ -56,12 +56,24 @@ class D3DPresenter {
   // Lets go of the window's swap chain, so GDI owns the window again (a
   // message drawn over black).
   void release();
-  // What it draws, for the log: e.g. "crt, ambient bars (hardware, feature
-  // level 11_1)".
+  // What it draws, for the log: the look, the adapter (its name, "WARP" or
+  // "Microsoft Basic Render Driver"), the feature level and the swap model,
+  // e.g. "crt, ambient bars (NVIDIA GeForce RTX 4070, feature level 11_1,
+  // blt model)"; while there is no device yet, the look alone.
   std::string describe() const;
   // The GPU time of the latest frame whose timestamps have come back, in
-  // milliseconds; -1 while none has (or the device can't time).
+  // milliseconds; -1 while none has (or the device can't time). Read back
+  // without waiting, so it trails the presents by a frame or three.
   double gpu_ms() const;
+  // The latest present drew the sharp look in a shader preset's place: the
+  // preset's chain is still being built (shader_preset.h).
+  bool standing_in() const;
+  // How many times what present() draws has changed under the same look:
+  // the preset's chain ready at last, after the sharp look stood in. The
+  // saver judges a look's cost on the frames after the latest change;
+  // gpu_ms() goes back to -1 at a change and comes back with those frames
+  // (not the first, which compiles the new shaders).
+  uint32_t drawn_changes() const;
   const LookOptions& options() const;
 
  private:
@@ -78,6 +90,18 @@ bool d3d_available(std::string* why = nullptr);
 // windows open). false: `*why` says what failed (the windows will fall back).
 bool d3d_prepare(const LookOptions& opts, std::string* why = nullptr);
 
+// For the tests (scr_lookshot --lose, LongAfterDark-test.scr's levers): the
+// next present() of any window finds the device gone, as Present does after
+// a driver reset (DXGI_ERROR_DEVICE_REMOVED): it reports device_lost, the
+// device is dropped, and the next present makes a new one.
+void d3d_simulate_device_loss();
+
+// For measuring (scr_lookshot --adapter): the windows' device is made on the
+// adapter whose name contains `match` (any case), or whose index it is,
+// instead of the default one. Only before the device exists; false when
+// none matches (`*why` lists the adapters).
+bool d3d_choose_adapter(const std::string& match, std::string* why = nullptr);
+
 // What a window shows, rendered off screen: `f` drawn with `opts` into `fit`
 // of a w x h picture, as D3DPresenter draws it (bars black, or the ambient
 // fill). On the process's device when the windows have made one, else on a
@@ -86,6 +110,16 @@ bool d3d_prepare(const LookOptions& opts, std::string* why = nullptr);
 // tests check the looks with them, and the scr_lookshot tool renders them.
 bool render_frame_bgr_d3d(const Frame& f, int w, int h, const RectI& fit, const LookOptions& opts,
                           std::vector<uint8_t>& bgr, std::string* error = nullptr);
+// The GPU time of the latest render_frame_bgr_d3d's drawing (its passes,
+// not the read back), in milliseconds; -1 when the device can't time. For
+// scr_lookshot's costs.
+double render_frame_gpu_ms();
+// render_frame_bgr_d3d with the caller's passes instead of a look's (the
+// last one into the fit, as look_passes' last): for the tests of the pass
+// runner, and for trying a pass list out.
+struct PassSpec;
+bool render_passes_bgr_d3d(const Frame& f, int w, int h, const RectI& fit, const std::vector<PassSpec>& passes,
+                           bool ambient, std::vector<uint8_t>& bgr, std::string* error = nullptr);
 
 // ---- the passes a look is made of ---------------------------------------------------
 // Every look but preset is a list of passes (look_passes): pixel shaders, each
@@ -100,7 +134,8 @@ bool render_frame_bgr_d3d(const Frame& f, int w, int h, const RectI& fit, const 
 // rectangle, not the whole window. Original, the resolved frame, holds the
 // palette's colours as they are (sRGB-encoded bytes in an RGBA8 UNORM
 // texture, alpha 1): a pass that works in linear light decodes and encodes
-// gamma itself.
+// gamma itself. The last pass writes every pixel of the fit rectangle (no
+// discard): nothing is drawn there before it.
 
 enum class PassSize {
   source,     // `scale` times the previous pass's output (Source)
@@ -132,7 +167,7 @@ Texture2D Pass4 : register(t6);
 Texture2D Pass5 : register(t7);
 SamplerState PointClamp : register(s0);
 SamplerState LinearClamp : register(s1);
-cbuffer Pass : register(b0) {
+cbuffer PassConstants : register(b0) {
   float4 SourceSize;     // Source: w, h, 1/w, 1/h
   float4 OriginalSize;   // Original (the frame): w, h, 1/w, 1/h
   float4 OutputSize;     // this pass's output (the last pass: the fit rectangle): w, h, 1/w, 1/h
@@ -144,7 +179,8 @@ cbuffer Pass : register(b0) {
 };
 )hlsl";
 
-// The C++ side of the Pass cbuffer (160 bytes, as HLSL packs it).
+// The C++ side of the PassConstants cbuffer (160 bytes, as HLSL packs it).
+// (Not "Pass": that is a reserved word to the HLSL compiler.)
 struct PassConstants {
   float source_size[4];
   float original_size[4];

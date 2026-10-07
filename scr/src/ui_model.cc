@@ -193,6 +193,35 @@ PerMonitorChoice per_monitor_choice(bool random, bool all_monitors, int monitors
   return c;
 }
 
+std::vector<LookChoice> look_choices(const std::string& shader_preset) {
+  std::vector<LookChoice> v = {{Look::sharp, L"Sharp pixels"},
+                               {Look::crt, L"CRT monitor"},
+                               {Look::crt_curved, L"Curved CRT monitor"},
+                               {Look::smooth, L"Smooth"}};
+  // The preset by its file name: the folder says little and would push the
+  // name out of a dropdown's width.
+  const std::wstring path = widen(trim(shader_preset));
+  if (!path.empty()) {
+    const size_t slash = path.find_last_of(L"\\/");
+    const std::wstring name = slash == std::wstring::npos || slash + 1 == path.size() ? path : path.substr(slash + 1);
+    v.push_back({Look::preset, L"Shader preset: " + name});
+  }
+  return v;
+}
+
+int look_choice_index(const std::vector<LookChoice>& choices, const std::string& look) {
+  Look l = Look::sharp;
+  if (parse_look(look, &l)) {
+    for (size_t i = 0; i < choices.size(); ++i) {
+      if (choices[i].look == l) return (int)i;
+    }
+  }
+  for (size_t i = 0; i < choices.size(); ++i) {
+    if (choices[i].look == Look::sharp) return (int)i;
+  }
+  return 0;
+}
+
 std::wstring rotation_summary(size_t checked, size_t total, long long runnable, long long distinct) {
   if (total == 0) return L"";
   if (checked == 0) return L"None in rotation";
@@ -632,12 +661,13 @@ WindowLayout layout_window(const LayoutInput& in) {
 
   // Right column: the module's details, then the saver-wide options.
   const double rx = lx + lw + kGap, rw = x0 + C - rx;
-  // Two rows of labelled controls with the "Stretch to fit" checkbox between
-  // them, and the sound note's caption line.
+  // Three rows of labelled controls, the "Stretch to fit" checkbox between
+  // the first two, and the sound note's caption line.
   const double option_row = kLabelH + 4 + kControlH;
-  const double stretch_row = 8 + kControlH + 8;   // between the two rows (they were 12 apart)
+  const double stretch_row = 8 + kControlH + 8;   // between the first two rows
+  const double look_row = option_row + 12;        // Look and Bars, 12 over Sound and Volume
   const double options_h =
-      kCardPad - 4 + option_row + stretch_row + option_row + 4 + kCaptionH + kCardPad - 4;   // 212
+      kCardPad - 4 + option_row + stretch_row + look_row + option_row + 4 + kCaptionH + kCardPad - 4;   // 280
   const double oy = bottom - options_h;
   L.options_card = s.rc(rx, oy, rw, options_h);
   const double dy = top, dh = oy - kGap - top;
@@ -674,29 +704,40 @@ WindowLayout layout_window(const LayoutInput& in) {
   L.module_badge = s.rc(sx + 60, inner_y + title_h + (two ? 4 : 2), sw - 60, 20);
   // "Restore defaults" at the column's foot, its text on the credits' first
   // line; the controls above it scroll (by whole rows) when they don't all fit.
+  // A window too short for a row of them over it (the shortest ones, under
+  // the options card's rows) leaves the link out: the controls take the
+  // column's foot, so a module's settings stay in reach.
   const double defaults_y = inner_y + inner_h - credits_h - 8;
-  L.defaults = s.rc(sx - kLinkPad, defaults_y, std::min(sw + kLinkPad, 176.0), kControlH);
   const double panel_y = inner_y + head_h + 20;
+  const bool defaults = defaults_y - 8 - panel_y >= kPanelRowMinDip;
+  if (defaults) L.defaults = s.rc(sx - kLinkPad, defaults_y, std::min(sw + kLinkPad, 176.0), kControlH);
+  const double panel_end = defaults ? defaults_y - 8 : inner_y + inner_h;
   {
-    const int px0 = s.px(sx) - fm, py0 = s.px(panel_y) - fm;
-    L.panel = Rc{px0, py0, s.px(sx + sw) + fm - px0, std::max(1, s.px(defaults_y - 8) - py0)};
+    // Never past the column's foot, however much the name takes: at worst a
+    // sliver there.
+    const int px0 = s.px(sx) - fm, py0 = std::min(s.px(panel_y) - fm, s.px(panel_end) - 1);
+    L.panel = Rc{px0, py0, s.px(sx + sw) + fm - px0, std::max(1, s.px(panel_end) - py0)};
   }
 
-  // Options: two rows of labelled controls, each at the start of its half
-  // of the card and at most kComboMaxW: Resolution and Monitors, then Sound
-  // and Volume; "Stretch to fit the screen" across the card between them
-  // (it goes with the display's settings); the note on where sound plays
-  // under them, across the card.
+  // Options: three rows of labelled controls, each at the start of its half
+  // of the card and at most kComboMaxW: Resolution and Monitors, Look and
+  // Bars, then Sound and Volume; "Stretch to fit the screen" across the card
+  // under the first row (the first two rows and it are the display's
+  // settings); the note on where sound plays under them, across the card.
   const double half = (rw - 2 * kCardPad - 24) / 2;
   const double cw = std::min<double>(kComboMaxW, half);
-  L.stretch = s.rc(rx + kCardPad, oy + kCardPad - 4 + option_row + 8, rw - 2 * kCardPad, kControlH);
-  for (int row = 0; row < 2; ++row) {
-    const double ly = oy + kCardPad - 4 + row * (option_row + stretch_row), cy = ly + kLabelH + 4;
+  const double row0 = oy + kCardPad - 4;
+  L.stretch = s.rc(rx + kCardPad, row0 + option_row + 8, rw - 2 * kCardPad, kControlH);
+  const double row_y[3] = {row0, row0 + option_row + stretch_row, row0 + option_row + stretch_row + look_row};
+  for (int row = 0; row < 3; ++row) {
+    const double ly = row_y[row], cy = ly + kLabelH + 4;
     for (int i = 0; i < 2; ++i) {
       const double x = rx + kCardPad + i * (half + 24);
       Rc label = s.rc(x, ly, cw, kLabelH), control = s.rc(x, cy, cw, kControlH);
       if (row == 0 && i == 0) L.scale_label = label, L.scale = control;
       else if (row == 0) L.monitors_label = label, L.monitors = control;
+      else if (row == 1 && i == 0) L.look_label = label, L.look = control;
+      else if (row == 1) L.bars_label = label, L.bars = control;
       else if (i == 0) L.sound_label = label, L.sound = control;
       else {
         L.volume = control;

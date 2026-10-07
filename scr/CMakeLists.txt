@@ -37,9 +37,11 @@ target_include_directories(adw_scr PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../host/co
 # Windows 10 APIs (per-monitor-v2 DPI, high-resolution waitable timers).
 target_compile_definitions(adw_scr PUBLIC _WIN32_WINNT=0x0A00 WINVER=0x0A00)
 # Direct2D and WIC: the saver windows' presentation (present.h). The looks'
-# Direct3D 11 (present_d3d.h) is not linked: d3d11.dll, dxgi.dll and the HLSL
-# compiler, d3dcompiler_47.dll, are loaded from System32 on first use, so with
-# the default settings the saver never loads them.
+# Direct3D 11 (present_d3d.h) is not linked: d3d11.dll and the HLSL compiler,
+# d3dcompiler_47.dll, are loaded from System32 on first use (dxgi.dll is
+# reached through the device). With the default settings none of it runs: no
+# Direct3D device of the saver's own, no HLSL compiler (Direct2D loads
+# d3d11.dll and dxgi.dll for itself, as it always has).
 target_link_libraries(adw_scr PUBLIC phosg::phosg dwmapi shell32 ole32 gdi32 user32 d2d1 windowscodecs)
 
 # The icon is drawn by a build-time program (no binary art in the repo).
@@ -133,6 +135,14 @@ add_executable(scr_unit tests/unit_tests.cc tests/looks_tests.cc tests/looks_cor
 target_link_libraries(scr_unit PRIVATE adw_scr adw_ui)
 target_compile_definitions(scr_unit PRIVATE
   AD_SCR_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+
+# lookshot.exe: a picture drawn with a look as the windows draw it
+# (present_d3d.h), into a PNG, with its cost: for checking and tuning the
+# looks. A console program beside scr_unit; never packaged.
+add_executable(scr_lookshot tests/lookshot.cc)
+set_target_properties(scr_lookshot PROPERTIES OUTPUT_NAME lookshot)
+target_link_libraries(scr_lookshot PRIVATE adw_scr adw_ui)
+target_link_options(scr_lookshot PRIVATE -municode)
 
 # The tests synthesize their cover tiles (adw_ui's save_png_bgr): never real art.
 add_executable(scr_smoke tests/smoke_test.cc)

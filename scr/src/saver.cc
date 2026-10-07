@@ -24,8 +24,10 @@
 #include "host_process.h"
 #include "input_rules.h"
 #include "log.h"
+#include "looks.h"
 #include "paths.h"
 #include "present.h"
+#include "present_d3d.h"
 #include "releases.h"
 #include "settings.h"
 #include "sound.h"
@@ -91,14 +93,19 @@ constexpr auto kHealthyRun = 5s;
 // accelerated (<1 ms). "auto" keeps a window's way while it costs less than
 // this per frame: Direct2D over budget (a software rasterizer, no GPU) gives
 // way to GDI, and GDI's HALFTONE upscales to COLORONCOLOR. Downscales
-// (previews) are cheap and always HALFTONE.
+// (previews) are cheap and always HALFTONE. A look (looks.h) draws through
+// Direct3D, before all of these: over budget (its GPU time where the device
+// times it), it gives way to Direct2D's sharp upscale.
 constexpr double kPresentBudgetMs = 8.0;
 constexpr int kPresentWarmup = 2, kPresentSamples = 8;
-// A device lost this many times in one window (a driver in trouble): GDI.
+// A device lost this many times in one window (a driver in trouble): GDI
+// (and from a look's Direct3D, Direct2D).
 constexpr int kMaxDeviceLosses = 3;
 
 enum class Stretch { automatic, halftone, nearest };
-enum class PresentWay { automatic, d2d, gdi };
+// d3d11: Direct3D 11 (present_d3d.h) even for the sharp look, to compare the
+// two, and never given up for its cost. d2d and gdi draw without the looks.
+enum class PresentWay { automatic, d2d, gdi, d3d11 };
 
 // Knobs: the smoke tests' (test_hooks.h: compiled into LongAfterDark-test.scr
 // only), and the diagnostic ones anyone chasing a problem on a real machine
@@ -120,8 +127,15 @@ struct Hooks {
   // presented frames AD_SCR_TEST_CAPTURE_FRAMES=<k>,... lists (default 30).
   std::wstring capture_dir;
   std::vector<uint64_t> capture_frames;
+  // AD_SCR_TEST_D3D_FAIL=<n>: a window's Direct3D present fails at its n-th
+  // try (1: the first, before any swap chain), as if it couldn't draw, so
+  // the tests see the fallback to Direct2D on any machine.
+  long long d3d_fail_at = 0;
+  // AD_SCR_TEST_D3D_LOSE=<n>: every n-th try finds the device lost
+  // (d3d_simulate_device_loss), as after a driver reset.
+  long long d3d_lose_every = 0;
   Stretch stretch = Stretch::automatic;         // AD_SCR_STRETCH=halftone|nearest (default: auto)
-  PresentWay present = PresentWay::automatic;   // AD_SCR_PRESENT=d2d|gdi (default: auto)
+  PresentWay present = PresentWay::automatic;   // AD_SCR_PRESENT=d2d|gdi|d3d11 (default: auto)
 };
 
 Hooks read_hooks() {
@@ -148,6 +162,8 @@ Hooks read_hooks() {
     }
     if (h.capture_frames.empty()) h.capture_frames.push_back(30);
   }
+  h.d3d_fail_at = std::max<long long>(0, env_int(L"AD_SCR_TEST_D3D_FAIL", 0));
+  h.d3d_lose_every = std::max<long long>(0, env_int(L"AD_SCR_TEST_D3D_LOSE", 0));
 #endif
   const std::wstring st = env_w(L"AD_SCR_STRETCH");
   if (st == L"nearest" || st == L"coloroncolor") h.stretch = Stretch::nearest;
@@ -155,6 +171,7 @@ Hooks read_hooks() {
   const std::wstring pw = env_w(L"AD_SCR_PRESENT");
   if (pw == L"gdi") h.present = PresentWay::gdi;
   else if (pw == L"d2d" || pw == L"direct2d") h.present = PresentWay::d2d;
+  else if (pw == L"d3d11" || pw == L"d3d" || pw == L"direct3d") h.present = PresentWay::d3d11;
   return h;
 }
 
@@ -317,6 +334,12 @@ class SaverWindow {
   // Direct2D (present.h): false when this frame is GDI's to draw.
   bool use_d2d() const;
   bool present_d2d(const Frame& f);
+  // Direct3D 11 (present_d3d.h), only while a look is on (App::looks) or
+  // AD_SCR_PRESENT=d3d11: false when this frame is Direct2D's (or GDI's).
+  bool use_d3d() const;
+  bool present_d3d(const Frame& f);
+  // How the frame on screen was drawn, for the stats and capture lines.
+  const char* present_name() const { return last_d3d_ ? "d3d" : last_d2d_ ? "d2d" : "gdi"; }
   // The filter a frame gets drawn one way or the other (AD_SCR_STRETCH, the auto policy).
   Filter filter_for(bool d2d, bool upscale) const;
   void maybe_capture();   // AD_SCR_TEST_CAPTURE
@@ -373,10 +396,30 @@ class SaverWindow {
   int d2d_losses_ = 0;
   int d2d_samples_ = 0;
   double d2d_ms_ = 0;
+  // The look's presenter, made only while a look is on: with the defaults
+  // there is none, and no Direct3D is ever loaded.
+  std::unique_ptr<D3DPresenter> d3d_;
+  bool d3d_off_ = false;           // Direct3D gave way to Direct2D for good (failed, or over budget)
+  bool d3d_logged_ = false;
+  bool last_d3d_ = false;          // the frame on screen was drawn with the look
+  bool d3d_fresh_ = false;         // ...with a swap chain made for it (not a sample of the cost)
+  int d3d_losses_ = 0;
+  int d3d_samples_ = 0;
+  double d3d_ms_ = 0;
+  uint32_t d3d_changes_ = 0;       // D3DPresenter::drawn_changes() the samples are of
+  long long d3d_tries_ = 0;        // presents tried (AD_SCR_TEST_D3D_FAIL, _LOSE)
   // Presentation cost, logged when a host is retired (AD_SCR_LOG).
   uint64_t stat_presented_ = 0, stat_dups_ = 0;
   double stat_ms_total_ = 0, stat_ms_max_ = 0;
 };
+
+// A look for the log: "crt", "smooth, ambient bars", "preset C:\x.slangp".
+std::string looks_text(const LookOptions& o) {
+  std::string s = look_name(o.look);
+  if (o.look == Look::preset) s += " " + narrow(o.preset);
+  if (o.ambient) s += ", ambient bars";
+  return s;
+}
 
 // Real hosts re-send the previous frame when a GO arrives before the
 // module's next draw is due (most modules draw at ~10 fps); those cost a
@@ -486,6 +529,12 @@ class App {
   bool awake_legacy = false;               // ...or SetThreadExecutionState's, when none could be made
   Hooks hooks;
   Settings settings;
+  // What the /s and /window windows draw with (looks.h): the settings' Look
+  // and AmbientBars. Never /p's (someone else's small window draws as it
+  // always has), nor with AD_SCR_PRESENT=d2d or gdi.
+  LookOptions looks;
+  // The windows draw through Direct3D: a look is on, or AD_SCR_PRESENT=d3d11.
+  bool d3d_wanted() const { return looks.any() || (hooks.present == PresentWay::d3d11 && !preview); }
   Catalog catalog;
   std::wstring win_dir, host_exe;
   std::vector<std::string> available;      // ids whose module file exists
@@ -550,6 +599,7 @@ class App {
   // Window index -> its captures, one per screen its first host may be
   // given (first host only).
   std::map<int, std::vector<SaverWindow::Seed>> seed_paths;
+  std::thread looks_prepare;               // d3d_prepare, while the first hosts start (run)
 
   // Input state.
   UINT_PTR caps_timer = 0, hold_timer = 0, script_timer = 0;
@@ -662,11 +712,14 @@ void SaverWindow::resized(int w, int h) {
   if (rc_.right == w && rc_.bottom == h) return;
   rc_ = {0, 0, w, h};
   aspect_ = (double)w / h;
-  // New letterbox, and a new upscale factor for the HALFTONE budget to judge.
+  // New letterbox, and a new upscale factor for the HALFTONE budget to judge
+  // (and a look's, whose cost follows the window's size).
   last_fit_ = {-1, -1, -1, -1};
   halftone_upscale_ = true;
   halftone_samples_ = 0;
   halftone_ms_ = 0;
+  d3d_samples_ = 0;
+  d3d_ms_ = 0;
   InvalidateRect(hwnd, nullptr, FALSE);
   // While the size changes, the host's frames are only scaled to it.
   if (host_) SetTimer(hwnd, kTimerResized, kResizeSettleMs, nullptr);
@@ -800,11 +853,14 @@ void SaverWindow::place(const RECT& rc) {
   if (EqualRect(&rc, &rc_)) return;
   rc_ = rc;
   if (w > 0 && h > 0) aspect_ = (double)w / h;
-  // New letterbox, and a new upscale factor for the HALFTONE budget to judge.
+  // New letterbox, and a new upscale factor for the HALFTONE budget to judge
+  // (and a look's, whose cost follows the window's size).
   last_fit_ = {-1, -1, -1, -1};
   halftone_upscale_ = true;
   halftone_samples_ = 0;
   halftone_ms_ = 0;
+  d3d_samples_ = 0;
+  d3d_ms_ = 0;
   InvalidateRect(hwnd, nullptr, FALSE);
 }
 
@@ -916,9 +972,10 @@ void SaverWindow::kill_host(bool wait) {
     log_line("stats window=%d gen=%llu received=%llu presented=%llu duplicates=%llu present_ms_avg=%.2f "
              "present_ms_max=%.2f present=%s upscale=%s", index_, (unsigned long long)generation_,
              (unsigned long long)host_->frames(), (unsigned long long)stat_presented_, (unsigned long long)stat_dups_,
-             stat_ms_total_ / stat_presented_, stat_ms_max_, last_d2d_ ? "d2d" : "gdi",
-             last_d2d_ ? (app_.hooks.stretch == Stretch::nearest ? "nearest" : "sharp")
-                       : (halftone_upscale_ ? "halftone" : "coloroncolor"));
+             stat_ms_total_ / stat_presented_, stat_ms_max_, present_name(),
+             last_d3d_   ? look_name(app_.looks.look)
+             : last_d2d_ ? (app_.hooks.stretch == Stretch::nearest ? "nearest" : "sharp")
+                         : (halftone_upscale_ ? "halftone" : "coloroncolor"));
   }
   stat_presented_ = stat_dups_ = 0;
   stat_ms_total_ = stat_ms_max_ = 0;
@@ -1116,18 +1173,45 @@ void SaverWindow::present_latest() {
   bool halftone_up = false;
   // A minimized /window draws nothing; it keeps the frame for when it is back.
   const bool shown = !(app_.windowed && IsIconic(hwnd));
-  const bool via_d2d = shown && present_d2d(*f);
-  if (!via_d2d && shown) {
+  // A look draws through Direct3D; without one (or when it gave way), Direct2D.
+  const bool via_d3d = shown && present_d3d(*f);
+  const bool via_d2d = shown && !via_d3d && present_d2d(*f);
+  if (!via_d3d && !via_d2d && shown) {
     if (HDC dc = GetDC(hwnd)) {
       halftone_up = paint_frame(dc, *f, false);
       ReleaseDC(hwnd, dc);
     }
   }
+  last_d3d_ = via_d3d;
   last_d2d_ = via_d2d;
   double ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
   ++stat_presented_;
   stat_ms_total_ += ms;
   stat_ms_max_ = std::max(stat_ms_max_, ms);
+  if (via_d3d && !d3d_fresh_ && app_.hooks.present != PresentWay::d3d11) {
+    // A shader preset drawn at last, after the sharp look stood in while
+    // its chain was built: its own cost is judged from here, its first
+    // frame (the driver's compiles) in the warm-up.
+    if (const uint32_t changes = d3d_->drawn_changes(); changes != d3d_changes_) {
+      d3d_changes_ = changes;
+      d3d_samples_ = 0;
+      d3d_ms_ = 0;
+    }
+    // A look the machine can't keep up with (no GPU but a software one, a
+    // weak GPU at 4K) gives way to Direct2D's sharp upscale. Its cost is the
+    // GPU's time where the device times it, else the CPU's, as Direct2D's.
+    if (!d3d_->standing_in() && d3d_samples_ < kPresentWarmup + kPresentSamples) {
+      const double gpu = d3d_->gpu_ms();
+      if (++d3d_samples_ > kPresentWarmup) d3d_ms_ += gpu >= 0 ? gpu : ms;
+      if (d3d_samples_ == kPresentWarmup + kPresentSamples && d3d_ms_ / kPresentSamples > kPresentBudgetMs) {
+        last_log("present window=%d: direct3d %s %.1f ms/frame over budget -> direct2d", index_,
+                 look_name(app_.looks.look), d3d_ms_ / kPresentSamples);
+        d3d_off_ = true;
+        d3d_.reset();
+        last_fit_ = {-1, -1, -1, -1};
+      }
+    }
+  }
   if (via_d2d && !d2d_fresh_ && app_.hooks.stretch == Stretch::automatic &&
       app_.hooks.present == PresentWay::automatic && d2d_samples_ < kPresentWarmup + kPresentSamples) {
     // Direct2D on a machine without a usable GPU (its software rasterizer)
@@ -1200,6 +1284,52 @@ bool SaverWindow::present_d2d(const Frame& f) {
   return false;
 }
 
+bool SaverWindow::use_d3d() const {
+  if (d3d_off_ || !hwnd || !message_.empty() || !status_.empty()) return false;
+  return app_.d3d_wanted();
+}
+
+// The look, through Direct3D; on failure the frame is Direct2D's (then
+// GDI's), as Direct2D's failures are GDI's.
+bool SaverWindow::present_d3d(const Frame& f) {
+  if (!use_d3d()) return false;
+  if (!d3d_) d3d_ = std::make_unique<D3DPresenter>(app_.looks);
+  // One presenter has the window at a time: Direct2D's render target (it
+  // drew a frame Direct3D lost) goes before Direct3D makes its swap chain.
+  if (d2d_) d2d_->release();
+  d3d_fresh_ = !d3d_->ready();
+  RECT cr{};
+  GetClientRect(hwnd, &cr);
+  const RectI fit = frame_fit(f.width, f.height, cr.right, cr.bottom);
+  std::string err;
+  bool lost = false, ok = false;
+  ++d3d_tries_;
+  if (app_.hooks.d3d_fail_at > 0 && d3d_tries_ == app_.hooks.d3d_fail_at) {
+    err = "AD_SCR_TEST_D3D_FAIL";
+  } else {
+    if (app_.hooks.d3d_lose_every > 0 && d3d_tries_ % app_.hooks.d3d_lose_every == 0) d3d_simulate_device_loss();
+    ok = d3d_->present(hwnd, f, fit, &err, &lost);
+  }
+  if (ok) {
+    if (!d3d_logged_) {
+      d3d_logged_ = true;
+      last_log("present window=%d: direct3d, %s, %ldx%ld", index_, d3d_->describe().c_str(), cr.right, cr.bottom);
+    }
+    last_fit_ = {-1, -1, -1, -1};   // GDI, if it takes over, draws its bars afresh
+    return true;
+  }
+  d3d_->release();   // its swap chain goes: the window is Direct2D's (or GDI's) now
+  if (lost && ++d3d_losses_ <= kMaxDeviceLosses) {
+    // The next frame makes a new device; this one is Direct2D's.
+    last_log("present window=%d: direct3d %s; a new device next frame", index_, err.c_str());
+    return false;
+  }
+  last_log("present window=%d: direct3d failed (%s) -> direct2d", index_, err.c_str());
+  d3d_off_ = true;
+  d3d_.reset();
+  return false;
+}
+
 // AD_SCR_TEST_CAPTURE: what the window shows at the presented frames listed,
 // drawn off screen the way it was drawn on it (present.h), and the host's
 // frame as it came.
@@ -1217,13 +1347,16 @@ void SaverWindow::maybe_capture() {
                                                          std::to_wstring(presented));
   std::vector<uint8_t> bgr;
   std::string err;
-  bool ok = render_frame_bgr(f, cr.right, cr.bottom, fit, last_d2d_, filter, bgr, &err) &&
+  // A look's frame as Direct3D draws it (render_frame_bgr_d3d), bars and all.
+  bool ok = (last_d3d_ ? render_frame_bgr_d3d(f, cr.right, cr.bottom, fit, app_.looks, bgr, &err)
+                       : render_frame_bgr(f, cr.right, cr.bottom, fit, last_d2d_, filter, bgr, &err)) &&
             adw::ui::save_png_bgr(base + L".png", cr.right, cr.bottom, bgr, &err);
   ok = ok && render_frame_bgr(f, f.width, f.height, RectI{0, 0, f.width, f.height}, false, Filter::nearest, bgr, &err) &&
        adw::ui::save_png_bgr(base + L"-host.png", f.width, f.height, bgr, &err);
   log_line("capture window=%d frame=%llu %s %ldx%ld host=%dx%d present=%s filter=%s%s%s", index_,
-           (unsigned long long)presented, ok ? "ok" : "failed", cr.right, cr.bottom, f.width, f.height,
-           last_d2d_ ? "d2d" : "gdi", filter == Filter::nearest ? "nearest" : "smooth", ok ? "" : ": ", err.c_str());
+           (unsigned long long)presented, ok ? "ok" : "failed", cr.right, cr.bottom, f.width, f.height, present_name(),
+           last_d3d_ ? look_name(app_.looks.look) : filter == Filter::nearest ? "nearest" : "smooth", ok ? "" : ": ",
+           err.c_str());
 }
 
 void SaverWindow::set_status(std::wstring text, int test_exit) {
@@ -1233,6 +1366,7 @@ void SaverWindow::set_status(std::wstring text, int test_exit) {
     last_log("status window=%d: %s", index_, narrow(status_).c_str());
     current_.reset();   // the message goes on black, not over a stale frame
     if (d2d_) d2d_->release();   // GDI draws it: the window is GDI's again
+    if (d3d_) d3d_->release();
     if (app_.hooks.exit_after_frames > 0) PostMessageW(hwnd, WM_APP_TESTEXIT, (WPARAM)test_exit, 0);
   }
   InvalidateRect(hwnd, nullptr, FALSE);
@@ -1443,10 +1577,12 @@ LRESULT SaverWindow::handle(UINT msg, WPARAM wp, LPARAM lp) {
     case WM_PAINT: {
       PAINTSTRUCT ps;
       HDC dc = BeginPaint(hwnd, &ps);
-      // Direct2D draws the frame, or the black between modules, while it
-      // has the window; GDI draws the rest (messages, the very first paint).
-      const bool d2d = current_ ? present_d2d(*current_) : use_d2d() && d2d_ && d2d_->clear(hwnd);
-      if (!d2d) render(dc);
+      // Direct3D (a look) or Direct2D draws the frame, or the black between
+      // modules, while it has the window; GDI draws the rest (messages, the
+      // very first paint).
+      const bool drawn = current_ ? present_d3d(*current_) || present_d2d(*current_)
+                                  : (use_d3d() && d3d_ && d3d_->clear(hwnd)) || (use_d2d() && d2d_ && d2d_->clear(hwnd));
+      if (!drawn) render(dc);
       EndPaint(hwnd, &ps);
       return 0;
     }
@@ -1639,6 +1775,11 @@ int App::run() {
   sound_forced_off = adw::scr::sound_forced_off();
   load();
   if (windowed && !window_choice()) return kExitBadArgs;
+  // The looks (looks.h): /s's (the settings dialog's Preview runs /s on its
+  // settings) and /window's. /p draws as it always has. They draw only
+  // through Direct3D, which AD_SCR_PRESENT=d2d or gdi rules out.
+  const LookOptions asked = preview ? LookOptions{} : look_options(settings);
+  if (hooks.present != PresentWay::d2d && hooks.present != PresentWay::gdi) looks = asked;
   seed = hooks.seed >= 0 ? (uint32_t)hooks.seed : (uint32_t)GetTickCount64() ^ (GetCurrentProcessId() << 16);
   // Random plays the same module on every monitor unless DifferentPerMonitor
   // gives each one a rotation of its own. /window's one window has its own,
@@ -1748,6 +1889,25 @@ int App::run() {
     log_line("rotation: waiting for the host's capabilities (a module of another ABI)");
   }
   for (auto& w : windows) w->start();
+  if (d3d_wanted() && message.empty()) {
+    // The device made and the look's shaders compiled now, while the first
+    // hosts start, so the first frame doesn't wait for them: off this
+    // thread (a big look takes a second or two), so the windows paint and
+    // input is heard meanwhile; a first frame that comes sooner waits only
+    // for what is left (present_d3d.h does one thing at a time). Failing
+    // only means each window falls back at its first frame.
+    looks_prepare = std::thread([opts = looks] {
+      const auto t0 = Clock::now();
+      std::string why;
+      const bool ready = d3d_prepare(opts, &why);
+      const long long ms = std::chrono::duration_cast<milliseconds>(Clock::now() - t0).count();
+      if (ready) last_log("looks: %s: direct3d ready in %lld ms", looks_text(opts).c_str(), ms);
+      else last_log("looks: %s: direct3d not ready in %lld ms (%s)", looks_text(opts).c_str(), ms, why.c_str());
+    });
+  } else if (asked.any() && !looks.any()) {
+    last_log("looks: %s: off (AD_SCR_PRESENT=%s)", looks_text(asked).c_str(),
+             hooks.present == PresentWay::gdi ? "gdi" : "d2d");
+  }
 
   MSG msg;
   while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
@@ -2138,6 +2298,7 @@ void App::teardown() {
   // Delete-on-close: the desktop captures go with their last handle.
   for (HANDLE h : seed_files) CloseHandle(h);
   seed_files.clear();
+  if (looks_prepare.joinable()) looks_prepare.join();   // a compile still under way: the windows are gone
 }
 
 void App::set_display_on(bool on) {

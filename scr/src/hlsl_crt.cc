@@ -1,8 +1,198 @@
-// Stub: track CRT replaces this file with the CRT look's passes.
+// The CRT look: a good VGA monitor of 1995 (31 kHz, 480 lines), the kind the
+// modules were drawn on. Our own shader, after the ideas every CRT shader
+// shares (Timothy Lottes's public-domain crt-lottes among them): a soft spot
+// across, each line a beam of its own down, a phosphor mask, a little glow,
+// in linear light.
+//
+// Four passes (present_d3d.h's contract):
+//   crt-linear  the frame decoded to linear light, at its own size (16-bit
+//               float, so the dark end keeps its steps)
+//   crt-glow-h  half size: a wide horizontal blur of it (the glow)
+//   crt-glow-v  the same down
+//   crt (crt-curved)  the fit rectangle: the beam, the scanlines, the mask,
+//               the glow and, behind curved glass, the curve; encoded again
+// About 0.2 ms of an RTX 4090's time at 3840x2160, all four.
 #include "hlsl_crt.h"
 
 namespace adw::scr {
 
-std::vector<PassSpec> crt_passes(bool) { return {}; }
+namespace {
+
+// What the look is made of (frame pixels, or lines, unless said otherwise).
+// The pictures in research/looks/crt/ were tuned with these.
+constexpr float kGamma = 2.2f;       // the palette's bytes are about this much gamma-encoded
+constexpr float kGlowWidth = 3.0f;   // the glow's blur (sigma)
+constexpr float kGlow = 0.035f;      // how much of the light goes to the glow
+constexpr float kSpot = 0.33f;       // the spot across (sigma): soft, but text stays crisp
+constexpr float kLineDark = 0.30f;   // a dark line's beam (sigma, in lines)...
+constexpr float kLineBright = 0.44f; // ...and a bright one's: bright lines all but close the gaps
+constexpr float kMask = 0.22f;       // how far the mask dims the two phosphors not lit
+constexpr float kBend = 0.045f;      // curved: how far the corners pull in (of the half height)
+constexpr float kCorner = 0.035f;    // curved: the corners' radius (of the height)
+constexpr float kVignette = 0.07f;   // curved: how much darker the edges are (the corners twice)
+
+constexpr char kLinear[] = R"hlsl(
+// Params[0].x: the gamma.
+float4 main(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target {
+  float3 c = Original.Load(int3(pos.xy, 0)).rgb;
+  return float4(pow(saturate(c), Params[0].x), 1);
+}
+)hlsl";
+
+// Half size: each tap, halfway between texels, is the mean of a 2x2 block.
+constexpr char kGlowH[] = R"hlsl(
+// Params[0].x: the glow's width (sigma, frame pixels).
+float4 main(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target {
+  float k = -0.5 / (Params[0].x * Params[0].x);
+  float3 sum = 0;
+  float total = 0;
+  [unroll] for (int i = -4; i <= 4; ++i) {
+    float d = 2.0 * i;
+    float w = exp(k * d * d);
+    sum += w * Source.SampleLevel(LinearClamp, uv + float2(d * SourceSize.z, 0), 0).rgb;
+    total += w;
+  }
+  return float4(sum / total, 1);
+}
+)hlsl";
+
+constexpr char kGlowV[] = R"hlsl(
+// Params[0].x: the glow's width (sigma, frame pixels; this texture is half the frame).
+float4 main(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target {
+  float k = -0.5 / (Params[0].x * Params[0].x);
+  float3 sum = 0;
+  float total = 0;
+  [unroll] for (int i = -4; i <= 4; ++i) {
+    float d = 2.0 * i;
+    float w = exp(k * d * d);
+    sum += w * Source.SampleLevel(LinearClamp, uv + float2(0, i * SourceSize.w), 0).rgb;
+    total += w;
+  }
+  return float4(sum / total, 1);
+}
+)hlsl";
+
+constexpr char kFinal[] = R"hlsl(
+// Params[0]: x gamma, y the glow's share, z curved (1) or flat (0)
+// Params[1]: x the spot across (sigma, frame pixels), y a dark line's beam,
+//            z a bright line's (sigma, lines)
+// Params[2]: x the mask's strength, y vignette, z bend, w corner radius
+// Pass0 is the frame in linear light, Pass2 the glow.
+
+float3 texel(int2 p) {
+  return Pass0.Load(int3(clamp(p, int2(0, 0), int2(OriginalSize.xy) - 1), 0)).rgb;
+}
+
+float4 main(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target {
+  // Screen pixels per frame pixel, across and down.
+  float2 k = FitRect.zw * OriginalSize.zw;
+
+  // Behind curved glass the picture bows out: further from the middle, it
+  // is drawn smaller. Corners round, the edge soft, the corners a little
+  // darker; nothing outside the glass.
+  float2 p = uv;
+  float glass = 1;
+  if (Params[0].z > 0.5) {
+    float2 c = uv * 2 - 1;
+    float bend = Params[2].z;
+    c *= 1 + float2(bend * FitRect.w / FitRect.z, bend) * c.yx * c.yx;
+    p = c * 0.5 + 0.5;
+    float2 inside = (0.5 - abs(p - 0.5)) * FitRect.zw;   // screen pixels to each edge
+    float r = Params[2].w * FitRect.w;
+    float2 q = r - inside;
+    float edge = r - length(max(q, 0)) - min(max(q.x, q.y), 0);   // to the rounded edge
+    glass = smoothstep(-0.5, max(1.5, 0.004 * FitRect.w), edge);
+    glass *= 1 - Params[2].y * dot(c, c);
+  }
+
+  // The frame pixel nearest, and how far from its centre.
+  float2 s = p * OriginalSize.xy - 0.5;
+  float2 n = floor(s + 0.5);
+  float2 f = s - n;
+
+  // Across: a soft spot, never narrower than half a screen pixel (a window
+  // smaller than the frame would shimmer).
+  float sx = max(Params[1].x, 0.5 / k.x);
+  float3 dx = float3(f.x + 1, f.x, f.x - 1);
+  float3 wx = exp(-0.5 * dx * dx / (sx * sx));
+  wx /= wx.x + wx.y + wx.z;
+
+  // Down: with scanlines, each line a beam of its own, taller where it is
+  // bright than where dark (each gun's current sets its beam's height: a
+  // saturated blue is a bright blue beam), its light spread over its height,
+  // so the gaps show. Scanlines only where a line has room (looks.h,
+  // crt_scanline_strength); without, the lines blend into each other as the
+  // spot blends pixels across.
+  float lines = saturate((k.y - 2.5) / 0.5);
+  float sb = max(Params[1].x, 0.5 / k.y);
+  float3 lit = 0;
+  float3 blend = 0;
+  float total = 0;
+  [unroll] for (int j = -1; j <= 1; ++j) {
+    int y = (int)n.y + j;
+    float3 c = wx.x * texel(int2((int)n.x - 1, y)) + wx.y * texel(int2((int)n.x, y)) +
+               wx.z * texel(int2((int)n.x + 1, y));
+    float dy = f.y - j;
+    float3 sy = max(lerp(Params[1].y, Params[1].z, sqrt(saturate(c))), 0.5 / k.y);
+    lit += c * exp(-0.5 * dy * dy / (sy * sy)) / sy;
+    float w = exp(-0.5 * dy * dy / (sb * sb));
+    blend += c * w;
+    total += w;
+  }
+  float3 beam = lerp(blend / total, lit * 0.3989423, lines);
+
+  // The mask, at the screen's own pixels: an aperture grille, stripes of
+  // red, green and blue (magenta and green where the screen has fewer
+  // pixels to a frame pixel), dimming the phosphors not lit and making up
+  // the light they lose. It fades out where a frame pixel is under two
+  // screen pixels, so a small window isn't covered in a pattern.
+  float m = Params[2].x * saturate((min(k.x, k.y) - 1.25) / 0.75);
+  uint x = (uint)pos.x;
+  float3 mask;
+  if (k.x >= 3.5) {
+    uint i = x % 3;
+    mask = float3(i == 0, i == 1, i == 2);
+    mask = lerp(1 - m, 1, mask) / (1 - m * 2.0 / 3.0);
+  } else {
+    float g = (float)(x & 1);
+    mask = float3(1 - g, g, 1 - g);
+    mask = lerp(1 - m, 1, mask) / (1 - m * 0.5);
+  }
+
+  float3 glow = Pass2.SampleLevel(LinearClamp, p, 0).rgb;
+  float3 light = lerp(beam * mask, glow, Params[0].y) * glass;
+  return float4(pow(saturate(light), 1 / Params[0].x), 1);
+}
+)hlsl";
+
+PassSpec pass(const char* name, const char* hlsl, PassSize size, float scale) {
+  PassSpec p;
+  p.name = name;
+  p.hlsl = hlsl;
+  p.size = size;
+  p.scale = scale;
+  p.format = PassFormat::rgba16f;
+  return p;
+}
+
+} // namespace
+
+std::vector<PassSpec> crt_passes(bool curved) {
+  std::vector<PassSpec> passes;
+  passes.push_back(pass("crt-linear", kLinear, PassSize::original, 1.0f));
+  passes.back().params[0] = kGamma;
+  passes.push_back(pass("crt-glow-h", kGlowH, PassSize::original, 0.5f));
+  passes.back().params[0] = kGlowWidth;
+  passes.push_back(pass("crt-glow-v", kGlowV, PassSize::source, 1.0f));
+  passes.back().params[0] = kGlowWidth;
+  PassSpec last = pass(curved ? "crt-curved" : "crt", kFinal, PassSize::fit, 1.0f);
+  last.format = PassFormat::rgba8;
+  last.params = {kGamma, kGlow, curved ? 1.0f : 0.0f, 0,
+                 kSpot, kLineDark, kLineBright, 0,
+                 kMask, kVignette, kBend, kCorner,
+                 0, 0, 0, 0};
+  passes.push_back(std::move(last));
+  return passes;
+}
 
 } // namespace adw::scr

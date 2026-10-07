@@ -71,6 +71,15 @@
 // "Stretch to fit the screen" (Settings::stretch_to_fit), across the options
 // card under Resolution and Monitors (ui_model.h: WindowLayout::stretch).
 #define IDC_STRETCH         1044
+// The looks (looks.h), a row of two dropdowns under "Stretch to fit": "Look"
+// (Settings::look: Sharp pixels / CRT monitor / Curved CRT monitor / Smooth,
+// and "Shader preset: <file>" while ShaderPreset names one) and "Bars"
+// (Settings::ambient_bars: Black / Ambient glow). ui_model.h: look_choices,
+// WindowLayout::look and ::bars.
+#define IDC_LOOK_LABEL      1045
+#define IDC_LOOK            1046
+#define IDC_BARS_LABEL      1047
+#define IDC_BARS            1048
 #define IDC_COVER_TILE_BASE 3000
 
 // Runtime-built controls in the module-settings panel: one block of IDs per

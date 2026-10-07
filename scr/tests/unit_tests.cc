@@ -1765,6 +1765,23 @@ void test_dialog() {
   }
   CHECK(preview_settings_path(L"C:\\T", 42) == L"C:\\T\\LongAfterDark-preview-42.ini");
   CHECK(preview_settings_path(L"C:\\T\\", 42) == L"C:\\T\\LongAfterDark-preview-42.ini");
+  // ...which holds the dialog's settings on their own (on_preview), the
+  // looks with them: Look and AmbientBars always, as the dialog shows them
+  // (a look this version doesn't know as written), ShaderPreset while the
+  // settings name one.
+  {
+    Settings s = parse_settings("[Saver]\r\nModule=test.plain\r\nShaderPreset=\"C:\\Sh\\x.slangp\"\r\n");
+    s.look = "crt";
+    s.ambient_bars = true;
+    std::string text = serialize_settings(s);
+    CHECK(text.find("Look=crt\r\n") != std::string::npos && text.find("AmbientBars=1\r\n") != std::string::npos);
+    CHECK(text.find("ShaderPreset=C:\\Sh\\x.slangp\r\n") != std::string::npos);
+    CHECK(look_options(parse_settings(text)) == (LookOptions{Look::crt, true, L"C:\\Sh\\x.slangp"}));
+    text = serialize_settings(parse_settings("[Saver]\r\nModule=test.plain\r\n"));
+    CHECK(text.find("Look=sharp\r\n") != std::string::npos && text.find("AmbientBars=0\r\n") != std::string::npos);
+    CHECK(text.find("ShaderPreset") == std::string::npos);
+    CHECK(serialize_settings(parse_settings("[Saver]\r\nLook=vhs\r\n")).find("Look=vhs\r\n") != std::string::npos);
+  }
   std::wstring td = temp_dir();
   CHECK(!td.empty() && td.back() != L'\\');
 
@@ -1852,7 +1869,8 @@ void check_layout(const WindowLayout& L, int cw, int ch, bool random) {
       {"about", L.about}, {"panel", L.panel}, {"scale", L.scale},
       {"monitors", L.monitors}, {"ok", L.ok}, {"cancel", L.cancel}, {"preview_button", L.preview_button},
       {"import", L.import}, {"assets", L.assets}, {"module_title", L.module_title},
-      {"sound_label", L.sound_label}, {"sound", L.sound}, {"volume_label", L.volume_label},
+      {"stretch", L.stretch}, {"look_label", L.look_label}, {"look", L.look}, {"bars_label", L.bars_label},
+      {"bars", L.bars}, {"sound_label", L.sound_label}, {"sound", L.sound}, {"volume_label", L.volume_label},
       {"volume_value", L.volume_value}, {"volume", L.volume}, {"sound_note", L.sound_note}};
   for (const auto& [name, r] : all) {
     if (r.empty() || !client.contains(r)) {
@@ -1876,8 +1894,9 @@ void check_layout(const WindowLayout& L, int cw, int ch, bool random) {
   apart("details", {L.preview, L.about, L.module_icon, L.module_title, L.module_badge, L.panel});
   apart("details with credits", {L.preview, L.credits, L.module_icon, L.module_title, L.module_badge, L.panel});
   apart("controls column", {L.module_icon, L.panel, L.defaults});
-  apart("options", {L.scale_label, L.scale, L.monitors_label, L.monitors, L.stretch, L.sound_label, L.sound,
-                    L.volume_label, L.volume_value, L.volume, L.sound_note});
+  apart("options", {L.scale_label, L.scale, L.monitors_label, L.monitors, L.stretch, L.look_label, L.look,
+                    L.bars_label, L.bars, L.sound_label, L.sound, L.volume_label, L.volume_value, L.volume,
+                    L.sound_note});
   apart("footer", {L.import, L.assets, L.preview_button, L.ok, L.cancel});
   CHECK(inside(L.list_card, L.list));
   for (const Rc& r : {L.preview, L.about, L.credits, L.controls, L.module_icon, L.module_title, L.module_badge, L.panel,
@@ -1889,25 +1908,45 @@ void check_layout(const WindowLayout& L, int cw, int ch, bool random) {
   const int d = L.dpi;
   CHECK(L.controls.w <= dip(kControlsMaxW, d) + 1);
   CHECK(L.preview.w <= dip(kPreviewMaxW, d) + 1);
-  for (const Rc& r : {L.duration, L.scale, L.monitors, L.sound, L.volume}) CHECK(r.w <= dip(kComboMaxW, d) + 1);
+  for (const Rc& r : {L.duration, L.scale, L.monitors, L.look, L.bars, L.sound, L.volume}) {
+    CHECK(r.w <= dip(kComboMaxW, d) + 1);
+  }
   // The options' dropdowns start their halves of the card: wide enough for
   // "Classic — 480 lines" even at the minimum size.
   CHECK(L.scale.w >= dip(200, d) && std::abs(L.monitors.w - L.scale.w) <= 1);
   // The controls' faces line up with the column: the panel is grown by the
   // focus margin, and "Restore defaults" starts its glyph on the edge.
   CHECK(L.panel.x < L.controls.x && L.panel.right() > L.controls.right());
-  CHECK(std::abs(L.defaults.x + dip(kLinkPad, d) - L.controls.x) <= 1);
-  // "Restore defaults" (where it is pinned) has its text on the credits' first line.
-  CHECK(std::abs(L.defaults.y + L.defaults.h / 2 - (L.credits.y + dip(8, d))) <= 1);
-  CHECK(L.panel.bottom() < L.defaults.y);
-  for (const Rc& r : {L.scale_label, L.scale, L.monitors_label, L.monitors, L.stretch, L.sound_label, L.sound,
-                      L.volume_label, L.volume_value, L.volume, L.sound_note}) {
+  if (!L.defaults.empty()) {
+    CHECK(std::abs(L.defaults.x + dip(kLinkPad, d) - L.controls.x) <= 1);
+    // "Restore defaults" (where it is pinned) has its text on the credits' first line.
+    CHECK(std::abs(L.defaults.y + L.defaults.h / 2 - (L.credits.y + dip(8, d))) <= 1);
+    CHECK(L.panel.bottom() < L.defaults.y);
+  } else {
+    // A window too short for it: the panel takes the column's foot.
+    CHECK(std::abs(L.panel.bottom() - L.credits.bottom()) <= 1);
+  }
+  // Under a name on one line, the panel holds a row of settings at least
+  // (a label and a control, and their focus ring), at every size.
+  if (L.module_title.h <= dip(28, d) + 1) CHECK(L.panel.h >= dip((int)kPanelRowMinDip, d));
+  for (const Rc& r : {L.scale_label, L.scale, L.monitors_label, L.monitors, L.stretch, L.look_label, L.look,
+                      L.bars_label, L.bars, L.sound_label, L.sound, L.volume_label, L.volume_value, L.volume,
+                      L.sound_note}) {
     CHECK(inside(L.options_card, r));
   }
   // "Stretch to fit the screen": under Resolution and Monitors, above Sound,
   // starting where Resolution does, a control's height.
   CHECK(!L.stretch.empty() && L.stretch.y > L.scale.bottom() && L.stretch.bottom() < L.sound_label.y);
   CHECK(std::abs(L.stretch.x - L.scale.x) <= 1 && L.stretch.h >= dip(32, d) - 1);
+  // Look and Bars (looks.h): a row of their own 8 DIP under "Stretch to fit"
+  // and 12 over Sound and Volume, in Resolution's and Monitors' columns and
+  // as wide, each labelled above, a control's height.
+  CHECK(L.look.x == L.scale.x && L.bars.x == L.monitors.x && L.look.w == L.scale.w && L.bars.w == L.monitors.w);
+  CHECK(L.look_label.x == L.look.x && L.bars_label.x == L.bars.x && L.look_label.w == L.look.w);
+  CHECK(L.look_label.y == L.bars_label.y && L.look.y == L.bars.y && L.look.y > L.look_label.bottom() - 1);
+  CHECK(std::abs((L.look_label.y - L.stretch.bottom()) - dip(8, d)) <= 1);
+  CHECK(std::abs((L.sound_label.y - L.look.bottom()) - dip(12, d)) <= 1);
+  CHECK(L.look.h >= dip(32, d) - 1 && L.bars.h == L.look.h && L.look.h == L.scale.h);
   // Sound and Volume (AUDIO.md §9): a second row under Resolution and
   // Monitors, in the same columns and as wide; Volume's readout ends its
   // label row at the slider's end; the note under both, across the card.
@@ -2133,15 +2172,28 @@ void test_ui() {
   // Designed on a 4-DIP grid: at 100% the main edges land on it.
   WindowLayout L96 = layout_window({kDesignClientW, kDesignClientH, 96, true});
   for (const Rc& r : {L96.mode, L96.list_card, L96.details_card, L96.options_card, L96.preview, L96.ok, L96.cancel,
-                      L96.import, L96.controls, L96.sound, L96.volume, L96.sound_note}) {
+                      L96.import, L96.controls, L96.look_label, L96.look, L96.bars, L96.sound, L96.volume,
+                      L96.sound_note}) {
     CHECK(r.x % 4 == 0 && r.y % 4 == 0 && r.w % 4 == 0 && r.h % 4 == 0);
   }
   // 200% is 100% doubled.
   WindowLayout L192 = layout_window({2 * kDesignClientW, 2 * kDesignClientH, 192, true});
   for (auto [a1, b1] : {std::pair{L96.list, L192.list}, std::pair{L96.preview, L192.preview}, std::pair{L96.ok, L192.ok},
-                        std::pair{L96.panel, L192.panel}}) {
+                        std::pair{L96.panel, L192.panel}, std::pair{L96.look, L192.look}, std::pair{L96.bars, L192.bars}}) {
     CHECK(std::abs(b1.x - 2 * a1.x) <= 1 && std::abs(b1.y - 2 * a1.y) <= 1 && std::abs(b1.w - 2 * a1.w) <= 1 &&
           std::abs(b1.h - 2 * a1.h) <= 1);
+  }
+  // "Restore defaults" at the first-open size, with the strip too; a window
+  // too short for a row of settings over it (from 651 DIP down, under the
+  // options card's three rows) leaves it out, so the row stays.
+  CHECK(!L96.defaults.empty());
+  CHECK(!layout_window({kMinClientW, 652, 96, true}).defaults.empty());
+  CHECK(layout_window({kMinClientW, 651, 96, true}).defaults.empty());
+  for (int dpi : {96, 120, 144, 192}) {
+    LayoutInput tall{dip(kDesignClientW, dpi), dip(design_client_h(20), dpi), dpi, true};
+    tall.strip_tiles = 20;
+    CHECK(!layout_window(tall).defaults.empty());
+    CHECK(layout_window({dip(kMinClientW, dpi), dip(kMinClientH, dpi), dpi, false}).defaults.empty());
   }
   // Single module: no rotation row, and the list takes its room.
   WindowLayout single = layout_window({kDesignClientW, kDesignClientH, 96, false});
@@ -2157,6 +2209,36 @@ void test_ui() {
     CHECK((per_monitor_choice(true, all, 1) == PerMonitorChoice{}));
     CHECK((per_monitor_choice(true, all, 0) == PerMonitorChoice{}));
     for (int n : {1, 2, 4}) CHECK((per_monitor_choice(false, all, n) == PerMonitorChoice{}));
+  }
+
+  // "Look" (looks.h): the four looks in this order, then the shader preset
+  // by its file name, only while the settings name one (ShaderPreset has no
+  // UI). The item it opens on: the file's look in any case, Sharp pixels for
+  // a look this version doesn't know and for preset without a ShaderPreset.
+  // "Bars": Black, then Ambient glow.
+  {
+    const std::vector<LookChoice> four = look_choices("");
+    CHECK((four == std::vector<LookChoice>{{Look::sharp, L"Sharp pixels"},
+                                           {Look::crt, L"CRT monitor"},
+                                           {Look::crt_curved, L"Curved CRT monitor"},
+                                           {Look::smooth, L"Smooth"}}));
+    CHECK(look_choices("  ").size() == 4);
+    const std::vector<LookChoice> five = look_choices("C:\\Shaders\\crt-royale.slangp");
+    CHECK(five.size() == 5 && std::equal(four.begin(), four.end(), five.begin()));
+    CHECK(five.size() == 5 && five[4] == (LookChoice{Look::preset, L"Shader preset: crt-royale.slangp"}));
+    CHECK(look_choices("x.slangp").back().label == L"Shader preset: x.slangp");
+    CHECK(look_choices("D:/presets/Fake Lottes.slangp").back().label == L"Shader preset: Fake Lottes.slangp");
+    CHECK(look_choices("C:\\Shaders\\").back().label == L"Shader preset: C:\\Shaders\\");   // no name: the path
+    CHECK(look_choices("C:\\Shaders\\\xC3\xA9t\xC3\xA9.slangp").back().label == L"Shader preset: \u00E9t\u00E9.slangp");
+    const std::vector<std::pair<std::string, int>> opens = {
+        {"sharp", 0}, {"crt", 1},   {"crt-curved", 2}, {"smooth", 3}, {"CRT-Curved", 2},
+        {" smooth", 3}, {"vhs", 0}, {"", 0},           {"preset", 0}, {"crt curved", 0}};
+    for (const auto& [look, i] : opens) {
+      CHECK(look_choice_index(four, look) == i);
+      CHECK(look_choice_index(five, look) == (look == "preset" ? 4 : i));
+    }
+    CHECK(std::size(kBarsChoices) == 2 && std::wstring(kBarsChoices[0]) == L"Black" &&
+          std::wstring(kBarsChoices[1]) == L"Ambient glow");
   }
   // Its row, under "Change module every" (which moves up by as much: 8 DIP
   // and its 32), takes the room from the list; at every scale, at the
@@ -2194,7 +2276,7 @@ void test_ui() {
   WindowLayout big = layout_window({1600, 1000, 96, true});
   CHECK(big.content.w == kContentMaxW && big.content.x == (1600 - kContentMaxW) / 2);
   CHECK(big.controls.w == kControlsMaxW && big.scale.w == kComboMaxW && big.monitors.w == kComboMaxW);
-  CHECK(big.sound.w == kComboMaxW && big.volume.w == kComboMaxW);
+  CHECK(big.sound.w == kComboMaxW && big.volume.w == kComboMaxW && big.look.w == kComboMaxW && big.bars.w == kComboMaxW);
   CHECK(big.preview.w > L96.preview.w);
   CHECK(std::abs((big.monitors.x - big.scale.x) - (big.options_card.right() - 20 - big.scale.x + 24) / 2) <= 1);
   // A module name too long for one line: two, the chips under them and the
@@ -2206,6 +2288,21 @@ void test_ui() {
     CHECK(two.module_title.h == 44 && L96.module_title.h == 28);
     CHECK(two.module_badge.y >= two.module_title.bottom() && two.panel.y == L96.panel.y + 20);
     check_layout(two, kDesignClientW, kDesignClientH, true);
+  }
+  // ...in the shortest window too, at every scale, with and without the
+  // strip: "Restore defaults" gives way, and the settings panel, between the
+  // chips and the column's foot, still holds a checkbox's row.
+  for (int dpi : {96, 120, 144, 168, 192, 240}) {
+    for (auto [h, tiles] : {std::pair{kMinClientH, 0}, std::pair{kMinClientHStrip, 12}}) {
+      for (bool random : {false, true}) {
+        LayoutInput in{dip(kMinClientW, dpi), dip(h, dpi), dpi, random};
+        in.title_lines = 2;
+        in.strip_tiles = tiles;
+        const WindowLayout L = layout_window(in);
+        check_layout(L, in.client_w, in.client_h, random);
+        CHECK(L.defaults.empty() && L.panel.y >= L.module_badge.bottom() && L.panel.h >= dip(40, dpi));
+      }
+    }
   }
 
   // The footer's credit (layout_footer_credit), measured in the real caption face,
@@ -3189,8 +3286,9 @@ void test_releases_layout() {
   CHECK(layout_strip(StripInput{0, false, 24, 48, 600, 0, 96}).mode == StripMode::hidden);
 
   // The window with the strip (COVERS.md §1.2).
-  // (836: 800 and the options card's "Stretch to fit" row.)
-  CHECK(kDesignClientHStrip == 836 && kMinClientHStrip == 680 && kStripCompactBelow == 760);
+  // (904: 800, the options card's "Stretch to fit" row and its Look and Bars row.)
+  CHECK(kDesignClientHStrip == 904 && kMinClientHStrip == 680 && kStripCompactBelow == 760);
+  CHECK(kDesignClientH == 784 && kMinClientH == 600);
   for (int dpi = 96; dpi <= 240; dpi += 24) {
     for (auto [w, h] : {std::pair{kDesignClientW, kDesignClientHStrip}, std::pair{kMinClientW, kMinClientHStrip},
                         std::pair{1600, 1000}, std::pair{1040, 759}, std::pair{1040, 760}}) {
@@ -3367,14 +3465,14 @@ void test_strip_wrap() {
   CHECK((strip_grid(3, false, 10) == StripGrid{3, 1}));      // narrower than a tile: one a row
   CHECK(strip_band(false, 1) == 120 && strip_band(true, 1) == 80);
   CHECK(strip_band(false, 2) == 236 && strip_band(true, 2) == 156 && strip_band(false, 3) == 352);
-  // The first-open height: one row of regular covers (836) up to eight
-  // releases, two (952) for nine to sixteen, three (1068) for seventeen to
+  // The first-open height: one row of regular covers (904) up to eight
+  // releases, two (1020) for nine to sixteen, three (1136) for seventeen to
   // twenty-four (the window then opens as tall as the work area allows, and
   // the strip goes compact where three rows don't fit).
   CHECK(design_client_h(0) == kDesignClientH && design_client_h(1) == kDesignClientH);
   for (int n = 2; n <= 8; ++n) CHECK(design_client_h(n) == kDesignClientHStrip);
-  for (int n = 9; n <= 16; ++n) CHECK(design_client_h(n) == 952);
-  CHECK(design_client_h(17) == 1068 && design_client_h(24) == 1068);
+  for (int n = 9; n <= 16; ++n) CHECK(design_client_h(n) == 1020);
+  CHECK(design_client_h(17) == 1136 && design_client_h(24) == 1136);
   CHECK((strip_grid(15, false, 776) == StripGrid{3, 7}) && (strip_grid(15, true, 776) == StripGrid{2, 8}));
   // Every scale, 1 to 15 releases, both forms, several widths.
   for (int dpi = 96; dpi <= 240; dpi += 24) {
@@ -3417,10 +3515,11 @@ void test_strip_wrap() {
     int rows;
   };
   const Case cases[] = {
-      {14, kDesignClientW, 952, StripMode::regular, true, 2},   // the first-open size
+      {14, kDesignClientW, 1020, StripMode::regular, true, 2},  // the first-open size
+      {14, kDesignClientW, 952, StripMode::regular, true, 2},
       {14, kDesignClientW, 876, StripMode::regular, true, 2},   // the least that holds two regular rows
       {14, kDesignClientW, 875, StripMode::compact, true, 2},
-      {14, kDesignClientW, kDesignClientHStrip, StripMode::compact, true, 2},
+      {14, kDesignClientW, 836, StripMode::compact, true, 2},   // a first-open window clamped to 836
       {14, kDesignClientW, 756, StripMode::compact, true, 2},   // the least that holds two compact rows
       {14, kDesignClientW, 755, StripMode::compact, false, 1},  // one compact row, scrolling
       {14, kMinClientW, kMinClientHStrip, StripMode::compact, false, 1},
@@ -3429,10 +3528,12 @@ void test_strip_wrap() {
       {14, 1600, 1000, StripMode::regular, true, 2},
       {12, kDesignClientW, 952, StripMode::regular, true, 2},
       {8, kDesignClientW, kDesignClientHStrip, StripMode::regular, true, 1},   // 8 regular covers fit one row
-      {9, kDesignClientW, kDesignClientHStrip, StripMode::compact, true, 1},   // 9 need two: compact, on one
-      {15, kDesignClientW, 952, StripMode::regular, true, 2},   // the first-open size: 8 and 7
-      {16, kDesignClientW, 952, StripMode::regular, true, 2},   // sixteen releases at the first-open size: 8 and 8
-      {20, kDesignClientW, 1068, StripMode::regular, true, 3},  // twenty releases at the first-open size: 8, 8 and 4
+      {9, kDesignClientW, kDesignClientHStrip, StripMode::regular, true, 2},   // 9 need two, which 904 holds
+      {9, kDesignClientW, 836, StripMode::compact, true, 1},    // ...and 836 doesn't: compact, on one
+      {15, kDesignClientW, 1020, StripMode::regular, true, 2},  // the first-open size: 8 and 7
+      {16, kDesignClientW, 1020, StripMode::regular, true, 2},  // sixteen releases at the first-open size: 8 and 8
+      {20, kDesignClientW, 1136, StripMode::regular, true, 3},  // twenty releases at the first-open size: 8, 8 and 4
+      {20, kDesignClientW, 1068, StripMode::regular, true, 3},
       {20, kDesignClientW, 952, StripMode::compact, true, 2},   // too short for three regular rows: two compact
       {10, 1336, 952, StripMode::regular, true, 2},             // 8 and 2 where 9 would fit
       {7, kDesignClientW, kDesignClientHStrip, StripMode::regular, true, 1},
@@ -3811,7 +3912,7 @@ void test_releases_seven() {
     };
     const WindowLayout first = strip_at(kDesignClientW, kDesignClientHStrip);
     const WindowLayout small = strip_at(kMinClientW, kMinClientHStrip);
-    const WindowLayout tall = strip_at(kMinClientW, kDesignClientHStrip);
+    const WindowLayout tall = strip_at(kMinClientW, 836);
     const WindowLayout taller = strip_at(kMinClientW, 876);
     for (const WindowLayout* L : {&first, &small, &tall, &taller}) {
       CHECK(L->tiles.cells.size() == 7 && !L->tiles.overflow && shown(L->tiles) == 7 && whole(L->tiles) == 7);
@@ -3923,7 +4024,7 @@ void test_releases_twelve() {
   // rows; only a shorter one scrolls one compact row, with only whole tiles
   // shown, as many at every stop, none of them under a chevron and none
   // reaching the status box. Regular ones (two rows of six in the
-  // first-open window, 952 DIP tall, or in a large one; they need 876 DIP)
+  // first-open window, 1020 DIP tall, or in a large one; they need 876 DIP)
   // never all fit side by side (twelve need 1240 DIP; the tiles area stops
   // growing at 1024, the content column at 1240). Compact ones on two rows of
   // six need 756 DIP (the first-open window clamped to 836 or 759 by a
@@ -3940,15 +4041,17 @@ void test_releases_twelve() {
   };
   auto whole = [](const StripLayout& t) { return (int)std::count(t.whole.begin(), t.whole.end(), true); };
   for (int dpi = 96; dpi <= 240; dpi += 24) {
-    for (const Want& want : {Want{kDesignClientW, 952, StripMode::regular, 2, 12},
+    for (const Want& want : {Want{kDesignClientW, 1020, StripMode::regular, 2, 12},
+                             Want{kDesignClientW, 952, StripMode::regular, 2, 12},
+                             Want{kDesignClientW, kDesignClientHStrip, StripMode::regular, 2, 12},
                              Want{kDesignClientW, 876, StripMode::regular, 2, 12},
                              Want{kDesignClientW, 875, StripMode::compact, 2, 12},
-                             Want{kDesignClientW, kDesignClientHStrip, StripMode::compact, 2, 12},
+                             Want{kDesignClientW, 836, StripMode::compact, 2, 12},
                              Want{kDesignClientW, 759, StripMode::compact, 2, 12},
                              Want{kDesignClientW, 756, StripMode::compact, 2, 12},
                              Want{kDesignClientW, 755, StripMode::compact, 0, 11},
                              Want{kMinClientW, kMinClientHStrip, StripMode::compact, 0, 8},
-                             Want{kMinClientW, kDesignClientHStrip, StripMode::compact, 2, 12},
+                             Want{kMinClientW, 836, StripMode::compact, 2, 12},
                              Want{kMinClientW, 876, StripMode::regular, 2, 12},
                              Want{1600, 1000, StripMode::regular, 2, 12},
                              Want{959, 700, StripMode::compact, 0, 8},
@@ -3990,7 +4093,7 @@ void test_releases_twelve() {
     const WindowLayout L = layout_window(in);
     printf("releases: twelve covers in the first-open window (%d DIP tall): %s, %d rows of %d\n", in.client_h,
            L.strip_mode == StripMode::regular ? "regular" : "compact", L.tiles.rows, L.tiles.cols);
-    in.client_h = kDesignClientHStrip;
+    in.client_h = 836;
     const WindowLayout M = layout_window(in);
     printf("releases: twelve covers in a first-open window clamped to %d DIP tall: %s, %d rows of %d\n", in.client_h,
            M.strip_mode == StripMode::regular ? "regular" : "compact", M.tiles.rows, M.tiles.cols);

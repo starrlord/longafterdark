@@ -90,6 +90,10 @@ struct State {
   std::wstring import_note;                             // why the last import changed nothing
   bool random = true;
   bool sound_on = true;                                 // the Sound dropdown says "Primary monitor" (AUDIO.md §9)
+  // The Look dropdown's items (ui_model.h: look_choices), and whether the
+  // user has picked one: until then OK writes the file's Look as it was.
+  std::vector<LookChoice> looks;
+  bool look_picked = false;
   // "A different module on each monitor" (ui_model.h: per_monitor_choice):
   // the monitors there are to tell apart, counted again at each display
   // change (the test hook's staged layouts follow those changes).
@@ -533,7 +537,9 @@ void apply_theme(State& st) {
   ListView_SetTextColor(st.list, p.text);
   if (st.preview) live_preview_set_palette(st.preview, &st.theme.pal, st.theme.dpi);
   const int face = st.theme.px(32) + 2 * focus_margin(st.theme.dpi);
-  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_SOUND}) size_combo(GetDlgItem(st.dlg, id), st.theme, face);
+  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_LOOK, IDC_BARS, IDC_SOUND}) {
+    size_combo(GetDlgItem(st.dlg, id), st.theme, face);
+  }
   RedrawWindow(st.dlg, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
 }
 
@@ -663,12 +669,13 @@ void set_rotation_summary(State& st, std::wstring text) {
   update_rotation_tip(st);
 }
 
-// "Restore defaults": shown while the module has anything to restore,
-// enabled once something differs from the catalog's defaults.
+// "Restore defaults": shown while the module has anything to restore (and
+// the window the room for it: WindowLayout::defaults), enabled once
+// something differs from the catalog's defaults.
 void update_defaults_button(State& st) {
   HWND b = GetDlgItem(st.dlg, IDC_PANEL_DEFAULTS);
   const Module* m = shown_module(st);
-  const bool show = m && !welcome(st) &&
+  const bool show = m && !welcome(st) && !st.L.defaults.empty() &&
                     std::any_of(m->controls.begin(), m->controls.end(), [](const Control& c) { return c.settable(); });
   const bool enable = show && !at_defaults(st, *m);
   if (!enable && GetFocus() == b) SetFocus(st.list);   // don't strand the keyboard on a dead button
@@ -893,6 +900,10 @@ void layout(State& st) {
   place_combo(IDC_SCALE, L.scale);
   place_combo(IDC_MONITORS, L.monitors);
   place(item(IDC_STRETCH), L.stretch, fm);
+  place(item(IDC_LOOK_LABEL), L.look_label);
+  place(item(IDC_BARS_LABEL), L.bars_label);
+  place_combo(IDC_LOOK, L.look);
+  place_combo(IDC_BARS, L.bars);
   place(item(IDC_SOUND_LABEL), L.sound_label);
   place_combo(IDC_SOUND, L.sound);
   place(item(IDC_VOLUME_LABEL), L.volume_label);
@@ -1081,8 +1092,7 @@ void position_panel(State& st) {
   if (!P.empty_note.empty()) put(IDC_PANEL_EMPTY, P.empty_note, 0, 0);
   // "Restore defaults" just under the last row when they all fit; at the
   // column's foot (layout) when they scroll.
-  {
-    Rc d = st.L.defaults;
+  if (Rc d = st.L.defaults; !d.empty()) {
     if (!scroll && !controls.empty()) d.y = std::min(d.y, st.L.panel.y + fm + P.content_h + st.theme.px(8));
     place(GetDlgItem(st.dlg, IDC_PANEL_DEFAULTS), d, fm);
   }
@@ -2486,6 +2496,12 @@ Settings gather(State& st) {
   // (Primary monitor only): the file's value stays until the user changes it.
   s.different_per_monitor = IsDlgButtonChecked(st.dlg, IDC_PER_MONITOR) == BST_CHECKED;
   s.stretch_to_fit = IsDlgButtonChecked(st.dlg, IDC_STRETCH) == BST_CHECKED;
+  // The looks (looks.h). Look as loaded until the user picks an item, so a
+  // value this version doesn't know stays as written; ShaderPreset has no UI
+  // and stays as loaded.
+  const LRESULT lsel = SendDlgItemMessageW(st.dlg, IDC_LOOK, CB_GETCURSEL, 0, 0);
+  if (st.look_picked && lsel >= 0 && lsel < (LRESULT)st.looks.size()) s.look = look_name(st.looks[(size_t)lsel].look);
+  s.ambient_bars = SendDlgItemMessageW(st.dlg, IDC_BARS, CB_GETCURSEL, 0, 0) == 1;
   // Sound (AUDIO.md §9); SoundMonitor stays as loaded (reserved).
   s.sound = SendDlgItemMessageW(st.dlg, IDC_SOUND, CB_GETCURSEL, 0, 0) != 1;
   s.volume = std::clamp((int)SendDlgItemMessageW(st.dlg, IDC_VOLUME, TBM_GETPOS, 0, 0), 0, 100);
@@ -2993,7 +3009,9 @@ void dpi_changed(State& st, int dpi) {
   load_logo(st);
   if (st.preview) live_preview_set_palette(st.preview, &st.theme.pal, dpi);
   const int face = st.theme.px(32) + 2 * focus_margin(dpi);
-  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_SOUND}) size_combo(GetDlgItem(st.dlg, id), st.theme, face);
+  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_LOOK, IDC_BARS, IDC_SOUND}) {
+    size_combo(GetDlgItem(st.dlg, id), st.theme, face);
+  }
 }
 
 // ---- panel dialog ------------------------------------------------------------------
@@ -3208,8 +3226,9 @@ void init_dialog(State& st) {
   auto item = [&](int id) { return GetDlgItem(st.dlg, id); };
   // Which surface each control sits on (for its background).
   for (int id : {IDC_MODULE_TITLE, IDC_MODULE_BADGE, IDC_ABOUT, IDC_CREDITS, IDC_SCALE_LABEL, IDC_SCALE,
-                 IDC_MONITORS_LABEL, IDC_MONITORS, IDC_STRETCH, IDC_SOUND_LABEL, IDC_SOUND, IDC_VOLUME_LABEL, IDC_VOLUME,
-                 IDC_VOLUME_VALUE, IDC_SOUND_NOTE, IDC_PANEL_DEFAULTS, IDC_WELCOME_IMPORT}) {
+                 IDC_MONITORS_LABEL, IDC_MONITORS, IDC_STRETCH, IDC_LOOK_LABEL, IDC_LOOK, IDC_BARS_LABEL, IDC_BARS,
+                 IDC_SOUND_LABEL, IDC_SOUND, IDC_VOLUME_LABEL, IDC_VOLUME, IDC_VOLUME_VALUE, IDC_SOUND_NOTE,
+                 IDC_PANEL_DEFAULTS, IDC_WELCOME_IMPORT}) {
     set_surface(item(id), Surface::card);
   }
   set_button_role(item(IDC_MODE_SINGLE), ButtonRole::segment_left);
@@ -3221,7 +3240,9 @@ void init_dialog(State& st) {
   set_button_role(item(IDC_WELCOME_IMPORT), ButtonRole::accent, L'\uE958');
   set_button_role(item(IDC_PANEL_DEFAULTS), ButtonRole::subtle, L'\uE7A7');   // undo
   set_button_role(item(IDOK), ButtonRole::accent);
-  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_SOUND}) subclass_combo(item(id), &st.theme);
+  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_LOOK, IDC_BARS, IDC_SOUND}) {
+    subclass_combo(item(id), &st.theme);
+  }
   HWND about = item(IDC_ABOUT);
 
   st.list = item(IDC_MODULE_LIST);
@@ -3328,6 +3349,17 @@ void init_dialog(State& st) {
   // shape between bars; the live preview shows it as it stands.
   CheckDlgButton(st.dlg, IDC_STRETCH, st.settings.stretch_to_fit ? BST_CHECKED : BST_UNCHECKED);
   live_preview_set_stretch(st.preview, st.settings.stretch_to_fit);
+
+  // How /s and /window draw the frames (looks.h); the live preview draws as
+  // it always has, whatever they say.
+  HWND look = item(IDC_LOOK);
+  st.looks = look_choices(st.settings.shader_preset);
+  for (const LookChoice& c : st.looks) SendMessageW(look, CB_ADDSTRING, 0, (LPARAM)c.label.c_str());
+  SendMessageW(look, CB_SETCURSEL, look_choice_index(st.looks, st.settings.look), 0);
+  st.look_picked = false;
+  HWND bars = item(IDC_BARS);
+  for (const wchar_t* label : kBarsChoices) SendMessageW(bars, CB_ADDSTRING, 0, (LPARAM)label);
+  SendMessageW(bars, CB_SETCURSEL, st.settings.ambient_bars ? 1 : 0, 0);
 
   // Sound (AUDIO.md §9): where it plays, or Off; and After Dark's volume.
   HWND snd = item(IDC_SOUND);
@@ -3571,6 +3603,11 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
           if (HIWORD(wp) == BN_CLICKED)
             live_preview_set_stretch(st->preview, IsDlgButtonChecked(st->dlg, IDC_STRETCH) == BST_CHECKED);
           return TRUE;
+        case IDC_LOOK:
+          // From now on OK writes the look picked (gather), even the one the
+          // file's unknown value showed as.
+          if (HIWORD(wp) == CBN_SELCHANGE) st->look_picked = true;
+          return TRUE;
         case IDC_STRIP_SHOW_ALL:
           if (st->strip && st->strip->selected_count()) {
             // Back to every release; the keyboard goes to the tiles (the link hides).
@@ -3805,6 +3842,11 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 //     follows)  focus=stretch (its focus ring); the report says where it shows (stretch=),
 //     whether it is checked (stretch_checked=) and its text fits (stretch_fits=), and where
 //     the options card, Resolution's and Sound's dropdowns are (options_card=, scale=, sound=)
+//     look=sharp|crt|crt-curved|smooth|preset (the Look dropdown at that item, as if the user
+//     picked it; preset only while the settings name a ShaderPreset)  bars=0|1 (Bars at Black
+//     or Ambient glow)  focus=look|bars (their focus rings); the report says where they show
+//     (look=, bars=), what they show (look_sel=sharp|crt|crt-curved|smooth|preset,
+//     bars_sel=0|1) and how many items Look has (look_items=)
 
 std::map<std::wstring, std::wstring> parse_state(const std::wstring& s) {
   std::map<std::wstring, std::wstring> kv;
@@ -3908,6 +3950,14 @@ int run_screenshot(State& st, const std::wstring& png) {
     CheckDlgButton(dlg, IDC_STRETCH, kv[L"stretch"] == L"1" ? BST_CHECKED : BST_UNCHECKED);
     live_preview_set_stretch(st.preview, kv[L"stretch"] == L"1");
   }
+  if (Look l = Look::sharp; !kv[L"look"].empty() && parse_look(narrow(kv[L"look"]), &l)) {
+    for (size_t i = 0; i < st.looks.size(); ++i) {
+      if (st.looks[i].look != l) continue;
+      SendDlgItemMessageW(dlg, IDC_LOOK, CB_SETCURSEL, i, 0);
+      st.look_picked = true;
+    }
+  }
+  if (!kv[L"bars"].empty()) SendDlgItemMessageW(dlg, IDC_BARS, CB_SETCURSEL, kv[L"bars"] == L"1" ? 1 : 0, 0);
   if (kv[L"hover"] == L"preview") {
     st.hover_preview = true;
     live_preview_set_hover(st.preview, true);
@@ -3931,7 +3981,8 @@ int run_screenshot(State& st, const std::wstring& png) {
                                                     {L"random", IDC_MODE_RANDOM}, {L"duration", IDC_DURATION},
                                                     {L"preview", IDC_PREVIEW}, {L"sound", IDC_SOUND},
                                                     {L"volume", IDC_VOLUME}, {L"credit", IDC_FOOTER_CREDIT},
-                                                    {L"permonitor", IDC_PER_MONITOR}, {L"stretch", IDC_STRETCH}};
+                                                    {L"permonitor", IDC_PER_MONITOR}, {L"stretch", IDC_STRETCH},
+                                                    {L"look", IDC_LOOK}, {L"bars", IDC_BARS}};
     SendMessageW(dlg, WM_CHANGEUISTATE, MAKEWPARAM(UIS_CLEAR, UISF_HIDEFOCUS | UISF_HIDEACCEL), 0);
     HWND f = nullptr;
     if (auto it = ids.find(kv[L"focus"]); it != ids.end()) f = GetDlgItem(dlg, it->second);
@@ -4101,6 +4152,20 @@ int run_screenshot(State& st, const std::wstring& png) {
                 "\nstretch_checked=" + (IsDlgButtonChecked(dlg, IDC_STRETCH) == BST_CHECKED ? "1" : "0") +
                 "\nstretch_fits=" + (fits ? "1" : "0") + "\noptions_card=" + pic(st.L.options_card) +
                 "\nscale=" + pic(st.L.scale) + "\nsound=" + pic(st.L.sound) + "\n";
+    }
+    // Look and Bars: where they show, the look and the bars they show, and
+    // how many looks there are to pick from.
+    {
+      auto shown = [&](int id, const Rc& r) {
+        return (GetWindowLongW(GetDlgItem(dlg, id), GWL_STYLE) & WS_VISIBLE) != 0 && !r.empty() ? pic(r)
+                                                                                              : std::string("hidden");
+      };
+      const LRESULT lsel = SendDlgItemMessageW(dlg, IDC_LOOK, CB_GETCURSEL, 0, 0);
+      const LRESULT bsel = SendDlgItemMessageW(dlg, IDC_BARS, CB_GETCURSEL, 0, 0);
+      report += "look=" + shown(IDC_LOOK, st.L.look) +
+                "\nlook_sel=" + (lsel >= 0 && lsel < (LRESULT)st.looks.size() ? look_name(st.looks[(size_t)lsel].look) : "") +
+                "\nlook_items=" + std::to_string(SendDlgItemMessageW(dlg, IDC_LOOK, CB_GETCOUNT, 0, 0)) +
+                "\nbars=" + shown(IDC_BARS, st.L.bars) + "\nbars_sel=" + (bsel >= 0 ? std::to_string(bsel) : "") + "\n";
     }
     write_file_atomic(kv[L"report"], report);
   }

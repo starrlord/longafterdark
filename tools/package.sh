@@ -101,8 +101,8 @@ Long After Dark: third-party software
 The three programs (LongAfterDark.scr, also there as LongAfterDark.exe,
 adhostwin.exe and adimport.exe) are
 linked statically, so each carries inside it the parts of the code below
-that it uses. The full licence texts are in this folder (UNARJ's terms,
-which have no file of their own, are quoted below).
+that it uses. The full licence texts are in this folder (UNARJ's and
+Super-xBR's terms, which have no file of their own, are quoted below).
 
   resource_dasm.LICENSE.txt       MIT
     The x86 emulator in adhostwin.exe is derived from resource_dasm
@@ -141,6 +141,32 @@ which have no file of their own, are quoted below).
       please do not delete my name from the program files or from the
       documentation.
 
+  (no file: the terms are here)   MIT
+    The Smooth look's shaders in LongAfterDark.scr are a modified version
+    of Hyllian's Super-xBR, from libretro's slang-shaders
+    (https://github.com/libretro/slang-shaders, commit
+    1e0238f9fdd4668ce8212c31d80877af605d3b53,
+    edge-smoothing/xbr/shaders/super-xbr/), ported to HLSL. Its notice:
+      Copyright (c) 2015 Hyllian - sergiogdb@gmail.com
+      Permission is hereby granted, free of charge, to any person
+      obtaining a copy of this software and associated documentation
+      files (the "Software"), to deal in the Software without
+      restriction, including without limitation the rights to use,
+      copy, modify, merge, publish, distribute, sublicense, and/or sell
+      copies of the Software, and to permit persons to whom the
+      Software is furnished to do so, subject to the following
+      conditions:
+      The above copyright notice and this permission notice shall be
+      included in all copies or substantial portions of the Software.
+      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+      EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+      OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+      NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+      HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+      WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+      FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+      OTHER DEALINGS IN THE SOFTWARE.
+
   LLVM.LICENSE.txt                Apache-2.0 WITH LLVM-exception
     The LLVM runtimes (libc++, libc++abi, libunwind, compiler-rt) of
     llvm-mingw $LLVM_MINGW_VER (https://github.com/mstorsjo/llvm-mingw), in all
@@ -172,8 +198,9 @@ EOF
 else
 cat <<'EOF'
 Apart from the code above and this project's own, everything the programs
-use comes with Windows. No file of any of the releases the programs run
-(After Dark and the others) is included.
+use comes with Windows (a shader preset's librashader.dll, which a user
+may add, is theirs: it is not included). No file of any of the releases
+the programs run (After Dark and the others) is included.
 EOF
 fi
 } > "$L/NOTICE.txt"
@@ -416,7 +443,8 @@ Licences
    LICENSE.txt is the project's licence. The licences of the code built
    into the programs are in licenses/ (NOTICE.txt there says which is
    whose, and quotes the terms of UNARJ, whose ARJ decoder adimport.exe
-   uses in a modified version).
+   uses in a modified version, and of Super-xBR, which the Smooth look in
+   LongAfterDark.scr uses in a modified version).
 EOF
 else
 cat > "$DIST/README.txt" <<'EOF'
@@ -612,6 +640,17 @@ adhostwin.exe and adimport.exe next to itself.
    get 640x480, scaled up to fit the screen, with bars at the sides on a
    widescreen monitor unless "Stretch to fit the screen" is checked.
 
+   Look and Bars, under it, change how the pictures are drawn. They start
+   at "Sharp pixels" and "Black", the way the screen saver has always drawn
+   them. Look: "CRT monitor" draws a 1990s VGA monitor (best on a 1440p or
+   4K monitor; on a 1080p one its scanlines are left out), "Curved CRT
+   monitor" the same behind curved glass, and "Smooth" smooths the edges of
+   cartoon art (not photos or dithered pictures). Bars: "Ambient glow"
+   fills the bars beside a picture that doesn't fill the screen with a
+   blurred, dimmed copy of it. The live preview always shows the plain
+   picture; Preview shows the look. They need Direct3D 11: without it, or
+   with graphics too slow for the look, the screen saver draws as before.
+
    Sound is on by default. Only the primary monitor's screen saver plays
    it, at the default volume (50): the modules' wave effects, their MIDI
    music (through Windows' MIDI synthesizer) and the Simpsons' speech.
@@ -695,7 +734,8 @@ Licences
    LICENSE.txt is the project's licence. The licences of the code built
    into the programs are in licenses\ (NOTICE.txt there says which is
    whose, and quotes the terms of UNARJ, whose ARJ decoder adimport.exe
-   uses in a modified version).
+   uses in a modified version, and of Super-xBR, which the Smooth look in
+   LongAfterDark.scr uses in a modified version).
 EOF
 fi
 # Linux keeps its own line endings.

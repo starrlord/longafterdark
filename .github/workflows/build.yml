@@ -98,7 +98,10 @@ jobs:
       # import.e2e, import.pkg_real, import.isz_real, import.download_real,
       # import.covers_real) and cpu_perf (no upstream resource_dasm clone to
       # compare with). The download and cover tests serve their files from a
-      # loopback server and need no network.
+      # loopback server and need no network. The runner has no GPU:
+      # scr_unit_looks draws the looks with Direct3D 11's software
+      # rasterizer, WARP, as it does on any machine (and checks no drawing
+      # where Direct3D 11 can't draw at all).
       - name: Build and test
         run: AD_BUILD_DIR="$PWD/build/win-release" AD_CTEST_ARGS="-LE gui -j4" bash tools/build.sh
 

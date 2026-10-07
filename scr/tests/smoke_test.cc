@@ -40,6 +40,7 @@
 #include "host_process.h"
 #include "log.h"
 #include "paths.h"
+#include "present_d3d.h"
 #include "releases.h"
 #include "resource.h"
 #include "settings.h"
@@ -4391,8 +4392,9 @@ int test_config_twelve(const Opts& o) {
     // twelve-release catalog): the seven covers side by side, no chevron (as
     // the first-open window holds them on every monitor but a narrow one);
     // after the reload, the twelve as the same client lays them out (two
-    // rows of compact covers in the seven's 836 DIP; scrolling unscrolled,
-    // with a right chevron, where the work area makes it shorter).
+    // rows of regular covers in the seven's 904 DIP, which need 876;
+    // compact rows, or one row scrolling unscrolled with a right chevron,
+    // where the work area makes it shorter).
     const fs::path catalog = w.assets / "win" / "catalog-win.json", imported = w.dir / "catalog-imported.json";
     std::string twelve, seven;
     CHECK(read_file(catalog.wstring(), twelve) && write_file_atomic(imported.wstring(), twelve));
@@ -7073,16 +7075,667 @@ int test_window(const Opts& o) {
   return 0;
 }
 
-// The looks (looks.h) in /s. Stub: track SAVER writes it.
-int test_looks(const Opts&) {
-  printf("SKIP: not written yet\n");
-  return kSkip;
+// The looks (looks.h) in /s and /window, against fakehost on a 1920x1080
+// monitor staged off every real one. A hidden (or locked) desktop is never
+// composed, so what Direct3D draws is checked in the test hook's captures
+// (AD_SCR_TEST_CAPTURE draws them with render_frame_bgr_d3d), never read
+// off the screen. With a module of a 640x480 screen of its own (Star Wars
+// Screen Entertainment's), pillarboxed: 1440x1080 at x=240.
+//  * the defaults written out (Look=sharp, AmbientBars=0): Direct2D exactly
+//    as before, not a line about Direct3D, no HLSL compiler loaded;
+//  * a look with AD_SCR_PRESENT=d2d: off, said once, Direct2D draws;
+//  * crt whose Direct3D fails at its first present (AD_SCR_TEST_D3D_FAIL):
+//    the log says so, and Direct2D draws;
+//  * a ShaderPreset that isn't there: the same, with the reason;
+// and where Direct3D 11 can draw (else SKIP after those):
+//  * crt with ambient bars: the bars lit by the frame, dimmer than it, and
+//    the frame not the sharp picture; the HLSL compiler loaded;
+//  * smooth and crt-curved draw and capture, their bars black;
+//  * Direct3D failing after frames of its own: Direct2D takes the window
+//    over and draws the sharp picture;
+//  * the device lost (AD_SCR_TEST_D3D_LOSE): a new one, three times, then
+//    Direct2D;
+//  * a monitor of another size: the window moves with its presenter;
+//  * /window with crt: a new size, and a new host, keep it on Direct3D.
+int test_looks(const Opts& o) {
+  std::string why;
+  const bool d3d = d3d_available(&why);
+  const std::wstring wide = L"-16000,0,1920,1080,p";
+  const RectI fit = fit_rect(640, 480, 1920, 1080);
+  // A capture (load_png's BGRA), its pixels' luma (Rec. 601) and a
+  // rectangle's mean luma, sampled every 8th pixel each way.
+  struct Shot {
+    int w = 0, h = 0;
+    std::vector<uint8_t> px;
+    const uint8_t* at(int x, int y) const { return &px[((size_t)y * w + x) * 4]; }
+    int luma(int x, int y) const {
+      const uint8_t* q = at(x, y);
+      return (q[0] * 114 + q[1] * 587 + q[2] * 299 + 500) / 1000;
+    }
+    double mean(int x0, int y0, int x1, int y1) const {
+      double sum = 0;
+      int n = 0;
+      for (int y = y0; y < y1; y += 8) {
+        for (int x = x0; x < x1; x += 8, ++n) sum += luma(x, y);
+      }
+      return n ? sum / n : 0;
+    }
+  };
+  auto shot = [](const fs::path& p, int w, int h, Shot* s) {
+    return load_png(p, &s->w, &s->h, &s->px) && s->w == w && s->h == h;
+  };
+  // How far the frame in `shown` is from the sharp picture of `host` (640x480
+  // in `fit`): the mean difference at the blocks' centres, 0..255.
+  auto off_sharp = [&](const Shot& shown, const Shot& host) {
+    int n = 0;
+    double diff = 0;
+    for (int hy = 8; hy < 480; hy += 37) {
+      for (int hx = 8; hx < 640; hx += 41, ++n) {
+        const int x = fit.x + (int)((hx + 0.5) * fit.w / 640), y = fit.y + (int)((hy + 0.5) * fit.h / 480);
+        const uint8_t* a = host.at(hx, hy);
+        const uint8_t* b = shown.at(x, y);
+        diff += (std::abs(a[0] - b[0]) + std::abs(a[1] - b[1]) + std::abs(a[2] - b[2])) / 3.0;
+      }
+    }
+    return diff / n;
+  };
+  // How much neighbours across a row of `fit` differ (0..255, every 8th row):
+  // in `shown`, and (*sharp) in the sharp picture of `host`, whose neighbours
+  // mostly fall in one block. A phosphor mask makes the first many times it.
+  auto across = [&](const Shot& shown, const Shot& host, double* sharp) {
+    auto diff = [](const uint8_t* a, const uint8_t* b) {
+      return (std::abs(a[0] - b[0]) + std::abs(a[1] - b[1]) + std::abs(a[2] - b[2])) / 3.0;
+    };
+    auto hx = [&](int x) { return (int)((x - fit.x + 0.5) * 640 / fit.w); };
+    int n = 0;
+    double a = 0, b = 0;
+    for (int y = fit.y + 4; y < fit.y + fit.h; y += 8) {
+      const int hy = (int)((y - fit.y + 0.5) * 480 / fit.h);
+      for (int x = fit.x; x + 1 < fit.x + fit.w; ++x, ++n) {
+        a += diff(shown.at(x, y), shown.at(x + 1, y));
+        b += diff(host.at(hx(x), hy), host.at(hx(x + 1), hy));
+      }
+    }
+    *sharp = b / n;
+    return a / n;
+  };
+  // The DLLs process `pid` has loaded, in lower case (psapi's
+  // K32EnumProcessModulesEx and K32GetModuleBaseNameW, which kernel32 has).
+  auto modules_of = [](DWORD pid) {
+    std::set<std::wstring> names;
+    using ListFn = BOOL(WINAPI*)(HANDLE, HMODULE*, DWORD, DWORD*, DWORD);
+    using NameFn = DWORD(WINAPI*)(HANDLE, HMODULE, wchar_t*, DWORD);
+    HMODULE k32 = GetModuleHandleW(L"kernel32.dll");
+    auto list = reinterpret_cast<ListFn>(reinterpret_cast<void*>(GetProcAddress(k32, "K32EnumProcessModulesEx")));
+    auto name = reinterpret_cast<NameFn>(reinterpret_cast<void*>(GetProcAddress(k32, "K32GetModuleBaseNameW")));
+    HANDLE p = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+    std::vector<HMODULE> mods(4096);
+    DWORD need = 0;
+    if (p && list && name && list(p, mods.data(), (DWORD)(mods.size() * sizeof(HMODULE)), &need, 3 /* all */)) {
+      mods.resize(std::min<size_t>(mods.size(), need / sizeof(HMODULE)));
+      for (HMODULE m : mods) {
+        wchar_t buf[MAX_PATH];
+        std::wstring s(buf, name(p, m, buf, MAX_PATH));
+        for (auto& c : s) c = towlower(c);
+        if (!s.empty()) names.insert(s);
+      }
+    }
+    if (p) CloseHandle(p);
+    return names;
+  };
+  // A /s of swse.vader with `look` (`preset`: ShaderPreset, from the data
+  // folder) and `ambient`, captured at frames 20 and 40 unless `extra` says;
+  // `mods` gets the saver's DLLs once frame 20 is captured; `during` is
+  // called as run_scr's is.
+  auto run_s = [&](const std::string& name, const char* look, bool ambient, const EnvList& extra,
+                   std::set<std::wstring>* mods = nullptr, const char* preset = "",
+                   const std::function<void(DWORD, const Work&)>& during = nullptr) {
+    Work w = prepare_six(o, name);
+    edit_settings(w, [&](Settings& s) {
+      s.module = "swse.vader";
+      s.randomize.clear();
+      s.look = look;
+      s.ambient_bars = ambient;
+      s.shader_preset = preset;
+    });
+    fs::create_directories(w.dir / "captures");
+    EnvList env = base_env(o, w);
+    env.push_back({L"AD_SCR_TEST_MONITORS", wide});
+    env.push_back({L"AD_SCR_TEST_CAPTURE", (w.dir / "captures").wstring()});
+    env.push_back({L"AD_SCR_TEST_CAPTURE_FRAMES", L"20,40"});
+    env.push_back({L"AD_SCR_TESTEXIT_AFTER_FRAMES", L"60"});
+    env.push_back({L"AD_SCR_PRESENT", L""});
+    env.push_back({L"AD_SCR_STRETCH", L""});
+    env.push_back({L"AD_SCR_TEST_D3D_FAIL", L""});
+    env.push_back({L"AD_SCR_TEST_D3D_LOSE", L""});
+    for (const auto& e : extra) env.push_back(e);
+    RunResult r = run_scr(o, L"/s", env, 60000, [&](DWORD pid) {
+      if (mods && mods->empty() && count_in_log(w.scr_log, "capture window=0 frame=20 ") > 0) *mods = modules_of(pid);
+      if (during) during(pid, w);
+    });
+    return std::make_pair(w, r);
+  };
+  auto capture_line = [](int k, const std::string& tail) {
+    return "capture window=0 frame=" + std::to_string(k) + " ok 1920x1080 host=640x480 " + tail;
+  };
+  auto capture_png = [](const Work& w, int k, bool host) {
+    return w.dir / "captures" / ("window0-frame" + std::to_string(k) + (host ? "-host.png" : ".png"));
+  };
+
+  // ---- the defaults, written out as the settings dialog's OK writes them
+  {
+    std::set<std::wstring> mods;
+    auto [w, r] = run_s("looks-default", "sharp", false, {}, &mods);
+    if (!expect_exit(w, r, 0)) return 1;
+    std::string text;
+    read_file(w.settings.wstring(), text);
+    CHECK(text.find("Look=sharp\r\n") != std::string::npos && text.find("AmbientBars=0\r\n") != std::string::npos);
+    CHECK(count_in_log(w.scr_log, "present window=0: direct2d, ") == 1);
+    CHECK(count_in_log(w.scr_log, "direct3d") == 0 && count_in_log(w.scr_log, "looks:") == 0);
+    CHECK(count_in_log(w.scr_log, "present=d2d upscale=sharp") >= 1);
+    for (int k : {20, 40}) CHECK(count_in_log(w.scr_log, capture_line(k, "present=d2d filter=smooth")) == 1);
+    // No Direct3D of ours: no HLSL compiler in the process. (Direct2D loads
+    // d3d11.dll and dxgi.dll for itself.)
+    CHECK(!mods.empty() && !mods.count(L"d3dcompiler_47.dll"));
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  // ---- a look, but AD_SCR_PRESENT=d2d: the looks are off
+  {
+    auto [w, r] = run_s("looks-d2d", "crt", true, {{L"AD_SCR_PRESENT", L"d2d"}});
+    if (!expect_exit(w, r, 0)) return 1;
+    CHECK(count_in_log(w.scr_log, "looks: crt, ambient bars: off (AD_SCR_PRESENT=d2d)") == 1);
+    CHECK(count_in_log(w.scr_log, "present window=0: direct2d, ") == 1 && count_in_log(w.scr_log, "direct3d") == 0);
+    for (int k : {20, 40}) CHECK(count_in_log(w.scr_log, capture_line(k, "present=d2d filter=smooth")) == 1);
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  // ---- crt, its Direct3D failing at its first present: Direct2D draws
+  {
+    auto [w, r] = run_s("looks-fail", "crt", false, {{L"AD_SCR_TEST_D3D_FAIL", L"1"}});
+    if (!expect_exit(w, r, 0)) return 1;
+    const std::vector<std::string> lines = lines_of(w.scr_log);
+    const int failed = find_line(lines, "present window=0: direct3d failed (AD_SCR_TEST_D3D_FAIL) -> direct2d");
+    CHECK(failed >= 0 && find_line(lines, "present window=0: direct2d, ", failed) > failed);
+    CHECK(count_in_log(w.scr_log, "direct3d failed") == 1 && count_in_log(w.scr_log, "present window=0: direct3d, ") == 0);
+    CHECK(count_in_log(w.scr_log, d3d ? "looks: crt: direct3d ready in " : "looks: crt: direct3d not ready in ") == 1);
+    for (int k : {20, 40}) CHECK(count_in_log(w.scr_log, capture_line(k, "present=d2d filter=smooth")) == 1);
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  // ---- a ShaderPreset that isn't there (nor, most likely, librashader.dll)
+  {
+    auto [w, r] = run_s("looks-preset", "preset", false, {}, nullptr, "no such preset.slangp");
+    if (!expect_exit(w, r, 0)) return 1;
+    const std::vector<std::string> lines = lines_of(w.scr_log);
+    CHECK(count_in_log(w.scr_log, "looks: preset no such preset.slangp: direct3d ") == 1);
+    const int failed = find_line(lines, "present window=0: direct3d failed (");
+    CHECK(failed >= 0 && find_line(lines, "present window=0: direct2d, ", failed) > failed);
+    if (failed >= 0) {
+      const std::string& l = lines[failed];
+      const size_t a = l.find("failed (") + 8, b = l.rfind(") -> direct2d");
+      const std::string reason = b != std::string::npos && b > a ? l.substr(a, b - a) : "";
+      printf("looks: a preset that isn't there: %s\n", reason.c_str());
+      CHECK(!reason.empty() && reason != "AD_SCR_TEST_D3D_FAIL");
+    }
+    CHECK(count_in_log(w.scr_log, "present window=0: direct3d, ") == 0);
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  if (!d3d) {
+    if (g_failures) return 0;
+    printf("SKIP: no Direct3D 11 here (%s): what the looks draw is not checked\n", why.c_str());
+    return kSkip;
+  }
+
+  // ---- crt with ambient bars, as a user runs it (the cost rule on)
+  {
+    std::set<std::wstring> mods;
+    auto [w, r] = run_s("looks-crt", "crt", true, {}, &mods);
+    if (!expect_exit(w, r, 0)) return 1;
+    const std::vector<std::string> lines = lines_of(w.scr_log);
+    if (const int no = find_line(lines, "looks: crt, ambient bars: direct3d not ready in "); no >= 0 && !g_failures) {
+      // Direct3D 11 is here (d3d_available: WARP, say), but no device of a
+      // GPU's for the windows.
+      printf("SKIP: %s: what the looks draw is not checked\n", lines[no].c_str());
+      return kSkip;
+    }
+    const int at = find_line(lines, "present window=0: direct3d, crt");
+    CHECK(at >= 0 && lines[at].find("ambient") != std::string::npos && ends_with(lines[at], ", 1920x1080"));
+    CHECK(count_in_log(w.scr_log, "looks: crt, ambient bars: direct3d ready in ") == 1);
+    CHECK(count_in_log(w.scr_log, "direct3d failed") == 0);
+    CHECK(mods.count(L"d3dcompiler_47.dll") == 1);
+    if (count_in_log(w.scr_log, "ms/frame over budget -> direct2d") > 0) {
+      printf("looks: crt went over budget here (a slow GPU): its pictures are not checked\n");
+    } else {
+      CHECK(count_in_log(w.scr_log, "present=d3d upscale=crt") >= 1);
+      for (int k : {20, 40}) {
+        CHECK(count_in_log(w.scr_log, capture_line(k, "present=d3d filter=crt")) == 1);
+        Shot shown, host;
+        if (!shot(capture_png(w, k, false), 1920, 1080, &shown) || !shot(capture_png(w, k, true), 640, 480, &host)) {
+          failf("crt: no captures of frame %d", k);
+          continue;
+        }
+        const double left = shown.mean(0, 0, fit.x, 1080), right = shown.mean(fit.x + fit.w, 0, 1920, 1080);
+        const double frame = shown.mean(fit.x, 0, fit.x + fit.w, 1080);
+        double sharp = 0;
+        const double rough = across(shown, host, &sharp);
+        printf("looks: crt frame %d: bars %.1f and %.1f, the frame %.1f (mean luma); neighbours %.1f apart, %.1f in "
+               "the sharp picture\n", k, left, right, frame, rough, sharp);
+        // The bars lit by the frame, and dimmer than it.
+        CHECK(left > 4 && right > 4 && left < frame && right < frame);
+        // A mask of phosphors over the beam: not the sharp picture's blocks.
+        CHECK(rough > 3 * sharp && rough > 4);
+      }
+    }
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  // ---- smooth and crt-curved, through Direct3D whatever they cost here
+  for (const std::string look : {"smooth", "crt-curved"}) {
+    auto [w, r] = run_s("looks-" + look, look.c_str(), false, {{L"AD_SCR_PRESENT", L"d3d11"}});
+    if (!expect_exit(w, r, 0)) return 1;
+    CHECK(count_in_log(w.scr_log, "present window=0: direct3d, " + look) == 1);
+    CHECK(count_in_log(w.scr_log, "direct3d failed") == 0 && count_in_log(w.scr_log, "over budget") == 0);
+    CHECK(count_in_log(w.scr_log, "present=d3d upscale=" + look) >= 1);
+    for (int k : {20, 40}) {
+      CHECK(count_in_log(w.scr_log, capture_line(k, "present=d3d filter=" + look)) == 1);
+      Shot shown;
+      if (!shot(capture_png(w, k, false), 1920, 1080, &shown)) {
+        failf("%s: no capture of frame %d", look.c_str(), k);
+        continue;
+      }
+      // No ambient: black bars. The frame's middle lit.
+      int lit_bars = 0;
+      for (int y = 4; y < 1080; y += 53) {
+        for (int x : {4, fit.x - 3, fit.x + fit.w + 2, 1915}) lit_bars += shown.luma(x, y) > 2;
+      }
+      const double middle = shown.mean(fit.x + fit.w / 4, fit.h / 4, fit.x + fit.w * 3 / 4, fit.h * 3 / 4);
+      printf("looks: %s frame %d: the frame's middle %.1f (mean luma)\n", look.c_str(), k, middle);
+      CHECK(lit_bars == 0 && middle > 30);
+      if (look == "crt-curved") {
+        // Behind curved glass the picture's corners fall away.
+        const POINT corners[] = {{fit.x + 2, 2}, {fit.x + fit.w - 3, 2}, {fit.x + 2, 1077}, {fit.x + fit.w - 3, 1077}};
+        for (const POINT& c : corners) CHECK(shown.luma(c.x, c.y) <= 8);
+      }
+    }
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  // ---- Direct3D failing after 29 frames of its own: Direct2D takes over the
+  // window (whose swap chain goes first) and draws the sharp picture
+  {
+    auto [w, r] = run_s("looks-handover", "crt", true, {{L"AD_SCR_TEST_D3D_FAIL", L"30"}, {L"AD_SCR_PRESENT", L"d3d11"}});
+    if (!expect_exit(w, r, 0)) return 1;
+    const std::vector<std::string> lines = lines_of(w.scr_log);
+    const int drew = find_line(lines, "present window=0: direct3d, crt");
+    const int failed = find_line(lines, "present window=0: direct3d failed (AD_SCR_TEST_D3D_FAIL) -> direct2d");
+    CHECK(drew >= 0 && failed > drew && find_line(lines, "present window=0: direct2d, ", failed) > failed);
+    CHECK(count_in_log(w.scr_log, "direct2d failed") == 0);
+    CHECK(count_in_log(w.scr_log, capture_line(20, "present=d3d filter=crt")) == 1);
+    CHECK(count_in_log(w.scr_log, capture_line(40, "present=d2d filter=smooth")) == 1);
+    Shot shown, host;
+    if (shot(capture_png(w, 40, false), 1920, 1080, &shown) && shot(capture_png(w, 40, true), 640, 480, &host)) {
+      const double off = off_sharp(shown, host);
+      printf("looks: Direct2D after Direct3D: %.1f off the sharp picture, bars %.1f\n", off, shown.mean(0, 0, fit.x, 1080));
+      CHECK(off < 3 && shown.mean(0, 0, fit.x, 1080) < 1);
+    } else {
+      failf("handover: no captures of frame 40");
+    }
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  // ---- the device lost every 15th frame (AD_SCR_TEST_D3D_LOSE): a new one
+  // the next frame, three times; the fourth time Direct2D takes over
+  {
+    auto [w, r] = run_s("looks-lost", "crt", false,
+                        {{L"AD_SCR_TEST_D3D_LOSE", L"15"}, {L"AD_SCR_PRESENT", L"d3d11"},
+                         {L"AD_SCR_TEST_CAPTURE_FRAMES", L"20,70"}, {L"AD_SCR_TESTEXIT_AFTER_FRAMES", L"80"}});
+    if (!expect_exit(w, r, 0)) return 1;
+    const std::vector<std::string> lines = lines_of(w.scr_log);
+    CHECK(count_in_log(w.scr_log, "present window=0: direct3d, crt") == 1);
+    CHECK(count_in_log(w.scr_log, "present window=0: direct3d device lost (") == 3);
+    CHECK(count_in_log(w.scr_log, "; a new device next frame") == 3);
+    const int failed = find_line(lines, "present window=0: direct3d failed (device lost (");
+    CHECK(failed >= 0 && count_in_log(w.scr_log, "direct3d failed") == 1);
+    CHECK(count_in_log(w.scr_log, "direct2d failed") == 0);
+    // Between the losses Direct3D draws again, on a new device; after the
+    // last, Direct2D.
+    CHECK(count_in_log(w.scr_log, capture_line(20, "present=d3d filter=crt")) == 1);
+    CHECK(count_in_log(w.scr_log, capture_line(70, "present=d2d filter=smooth")) == 1);
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  // ---- the monitor becomes 1280x1024: the window moves onto it with its
+  // host (a screen of its own) and its presenter, whose swap chain follows
+  {
+    bool posted = false;
+    auto [w, r] = run_s("looks-monitor", "crt", false,
+                        {{L"AD_SCR_TEST_MONITORS", wide + L"|-16000,0,1280,1024,p"}, {L"AD_SCR_PRESENT", L"d3d11"},
+                         {L"AD_SCR_TEST_CAPTURE_FRAMES", L"20,150"}, {L"AD_SCR_TESTEXIT_AFTER_FRAMES", L"160"}},
+                        nullptr, "", [&](DWORD pid, const Work& run) {
+                          if (posted || count_in_log(run.scr_log, "capture window=0 frame=20 ") == 0) return;
+                          post_display_change(pid, 1);
+                          posted = true;
+                        });
+    if (!expect_exit(w, r, 0)) return 1;
+    CHECK(posted);
+    CHECK(count_in_log(w.scr_log, "relayout monitors=1->1 kept=0 moved=1 created=0 retired=0") == 1);
+    CHECK(host_events(w, "start").size() == 1);
+    CHECK(count_in_log(w.scr_log, "present window=0: direct3d, crt") == 1);
+    CHECK(count_in_log(w.scr_log, "present window=1") == 0 && count_in_log(w.scr_log, "direct3d failed") == 0);
+    CHECK(count_in_log(w.scr_log, capture_line(20, "present=d3d filter=crt")) == 1);
+    CHECK(count_in_log(w.scr_log, "capture window=0 frame=150 ok 1280x1024 host=640x480 present=d3d filter=crt") == 1);
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  // ---- /window with crt: a new shape (a new host at 640x480) keeps it on Direct3D
+  {
+    Work w = prepare(o, "looks-window");
+    edit_settings(w, [](Settings& s) { s.look = "crt"; });
+    fs::create_directories(w.dir / "captures");
+    EnvList env = base_env(o, w);
+    env.push_back({L"AD_SCR_TEST_CAPTURE", (w.dir / "captures").wstring()});
+    env.push_back({L"AD_SCR_TEST_CAPTURE_FRAMES", L"30,300"});
+    env.push_back({L"AD_SCR_PRESENT", L""});
+    env.push_back({L"AD_SCR_TEST_D3D_FAIL", L""});
+    int step = 0;
+    HWND win = nullptr;
+    RunResult r = run_scr(o, L"/window /size 1280x720 /module test.rings", env, 90000, [&](DWORD pid) {
+      if (step == 0) {
+        win = window_of(pid, kWindowModeClass);
+        if (!win || count_in_log(w.scr_log, "capture window=0 frame=30 ") == 0) return;
+        RECT wr{}, cr{};
+        GetWindowRect(win, &wr);
+        GetClientRect(win, &cr);
+        SetWindowPos(win, nullptr, 0, 0, 800 + (wr.right - wr.left - cr.right), 600 + (wr.bottom - wr.top - cr.bottom),
+                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        step = 1;
+      } else if (step == 1 && count_in_log(w.scr_log, "capture window=0 frame=300 ") > 0) {
+        PostMessageW(win, WM_CLOSE, 0, 0);
+        step = 2;
+      }
+    });
+    if (!expect_exit(w, r, 0)) return 1;
+    CHECK(step == 2);
+    CHECK(count_in_log(w.scr_log, "present window=0: direct3d, crt") == 1);
+    CHECK(count_in_log(w.scr_log, "window: resized to 800x600; test.rings starts again at 640x480") == 1);
+    CHECK(count_in_log(w.scr_log, "direct3d failed") == 0);
+    if (count_in_log(w.scr_log, "ms/frame over budget -> direct2d") > 0) {
+      printf("looks: /window's crt went over budget here (a slow GPU): its later frames are not checked\n");
+    } else {
+      CHECK(count_in_log(w.scr_log, "capture window=0 frame=30 ok 1280x720 host=856x480 present=d3d filter=crt") == 1);
+      CHECK(count_in_log(w.scr_log, "capture window=0 frame=300 ok 800x600 host=640x480 present=d3d filter=crt") == 1);
+      CHECK(count_in_log(w.scr_log, "present=d3d upscale=crt") == 2);   // both hosts
+      Shot shown;
+      if (shot(w.dir / "captures" / "window0-frame300.png", 800, 600, &shown)) {
+        CHECK(shown.mean(200, 150, 600, 450) > 30);
+      } else {
+        failf("/window: no 800x600 capture of frame 300");
+      }
+    }
+    check_hosts_gone(w);
+    if (g_failures) dump_logs(w);
+  }
+  return 0;
 }
 
-// The settings window's Look and Bars. Stub: track DIALOG writes it.
-int test_config_look(const Opts&) {
-  printf("SKIP: not written yet\n");
-  return kSkip;
+// Waits on a folder for the settings dialog's Preview file
+// (LongAfterDark-preview-<pid>.ini) and reads it as it appears: it lives only
+// until the Preview's /s has read it.
+struct PreviewFileWatch {
+  fs::path dir;
+  std::string text;
+  volatile LONG stop = 0;
+};
+
+DWORD WINAPI watch_preview_file(LPVOID p) {
+  auto* wt = static_cast<PreviewFileWatch*>(p);
+  HANDLE dir = CreateFileW(wt->dir.c_str(), FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+  if (dir == INVALID_HANDLE_VALUE) return 1;
+  alignas(DWORD) char buf[8192];
+  DWORD got = 0;
+  while (!wt->stop && wt->text.empty() &&
+         ReadDirectoryChangesW(dir, buf, sizeof(buf), FALSE, FILE_NOTIFY_CHANGE_FILE_NAME, &got, nullptr, nullptr)) {
+    for (DWORD off = 0; got && off < got;) {
+      const auto* n = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(buf + off);
+      const std::wstring name(n->FileName, n->FileNameLength / sizeof(wchar_t));
+      if ((n->Action == FILE_ACTION_ADDED || n->Action == FILE_ACTION_RENAMED_NEW_NAME) &&
+          parse_preview_settings_name(name)) {
+        read_file((wt->dir / name).wstring(), wt->text);
+      }
+      if (!n->NextEntryOffset) break;
+      off += n->NextEntryOffset;
+    }
+  }
+  CloseHandle(dir);
+  return 0;
+}
+
+// The settings window's Look and Bars (looks.h; ui_model.h: look_choices),
+// driven by control ID:
+//  * a file with Look=crt-curved, AmbientBars=1 and ShaderPreset=x.slangp:
+//    five looks, the last "Shader preset: x.slangp", with "Curved CRT
+//    monitor" and "Ambient glow" shown; Smooth and Black picked, OK:
+//    Look=smooth, AmbientBars=0, ShaderPreset and the rest of the file kept;
+//  * Look=vhs (a later version's): shown as "Sharp pixels"; OK with only Bars
+//    changed keeps Look=vhs; "Sharp pixels" picked writes Look=sharp;
+//  * no ShaderPreset: four looks, and Look=preset shows "Sharp pixels" (kept);
+//  * Preview with Look=crt and ambient bars: its settings file says so, and
+//    its /s draws with them (the saver's "looks: crt, ambient bars: direct3d");
+//  * renders at 100% and 150%, light, dark and high contrast, at the
+//    first-open and the minimum size (kept as look-<name>.png in the test's
+//    folder): the row under "Stretch to fit", over Sound, in Resolution's and
+//    Monitors' columns, showing what was asked.
+int test_config_look(const Opts& o) {
+  Work w = prepare(o, "config-look");
+  auto ready = [](DWORD pid) -> HWND {
+    HWND d = find_dialog(pid);
+    HWND list = d ? GetDlgItem(d, IDC_MODULE_LIST) : nullptr;
+    return list && SendMessageW(list, LVM_GETITEMCOUNT, 0, 0) > 0 ? d : nullptr;
+  };
+  using Strs = std::vector<std::string>;
+  struct Seen {
+    Strs looks, bars;               // the items
+    int look = -1, bar = -1;        // the selections
+    std::string look_label, bars_label;
+    bool shown = false;
+  };
+  auto see = [](HWND dlg) {
+    Seen s;
+    for (auto [id, items] : {std::pair{IDC_LOOK, &s.looks}, std::pair{IDC_BARS, &s.bars}}) {
+      HWND c = GetDlgItem(dlg, id);
+      for (int i = 0, n = (int)SendMessageW(c, CB_GETCOUNT, 0, 0); i < n; ++i) {
+        wchar_t buf[128] = {};
+        if (SendMessageW(c, CB_GETLBTEXTLEN, i, 0) < 128) SendMessageW(c, CB_GETLBTEXT, i, (LPARAM)buf);
+        items->push_back(narrow(buf));
+      }
+    }
+    s.look = (int)SendDlgItemMessageW(dlg, IDC_LOOK, CB_GETCURSEL, 0, 0);
+    s.bar = (int)SendDlgItemMessageW(dlg, IDC_BARS, CB_GETCURSEL, 0, 0);
+    s.look_label = window_text(GetDlgItem(dlg, IDC_LOOK_LABEL));
+    s.bars_label = window_text(GetDlgItem(dlg, IDC_BARS_LABEL));
+    s.shown = IsWindowVisible(GetDlgItem(dlg, IDC_LOOK)) && IsWindowVisible(GetDlgItem(dlg, IDC_BARS));
+    return s;
+  };
+  // An item picked as the dialog sees a pick.
+  auto pick = [](HWND dlg, int id, int i) {
+    HWND c = GetDlgItem(dlg, id);
+    SendMessageW(c, CB_SETCURSEL, i, 0);
+    SendMessageW(dlg, WM_COMMAND, MAKEWPARAM(id, CBN_SELCHANGE), (LPARAM)c);
+  };
+  // One dialog: `act` sees it and changes what it will, then OK.
+  auto session = [&](const std::function<void(HWND)>& act) {
+    bool acted = false;
+    RunResult r = run_scr(o, L"/c", base_env(o, w), 60000, [&](DWORD pid) {
+      if (acted) return;
+      HWND dlg = ready(pid);
+      if (!dlg) return;
+      act(dlg);
+      PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), (LPARAM)GetDlgItem(dlg, IDOK));
+      acted = true;
+    });
+    CHECK(acted);
+    return expect_exit(w, r, 0);
+  };
+  auto file = [&] {
+    std::string text;
+    read_file(w.settings.wstring(), text);
+    return text;
+  };
+  auto has = [](const std::string& text, const char* line) { return text.find(line) != std::string::npos; };
+  const Strs four = {"Sharp pixels", "CRT monitor", "Curved CRT monitor", "Smooth"};
+  Strs five = four;
+  five.push_back("Shader preset: x.slangp");
+
+  // ---- Look=crt-curved, AmbientBars=1, ShaderPreset=x.slangp: Smooth and Black picked.
+  edit_settings(w, [](Settings& s) {
+    s.look = "crt-curved";
+    s.ambient_bars = true;
+    s.shader_preset = "x.slangp";
+  });
+  Seen first;
+  if (!session([&](HWND dlg) {
+        first = see(dlg);
+        pick(dlg, IDC_LOOK, 3);
+        pick(dlg, IDC_BARS, 0);
+      })) {
+    return 1;
+  }
+  CHECK(first.looks == five && first.bars == (Strs{"Black", "Ambient glow"}));
+  CHECK(first.look == 2 && first.bar == 1 && first.shown);
+  CHECK(first.look_label == "Loo&k" && first.bars_label == "&Bars");
+  std::string text = file();
+  CHECK(has(text, "Look=smooth\r\n") && has(text, "AmbientBars=0\r\n") && has(text, "ShaderPreset=x.slangp\r\n"));
+  CHECK(has(text, "FutureKey=keep me\r\n") && has(text, "Module=test.rings\r\n"));
+  Settings s;
+  CHECK(load_settings(w.settings.wstring(), s) && s.look == "smooth" && !s.ambient_bars && s.shader_preset == "x.slangp");
+
+  // ---- Look=vhs: "Sharp pixels" shown; only Bars changed: Look stays vhs.
+  edit_settings(w, [](Settings& s) { s.look = "vhs"; });
+  CHECK(has(file(), "Look=vhs\r\n"));
+  Seen later;
+  if (!session([&](HWND dlg) {
+        later = see(dlg);
+        pick(dlg, IDC_BARS, 1);
+      })) {
+    return 1;
+  }
+  CHECK(later.looks == five && later.look == 0 && later.bar == 0);
+  text = file();
+  CHECK(has(text, "Look=vhs\r\n") && has(text, "AmbientBars=1\r\n") && has(text, "ShaderPreset=x.slangp\r\n"));
+  // ...and "Sharp pixels" picked (the item it showed): Look=sharp.
+  if (!session([&](HWND dlg) { pick(dlg, IDC_LOOK, 0); })) return 1;
+  text = file();
+  CHECK(has(text, "Look=sharp\r\n") && !has(text, "Look=vhs") && has(text, "AmbientBars=1\r\n"));
+
+  // ---- No ShaderPreset: four looks; Look=preset shows "Sharp pixels" and stays.
+  edit_settings(w, [](Settings& s) {
+    s.look = "preset";
+    s.shader_preset.clear();
+  });
+  Seen plain;
+  if (!session([&](HWND dlg) { plain = see(dlg); })) return 1;
+  CHECK(plain.looks == four && plain.look == 0 && plain.bar == 1);
+  text = file();
+  CHECK(has(text, "Look=preset\r\n") && has(text, "AmbientBars=1\r\n"));
+  CHECK(load_settings(w.settings.wstring(), s) && s.shader_preset.empty());
+
+  // ---- Preview with Look=crt and ambient bars: its /s gets them.
+  {
+    edit_settings(w, [](Settings& s) {
+      s.look = "crt";
+      s.ambient_bars = true;
+    });
+    const std::string before = file();
+    const fs::path tmp = w.dir / "tmp";
+    fs::create_directories(tmp);
+    EnvList env = base_env(o, w);
+    env.push_back({L"TMP", tmp.wstring()});
+    env.push_back({L"TEMP", tmp.wstring()});
+    env.push_back({L"AD_SCR_TESTEXIT_AFTER_FRAMES", L"60"});   // the Preview ends itself
+    PreviewFileWatch watch{tmp};
+    HANDLE watcher = CreateThread(nullptr, 0, watch_preview_file, &watch, 0, nullptr);
+    CHECK(watcher != nullptr);
+    Sleep(200);   // waiting on the folder before anything is written there
+    int step = 0;
+    DWORD preview_pid = 0;
+    RunResult r = run_scr(o, L"/c", env, 90000, [&](DWORD pid) {
+      HWND dlg = ready(pid);
+      if (!dlg || step == 2) return;
+      if (step == 0) {
+        click(dlg, IDC_PREVIEW);
+        step = 1;
+        return;
+      }
+      for (auto& e : hosts_of(w, pid, true)) preview_pid = (DWORD)strtoul(e["ppid"].c_str(), nullptr, 10);
+      // The Preview has ended (its test exit) and the dialog took it back.
+      if (preview_pid && IsWindowEnabled(GetDlgItem(dlg, IDC_PREVIEW))) {
+        PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED), 0);
+        step = 2;
+      }
+    });
+    InterlockedExchange(&watch.stop, 1);
+    write_file_atomic((tmp / "wake.txt").wstring(), "wake\n");   // the watcher, if it still waits
+    if (watcher) {
+      CHECK(WaitForSingleObject(watcher, 10000) == WAIT_OBJECT_0);
+      CloseHandle(watcher);
+    }
+    CHECK(step == 2);
+    if (!expect_exit(w, r, 0)) return 1;
+    CHECK(has(watch.text, "Look=crt\r\n") && has(watch.text, "AmbientBars=1\r\n"));
+    CHECK(has(watch.text, "Module=test.rings\r\n"));
+    CHECK(count_in_log(w.scr_log, "looks: crt, ambient bars: direct3d") == 1);
+    CHECK(file() == before);   // Cancel
+    check_hosts_gone(w);
+    if (g_failures) {
+      fprintf(stderr, "the Preview's settings file:\n%s\n", watch.text.c_str());
+      dump_logs(w);
+      return 1;
+    }
+  }
+
+  // ---- renders (kept as look-<name>.png in the test's folder)
+  edit_settings(w, [](Settings& s) { s.shader_preset = "C:\\Shaders\\crt-royale-fake-bloom-ntsc.slangp"; });
+  struct Render {
+    const char* name;
+    std::string state, look, bars;
+  };
+  const std::string base = "mode=single;wait=5000;frames=3;size=";
+  const std::vector<Render> renders = {
+      {"light-100", "theme=light;dpi=96;look=crt-curved;bars=1;" + base + "1104x784", "crt-curved", "1"},
+      {"dark-100", "theme=dark;dpi=96;look=smooth;bars=0;" + base + "1104x784", "smooth", "0"},
+      {"light-150", "theme=light;dpi=144;look=preset;bars=1;" + base + "1104x784", "preset", "1"},
+      {"dark-150-focus", "theme=dark;dpi=144;focus=look;" + base + "1104x784", "crt", "1"},
+      {"hc-100", "theme=hc;dpi=96;look=sharp;bars=0;focus=bars;" + base + "1104x784", "sharp", "0"},
+      {"light-100-min", "theme=light;dpi=96;look=preset;" + base + "900x600", "preset", "1"},
+      {"dark-150-min", "theme=dark;dpi=144;look=crt;bars=0;" + base + "900x600", "crt", "0"},
+  };
+  for (const Render& rd : renders) {
+    auto kv = dialog_report(o, w, rd.state);
+    const fs::path png = w.dir / (std::string("look-") + rd.name + ".png");
+    std::error_code ec;
+    fs::copy_file(w.dir / "dialog.png", png, fs::copy_options::overwrite_existing, ec);
+    RECT look{}, bars{}, sb{}, card{}, scale{}, sound{};
+    CHECK(report_rect(kv["look"], &look) && report_rect(kv["bars"], &bars) && report_rect(kv["stretch"], &sb));
+    CHECK(report_rect(kv["options_card"], &card) && report_rect(kv["scale"], &scale) && report_rect(kv["sound"], &sound));
+    CHECK(kv["look_sel"] == rd.look && kv["bars_sel"] == rd.bars && kv["look_items"] == "5");
+    for (const RECT& r : {look, bars}) {
+      CHECK(r.left >= card.left && r.right <= card.right && r.top >= card.top && r.bottom <= card.bottom);
+    }
+    CHECK(look.top > sb.bottom && look.bottom < sound.top && std::abs(look.left - scale.left) <= 1);
+    CHECK(bars.top == look.top && bars.left > look.right && look.right - look.left == scale.right - scale.left);
+    if (g_failures) {
+      fprintf(stderr, "%s: look=%s bars=%s stretch=%s options_card=%s scale=%s sound=%s look_sel=%s bars_sel=%s items=%s\n",
+              rd.name, kv["look"].c_str(), kv["bars"].c_str(), kv["stretch"].c_str(), kv["options_card"].c_str(),
+              kv["scale"].c_str(), kv["sound"].c_str(), kv["look_sel"].c_str(), kv["bars_sel"].c_str(),
+              kv["look_items"].c_str());
+      return 1;
+    }
+  }
+  check_hosts_gone(w);
+  return 0;
 }
 
 } // namespace
