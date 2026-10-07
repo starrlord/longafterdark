@@ -12,13 +12,18 @@ add_library(adw_scr STATIC
   src/dialog_support.cc
   src/frame_parser.cc
   src/geometry.cc
+  src/hlsl_crt.cc
+  src/hlsl_smooth.cc
   src/host_process.cc
   src/input_rules.cc
   src/log.cc
+  src/looks.cc
   src/paths.cc
   src/present.cc
+  src/present_d3d.cc
   src/releases.cc
   src/settings.cc
+  src/shader_preset.cc
   src/sound.cc
   src/ui_model.cc
   src/window_mode.cc
@@ -31,7 +36,10 @@ target_include_directories(adw_scr PUBLIC src)
 target_include_directories(adw_scr PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../host/core/include)
 # Windows 10 APIs (per-monitor-v2 DPI, high-resolution waitable timers).
 target_compile_definitions(adw_scr PUBLIC _WIN32_WINNT=0x0A00 WINVER=0x0A00)
-# Direct2D and WIC: the saver windows' presentation (present.h).
+# Direct2D and WIC: the saver windows' presentation (present.h). The looks'
+# Direct3D 11 (present_d3d.h) is not linked: d3d11.dll, dxgi.dll and the HLSL
+# compiler, d3dcompiler_47.dll, are loaded from System32 on first use, so with
+# the default settings the saver never loads them.
 target_link_libraries(adw_scr PUBLIC phosg::phosg dwmapi shell32 ole32 gdi32 user32 d2d1 windowscodecs)
 
 # The icon is drawn by a build-time program (no binary art in the repo).
@@ -117,7 +125,10 @@ add_executable(scr_fakeimport tests/fakeimport.cc)
 set_target_properties(scr_fakeimport PROPERTIES OUTPUT_NAME fakeimport)
 target_link_options(scr_fakeimport PRIVATE -municode)
 
-add_executable(scr_unit tests/unit_tests.cc)
+# The looks' suite (scr_unit looks) is in files of its own, one per part
+# (tests/looks_test.h).
+add_executable(scr_unit tests/unit_tests.cc tests/looks_tests.cc tests/looks_core_test.cc tests/looks_crt_test.cc
+               tests/looks_smooth_test.cc tests/looks_preset_test.cc)
 # adw_ui for the caption fonts: the strip's captions are measured in the real face.
 target_link_libraries(scr_unit PRIVATE adw_scr adw_ui)
 target_compile_definitions(scr_unit PRIVATE
@@ -130,7 +141,7 @@ target_link_libraries(scr_smoke PRIVATE adw_scr adw_ui user32 gdi32 comctl32 win
 target_link_options(scr_smoke PRIVATE -municode)
 
 foreach(_t args parser settings catalog geometry rotation convert env layout input seed releases paths sound present
-           window)
+           window looks)
   add_test(NAME scr_unit_${_t} COMMAND scr_unit ${_t})
 endforeach()
 # Starts fakeimport.exe the way the dialog starts adimport.exe.
@@ -164,7 +175,7 @@ foreach(_t run preview preview-parent-gone not-imported host-missing respawn sta
            config-buttons config-speed
            config-collections config-cover config-remove rotate-collections config-details data-root
            sound sound-wake config-sound present config-abi rotate-abi rotate-abi-wait screen-abi screen-field numlock
-           config-credit config-twelve rotate-monitors config-monitors config-stretch window)
+           config-credit config-twelve rotate-monitors config-monitors config-stretch window looks config-look)
   add_test(NAME scr_smoke_${_t} COMMAND scr_smoke ${_t} ${_smoke_args})
   set_tests_properties(scr_smoke_${_t} PROPERTIES LABELS gui SKIP_RETURN_CODE 77 TIMEOUT 90)
 endforeach()
@@ -203,6 +214,9 @@ set_tests_properties(scr_smoke_config-monitors PROPERTIES TIMEOUT 240)
 # a /s rotation and a /p.
 set_tests_properties(scr_smoke_config-speed PROPERTIES TIMEOUT 240)
 set_tests_properties(scr_smoke_config-stretch PROPERTIES TIMEOUT 240)
+# The looks (looks.h): /s runs with each look, and the dialog's Look and Bars.
+set_tests_properties(scr_smoke_looks PROPERTIES TIMEOUT 240)
+set_tests_properties(scr_smoke_config-look PROPERTIES TIMEOUT 240)
 set_tests_properties(scr_host_stream PROPERTIES TIMEOUT 60)
 
 # Sound (docs/AUDIO.md §9) is on by default and the GUI smoke tests

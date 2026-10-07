@@ -58,6 +58,14 @@ bool parse_switch(std::string_view s, bool& out) {
   return false;
 }
 
+// A path as a hand may write it: blanks around it, and one pair of double
+// quotes around that ("C:\Shaders\crt-royale.slangp").
+std::string_view unquote(std::string_view s) {
+  s = trim(s);
+  if (s.size() >= 2 && s.front() == '"' && s.back() == '"') s = trim(s.substr(1, s.size() - 2));
+  return s;
+}
+
 std::string format_scale(double v) {
   char buf[32];
   // "1.0"/"1.5" as DESIGN.md spells them; anything hand-edited keeps its digits.
@@ -272,6 +280,15 @@ std::string join_ids(const std::vector<std::string>& ids) {
 
 } // namespace
 
+LookOptions look_options(const Settings& s) {
+  LookOptions o;
+  if (!parse_look(s.look, &o.look)) o.look = Look::sharp;   // a later version's look
+  o.ambient = s.ambient_bars;
+  o.preset = widen(s.shader_preset);
+  if (o.look == Look::preset && o.preset.empty()) o.look = Look::sharp;
+  return o;
+}
+
 Settings parse_settings(std::string_view text) {
   IniFile ini;
   ini.parse(text);
@@ -296,6 +313,9 @@ Settings parse_settings(std::string_view text) {
   if (auto* v = ini.get(kSaver, "Monitors")) s.all_monitors = !iequals(trim(*v), "primary");
   if (auto* v = ini.get(kSaver, "DifferentPerMonitor")) parse_switch(*v, s.different_per_monitor);
   if (auto* v = ini.get(kSaver, "StretchToFit")) parse_switch(*v, s.stretch_to_fit);
+  if (auto* v = ini.get(kSaver, "Look"); v && !trim(*v).empty()) s.look = std::string(trim(*v));
+  if (auto* v = ini.get(kSaver, "AmbientBars")) parse_switch(*v, s.ambient_bars);
+  if (auto* v = ini.get(kSaver, "ShaderPreset")) s.shader_preset = std::string(unquote(*v));
   if (auto* v = ini.get(kSaver, "StartFromDesktop"); v && parse_int(*v, n)) s.start_from_desktop = n != 0;
   if (auto* v = ini.get(kSaver, "Sound")) parse_switch(*v, s.sound);
   if (auto* v = ini.get(kSaver, "Volume"); v && parse_int(*v, n)) s.volume = (int)std::clamp<long long>(n, 0, 100);
@@ -349,6 +369,21 @@ std::string serialize_settings(const Settings& s, std::string_view base) {
     const std::string* v = ini.get(kSaver, "StretchToFit");
     if (!v || !parse_switch(*v, cur) || cur != s.stretch_to_fit)
       ini.set(kSaver, "StretchToFit", s.stretch_to_fit ? "1" : "0");
+  }
+  // The looks (looks.h). A Look that already says this look (another case,
+  // or a later version's value the dialog kept) is left as written.
+  {
+    const std::string* v = ini.get(kSaver, "Look");
+    Look a = Look::sharp, b = Look::sharp;
+    const bool same = v && (std::string(trim(*v)) == s.look ||
+                            (parse_look(*v, &a) && parse_look(s.look, &b) && a == b));
+    if (!same) ini.set(kSaver, "Look", trim(s.look).empty() ? std::string("sharp") : s.look);
+    bool cur = !s.ambient_bars;
+    v = ini.get(kSaver, "AmbientBars");
+    if (!v || !parse_switch(*v, cur) || cur != s.ambient_bars) ini.set(kSaver, "AmbientBars", s.ambient_bars ? "1" : "0");
+    // No UI sets it: written only when it says something other than the file.
+    v = ini.get(kSaver, "ShaderPreset");
+    if (v ? unquote(*v) != s.shader_preset : !s.shader_preset.empty()) ini.set(kSaver, "ShaderPreset", s.shader_preset);
   }
   // No UI sets it: written only when it differs from the default, or when
   // the file already says something else.

@@ -38,6 +38,7 @@
 #include "sound.h"
 #include "ui_model.h"
 #include "window_mode.h"
+#include "looks_test.h"
 #include "adw/core/data_root.h"
 #include "adw/ui/theme.h"
 
@@ -5069,6 +5070,7 @@ int main(int argc, char** argv) {
       {"dialog", test_dialog},     {"ui", test_ui},           {"input", test_input},
       {"seed", test_seed},         {"releases", test_releases}, {"paths", test_paths},
       {"sound", test_sound},       {"present", test_present}, {"window", test_window},
+      {"looks", [] { g_failures += run_looks_tests(); }},
   };
   std::vector<std::string> run;
   for (int i = 1; i < argc; ++i) {

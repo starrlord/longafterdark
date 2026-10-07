@@ -8,6 +8,10 @@
 //            StretchToFit=1|0  (1 = a module with a screen of its own,
 //                               640x480, fills the monitor instead of keeping
 //                               its shape with black bars; 0 or missing = bars)
+//            Look=sharp|crt|crt-curved|smooth|preset  AmbientBars=1|0
+//            ShaderPreset=<path of a .slangp>   (how /s and /window draw the
+//                               frames, looks.h; sharp, 0 and empty, the
+//                               defaults, draw exactly as before)
 //            RandomizeSaved=<id>,<id>,…|-  (the dialog's checklist while a single
 //                                          module is chosen, "-" = nothing
 //                                          checked; the saver ignores it)
@@ -26,6 +30,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "looks.h"
 
 namespace adw::scr {
 
@@ -79,6 +85,15 @@ struct Settings {
   // its shape between black bars (frame_rect). Modules that follow the
   // display (After Dark's) fill it either way. False, the default.
   bool stretch_to_fit = false;
+  // [Saver] Look, AmbientBars, ShaderPreset (looks.h): how the /s and
+  // /window windows draw the frames. Off by default (sharp, false, empty),
+  // and then they draw exactly as before. Look is kept as written, so a
+  // value this version doesn't know (a later version's) stays in the file;
+  // look_options() draws it as sharp. ShaderPreset has no UI: it is kept as
+  // written (one pair of surrounding quotes dropped), UTF-8.
+  std::string look = "sharp";
+  bool ambient_bars = false;
+  std::string shader_preset;
   // [Saver] StartFromDesktop=0: /s starts every module on black instead of
   // on a capture of the desktop (INTERACTION.md §8). No UI; default 1.
   bool start_from_desktop = true;
@@ -165,6 +180,11 @@ inline constexpr char kRandomizeSavedNone[] = "-";
 //  - Collections: the strip's selection, normalized, while the strip shows;
 //    otherwise as loaded.
 Settings apply_dialog_choice(const Settings& loaded, const DialogChoice& c);
+
+// What the /s and /window windows draw with (looks.h): Look as a known look
+// (anything else is sharp; preset without a ShaderPreset is sharp too),
+// AmbientBars and ShaderPreset.
+LookOptions look_options(const Settings& s);
 
 Settings parse_settings(std::string_view text);
 // Applies `s` onto `base` (the file's current contents) and returns the text.

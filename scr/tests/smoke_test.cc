@@ -7073,6 +7073,18 @@ int test_window(const Opts& o) {
   return 0;
 }
 
+// The looks (looks.h) in /s. Stub: track SAVER writes it.
+int test_looks(const Opts&) {
+  printf("SKIP: not written yet\n");
+  return kSkip;
+}
+
+// The settings window's Look and Bars. Stub: track DIALOG writes it.
+int test_config_look(const Opts&) {
+  printf("SKIP: not written yet\n");
+  return kSkip;
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv) {
@@ -7158,6 +7170,8 @@ int wmain(int argc, wchar_t** argv) {
       {L"sound-wake", test_sound_wake},
       {L"config-sound", test_config_sound},
       {L"window", test_window},
+      {L"looks", test_looks},
+      {L"config-look", test_config_look},
   };
   // Nothing started from here may touch the user's data folder: whatever a
   // test leaves to the defaults lands in a scratch base.

@@ -236,6 +236,8 @@ jobs:
       #   scr_unit_releases  Wine's fonts measure wider than Segoe UI, so the
       #       settings window's covers lay out differently.
       #   scr_unit_present   Wine's HALFTONE stretching smooths differently.
+      #   scr_unit_looks     Wine's Direct3D 11 draws the looks' shaders
+      #       through its own translation: not the pictures Windows draws.
       # As on Windows, the suites that need modules skip (77), and so do
       # cpu_perf and, with no 32-bit Wine, cpu_x86_diff and
       # cpu_x86_diff_seed2 (their oracle runs x86 code natively).
@@ -247,7 +249,7 @@ jobs:
         timeout-minutes: 40
         run: >-
           xvfb-run -a env AD_BUILD_DIR="$PWD/build/win-release"
-          AD_CTEST_ARGS='-LE gui -E ^(ui\.(theme|image|capture|slider)|core\.audio|win(16|32)\.unit|import\.(download|covers|gui_model)|scr_unit_(releases|present))$ -j4'
+          AD_CTEST_ARGS='-LE gui -E ^(ui\.(theme|image|capture|slider)|core\.audio|win(16|32)\.unit|import\.(download|covers|gui_model)|scr_unit_(releases|present|looks))$ -j4'
           bash tools/build.sh
 
       - name: Upload the test log
