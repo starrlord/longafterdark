@@ -43,7 +43,9 @@ shows "No modules imported".
 
 Everything the saver keeps is under `%LOCALAPPDATA%\LongAfterDark`: the
 imported `assets\`, `settings.ini`, the modules' `state\`, the dialog's
-`thumbs\` and the last-exit log in `logs\`. `AD_LOCALAPPDATA` stands in for
+`thumbs\` and the last-exit log in `logs\`; it also looks there for
+`librashader\librashader.dll`, which only a user who wants a shader preset
+puts there (**Looks**). `AD_LOCALAPPDATA` stands in for
 `%LOCALAPPDATA%` (tests use it for a scratch folder); on the secure desktop,
 with a thin environment, the saver asks `SHGetKnownFolderPath` instead.
 
@@ -207,17 +209,19 @@ names and what the window plays) are in `src/window_mode.h`, the rest in
   holds it to 160×120's at least). The log says `window: client 1920x1080
   (asked 1920x1080) at 144 dpi, outer 1942x1136`.
 * **Resizing** scales the current frames into the new client area at once
-  (the letterbox and Direct2D's render target follow the size). Once the
-  size has not changed for 500 ms, a host whose emulated screen the new
-  shape would no longer give its module starts that module again at the new
-  one (`window: resized to 1440x1080; ad40.toasters starts again at 640x480
-  (was 856x480)`): an After Dark module's screen follows the client area's
-  shape as it follows a monitor's (**Emulated screen**), so the same shape at
-  another size, a drag back and forth, and any module with a 640×480 screen
-  of its own restart nothing. Minimized, it draws nothing and its host runs on.
+  (the letterbox and Direct2D's render target, or a look's swap chain,
+  follow the size). Once the size has not changed for 500 ms, a host whose
+  emulated screen the new shape would no longer give its module starts that
+  module again at the new one (`window: resized to 1440x1080; ad40.toasters
+  starts again at 640x480 (was 856x480)`): an After Dark module's screen
+  follows the client area's shape as it follows a monitor's (**Emulated
+  screen**), so the same shape at another size, a drag back and forth, and
+  any module with a 640×480 screen of its own restart nothing. Minimized,
+  it draws nothing and its host runs on.
 * **What it plays:** the settings file it reads, as `/s` (Resolution,
-  Stretch to fit, each module's control values and host controls such as
-  Intermission 4.0's Speed in `ADNE16IMXSPEED`, Sound and Volume:
+  Stretch to fit, the look (**Looks**, under **How it runs a module**), each
+  module's control values and host controls such as Intermission 4.0's
+  Speed in `ADNE16IMXSPEED`, Sound and Volume:
   `sound_for` treats the window as the primary monitor's), with `/module`
   and `/random` applied over it (`window_settings`): `/module` alone is
   that module and nothing else; `/random` is the dialog's Random checklist
@@ -338,10 +342,11 @@ column at most 1240 DIP wide, centred.
   Space toggles while the chevrons have scrolled it away, comes into view,
   and with a filter saved (or kept through a reload) the row opens scrolled
   to the first selected cover. The
-  window opens at 1104×836 DIP with the strip, a row of eight covers
-  (1104×952 with nine releases and more: two rows of regular covers;
-  1104×1068 with seventeen and more: three rows; `design_client_h`), clamped to the
-  work area (at least 680 tall; 716 without it).
+  window opens at 1104×904 DIP with the strip, a row of eight covers
+  (1104×1020 with nine releases and more: two rows of regular covers;
+  1104×1136 with seventeen and more: three rows; `design_client_h`) and at
+  1104×784 without it, clamped to the work area (at least 680 tall with
+  the strip).
 * **Single module / Random** at the top left chooses what the saver plays.
   Below it, the **module list**, grouped by release (the release's title and
   its number of modules, oldest release first), with a hairline and 12 DIP of
@@ -436,7 +441,10 @@ column at most 1240 DIP wide, centred.
   tooltip. **Restore defaults** sits just under the
   last row when they all fit (at the column's foot, level with the credits'
   first line, when they scroll) and is enabled once a value differs from the
-  catalog's default.
+  catalog's default. In a window too short to keep a row of the controls
+  over it (its columns, the strip's band aside, under 652 DIP tall, with a
+  module name on one line) it gives way, and the controls run to the
+  column's foot.
 * **Resolution** and **Monitors**, each at the start of its half of the card
   (dropdowns at most 280 DIP wide; Resolution, 480 or 720 lines, is for the
   modules that follow the display alone: an Intermission, Star Trek,
@@ -444,8 +452,15 @@ column at most 1240 DIP wide, centred.
   **Emulated screen**), then across the card **Stretch to fit the screen
   (no black bars)** (`StretchToFit`: those 640×480 modules fill each monitor,
   stretched, in `/s` and the settings window's live preview, never in `/p`;
-  modules that follow the display are unaffected), and under
-  it **Sound** ("Primary
+  modules that follow the display are unaffected), then **Look** ("Sharp
+  pixels" / "CRT monitor" / "Curved CRT monitor" / "Smooth", and while
+  `ShaderPreset` names a preset, "Shader preset: " and its file name, such
+  as "Shader preset: crt-lottes.slangp") and **Bars** ("Black" / "Ambient
+  glow"), each at the start of its half of the card as Resolution and
+  Monitors are (`Look` and `AmbientBars`: how `/s`, Preview and `/window`
+  draw the frames, **Looks** under **How it runs a module**; the live
+  preview, the thumbnails and `/p` draw as before), and under them
+  **Sound** ("Primary
   monitor" / "Off") and **Volume** (a 0–100 slider with its value at the end
   of its label row; screen readers call it "Volume"; greyed, with its label,
   while Sound is Off), then the note "Sound plays from the primary monitor’s
@@ -651,6 +666,9 @@ Scale=1.0                ; 1.0 = 480-line emulated screen, 1.5 = 720-line (modul
 Monitors=all             ; or primary (the other monitors stay black)
 DifferentPerMonitor=0    ; 1: in a rotation each monitor follows its own order; 0 or missing: the same module on all, switching together
 StretchToFit=0           ; 1: 640x480 modules (Intermission, catalog screen) fill each monitor instead of keeping 4:3 with bars; not in /p
+Look=sharp               ; crt, crt-curved, smooth or preset: /s and /window draw the frames through Direct3D 11 with that look; sharp (or missing) draws as before
+AmbientBars=0            ; 1: the bars beside a frame that doesn't fill the window show a blurred, dimmed copy of it (Direct3D 11); 0 or missing: black
+ShaderPreset=C:\Shaders\slang-shaders\crt\crt-lottes.slangp   ; Look=preset's RetroArch preset (a relative path: from the data folder), drawn by the user's librashader.dll; no UI
 StartFromDesktop=1       ; 0: /s starts every module on black (no desktop capture); no UI
 Collections=simpsons,tt  ; the strip's filter: release ids; empty or missing = every release
 Sound=1                  ; 0: no sound from any module (1, or on/yes/true, is the default)
@@ -767,10 +785,17 @@ without a value (`host_variable_ok`). The Linux player, which has no
 settings window, gives every host each host control's default.
 
 The dialog updates the file in place. Keys, sections and comments it doesn't
-know about are left alone. `Sound`, `Volume` and `DifferentPerMonitor` are
-read leniently (`on`, `off`, `075`; a volume outside 0–100 is clamped;
-anything unreadable is the default) and a value that already says what OK
-saves is left as written.
+know about are left alone. `Sound`, `Volume`, `DifferentPerMonitor` and
+`AmbientBars` are read leniently (`on`, `off`, `075`; a volume outside
+0–100 is clamped; anything unreadable is the default) and a value that
+already says what OK saves is left as written; so is a `Look` in another
+case (`CRT`). A `Look` this version doesn't know (a later version's) draws
+as `sharp`, as `preset` does without a `ShaderPreset` (`look_options` in
+`settings.h`), and stays in the file until a look is picked in the dialog.
+OK writes `Look` and `AmbientBars` into a file that lacks them, as it does
+`StretchToFit`; `ShaderPreset`, which no control sets, is written only when
+it says something the file doesn't (one pair of double quotes around the
+path is dropped as it is read).
 
 **Import…** starts `adimport.exe --gui` with `CREATE_NO_WINDOW` (it is a
 console program; this keeps a console window from appearing behind its own
@@ -902,6 +927,117 @@ running. Only files named that way are ever deleted.
   `AD_SCR_STRETCH=halftone` the smooth filter. `AD_SCR_LOG` says how each
   window presents (`present window=0: direct2d, …`) and what it cost
   (`stats … present_ms_avg=… present=d2d`).
+* **Looks** (`looks.h`, `present_d3d.h`): with `Look` other than `sharp`,
+  or `AmbientBars=1` (the dialog's **Look** and **Bars**), each `/s` and
+  `/window` window draws through Direct3D 11 instead of Direct2D;
+  `AD_SCR_PRESENT=d3d11` does so with the defaults too (the sharp look in a
+  pass of its own, Direct2D's picture to a fraction of a level on average,
+  a few levels where two blocks blend), to compare the
+  two ways. With the defaults none of it
+  runs: the saver makes no Direct3D device of its own and never loads the
+  HLSL compiler, `d3dcompiler_47.dll` (`d3d11.dll` and `dxgi.dll` are in
+  the process anyway: Direct2D loads them for itself, as it always has).
+  Neither is linked: a look loads `d3d11.dll` and the compiler by full path
+  from System32, where every Windows 10 and 11 has them, when it first
+  needs them. One device serves every window of the process; it is made,
+  and the look's shaders compiled, on a thread of its own as the windows
+  open (`d3d_prepare`), so they paint and hear input meanwhile, and a first
+  frame that comes sooner waits only for what is left.
+  An 8-bit frame goes up as it comes, an `R8_UINT` texture of its indices
+  and a 256×1 texture of its palette (a quarter of the bytes of Direct2D's
+  32-bit bitmap, and no conversion on the CPU), a 32-bit one (P6) as it
+  is. A first pass resolves it to colour at the frame's own size (the
+  passes' `Original`), and the look's passes take it from there into the
+  window's swap chain, the last one into the fit rectangle (the letterbox,
+  or the whole window for a 640×480 module with `StretchToFit=1`). A pass
+  is a pixel shader drawn over a full-screen triangle into a texture of
+  its own, its HLSL compiled at run time for shader model 4.0 (feature
+  level 10.0 and up) after `kPassPrelude`, which declares what every pass
+  sees: `Source` (the pass before), `Original`, the earlier passes'
+  outputs by index, a point and a linear sampler, and its constants (the
+  sizes of `Source`, `Original`, its own output and the window, the fit
+  rectangle, four parameters of its own and the frames presented):
+  `PassSpec`, and a look's list is `look_passes`. With `AmbientBars=1` the
+  bars first get a blurred, dimmed copy of the frame (`hlsl_core.h`): the
+  frame shrunk by area to about a sixteenth a side, blurred there (a
+  nine-tap Gaussian, twice each way), then scaled up smoothly to cover the
+  whole window in the frame's shape, centred, at 35% of its brightness and
+  75% of its colour, with a fixed pinch of noise against banding; where
+  the frame fills the window there are no bars.
+  The log says when the device and the look are ready (`looks: crt,
+  ambient bars: direct3d ready in 470 ms`, or `… not ready in … ms
+  (<why>)`), and each window how it draws, on its first Direct3D frame
+  (`present window=0: direct3d, crt, ambient bars (<adapter>, feature
+  level 11_1, blt model), 2560x1440`). A window gives Direct3D up for good
+  and draws the old way, Direct2D's sharp upscale with black bars and then
+  GDI by **Scaling**'s rules, when it can't draw the look: no device of
+  feature level 10.0 or up, no `d3dcompiler_47.dll`, a pass that doesn't
+  compile, a preset that fails or no librashader it can use
+  (`present window=N: direct3d failed (<why>) -> direct2d`). It gives it up
+  for its cost as Direct2D does, when its frames 3 to 10 average over 8 ms
+  (`present window=N: direct3d crt 9.4 ms/frame over budget -> direct2d`):
+  each frame counted at its GPU time where the device can time it
+  (`gpu_ms`), else at its present's CPU time; a frame that made the swap
+  chain not at all, nor one where the sharp look stands in for a preset
+  still building; and afresh after a resize, as the cost follows the size,
+  and once a preset draws (`drawn_changes`), its first frame, which the
+  driver's compiles slow, among the two left out. `AD_SCR_PRESENT=d3d11` keeps Direct3D whatever it costs. A
+  device lost (a driver update or reset, a GPU removed) leaves that frame
+  to Direct2D and is made again for the next one (`present window=N:
+  direct3d <why>; a new device next frame`), three times in a window
+  (`kMaxDeviceLosses`); the fourth is for good. While a window shows a
+  message, GDI draws it, as with Direct2D, and between modules the black is
+  Direct3D's. These lines go to the last-exit log too, so a user's
+  `saver-last.log` says which look drew and why it gave way; with the
+  defaults none of them is written, and every other line is as before (the
+  `stats` line says `present=d3d upscale=<look>` for a window that drew
+  one). `/p`, the dialog's live preview and its thumbnails always draw the
+  old way. The looks:
+  * `crt` (`hlsl_crt.h`): a 1990s VGA monitor, in linear light. The frame
+    is decoded (`crt-linear`) and blurred at half its size into a glow
+    (`crt-glow-h`, `crt-glow-v`); the last pass draws each pixel as a soft
+    spot across and each line as a beam down, wider the brighter it is,
+    through an aperture grille at the monitor's own pixels (red, green and
+    blue stripes three pixels wide, magenta and green two wide where a
+    frame pixel gets fewer than 3.5; fading out below 2 and gone under
+    1.25), with a little of the glow over it. Its scanlines' strength
+    follows the screen pixels each line of the frame gets
+    (`crt_scanline_strength`): none below 2.5, where they would beat
+    against the monitor's own pixel grid (480 lines on a 1080p monitor is
+    2.25; in the default 1280×720 `/window`, 1.5), full from 3 (480 lines at
+    1440p; 720 at 4K), linearly in between. Without them the lines blend.
+  * `crt-curved`: the same behind curved glass: a barrel curve that pulls
+    the corners in by 4.5% of the half height, rounded corners, a soft edge
+    and a vignette, black outside the glass. Clicks still map to the flat
+    frame.
+  * `smooth` (`hlsl_smooth.h`): an edge-directed upscale for flat cartoon
+    art. Hyllian's Super-xBR (MIT; ported to HLSL, `THIRD_PARTY_LICENSES.md`)
+    runs twice, a luma pass and three passes of its own each time, and
+    draws the frame at four times its size with its edges followed instead
+    of stepped (to the bit what upstream's chain draws with 8-bit textures
+    between its passes); a Catmull-Rom resample of our own takes that into
+    the fit rectangle (its kernel widened to an output pixel where it
+    shrinks, and held within the texels under it, so it doesn't ring).
+  * `preset` (`shader_preset.h`): the RetroArch preset `ShaderPreset` names,
+    drawn by librashader's Direct3D 11 filter chain on the same device, into
+    a texture the fit rectangle's size that is then copied into place (so
+    the bars drawn before it stay). Long After Dark ships neither
+    librashader nor any preset: the user puts `librashader.dll` next to the
+    running program or in the data folder's `librashader` folder, and the
+    saver loads it from the first of those that has it, by full path, never
+    through the DLL search order (the DLL's own folder and System32 answer
+    for what it needs: the Visual C++ runtime and `D3DX9_43.dll`). It
+    speaks librashader's C ABI 2 (librashader 0.5.0 on), whose few
+    functions `shader_preset.cc` declares itself, and leaves librashader's
+    shader cache on (in `%LOCALAPPDATA%\librashader`, a folder of its own,
+    which follows the real profile, not `AD_LOCALAPPDATA`; the unit tests
+    turn it off). The preset (a relative `ShaderPreset` is taken from the
+    data folder) and the passes it names are read at once; its chain is
+    built off the UI thread (one build at a time in the process, so a
+    second window finds the cache warm), and the sharp look stands in until
+    it is ready, some seconds for a big preset the first time.
+    librashader's Direct3D 11 runtime compiles shader model 5, so this look
+    needs feature level 11.0.
 * **Starting from the desktop:** before any `/s` window appears, each
   monitor that will run a host is captured (`BitBlt` with `CAPTUREBLT`) and
   shrunk with `HALFTONE` to its window's emulated size, written as a P6 to
@@ -987,7 +1123,7 @@ running. Only files named that way are ever deleted.
 | `AD_SCR_STATE` | the modules' state folder passed to every host as `ADSTATE` (default: `state` next to the settings file) |
 | `AD_SCR_LASTLOG` | the last-exit log (default: `logs\saver-last.log` next to the settings file) |
 | `AD_SCR_STRETCH` | `halftone` or `nearest`; `auto` is the default |
-| `AD_SCR_PRESENT` | `gdi`: draw with GDI's `StretchDIBits` only; `d2d`: Direct2D for `/p` too, and never given up for its cost (only when it fails); the default is Direct2D for `/s` with GDI as the fallback (see **Scaling**) |
+| `AD_SCR_PRESENT` | `gdi`: draw with GDI's `StretchDIBits` only; `d2d`: Direct2D for `/p` too, and never given up for its cost (only when it fails); `d3d11` (or `d3d`, `direct3d`): Direct3D 11 for `/s` and `/window` whatever the look (with the defaults, the sharp look in a pass of its own), never given up for its cost (only when it fails), `/p` keeping GDI; `gdi` and `d2d` turn the looks off (`looks: crt: off (AD_SCR_PRESENT=d2d)`). The default is Direct2D for `/s` with GDI as the fallback, and Direct3D 11 while a look is on (see **Scaling** and **Looks**) |
 | `AD_SCR_NO_DWM` | pace with the 60 Hz timer only |
 | `AD_SCR_THUMBS` | where the settings dialog keeps module thumbnails (default: `thumbs` next to the settings file) |
 | `AD_SCR_THUMBGEN` | `0`: the settings dialog takes no thumbnails in the background (the live preview still takes its own) |
@@ -1014,11 +1150,13 @@ with `AD_HOST_EXE` pointing at its `adhostwin.exe`.
 | `AD_SCR_TEST_STALL_MS`, `AD_SCR_TEST_FIRSTFRAME_MS` | watchdog timeouts |
 | `AD_SCR_TEST_DISPLAY_OFF_MS` | after 5 frames, behave as if the display powered off for this long |
 | `AD_SCR_TEST_DISPLAY_ON` | take the console display to be on whatever Windows reports (`display state 0 taken as on` in `AD_SCR_LOG`): with the monitors asleep the saver pauses every host, and no `/s` smoke test would see a frame. Set it in the environment that runs the tests (the smoke tests pass it on); `AD_SCR_TEST_DISPLAY_OFF_MS` still simulates a power-off |
-| `AD_SCR_TEST_CAPTURE=<dir>` | each window writes what it shows when it has presented the frames in `AD_SCR_TEST_CAPTURE_FRAMES=<k>,…` (default 30): `window<N>-frame<K>.png` at its client size (the frame scaled into its letterbox as the window drew it, Direct2D or GDI, re-drawn off screen by `render_frame_bgr`) and `window<N>-frame<K>-host.png` (the host's frame as it came); `AD_SCR_LOG` gets a `capture window=N frame=K ok …` line for each |
+| `AD_SCR_TEST_CAPTURE=<dir>` | each window writes what it shows when it has presented the frames in `AD_SCR_TEST_CAPTURE_FRAMES=<k>,…` (default 30): `window<N>-frame<K>.png` at its client size (the frame scaled into its letterbox as the window drew it, Direct2D or GDI, re-drawn off screen by `render_frame_bgr`; a window drawing a look, by `render_frame_bgr_d3d` with the look and its bars) and `window<N>-frame<K>-host.png` (the host's frame as it came); `AD_SCR_LOG` gets a `capture window=N frame=K ok …` line for each (`… present=d3d filter=<look>` for a look) |
+| `AD_SCR_TEST_D3D_FAIL=<n>` | a window's n-th try to present through Direct3D fails (`AD_SCR_TEST_D3D_FAIL`, not a device loss), so it falls back for good (**Looks**): 1 before it has a swap chain, 30 once Direct3D has drawn 29 frames (the hand-over of a window that had one); redraws for `WM_PAINT` count as tries |
+| `AD_SCR_TEST_D3D_LOSE=<n>` | every n-th of a window's tries finds the device lost (`d3d_simulate_device_loss`), as after a driver reset: 15 makes a new device at the 15th, 30th and 45th, and the fourth loss, at the 60th, hands the window to Direct2D |
 | `AD_SCR_TEST_MONITORS` | `x,y,w,h[,p];…` monitors to use instead of the real ones (`,p` marks the primary). `\|` separates the layouts reported after each successive display change (`parse_staged_monitors` in `geometry.h`). The settings dialog counts them too, for **A different module on each monitor**, taking the next layout at each `WM_DISPLAYCHANGE` it gets |
 | `AD_SCR_TEST_OPEN_LOG=<file>` | the settings dialog's credit link appends `open<TAB><url>` here. The test build never opens a page itself, whatever its environment (it logs `dialog: open <url> (the test build opens nothing)`); only `LongAfterDark.scr` calls `ShellExecuteW` |
 | `AD_SCR_TEST_SCREENSHOT=<png>` | `/c` renders the settings dialog to this PNG and exits (0, or 1 if it couldn't). The window is created hidden, parked off every monitor and cloaked, never activated or focused (`WS_EX_NOACTIVATE`: no keystroke meant for another window can reach it), and drawn with `PrintWindow`: it never appears on screen. |
-| `AD_SCR_TEST_SCREENSHOT_STATE` | `key=value;…` for the screenshot: `theme=light\|dark\|hc`, `module=<id>`, `mode=single\|random`, `dpi=<n>` (lay out at that DPI), `dpichange=<n>` (send `WM_DPICHANGED` as if dragged to such a monitor), `size=<w>x<h>` (client, DIPs), `focus=list\|slider\|ok\|single\|random\|duration\|preview\|strip\|sound\|volume\|credit\|permonitor` (draw that control's focus ring; `strip`: the first selected cover, else the first, scrolled into view), `sound=off` (the Sound dropdown at Off: Volume greyed), `volume=<0..100>`, `monitors=primary` (the Monitors dropdown at Primary monitor only), `different=1\|0` (**A different module on each monitor** checked or not), `wait=<ms>` and `frames=<n>` (how long to let the live preview run), `hover=preview` (the pointer over the live preview), `hover=strip:<id>` (that release's cover hovered), `hover=credit` and `pressed=credit` (the footer's credit under the pointer, and held down), `collections=<id>,…` (the strip's filter, as if those covers had been clicked), `thumbgen=1\|wait` (take missing thumbnails in the background; `wait`: until all are taken, within `wait`), `report=<file>` (write where the list shows in the picture, the card's colour and whether anything straddles the list's top edge; `strip=x,y,w,h` where the strip's tiles area shows, `strip_mode=regular\|compact\|hidden`, the base colour and how many rows the list shows; the strip's scroll position, `strip_first=`, its last stop, `strip_max_first=`, and how many covers a stop shows, `strip_slots=`, each cover's window, `tile<i>=x,y,w,h` (or `hidden` while it lies outside the strip, not shown), the chevrons, `chevron_left=` and `chevron_right=`, and the status line, `strip_status=`; each group's accessible name, `group<g>=`, and its title as the header drew it, `drawn<g>=` (whole, or ellipsized); what the host said, `caps=`, the modules "Coming soon", `soon=`, and the module the details show, `details=`, with its chip, `badge=`, whether its buttons are live, `button_live=`, and Preview enabled, `preview_enabled=`; the footer's credit, `credit=x,y,w,h` (its link's box, or `hidden`), `credit_lead=` and `credit_name=` (its two texts), with the assets line's text, `assets_text=`, and Preview, `preview_button=`; the monitors the dialog counts, `monitors=`, and **A different module on each monitor**: where it shows, `per_monitor=x,y,w,h` (or `hidden`), whether it is enabled and checked, `per_monitor_enabled=` and `per_monitor_checked=`, and whether its text fits whole beside its box, `per_monitor_fits=`, with **Change module every**'s dropdown, `duration=`, and the list's card, `list_card=`; all in the picture's pixels). A `size=` taller or wider than this machine's screen is honoured (the window's maximum tracking size is lifted off screen), so the regular strip can be captured at 150% and up. With `theme=hc`, `AD_UI_TEST_HC_SCHEME=nightsky\|aquatic\|desert\|dusk` stands one of Windows 11's contrast themes in for the system colours (the hook passes it to adw_ui's `set_test_hc_scheme`; the library itself reads no environment) |
+| `AD_SCR_TEST_SCREENSHOT_STATE` | `key=value;…` for the screenshot: `theme=light\|dark\|hc`, `module=<id>`, `mode=single\|random`, `dpi=<n>` (lay out at that DPI), `dpichange=<n>` (send `WM_DPICHANGED` as if dragged to such a monitor), `size=<w>x<h>` (client, DIPs), `focus=list\|slider\|ok\|single\|random\|duration\|preview\|strip\|sound\|volume\|credit\|permonitor\|stretch\|look\|bars` (draw that control's focus ring; `strip`: the first selected cover, else the first, scrolled into view), `sound=off` (the Sound dropdown at Off: Volume greyed), `volume=<0..100>`, `monitors=primary` (the Monitors dropdown at Primary monitor only), `different=1\|0` (**A different module on each monitor** checked or not), `stretch=1\|0` (**Stretch to fit the screen** checked or not; the live preview follows), `look=sharp\|crt\|crt-curved\|smooth\|preset` (the **Look** dropdown at that item, as if picked; `preset` only while the settings name a `ShaderPreset`), `bars=0\|1` (**Bars** at Black or Ambient glow), `wait=<ms>` and `frames=<n>` (how long to let the live preview run), `hover=preview` (the pointer over the live preview), `hover=strip:<id>` (that release's cover hovered), `hover=credit` and `pressed=credit` (the footer's credit under the pointer, and held down), `collections=<id>,…` (the strip's filter, as if those covers had been clicked), `thumbgen=1\|wait` (take missing thumbnails in the background; `wait`: until all are taken, within `wait`), `report=<file>` (write where the list shows in the picture, the card's colour and whether anything straddles the list's top edge; `strip=x,y,w,h` where the strip's tiles area shows, `strip_mode=regular\|compact\|hidden`, the base colour and how many rows the list shows; the strip's scroll position, `strip_first=`, its last stop, `strip_max_first=`, and how many covers a stop shows, `strip_slots=`, each cover's window, `tile<i>=x,y,w,h` (or `hidden` while it lies outside the strip, not shown), the chevrons, `chevron_left=` and `chevron_right=`, and the status line, `strip_status=`; each group's accessible name, `group<g>=`, and its title as the header drew it, `drawn<g>=` (whole, or ellipsized); what the host said, `caps=`, the modules "Coming soon", `soon=`, and the module the details show, `details=`, with its chip, `badge=`, whether its buttons are live, `button_live=`, and Preview enabled, `preview_enabled=`; the footer's credit, `credit=x,y,w,h` (its link's box, or `hidden`), `credit_lead=` and `credit_name=` (its two texts), with the assets line's text, `assets_text=`, and Preview, `preview_button=`; the monitors the dialog counts, `monitors=`, and **A different module on each monitor**: where it shows, `per_monitor=x,y,w,h` (or `hidden`), whether it is enabled and checked, `per_monitor_enabled=` and `per_monitor_checked=`, and whether its text fits whole beside its box, `per_monitor_fits=`, with **Change module every**'s dropdown, `duration=`, and the list's card, `list_card=`; the options card, `options_card=`, and Resolution's and Sound's dropdowns, `scale=` and `sound=`; **Stretch to fit the screen**: where it shows, `stretch=`, whether it is checked, `stretch_checked=`, and whether its text fits, `stretch_fits=`; **Look** and **Bars**: where they show, `look=` and `bars=` (or `hidden`), the item each shows, `look_sel=` (`sharp`, `crt`, `crt-curved`, `smooth` or `preset`) and `bars_sel=` (0 or 1), and how many items **Look** has, `look_items=`; all in the picture's pixels). A `size=` taller or wider than this machine's screen is honoured (the window's maximum tracking size is lifted off screen), so the regular strip can be captured at 150% and up. With `theme=hc`, `AD_UI_TEST_HC_SCHEME=nightsky\|aquatic\|desert\|dusk` stands one of Windows 11's contrast themes in for the system colours (the hook passes it to adw_ui's `set_test_hc_scheme`; the library itself reads no environment) |
 
 ## Build and test
 
@@ -1107,8 +1245,10 @@ only reads it.
   defaults, each start's variables in front of its own and over an
   inherited value, the live preview's restart when the value changes,
   `same_target`, and a real `--configure` run against `fakehost.exe`), the dialog's helpers (`dialog`:
-  adimport's exit codes, the preview-file names and sweep, and starting
-  `fakeimport.exe` without a console window), and its presentation (`ui`:
+  adimport's exit codes, the preview-file names and sweep, the looks in
+  the preview's file (`Look` and `AmbientBars` always, a look this version
+  doesn't know as written, `ShaderPreset` while the settings name one), and
+  starting `fakeimport.exe` without a console window), and its presentation (`ui`:
   About tidying (including the catalog's own mid-phrase breaks, and credits
   and verse left alone), the duration choices and summary lines, the window
   layout at 100/125/150/200% and several sizes (inside the window, nothing
@@ -1157,8 +1297,8 @@ only reads it.
   column, the fewest rows, regular ones full but the last (at most eight)
   and compact ones the evenest (`strip_grid`), nothing scrolling,
   no two tiles' focus rings touching, a row that fits laid out as before;
-  the bands (`strip_band`) and first-open heights (`design_client_h`: 836,
-  952); `layout_window` with the strip: regular rows while the client has
+  the bands (`strip_band`) and first-open heights (`design_client_h`: 904,
+  1020, 1136); `layout_window` with the strip: regular rows while the client has
   their height, else compact rows, else (only) the one compact row that
   scrolls, at every size the columns at least their minimum, the status box
   clear of the tiles and centred on their rows, and the columns
@@ -1190,7 +1330,7 @@ only reads it.
   display at every Resolution setting and the other new releases' following
   the display, `first_module_screens` and a monitor's seed pictures with
   them; twelve covers at 100–250%: regular ones never all side by side but
-  on two rows of six from 876 DIP tall (the first-open window, 952; a large
+  on two rows of six from 876 DIP tall (the first-open window, 1020; a large
   one), compact ones on two rows from 756 (the first-open window clamped to
   836 or 759); only shorter windows scroll one compact row, eight over five
   stops in the smallest window, nine from 960 DIP wide, ten from 1032 (the
@@ -1237,11 +1377,49 @@ only reads it.
   inherited values); `AD_SCR_SOUND`'s spellings; the stop graces. The
   `layout` checks (`ui`) include the Sound row: inside the options card, in
   the Resolution/Monitors columns, the readout at the slider's end, the note
-  under both. `present` (`present.h`): the palette expansion, and both
+  under both; and the Look and Bars row, 8 DIP under Stretch to fit and 12
+  over Sound, in Resolution's and Monitors' columns and as wide, each
+  labelled above. `ui` also checks **Look**'s items (the four looks in
+  order, then "Shader preset: " and the file name only while
+  `ShaderPreset` names one) and the one it opens on (the file's look, in any case; Sharp pixels
+  for a look this version doesn't know and for `preset` without a
+  `ShaderPreset`), and **Bars**' two. `present` (`present.h`): the palette expansion, and both
   ways' filters off screen (Direct2D on its software rasterizer, GDI): at
   4.5 times, nearest leaves a hard edge while the smooth filter blends the
   one column where two pixels meet (by half, on Direct2D), an exact
   multiple is crisp either way, 1:1 is exact, and the bars are black.
+  `looks` (`looks.h`, `present_d3d.h`; a file per part,
+  `tests/looks_*_test.cc`): the looks' names both ways (any case, blanks
+  around them), the scanlines' strength (none at 1.5, 2.25 and 2.5 screen
+  pixels a line, half at 2.75, full at 3 and 4.5), and what the keys come
+  to (`look_options`: nothing on without them; each read, a quoted
+  `ShaderPreset` unquoted; a `Look` this version doesn't know drawn as sharp
+  and kept in the file, `preset` without a `ShaderPreset` sharp, a `Look`
+  already saying the look left as written, `ShaderPreset` written only when
+  it says something new); then, where Direct3D 11 can draw (`d3d_available`;
+  elsewhere it says why and checks no more), what each part draws, off
+  screen with `render_frame_bgr_d3d` on WARP from small made-up frames: the
+  presenter (the sharp look as Direct2D draws it: black | white 4.5 times
+  wider, an exact multiple, 1:1, random pixels at an 856×480 frame's
+  scales on 1080p and 4K and halved, within a fraction of a level on
+  average and a few where two blocks blend; an 8-bit frame
+  and the same picture in 32 bits alike with every look; frames of two
+  sizes in turn; the bars black, or with `AmbientBars` lit by a bright
+  frame at about a third of its light, dark for a black one, none for a
+  frame that fills the picture), the CRT look (four passes, the curved
+  one's differing in its last alone; faint scanlines with room for them,
+  none without, its light about the sharp look's; the curved glass's
+  corners black; a dot spread a little and no further; nothing outside
+  the fit rectangle; any size from half the frame's to 8K's), Smooth (nine
+  passes; staircases drawn as slopes on the sharp look's line, flat colours
+  flat to the edges and an edge between two greys without ringing, no
+  shift, black bars) and the presets (with no
+  librashader, every call failing cleanly and saying where it looked; with
+  `AD_LOOKS_TEST_LIBRASHADER_DIR` naming a folder that holds a
+  `librashader.dll`, read by this test alone, that DLL in a scratch data
+  folder drawing a one-pass preset of our own, the colours inverted, from
+  a folder with a non-ASCII name, inside the viewport only, presets that
+  fail each way, and the folder's first `.slangp`).
 * **`scr_resources`:** what Windows reads from the file, without a window:
   the name `LongAfterDark.scr`, string 1 "Long After Dark", the version
   resource (product "Long After Dark", `OriginalFilename`
@@ -1410,8 +1588,8 @@ only reads it.
   the first stop leaves its place empty; reopened with that filter saved,
   its cover shows; and from seven releases an import (`fakeimport.exe`
   leaving the twelve-release catalog) turns seven covers side by side into
-  twelve, as the same client lays them out (two compact rows in the seven's
-  836 DIP), "46 modules from 12 releases";
+  twelve, as the same client lays them out (two rows of regular covers in
+  the seven's 904 DIP), "46 modules from 12 releases";
   a ScreamSavers and a Marvel module, After Dark modules with `"screen":
   "640x480"`, previewed at 640x480 where the others get the box's 16:9 480
   lines, and `/s` at the 720-line setting on a 16:9 monitor rotating
@@ -1497,6 +1675,36 @@ only reads it.
   title at 1280×720's screen, its hosts with the settings' sound
   (`ADSOUND=1 ADVOLUME=35`), and four command lines it refuses and `/?`,
   each a message box, read and dismissed, with no window and no host).
+  The looks: `looks` (`/s` of a Star Wars module, 640×480, on a 1920×1080
+  monitor staged off every real one, its window captured at frames 20 and
+  40: with the defaults as OK writes them, Direct2D as before, no
+  `looks:` or `direct3d` line, and no HLSL compiler in the process; a look
+  under `AD_SCR_PRESENT=d2d`, off; `crt` with `AD_SCR_TEST_D3D_FAIL=1`,
+  Direct2D from the first frame; a `ShaderPreset` that isn't there,
+  Direct2D, the log saying why; then, where Direct3D 11 can draw, `crt`
+  with ambient bars as a user runs it (the compiler loaded, the bars lit by
+  the frame and dimmer than it, a phosphor mask over the beam), `smooth`
+  and `crt-curved` under `AD_SCR_PRESENT=d3d11` (black bars, the middle
+  lit; the curved glass's corners dark), Direct3D failing after 29 frames
+  of its own and Direct2D taking the window over with the sharp picture,
+  the device lost every 15th frame (a new one three times, Direct3D drawing
+  again between, then Direct2D), the monitor turning 1280×1024 (the window
+  moved with its host and its presenter, its swap chain following), and
+  `/window` with `crt` resized to 4:3, its new host at 640×480 still drawn
+  through Direct3D) and `config-look` (the dialog driven by control
+  ID: a file with `Look=crt-curved`, `AmbientBars=1` and
+  `ShaderPreset=x.slangp` shows five looks, the last "Shader preset:
+  x.slangp", at "Curved CRT monitor" and "Ambient glow"; Smooth and Black
+  picked, OK writes `Look=smooth` and `AmbientBars=0`, keeping
+  `ShaderPreset` and the rest; `Look=vhs`, a later version's, shows as
+  "Sharp pixels" and stays through an OK that changes only Bars, while
+  "Sharp pixels" picked writes `Look=sharp`; without `ShaderPreset`, four
+  looks, and `Look=preset` shows as "Sharp pixels" and stays; Preview with
+  `crt` and ambient bars, its settings file saying so and its `/s` drawing
+  with them; off-screen renders at 100% and 150%, light, dark and high
+  contrast, at the first-open and the minimum size: the row under Stretch
+  to fit and over Sound, in Resolution's and Monitors' columns, showing
+  what was asked).
 
 Two opt-in tests run the real `adhostwin.exe` (the build's own, with its
 lanes) on real modules: set `AD_E2E=1` and `AD_E2E_ASSETS=<an assets root>`
@@ -1531,6 +1739,34 @@ SKIP. They also skip themselves when there is no interactive desktop. While
 the monitors are asleep (display powered off), a `/s` pauses its hosts and
 the tests that run one never see a frame: set `AD_SCR_TEST_DISPLAY_ON=1` for
 the run (the tests pass it on to the saver).
+
+**The looks by hand.** `lookshot.exe` (target `scr_lookshot`, built beside
+`scr_unit`, never packaged) draws a frame the way a `/s` or `/window`
+window draws it with a look (**Looks**), into a PNG, and prints what the
+picture cost (with its read back) and the passes' GPU time:
+
+```sh
+build/win-scr/scr/lookshot.exe --look crt --size 2560x1440 --palette8 --hw frame.ppm crt.png
+```
+
+| Switch | What it does |
+|---|---|
+| `--look sharp\|crt\|crt-curved\|smooth\|preset` | the look; `--preset <file.slangp>` names `preset`'s |
+| `--ambient` | the ambient bars |
+| `--size WxH` | the picture, the window's client area |
+| `--fit x,y,w,h` or `--stretch` | the frame into that rectangle, or over the whole picture, instead of in its shape, centred (`fit_rect`) |
+| `--palette8` | the frame as an 8-bit one through an exact palette, so the palette's path runs (more than 256 colours: 32-bit, with a warning) |
+| `--d2d` | today's Direct2D picture instead (`render_frame_bgr`), to compare |
+| `--hw` | on the hardware device the windows use, not WARP |
+| `--adapter <name\|index>` | with `--hw`: the device on the adapter whose name contains this (any case), or whose index it is, instead of the default one (an integrated GPU beside a discrete one, say) |
+| `--repeat n` | draws it n times and prints the mean |
+| `--window` | also presents it `--repeat` times through a `D3DPresenter` into a window that is never shown, for what a window pays: the CPU a present and the GPU's time |
+| `--lose` | with `--window`: the device is lost halfway (`d3d_simulate_device_loss`), and must be reported once and got over, while a second window recovers unasked |
+
+The frame is a PNG, or a binary PPM as `adhostwin.exe`'s `ADOUT` writes
+it. It exits 0, 1 when something fails (a pass that doesn't compile prints
+`pass <name> does not compile:` and the compiler's first lines), and 2 for
+a command line it can't use.
 
 ### By hand, before a release
 

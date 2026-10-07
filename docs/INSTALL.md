@@ -405,6 +405,51 @@ have none) and no music, but for Intermission 4.0's Rapping Pig, whose song
 is MIDI. **Preview** plays sound with the values you have not saved yet; the
 small live preview never does.
 
+**Look** and **Bars**, under **Stretch to fit the screen**, change how the
+screen saver draws the modules' pictures. They start at **Sharp pixels** and
+**Black**, the way it has always drawn them, and as long as they stay there
+nothing changes. The other choices draw with your graphics card, through
+Direct3D 11. **Look**:
+
+- **Sharp pixels** (the default): every pixel of the module's picture a
+  crisp block.
+- **CRT monitor**: the picture as a 1990s VGA monitor showed it, with a
+  soft beam, faint scanlines, a fine mask and a little glow. It suits every
+  module, and looks best on a 1440p or 4K monitor: its scanlines need about
+  three of the monitor's pixels for each line of the picture, as a 480-line
+  picture gets on a 1440p monitor (and a 720-line one on a 4K monitor).
+  With fewer, as on a 1080p monitor, they are left out, since they would
+  beat against the monitor's own pixels, and the rest of the look stays.
+- **Curved CRT monitor**: the same, behind curved glass: the picture bows
+  out a little, with rounded corners that are a little darker.
+- **Smooth**: redraws the picture with an edge-following upscaler
+  (Super-xBR), so outlines come out as curves and clean diagonals instead
+  of steps. It suits flat cartoon art with dark outlines best, such as The
+  Far Side's, Dilbert's, Disney's, the Looney Tunes' or the Simpsons'
+  modules, the more so on a large monitor. Dithered backgrounds (Johnny
+  Castaway's sea and sky) turn into a wormy texture, photographs and
+  halftones (Marvel's posters, the Star Wars stills) gain little and look a
+  little painted, and single-pixel stars come out softer and dimmer: for
+  those, keep Sharp pixels or a CRT.
+- **Shader preset:** and the preset's file name, such as **Shader preset:
+  crt-lottes.slangp**, only while `settings.ini` names a shader preset of
+  your own ([below](#your-own-shader-preset-advanced)).
+
+**Bars** is what fills the bars beside a picture that doesn't fill the
+screen: **Black** (the default), or **Ambient glow**, a blurred, dimmed copy
+of the picture. It is for the modules that always get 640×480
+(Intermission's, Star Wars' among them, both Star Trek releases',
+ScreamSavers', Marvel's and Johnny Castaway) on a widescreen monitor, and
+for After Dark's own on an ultrawide or portrait one; with **Stretch to fit
+the screen** checked, the 640×480 modules have no bars.
+
+The live preview in the settings window, its module pictures and the small
+preview in Screen Saver Settings always show the plain picture, with black
+bars; **Preview** shows the look you chose, as the screen saver and its
+window ([below](#show-it-in-a-window-a-be-right-back-screen)) do. A PC whose
+graphics can't draw the look (Direct3D 11 is needed), or draw it fast
+enough, shows sharp pixels and black bars instead.
+
 ## Ending it, and playing
 
 Any key except Shift, Ctrl, Caps Lock and Num Lock, a click, the mouse
@@ -450,13 +495,13 @@ while you are away. From PowerShell, in the programs' folder:
 The switches go in any order, and `-` works as well as `/`. With neither
 `/module` nor `/random`, the window shows what the screen saver would. Each
 module's own settings (its options, Intermission 4.0's Speed), the
-Resolution, **Stretch to fit the screen** and the sound apply as they do
-to the screen saver; the monitor settings don't, as it is one window. Every
-module starts on black, never on a picture of your desktop. With
-`/window`, a switch it doesn't know, a size out of range or a module it
-can't find opens a message saying what is wrong, and nothing runs; without
-`/window`, a switch it doesn't know is skipped and the settings window
-opens, as Windows' own screen savers do.
+Resolution, **Stretch to fit the screen**, **Look**, **Bars** and the sound
+apply as they do to the screen saver; the monitor settings don't, as it is
+one window. Every module starts on black, never on a picture of your
+desktop. With `/window`, a switch it doesn't know, a size out of range or a
+module it can't find opens a message saying what is wrong, and nothing
+runs; without `/window`, a switch it doesn't know is skipped and the
+settings window opens, as Windows' own screen savers do.
 
 Windows starts a `.scr` with `/S` and nothing else, whatever is written
 after its name (from PowerShell, a shortcut and Start-Process alike), so
@@ -501,6 +546,49 @@ The window plays sound as the primary monitor's screen saver does (Sound
 and Volume in the settings window). For the stream to have it, add an
 **Application Audio Capture** source for the same window.
 
+## Your own shader preset (advanced)
+
+The screen saver can also draw the modules through a RetroArch shader
+preset, a `.slangp` file such as those of libretro's
+[slang-shaders](https://github.com/libretro/slang-shaders), run by
+[librashader](https://github.com/SnowflakePowered/librashader). Long After
+Dark ships neither, and supports librashader no further than loading it:
+what a preset draws, and whether it runs at all, is up to the preset and
+librashader.
+
+1. Download librashader's 64-bit Windows build from its releases page
+   (`librashader-x86_64-windows-….zip`), version 0.5.0 or later (0.5.1 and
+   0.12.0 were tried; a later one that changes librashader's C interface is
+   refused), and put the `librashader.dll` from it next to
+   `LongAfterDark.scr`, or in a folder named `librashader` in
+   `%LOCALAPPDATA%\LongAfterDark`. It needs the Microsoft Visual C++
+   2015–2022 x64 runtime and DirectX's `D3DX9_43.dll` (the DirectX
+   End-User Runtime), which many PCs have already.
+2. Keep the preset with the shader and picture files it names, which it
+   finds by their place relative to itself: take the whole slang-shaders
+   folder, say, as its presets name files in its other folders.
+3. With the settings window closed, add a line naming the preset under
+   `[Saver]` in `settings.ini` (in `%LOCALAPPDATA%\LongAfterDark`), such as
+   `ShaderPreset=C:\Shaders\slang-shaders\crt\crt-lottes.slangp` (a
+   relative path is taken from that folder).
+4. Open the settings window: **Look** now offers **Shader preset:
+   crt-lottes.slangp**. Choose it, and try it with **Preview**.
+
+Not every preset suits the modules' 480-line pictures: crt-royale, for
+one, takes them for interlaced ones, and their thin lines flicker.
+
+A preset needs graphics of Direct3D feature level 11.0 or later. The first
+time a preset runs, librashader can take some seconds to build it, and the
+screen saver shows sharp pixels meanwhile; librashader keeps what it built
+in a folder of its own, `%LOCALAPPDATA%\librashader`, so the next start is
+quicker (delete the folder to clear it).
+
+Without a `librashader.dll` it can use, or with a preset that can't be read
+or doesn't compile, the screen saver draws sharp pixels with black bars
+instead, as it does when a preset is too heavy for the graphics card, and
+the log of its last run, `logs\saver-last.log` in the same folder as
+`settings.ini`, says why.
+
 ## Where your files are
 
 Everything is in `%LOCALAPPDATA%\LongAfterDark` (paste that into Explorer's
@@ -514,6 +602,7 @@ address bar):
 | `state\` | what the modules save themselves (message texts, chosen pictures, high scores, the Intermission modules' settings, Sounder's folder, Marvel's poster choices, Johnny Castaway's settings and story), per release |
 | `thumbs\` | the settings window's module pictures |
 | `logs\saver-last.log` | how the last screen saver run went and why it ended |
+| `librashader\` | `librashader.dll`, if you put it there for a shader preset ([above](#your-own-shader-preset-advanced)) |
 
 ## Updating
 

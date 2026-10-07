@@ -141,7 +141,7 @@ actually behaves; the design documents record the plan and the evidence.
 | `host/ne16/` | `adw_lane_ne16` | `adw::ne16` | The 16-bit lane: its module protocols (After Dark: OLDMOD16 or the native AD3 bridge; Intermission: the IMX reader), palettes, small screens, long calls | `ne16/lane.hh` |
 | `importer/` | `adw_import`, **`adimport.exe`** | `adw::import` | Package registry, ISO-9660/Joliet, FAT12/16, PKZIP, ARJ, SZDD, KWAJ and InstallShield 2 library readers, disk sets, verification, atomic per-package import, Internet Archive downloads, covers, catalog generator | [importer/README.md](../importer/README.md) |
 | `importer/gui/` | `adw_import_gui` | `adw::import::gui` | The importer's windows (`adimport --gui`): sources, downloads, progress, result, cover | [importer/gui/README.md](../importer/gui/README.md) |
-| `scr/` | `adw_scr`, **`LongAfterDark.scr`** | `adw::scr` | The screen saver (`/s`, `/p`, `/c`), the settings dialog, input rules, which host plays sound, thumbnails, desktop capture | [scr/README.md](../scr/README.md) |
+| `scr/` | `adw_scr`, **`LongAfterDark.scr`** | `adw::scr` | The screen saver (`/s`, `/p`, `/c`), the settings dialog, input rules, which host plays sound, thumbnails, desktop capture, the looks (Direct3D 11) | [scr/README.md](../scr/README.md) |
 | `scr/linux/` | **`longafterdark`** (by `tools/build-player.sh`, not CMake) | `lad` | The Linux player: runs `adhostwin.exe` under Wine and presents its frames on X11 (full screen, a window, XScreenSaver's window or its preview) with the saver's input, sound and screen rules; unit and smoke tests in `tests/` | [LINUX.md](LINUX.md), INTERACTION §4.5 |
 | `common/ui/` | `adw_ui` | `adw::ui` | The Windows 11 theming and widgets shared by the settings dialog and the importer's windows | [common/ui/README.md](../common/ui/README.md), COVERS §3 |
 | `cmake/` | | | `llvm-mingw.cmake` (the toolchain file), `adw_version.h.in` (the one version), `adhostwin.rc` and its manifest | |
@@ -239,7 +239,7 @@ bash tools/build-player.sh              # the player -> build/linux/longafterdar
 bash tools/build-player.sh --tests      # its unit tests, built and run
 bash tools/package.sh                   # the player, then build/dist/LongAfterDark and its zip
 # the cross build and its tests under Wine -> build/win, without the tests Wine fails (below):
-xvfb-run -a env AD_CTEST_ARGS='-LE gui -E ^(ui\.(theme|image|capture|slider)|core\.audio|win(16|32)\.unit|import\.(download|covers|gui_model)|scr_unit_(releases|present))$ -j4' bash tools/build.sh
+xvfb-run -a env AD_CTEST_ARGS='-LE gui -E ^(ui\.(theme|image|capture|slider)|core\.audio|win(16|32)\.unit|import\.(download|covers|gui_model)|scr_unit_(releases|present|looks))$ -j4' bash tools/build.sh
 ```
 
 * **`bootstrap.sh`** also needs `curl`, `git`, `cmake`, `unzip`, `tar` and
@@ -278,16 +278,17 @@ xvfb-run -a env AD_CTEST_ARGS='-LE gui -E ^(ui\.(theme|image|capture|slider)|cor
   whose `NOTICE.txt` covers the player too; the text files keep LF endings.
   It zips the folder as `build/dist/LongAfterDark-linux-x64.zip` (`AD_ZIP`
   names another), since zip keeps the player's executable bit.
-* **The tests under Wine** are the Windows ones, but for twelve tests that
+* **The tests under Wine** are the Windows ones, but for thirteen tests that
   check what Wine does differently from Windows: the pixels of the Windows 11
   look, Windows' own ADPCM codec, 8.3 aliases, GDI object counts, WinHTTP
-  on dropped and cancelled transfers, dropped files, Segoe UI's metrics and
-  HALFTONE stretching. A plain `build.sh` runs them too: they fail, and
-  `import.download` and `import.covers` hang until their timeouts. The
-  `-E` list above leaves them out; the CI's, in
-  `.github/workflows/build.yml`, is the same and says why for each, and the
-  Windows job runs them all. Without 32-bit Wine, `cpu_x86_diff` and
-  `cpu_x86_diff_seed2` skip (their oracle runs x86 code natively).
+  on dropped and cancelled transfers, dropped files, Segoe UI's metrics,
+  HALFTONE stretching and the looks' Direct3D 11 pictures. A plain
+  `build.sh` runs them too: they fail, and `import.download` and
+  `import.covers` hang until their timeouts. The `-E` list above leaves
+  them out; the CI's, in `.github/workflows/build.yml`, is the same and
+  says why for each, and the Windows job runs them all. Without 32-bit
+  Wine, `cpu_x86_diff` and `cpu_x86_diff_seed2` skip (their oracle runs x86
+  code natively).
 * **The player's smoke test**,
   `bash scr/linux/tests/smoke.sh <player> <adhostwin.exe> [<assets root>]`,
   runs it in private Xvfb servers and a private Wine prefix, as CI does
@@ -351,7 +352,13 @@ imports all fourteen releases from made-up sources.
   driven by keyboard and chevrons, a saved filter, an import going from
   seven releases to twelve, and ScreamSavers' and Marvel's catalog screen),
   and with removing a release `scr_smoke_config-remove` ("Remove …" from a
-  cover's menu against `fakeimport.exe`). While the monitors
+  cover's menu against `fakeimport.exe`), and with the looks
+  `scr_smoke_looks` (`/s` and `/window` with the looks, and their falling
+  back when Direct3D fails, a preset is missing or the device is lost,
+  checked in the log and in `AD_SCR_TEST_CAPTURE`'s pictures, so it holds
+  on a desktop that is never shown; without Direct3D 11 it checks what it
+  can and reports SKIP) and `scr_smoke_config-look` (the
+  settings window's **Look** and **Bars**). While the monitors
   are asleep the saver pauses its hosts, and every smoke test that runs a
   `/s` times out: set `AD_SCR_TEST_DISPLAY_ON=1` for the run, a lever only
   the test build, `LongAfterDark-test.scr`, reads (`scr_resources` checks
@@ -484,6 +491,10 @@ AD_ASSETS_DIR=C:/Temp/adroot ADFRAMES=120 ADGOWAITMS=0 $H packages/tt/TWISTED/<M
   --button <slot>` runs a module's own button (`docs/INTERACTION.md` §6.1).
 * `adwinspect.exe <file>` dumps a PE or NE file's headers, imports, exports
   and resources.
+* `scr/lookshot.exe --look crt --size 2560x1440 <frame.ppm> <out.png>` draws
+  a frame (one of `ADOUT`'s, say) the way a screen saver window draws it
+  with one of the looks, and says what that cost
+  ([scr/README.md](../scr/README.md), "Build and test").
 
 The full environment is in [host/core/README.md](../host/core/README.md) and
 each lane's `lane.hh`.
@@ -508,6 +519,7 @@ Everything the programs keep is under **`%LOCALAPPDATA%\LongAfterDark`**
   state\<package>\                 what the modules write: INI files, message texts, scores (ADSTATE, INTERACTION §7)
   thumbs\                          the settings dialog's module thumbnails
   logs\saver-last.log              how the last /s run ended
+  librashader\librashader.dll      the user's own, for Look=preset, if they put it there (scr/README.md)
 ```
 
 Package ids are `deluxe` (its files stay in `FILES\`), `ad10`, `ad32`, `tt`,
@@ -549,7 +561,7 @@ keeps the modules' state in `$XDG_DATA_HOME/longafterdark/state` instead
   tag: the release's notes carry it above GitHub's generated list, which
   names merged pull requests only, not commits made on `main` itself.
   A second job, `build-linux`, does the same on an Ubuntu 24.04 runner (the
-  cross build and its tests under Wine and Xvfb, without the twelve tests
+  cross build and its tests under Wine and Xvfb, without the thirteen tests
   above), builds the player in an Ubuntu 22.04 container (`AD_WERROR=1
   AD_GLIBC_MAX=2.35`, so it runs on glibc 2.35 and newer), runs its unit
   tests and its smoke test, and makes the Linux zip. Neither the Windows

@@ -241,9 +241,9 @@ so every cover now shows, on as many rows as they need
   covers at a time; the minimum window size is unchanged.
 * **First-open size.** The design height plus the band of the regular rows
   at the first-open width, 1104 DIP, where a row holds eight
-  (`design_client_h`): 1104 × 836 DIP for two to eight releases, 1104 × 952
+  (`design_client_h`): 1104 × 904 DIP for two to eight releases, 1104 × 1020
   for nine to sixteen (two rows of regular covers, the columns at their
-  design heights), and 1104 × 1068 for seventeen to twenty-four (three
+  design heights), and 1104 × 1136 for seventeen to twenty-four (three
   regular rows, 352 DIP), clamped to the
   work area as before (a clamped height then gets the compact rows, or the
   scrolling row).

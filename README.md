@@ -134,9 +134,16 @@ and start of day.
   Castaway's **Setup...** that open the module's original settings windows.
 - **A modern settings window.** It follows Windows' light or dark mode,
   shows each release's box cover, and has a live preview.
+- **Looks, off unless you choose them.** The modules can be drawn as on a
+  1990s CRT monitor, flat or behind curved glass, or smoothed for cartoon
+  art; the bars beside a 4:3 module can show a soft glow of its picture
+  instead of black; and a RetroArch shader preset of your own can draw
+  them, through librashader, which you supply. Otherwise every pixel is
+  drawn sharp, as before.
 
 On Linux you get the modules, their sound and their games, but not the
-settings window or the modules' own options (see [On Linux](#on-linux)).
+settings window, the looks or the modules' own options (see
+[On Linux](#on-linux)).
 
 ![Flying Toasters! from After Dark 4.0 Deluxe, running in Long After Dark](docs/images/flying-toasters.png)
 
@@ -313,8 +320,8 @@ capture. From PowerShell, in the folder you unzipped:
   modules checked there, as often as it says. With `/module`, that module
   plays first.
 - With neither, the window shows what the screen saver would. Each
-  module's own settings, the resolution, **Stretch to fit the screen** and
-  the sound settings apply as they do to the screen saver.
+  module's own settings, the resolution, **Stretch to fit the screen**, the
+  look and the sound settings apply as they do to the screen saver.
 - `LongAfterDark.exe /help` lists the switches.
 
 Use the `.exe`: Windows starts a `.scr` with `/S` and nothing else,
@@ -433,8 +440,9 @@ screen saver.
 Long After Dark's own code is under the license in [LICENSE](LICENSE).
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) lists the third-party
 code built into the programs, including the x86 emulator, which is derived
-from [resource_dasm](https://github.com/fuzziqersoftware/resource_dasm), and
-the importer's ARJ decoder, modified from Robert K. Jung's UNARJ.
+from [resource_dasm](https://github.com/fuzziqersoftware/resource_dasm), the
+importer's ARJ decoder, modified from Robert K. Jung's UNARJ, and the Smooth
+look's shaders, ported from Hyllian's Super-xBR.
 
 After Dark and every release above, their modules, pictures, music, sounds
 and box art belong to their rights holders, among them those of Berkeley

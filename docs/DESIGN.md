@@ -545,7 +545,11 @@ every monitor and switches them together; 1: each monitor has a rotation of
 its own, the settings window's "A different module on each monitor"),
 `StretchToFit=1|0` (default 0: a 640×480 module keeps its 4:3 shape with
 bars; 1: its frame fills each monitor, the settings window's "Stretch to fit
-the screen"; never in `/p`), `StartFromDesktop=1|0` (no UI;
+the screen"; never in `/p`), `Look=sharp|crt|crt-curved|smooth|preset` and
+`AmbientBars=1|0` (default `sharp` and 0, the frames drawn as they always
+were; the settings window's "Look" and "Bars"; `/s` and `/window` only,
+below), `ShaderPreset=<path of a .slangp>` (no UI; `Look=preset`'s
+RetroArch preset), `StartFromDesktop=1|0` (no UI;
 INTERACTION.md §8), `Collections=<package id>,…` (the box-strip filter;
 empty or missing = every release), `Sound=1|0` (default 1), `Volume=0..100`
 (default 50), `SoundMonitor=primary` (reserved; §10, AUDIO.md §9);
@@ -566,6 +570,18 @@ it stretches with `HALFTONE` and switches to `COLORONCOLOR` when a host's
 `HALFTONE` upscales average more than 8 ms (judged afresh for each host).
 `AD_SCR_PRESENT=gdi|d2d` and `AD_SCR_STRETCH=halftone|nearest` force one
 (`scr/README.md`).
+
+The looks, each off until the user turns it on (`Look` other than `sharp`,
+or `AmbientBars=1`), draw the `/s` and `/window` windows through Direct3D 11
+instead (`scr/src/present_d3d.h`): the frame goes up as it comes (an 8-bit
+one as its indices and its palette), a first pass resolves it to colour,
+and the look's pixel shaders, HLSL compiled at run time by
+`d3dcompiler_47.dll`, draw it into the window; a RetroArch preset is drawn
+by the user's own librashader. With the defaults the saver makes no Direct3D
+device of its own and never loads the HLSL compiler. A look that can't run,
+or costs over 8 ms a frame, gives way to Direct2D's sharp upscale
+(`AD_SCR_PRESENT=d3d11` keeps it whatever it costs); `/p`, the settings
+window's live preview and its thumbnails always draw as before.
 
 ### 6. The data folder and the assets
 
