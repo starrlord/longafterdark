@@ -640,9 +640,11 @@ adhostwin.exe and adimport.exe next to itself.
    get 640x480, scaled up to fit the screen, with bars at the sides on a
    widescreen monitor unless "Stretch to fit the screen" is checked.
 
-   Look and Bars, under it, change how the pictures are drawn. They start
-   at "Sharp pixels" and "Black", the way the screen saver has always drawn
-   them. Look: "CRT monitor" draws a 1990s VGA monitor (best on a 1440p or
+   "Look: Sharp pixels", at the end of the "Stretch to fit the screen"
+   line, opens the Look menu (Alt+K opens it too), which changes how the
+   pictures are drawn. Its two groups, Look and Bars, start at "Sharp
+   pixels" and "Black", the way the screen saver has always drawn them.
+   Look: "CRT monitor" draws a 1990s VGA monitor (best on a 1440p or
    4K monitor; on a 1080p one its scanlines are left out), "Curved CRT
    monitor" the same behind curved glass, and "Smooth" smooths the edges of
    cartoon art (not photos or dithered pictures). Bars: "Ambient glow"

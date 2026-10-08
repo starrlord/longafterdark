@@ -90,10 +90,16 @@ struct State {
   std::wstring import_note;                             // why the last import changed nothing
   bool random = true;
   bool sound_on = true;                                 // the Sound dropdown says "Primary monitor" (AUDIO.md §9)
-  // The Look dropdown's items (ui_model.h: look_choices), and whether the
-  // user has picked one: until then OK writes the file's Look as it was.
+  // The Look menu (ui_model.h: look_menu_items): its looks, the one checked
+  // (-1: none, a Look this version doesn't know), whether the user has picked
+  // one (until then OK writes the file's Look as it was) and Bars at Ambient
+  // glow; the link that opens it as last laid out (place_look_link).
   std::vector<LookChoice> looks;
+  int look_checked = -1;
   bool look_picked = false;
+  bool ambient = false;
+  LookLinkLayout look_link;
+  bool look_link_hover = false;                         // screenshot hook: the link drawn as under the pointer
   // "A different module on each monitor" (ui_model.h: per_monitor_choice):
   // the monitors there are to tell apart, counted again at each display
   // change (the test hook's staged layouts follow those changes).
@@ -537,9 +543,7 @@ void apply_theme(State& st) {
   ListView_SetTextColor(st.list, p.text);
   if (st.preview) live_preview_set_palette(st.preview, &st.theme.pal, st.theme.dpi);
   const int face = st.theme.px(32) + 2 * focus_margin(st.theme.dpi);
-  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_LOOK, IDC_BARS, IDC_SOUND}) {
-    size_combo(GetDlgItem(st.dlg, id), st.theme, face);
-  }
+  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_SOUND}) size_combo(GetDlgItem(st.dlg, id), st.theme, face);
   RedrawWindow(st.dlg, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
 }
 
@@ -632,6 +636,31 @@ void place_footer_credit(State& st) {
   }
 }
 
+// The Look link (ui_model.h: layout_look_link) for the look and the bars as
+// they now stand: its window text, which screen readers read, is the whole
+// text; it draws what fits. Hidden only when its row has no room at all.
+void place_look_link(State& st) {
+  HWND link = GetDlgItem(st.dlg, IDC_LOOK_MENU);
+  if (!link) return;
+  const Theme& t = st.theme;
+  const std::wstring look = look_choice_name(st.looks, st.look_checked);
+  if (const std::wstring whole = look_link_text(look, st.ambient); window_text(link) != whole) {
+    SetWindowTextW(link, whole.c_str());
+  }
+  HDC dc = GetDC(link);
+  st.look_link = layout_look_link(st.L, look, st.ambient,
+                                  [&](const std::wstring& s) { return (int)measure_text(dc, s, t.fonts.body).cx; });
+  ReleaseDC(link, dc);
+  if (!st.look_link.box.empty()) {
+    place(link, st.look_link.box, focus_margin(t.dpi));
+    ShowWindow(link, SW_SHOWNA);
+    InvalidateRect(link, nullptr, TRUE);
+  } else {
+    if (GetFocus() == link) SetFocus(GetDlgItem(st.dlg, IDC_STRETCH));
+    ShowWindow(link, SW_HIDE);
+  }
+}
+
 // The rotation line's tooltip (the chip's tooltip control, tool 2), over the
 // line while it shows and has something to explain (rotation_tip).
 void update_rotation_tip(State& st) {
@@ -669,13 +698,12 @@ void set_rotation_summary(State& st, std::wstring text) {
   update_rotation_tip(st);
 }
 
-// "Restore defaults": shown while the module has anything to restore (and
-// the window the room for it: WindowLayout::defaults), enabled once
-// something differs from the catalog's defaults.
+// "Restore defaults": shown while the module has anything to restore,
+// enabled once something differs from the catalog's defaults.
 void update_defaults_button(State& st) {
   HWND b = GetDlgItem(st.dlg, IDC_PANEL_DEFAULTS);
   const Module* m = shown_module(st);
-  const bool show = m && !welcome(st) && !st.L.defaults.empty() &&
+  const bool show = m && !welcome(st) &&
                     std::any_of(m->controls.begin(), m->controls.end(), [](const Control& c) { return c.settable(); });
   const bool enable = show && !at_defaults(st, *m);
   if (!enable && GetFocus() == b) SetFocus(st.list);   // don't strand the keyboard on a dead button
@@ -777,7 +805,8 @@ void layout(State& st) {
   in.per_monitor = rotation && per_monitor_choice(st.random, monitors_all(st), st.monitors).shown;
   in.strip_tiles = st.strip_on && st.strip ? (int)st.strip->count() : 0;
   {
-    // The links' text widths, so their text lines up with the card's edge.
+    // The links' text widths, so their text lines up with the card's edge;
+    // "Stretch to fit"'s, which the Look link stays clear of.
     HDC dc = GetDC(st.dlg);
     auto dips = [&](int id) {
       SIZE sz = measure_text(dc, without_mnemonic(window_text(item(id))), st.theme.fonts.body);
@@ -785,6 +814,7 @@ void layout(State& st) {
     };
     in.link_all_w = dips(IDC_CHECK_ALL);
     in.link_none_w = dips(IDC_CHECK_NONE);
+    in.stretch_text_w = dips(IDC_STRETCH);
     ReleaseDC(st.dlg, dc);
   }
   st.L = layout_window(in);
@@ -899,11 +929,15 @@ void layout(State& st) {
   place(item(IDC_MONITORS_LABEL), L.monitors_label);
   place_combo(IDC_SCALE, L.scale);
   place_combo(IDC_MONITORS, L.monitors);
-  place(item(IDC_STRETCH), L.stretch, fm);
-  place(item(IDC_LOOK_LABEL), L.look_label);
-  place(item(IDC_BARS_LABEL), L.bars_label);
-  place_combo(IDC_LOOK, L.look);
-  place_combo(IDC_BARS, L.bars);
+  {
+    // "Stretch to fit the screen" up to the Look link's part of the row (its
+    // text and the gap after it): the two windows, grown by the focus
+    // margin, never overlap.
+    Rc sb = L.stretch;
+    if (!L.look_link.empty()) sb.w = std::max(1, L.look_link.x - 2 * fm - sb.x);
+    place(item(IDC_STRETCH), sb, fm);
+    place_look_link(st);
+  }
   place(item(IDC_SOUND_LABEL), L.sound_label);
   place_combo(IDC_SOUND, L.sound);
   place(item(IDC_VOLUME_LABEL), L.volume_label);
@@ -1092,7 +1126,8 @@ void position_panel(State& st) {
   if (!P.empty_note.empty()) put(IDC_PANEL_EMPTY, P.empty_note, 0, 0);
   // "Restore defaults" just under the last row when they all fit; at the
   // column's foot (layout) when they scroll.
-  if (Rc d = st.L.defaults; !d.empty()) {
+  {
+    Rc d = st.L.defaults;
     if (!scroll && !controls.empty()) d.y = std::min(d.y, st.L.panel.y + fm + P.content_h + st.theme.px(8));
     place(GetDlgItem(st.dlg, IDC_PANEL_DEFAULTS), d, fm);
   }
@@ -2496,12 +2531,13 @@ Settings gather(State& st) {
   // (Primary monitor only): the file's value stays until the user changes it.
   s.different_per_monitor = IsDlgButtonChecked(st.dlg, IDC_PER_MONITOR) == BST_CHECKED;
   s.stretch_to_fit = IsDlgButtonChecked(st.dlg, IDC_STRETCH) == BST_CHECKED;
-  // The looks (looks.h). Look as loaded until the user picks an item, so a
-  // value this version doesn't know stays as written; ShaderPreset has no UI
-  // and stays as loaded.
-  const LRESULT lsel = SendDlgItemMessageW(st.dlg, IDC_LOOK, CB_GETCURSEL, 0, 0);
-  if (st.look_picked && lsel >= 0 && lsel < (LRESULT)st.looks.size()) s.look = look_name(st.looks[(size_t)lsel].look);
-  s.ambient_bars = SendDlgItemMessageW(st.dlg, IDC_BARS, CB_GETCURSEL, 0, 0) == 1;
+  // The looks (looks.h). Look as loaded until the user picks one in the
+  // menu, so a value this version doesn't know stays as written;
+  // ShaderPreset has no UI and stays as loaded.
+  if (st.look_picked && st.look_checked >= 0 && st.look_checked < (int)st.looks.size()) {
+    s.look = look_name(st.looks[(size_t)st.look_checked].look);
+  }
+  s.ambient_bars = st.ambient;
   // Sound (AUDIO.md §9); SoundMonitor stays as loaded (reserved).
   s.sound = SendDlgItemMessageW(st.dlg, IDC_SOUND, CB_GETCURSEL, 0, 0) != 1;
   s.volume = std::clamp((int)SendDlgItemMessageW(st.dlg, IDC_VOLUME, TBM_GETPOS, 0, 0), 0, 100);
@@ -2961,6 +2997,129 @@ LRESULT draw_footer_credit(State& st, NMCUSTOMDRAW* cd) {
   return CDRF_SKIPDEFAULT;
 }
 
+// The Look link (IDC_LOOK_MENU, NM_CUSTOMDRAW): the dialog's link look as
+// adw_ui draws "Restore defaults" (ButtonRole::subtle: a fill under the
+// pointer and a deeper one pressed, the text in the body face and the accent
+// text colour, the focus ring round its box), and after the text About's
+// "More" chevron, in the same ink; the text and the chevron where
+// layout_look_link put them. Under high contrast, whose hover fill is the
+// window colour, the text is underlined under the pointer, and pressed it is
+// the highlight's text on the highlight (as the footer's credit).
+LRESULT draw_look_link(State& st, NMCUSTOMDRAW* cd) {
+  if (cd->dwDrawStage != CDDS_PREPAINT) return CDRF_DODEFAULT;
+  HWND h = cd->hdr.hwndFrom;
+  const Theme& t = st.theme;
+  const Palette& p = t.pal;
+  const RECT cr = cd->rc;
+  const int w = cr.right - cr.left, hgt = cr.bottom - cr.top;
+  if (w <= 0 || hgt <= 0 || st.look_link.box.empty()) return CDRF_SKIPDEFAULT;
+  HDC dc = CreateCompatibleDC(cd->hdc);
+  HBITMAP bmp = CreateCompatibleBitmap(cd->hdc, w, hgt);
+  HGDIOBJ old = SelectObject(dc, bmp);
+  const RECT all{0, 0, w, hgt};
+  const COLORREF bg = surface_color(h, p);
+  fill_rect(dc, all, bg);
+  const int fm = focus_margin(t.dpi);
+  const float s = t.dpi / 96.0f, radius = 4 * s;
+  const bool disabled = (cd->uItemState & CDIS_DISABLED) || !IsWindowEnabled(h);
+  const bool pressed = (cd->uItemState & CDIS_SELECTED) != 0;
+  const bool hot = (cd->uItemState & CDIS_HOT) != 0 || st.look_link_hover;
+  const bool focus = ((cd->uItemState & CDIS_FOCUS) || focused_window() == h) && keyboard_cues(h);
+  const UINT prefix = keyboard_cues(h) || (cd->uItemState & CDIS_SHOWKEYBOARDCUES) ? 0 : DT_HIDEPREFIX;
+  const RECT body{fm, fm, w - fm, hgt - fm};
+  if (!disabled && (hot || pressed)) fill_round(dc, body, radius, pressed ? p.row_selected : p.row_hover);
+  COLORREF ink = p.accent_text;
+  if (disabled) ink = p.text_disabled;
+  else if (pressed) ink = p.high_contrast ? p.on_accent : blend(p.accent_text, bg, 0.25);
+  // In this window's coordinates.
+  const int ox = st.look_link.box.x - fm, oy = st.look_link.box.y - fm;
+  auto local = [&](const Rc& r) { return RECT{r.x - ox, r.y - oy, r.right() - ox, r.bottom() - oy}; };
+  HFONT underlined = nullptr;
+  if (hot && !disabled && p.high_contrast) {
+    LOGFONTW lf{};
+    if (GetObjectW(t.fonts.body, sizeof(lf), &lf)) {
+      lf.lfUnderline = TRUE;
+      underlined = CreateFontIndirectW(&lf);
+    }
+  }
+  RECT tr = local(st.look_link.label);
+  tr.right += 1;   // as measured: whole, never an ellipsis it doesn't need
+  draw_text(dc, st.look_link.text, tr, underlined ? underlined : t.fonts.body, ink,
+            DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS | prefix);
+  if (underlined) DeleteObject(underlined);
+  draw_text(dc, L"\uE70D", local(st.look_link.chevron), t.fonts.icons_small, ink,
+            DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
+  if (focus) draw_focus_ring(dc, all, radius + fm, p, s);
+  BitBlt(cd->hdc, cr.left, cr.top, w, hgt, dc, 0, 0, SRCCOPY);
+  SelectObject(dc, old);
+  DeleteObject(bmp);
+  DeleteDC(dc);
+  return CDRF_SKIPDEFAULT;
+}
+
+// A look or the bars picked in the Look menu, or its command posted to the
+// dialog: the link says so, and OK and Preview write it (gather). A look
+// picked is written from then on, even the one a value this version doesn't
+// know was drawn as; a preset only while the menu offers it.
+bool pick_look(State& st, UINT cmd) {
+  static_assert(IDM_LOOK_PRESET - IDM_LOOK_SHARP == (int)Look::preset, "IDM_LOOK_SHARP + a Look");
+  if (cmd >= IDM_LOOK_SHARP && cmd <= IDM_LOOK_PRESET) {
+    const Look look = (Look)(cmd - IDM_LOOK_SHARP);
+    auto it = std::find_if(st.looks.begin(), st.looks.end(), [&](const LookChoice& c) { return c.look == look; });
+    if (it == st.looks.end()) return false;
+    st.look_checked = (int)(it - st.looks.begin());
+    st.look_picked = true;
+  } else if (cmd == IDM_BARS_BLACK || cmd == IDM_BARS_AMBIENT) {
+    st.ambient = cmd == IDM_BARS_AMBIENT;
+  } else {
+    return false;
+  }
+  log_line("dialog: look %s, bars %s",
+           st.look_picked ? look_name(st.looks[(size_t)st.look_checked].look) : st.settings.look.c_str(),
+           st.ambient ? "ambient glow" : "black");
+  place_look_link(st);
+  return true;
+}
+
+// The Look menu (ui_model.h: look_menu_items) under the link, its right edge
+// on the link's (which ends the row), or over the link where the screen has
+// no room under it; in the app's mode (apply_theme: allow_dark_menus).
+void open_look_menu(State& st) {
+  HWND link = GetDlgItem(st.dlg, IDC_LOOK_MENU);
+  HMENU menu = CreatePopupMenu();
+  if (!menu || !link) return;
+  for (const LookMenuItem& it : look_menu_items(st.looks, st.look_checked, st.ambient)) {
+    MENUITEMINFOW mi{};
+    mi.cbSize = sizeof(mi);
+    if (it.kind == LookMenuItem::separator) {
+      mi.fMask = MIIM_FTYPE;
+      mi.fType = MFT_SEPARATOR;
+    } else {
+      // Headers grey; the looks and the bars radio items, the current ones checked.
+      mi.fMask = MIIM_FTYPE | MIIM_STATE | MIIM_ID | MIIM_STRING;
+      mi.fType = MFT_STRING | (it.kind == LookMenuItem::header ? 0 : MFT_RADIOCHECK);
+      mi.fState = it.kind == LookMenuItem::header ? MFS_DISABLED : it.checked ? MFS_CHECKED : MFS_UNCHECKED;
+      mi.wID = it.kind == LookMenuItem::look ? IDM_LOOK_SHARP + (UINT)it.value
+               : it.kind == LookMenuItem::bars ? (it.ambient ? IDM_BARS_AMBIENT : IDM_BARS_BLACK)
+                                               : 0;
+      mi.dwTypeData = const_cast<wchar_t*>(it.text.c_str());
+    }
+    InsertMenuItemW(menu, (UINT)GetMenuItemCount(menu), TRUE, &mi);
+  }
+  RECT box{};
+  GetWindowRect(link, &box);
+  const int fm = focus_margin(st.theme.dpi);
+  InflateRect(&box, -fm, -fm);
+  TPMPARAMS tp{sizeof(tp), box};
+  SetLastError(0);
+  const UINT cmd = (UINT)TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_TOPALIGN | TPM_VERTICAL, box.right,
+                                          box.bottom, st.dlg, &tp);
+  const DWORD err = cmd ? 0 : GetLastError();
+  DestroyMenu(menu);
+  if (cmd) pick_look(st, cmd);
+  else if (err) log_line("dialog: the Look menu didn't open (error %lu)", err);
+}
+
 // What screen readers hear of the credit besides its name (its window text,
 // "Made With Love by StarrLord"): where it goes, as its MSAA description and
 // its UI Automation help text (UIA's own property: its button proxy doesn't
@@ -3009,9 +3168,7 @@ void dpi_changed(State& st, int dpi) {
   load_logo(st);
   if (st.preview) live_preview_set_palette(st.preview, &st.theme.pal, dpi);
   const int face = st.theme.px(32) + 2 * focus_margin(dpi);
-  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_LOOK, IDC_BARS, IDC_SOUND}) {
-    size_combo(GetDlgItem(st.dlg, id), st.theme, face);
-  }
+  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_SOUND}) size_combo(GetDlgItem(st.dlg, id), st.theme, face);
 }
 
 // ---- panel dialog ------------------------------------------------------------------
@@ -3226,9 +3383,8 @@ void init_dialog(State& st) {
   auto item = [&](int id) { return GetDlgItem(st.dlg, id); };
   // Which surface each control sits on (for its background).
   for (int id : {IDC_MODULE_TITLE, IDC_MODULE_BADGE, IDC_ABOUT, IDC_CREDITS, IDC_SCALE_LABEL, IDC_SCALE,
-                 IDC_MONITORS_LABEL, IDC_MONITORS, IDC_STRETCH, IDC_LOOK_LABEL, IDC_LOOK, IDC_BARS_LABEL, IDC_BARS,
-                 IDC_SOUND_LABEL, IDC_SOUND, IDC_VOLUME_LABEL, IDC_VOLUME, IDC_VOLUME_VALUE, IDC_SOUND_NOTE,
-                 IDC_PANEL_DEFAULTS, IDC_WELCOME_IMPORT}) {
+                 IDC_MONITORS_LABEL, IDC_MONITORS, IDC_STRETCH, IDC_LOOK_MENU, IDC_SOUND_LABEL, IDC_SOUND,
+                 IDC_VOLUME_LABEL, IDC_VOLUME, IDC_VOLUME_VALUE, IDC_SOUND_NOTE, IDC_PANEL_DEFAULTS, IDC_WELCOME_IMPORT}) {
     set_surface(item(id), Surface::card);
   }
   set_button_role(item(IDC_MODE_SINGLE), ButtonRole::segment_left);
@@ -3240,9 +3396,7 @@ void init_dialog(State& st) {
   set_button_role(item(IDC_WELCOME_IMPORT), ButtonRole::accent, L'\uE958');
   set_button_role(item(IDC_PANEL_DEFAULTS), ButtonRole::subtle, L'\uE7A7');   // undo
   set_button_role(item(IDOK), ButtonRole::accent);
-  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_LOOK, IDC_BARS, IDC_SOUND}) {
-    subclass_combo(item(id), &st.theme);
-  }
+  for (int id : {IDC_DURATION, IDC_SCALE, IDC_MONITORS, IDC_SOUND}) subclass_combo(item(id), &st.theme);
   HWND about = item(IDC_ABOUT);
 
   st.list = item(IDC_MODULE_LIST);
@@ -3350,16 +3504,13 @@ void init_dialog(State& st) {
   CheckDlgButton(st.dlg, IDC_STRETCH, st.settings.stretch_to_fit ? BST_CHECKED : BST_UNCHECKED);
   live_preview_set_stretch(st.preview, st.settings.stretch_to_fit);
 
-  // How /s and /window draw the frames (looks.h); the live preview draws as
-  // it always has, whatever they say.
-  HWND look = item(IDC_LOOK);
+  // How /s and /window draw the frames (looks.h), in the Look menu; the live
+  // preview draws as it always has, whatever they say. The link that opens
+  // it is placed (and its text set) with the layout.
   st.looks = look_choices(st.settings.shader_preset);
-  for (const LookChoice& c : st.looks) SendMessageW(look, CB_ADDSTRING, 0, (LPARAM)c.label.c_str());
-  SendMessageW(look, CB_SETCURSEL, look_choice_index(st.looks, st.settings.look), 0);
+  st.look_checked = look_choice_checked(st.looks, st.settings.look);
   st.look_picked = false;
-  HWND bars = item(IDC_BARS);
-  for (const wchar_t* label : kBarsChoices) SendMessageW(bars, CB_ADDSTRING, 0, (LPARAM)label);
-  SendMessageW(bars, CB_SETCURSEL, st.settings.ambient_bars ? 1 : 0, 0);
+  st.ambient = st.settings.ambient_bars;
 
   // Sound (AUDIO.md §9): where it plays, or Off; and After Dark's volume.
   HWND snd = item(IDC_SOUND);
@@ -3556,6 +3707,10 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         SetWindowLongPtrW(h, DWLP_MSGRESULT, draw_footer_credit(*st, reinterpret_cast<NMCUSTOMDRAW*>(lp)));
         return TRUE;
       }
+      if (hdr->code == NM_CUSTOMDRAW && hdr->idFrom == IDC_LOOK_MENU) {
+        SetWindowLongPtrW(h, DWLP_MSGRESULT, draw_look_link(*st, reinterpret_cast<NMCUSTOMDRAW*>(lp)));
+        return TRUE;
+      }
       if (hdr->code == NM_CUSTOMDRAW) {
         wchar_t cls[32] = {};
         GetClassNameW(hdr->hwndFrom, cls, 32);
@@ -3603,10 +3758,20 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
           if (HIWORD(wp) == BN_CLICKED)
             live_preview_set_stretch(st->preview, IsDlgButtonChecked(st->dlg, IDC_STRETCH) == BST_CHECKED);
           return TRUE;
-        case IDC_LOOK:
-          // From now on OK writes the look picked (gather), even the one the
-          // file's unknown value showed as.
-          if (HIWORD(wp) == CBN_SELCHANGE) st->look_picked = true;
+        case IDC_LOOK_MENU:
+          // A click, Enter or Space on it, or Alt+K.
+          if (HIWORD(wp) == BN_CLICKED) open_look_menu(*st);
+          return TRUE;
+        case IDM_LOOK_SHARP:
+        case IDM_LOOK_CRT:
+        case IDM_LOOK_CRT_CURVED:
+        case IDM_LOOK_SMOOTH:
+        case IDM_LOOK_PRESET:
+        case IDM_BARS_BLACK:
+        case IDM_BARS_AMBIENT:
+          // The menu's commands, as a test posts them (the menu itself
+          // returns its pick to open_look_menu).
+          pick_look(*st, LOWORD(wp));
           return TRUE;
         case IDC_STRIP_SHOW_ALL:
           if (st->strip && st->strip->selected_count()) {
@@ -3842,11 +4007,13 @@ INT_PTR CALLBACK dialog_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 //     follows)  focus=stretch (its focus ring); the report says where it shows (stretch=),
 //     whether it is checked (stretch_checked=) and its text fits (stretch_fits=), and where
 //     the options card, Resolution's and Sound's dropdowns are (options_card=, scale=, sound=)
-//     look=sharp|crt|crt-curved|smooth|preset (the Look dropdown at that item, as if the user
-//     picked it; preset only while the settings name a ShaderPreset)  bars=0|1 (Bars at Black
-//     or Ambient glow)  focus=look|bars (their focus rings); the report says where they show
-//     (look=, bars=), what they show (look_sel=sharp|crt|crt-curved|smooth|preset,
-//     bars_sel=0|1) and how many items Look has (look_items=)
+//     look=sharp|crt|crt-curved|smooth|preset (that look picked in the Look menu, as the user
+//     picks it; preset only while the settings name a ShaderPreset)  bars=0|1 (Black or
+//     Ambient glow picked)  focus=look (the Look link's focus ring)  hover=look (the link under
+//     the pointer)  pressed=look (...held down); the report says where the link's box shows
+//     (look_link=x,y,w,h or "hidden"), its text as drawn, whole or shortened (look_text=,
+//     without the "&") and whether that text fits its box (look_fits=1|0: 0 only when not
+//     even "Look" does)
 
 std::map<std::wstring, std::wstring> parse_state(const std::wstring& s) {
   std::map<std::wstring, std::wstring> kv;
@@ -3951,13 +4118,11 @@ int run_screenshot(State& st, const std::wstring& png) {
     live_preview_set_stretch(st.preview, kv[L"stretch"] == L"1");
   }
   if (Look l = Look::sharp; !kv[L"look"].empty() && parse_look(narrow(kv[L"look"]), &l)) {
-    for (size_t i = 0; i < st.looks.size(); ++i) {
-      if (st.looks[i].look != l) continue;
-      SendDlgItemMessageW(dlg, IDC_LOOK, CB_SETCURSEL, i, 0);
-      st.look_picked = true;
-    }
+    pick_look(st, IDM_LOOK_SHARP + (UINT)l);
   }
-  if (!kv[L"bars"].empty()) SendDlgItemMessageW(dlg, IDC_BARS, CB_SETCURSEL, kv[L"bars"] == L"1" ? 1 : 0, 0);
+  if (!kv[L"bars"].empty()) pick_look(st, kv[L"bars"] == L"1" ? IDM_BARS_AMBIENT : IDM_BARS_BLACK);
+  if (kv[L"hover"] == L"look") st.look_link_hover = true;
+  if (kv[L"pressed"] == L"look") SendDlgItemMessageW(dlg, IDC_LOOK_MENU, BM_SETSTATE, TRUE, 0);
   if (kv[L"hover"] == L"preview") {
     st.hover_preview = true;
     live_preview_set_hover(st.preview, true);
@@ -3982,7 +4147,7 @@ int run_screenshot(State& st, const std::wstring& png) {
                                                     {L"preview", IDC_PREVIEW}, {L"sound", IDC_SOUND},
                                                     {L"volume", IDC_VOLUME}, {L"credit", IDC_FOOTER_CREDIT},
                                                     {L"permonitor", IDC_PER_MONITOR}, {L"stretch", IDC_STRETCH},
-                                                    {L"look", IDC_LOOK}, {L"bars", IDC_BARS}};
+                                                    {L"look", IDC_LOOK_MENU}};
     SendMessageW(dlg, WM_CHANGEUISTATE, MAKEWPARAM(UIS_CLEAR, UISF_HIDEFOCUS | UISF_HIDEACCEL), 0);
     HWND f = nullptr;
     if (auto it = ids.find(kv[L"focus"]); it != ids.end()) f = GetDlgItem(dlg, it->second);
@@ -4139,7 +4304,8 @@ int run_screenshot(State& st, const std::wstring& png) {
                 "\nlist_card=" + pic(st.L.list_card) + "\n";
     }
     // "Stretch to fit the screen": where it shows, whether it is checked and
-    // its text fits beside its box; the options card and Resolution and
+    // its text fits beside its box (in its window, which stops short of the
+    // Look link's part of the row); the options card and Resolution and
     // Sound's dropdowns around it.
     {
       HWND sb = GetDlgItem(dlg, IDC_STRETCH);
@@ -4147,25 +4313,27 @@ int run_screenshot(State& st, const std::wstring& png) {
       HDC dc = GetDC(sb);
       const int text_w = measure_text(dc, without_mnemonic(window_text(sb)), st.theme.fonts.body).cx;
       ReleaseDC(sb, dc);
-      const bool fits = st.L.stretch.w - st.theme.px(20) - st.theme.px(8) >= text_w;
+      RECT wr{};
+      GetWindowRect(sb, &wr);
+      const int body_w = (int)(wr.right - wr.left) - 2 * focus_margin(st.theme.dpi);
+      const bool fits = std::min<int>(st.L.stretch.w, body_w) - st.theme.px(20) - st.theme.px(8) >= text_w;
       report += "stretch=" + (shown ? pic(st.L.stretch) : std::string("hidden")) +
                 "\nstretch_checked=" + (IsDlgButtonChecked(dlg, IDC_STRETCH) == BST_CHECKED ? "1" : "0") +
                 "\nstretch_fits=" + (fits ? "1" : "0") + "\noptions_card=" + pic(st.L.options_card) +
                 "\nscale=" + pic(st.L.scale) + "\nsound=" + pic(st.L.sound) + "\n";
     }
-    // Look and Bars: where they show, the look and the bars they show, and
-    // how many looks there are to pick from.
+    // The Look link: where its box shows, its text as drawn (a mnemonic's
+    // "&" an underline, "&&" one "&") and whether that text fits its box.
     {
-      auto shown = [&](int id, const Rc& r) {
-        return (GetWindowLongW(GetDlgItem(dlg, id), GWL_STYLE) & WS_VISIBLE) != 0 && !r.empty() ? pic(r)
-                                                                                              : std::string("hidden");
-      };
-      const LRESULT lsel = SendDlgItemMessageW(dlg, IDC_LOOK, CB_GETCURSEL, 0, 0);
-      const LRESULT bsel = SendDlgItemMessageW(dlg, IDC_BARS, CB_GETCURSEL, 0, 0);
-      report += "look=" + shown(IDC_LOOK, st.L.look) +
-                "\nlook_sel=" + (lsel >= 0 && lsel < (LRESULT)st.looks.size() ? look_name(st.looks[(size_t)lsel].look) : "") +
-                "\nlook_items=" + std::to_string(SendDlgItemMessageW(dlg, IDC_LOOK, CB_GETCOUNT, 0, 0)) +
-                "\nbars=" + shown(IDC_BARS, st.L.bars) + "\nbars_sel=" + (bsel >= 0 ? std::to_string(bsel) : "") + "\n";
+      const bool shown = (GetWindowLongW(GetDlgItem(dlg, IDC_LOOK_MENU), GWL_STYLE) & WS_VISIBLE) != 0 &&
+                         !st.look_link.box.empty();
+      std::wstring drawn;
+      for (size_t i = 0; shown && i < st.look_link.text.size(); ++i) {
+        if (st.look_link.text[i] == L'&' && ++i == st.look_link.text.size()) break;
+        drawn += st.look_link.text[i];
+      }
+      report += "look_link=" + (shown ? pic(st.look_link.box) : std::string("hidden")) + "\nlook_text=" + narrow(drawn) +
+                "\nlook_fits=" + (shown && st.look_link.fits ? "1" : "0") + "\n";
     }
     write_file_atomic(kv[L"report"], report);
   }

@@ -87,7 +87,10 @@ bool d3d_available(std::string* why = nullptr);
 
 // Makes the device and compiles the look's shaders ahead of the first frame,
 // so the first present doesn't stall on them (the saver calls it as its
-// windows open). false: `*why` says what failed (the windows will fall back).
+// windows open). A shader preset's chain is each window's own: for one,
+// librashader and the preset's file must be there, and the sharp look that
+// stands in while the chain builds is compiled. false: `*why` says what
+// failed (the windows will fall back).
 bool d3d_prepare(const LookOptions& opts, std::string* why = nullptr);
 
 // For the tests (scr_lookshot --lose, LongAfterDark-test.scr's levers): the

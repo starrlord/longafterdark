@@ -224,7 +224,7 @@ set_tests_properties(scr_smoke_config-monitors PROPERTIES TIMEOUT 240)
 # a /s rotation and a /p.
 set_tests_properties(scr_smoke_config-speed PROPERTIES TIMEOUT 240)
 set_tests_properties(scr_smoke_config-stretch PROPERTIES TIMEOUT 240)
-# The looks (looks.h): /s runs with each look, and the dialog's Look and Bars.
+# The looks (looks.h): /s runs with each look, and the dialog's Look menu.
 set_tests_properties(scr_smoke_looks PROPERTIES TIMEOUT 240)
 set_tests_properties(scr_smoke_config-look PROPERTIES TIMEOUT 240)
 set_tests_properties(scr_host_stream PROPERTIES TIMEOUT 60)

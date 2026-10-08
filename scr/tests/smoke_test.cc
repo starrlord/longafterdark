@@ -4392,9 +4392,8 @@ int test_config_twelve(const Opts& o) {
     // twelve-release catalog): the seven covers side by side, no chevron (as
     // the first-open window holds them on every monitor but a narrow one);
     // after the reload, the twelve as the same client lays them out (two
-    // rows of regular covers in the seven's 904 DIP, which need 876;
-    // compact rows, or one row scrolling unscrolled with a right chevron,
-    // where the work area makes it shorter).
+    // rows of compact covers in the seven's 836 DIP; scrolling unscrolled,
+    // with a right chevron, where the work area makes it shorter).
     const fs::path catalog = w.assets / "win" / "catalog-win.json", imported = w.dir / "catalog-imported.json";
     std::string twelve, seven;
     CHECK(read_file(catalog.wstring(), twelve) && write_file_atomic(imported.wstring(), twelve));
@@ -7513,21 +7512,33 @@ DWORD WINAPI watch_preview_file(LPVOID p) {
   return 0;
 }
 
-// The settings window's Look and Bars (looks.h; ui_model.h: look_choices),
-// driven by control ID:
+// The settings window's Look menu (looks.h; ui_model.h: look_menu_items),
+// which the link at the end of the "Stretch to fit" row opens:
 //  * a file with Look=crt-curved, AmbientBars=1 and ShaderPreset=x.slangp:
-//    five looks, the last "Shader preset: x.slangp", with "Curved CRT
-//    monitor" and "Ambient glow" shown; Smooth and Black picked, OK:
-//    Look=smooth, AmbientBars=0, ShaderPreset and the rest of the file kept;
-//  * Look=vhs (a later version's): shown as "Sharp pixels"; OK with only Bars
-//    changed keeps Look=vhs; "Sharp pixels" picked writes Look=sharp;
-//  * no ShaderPreset: four looks, and Look=preset shows "Sharp pixels" (kept);
-//  * Preview with Look=crt and ambient bars: its settings file says so, and
-//    its /s draws with them (the saver's "looks: crt, ambient bars: direct3d");
+//    the link says "Loo&k: Curved CRT monitor, ambient glow" (its window
+//    text, which screen readers read); a click on it opens the menu: "Look"
+//    (grey), the five looks (the last "Shader preset: x.slangp"; "Curved CRT
+//    monitor" checked), a separator, "Bars" (grey), "Black" and "Ambient
+//    glow" (checked), the looks and the bars radio items. The keyboard picks
+//    CRT monitor there (Down to it, Enter), and the link says so; then the
+//    menu's commands posted to the dialog, Smooth and Black, and the link
+//    says "Loo&k: Smooth"; OK: Look=smooth, AmbientBars=0, ShaderPreset and
+//    the rest of the file kept;
+//  * Look=vhs (a later version's): the link says "Sharp pixels", as /s draws
+//    it, and the menu checks no look; OK with only Bars changed keeps
+//    Look=vhs; Sharp pixels picked writes Look=sharp;
+//  * no ShaderPreset: no preset in the menu; Look=preset stays, the preset's
+//    command posted or not;
+//  * Preview after CRT monitor and Ambient glow are picked (the file saying
+//    sharp and black): its settings file says Look=crt and AmbientBars=1, its
+//    /s draws with them (the saver's "looks: crt, ambient bars: direct3d"),
+//    and Cancel leaves settings.ini as it was;
 //  * renders at 100% and 150%, light, dark and high contrast, at the
 //    first-open and the minimum size (kept as look-<name>.png in the test's
-//    folder): the row under "Stretch to fit", over Sound, in Resolution's and
-//    Monitors' columns, showing what was asked.
+//    folder), the link focused, under the pointer and held down: the link in
+//    the stretch row, inside the card, right of the checkbox's text (which
+//    still fits its part of the row), its text as drawn: whole, or at the
+//    minimum width without ", ambient glow".
 int test_config_look(const Opts& o) {
   Work w = prepare(o, "config-look");
   auto ready = [](DWORD pid) -> HWND {
@@ -7535,49 +7546,102 @@ int test_config_look(const Opts& o) {
     HWND list = d ? GetDlgItem(d, IDC_MODULE_LIST) : nullptr;
     return list && SendMessageW(list, LVM_GETITEMCOUNT, 0, 0) > 0 ? d : nullptr;
   };
-  using Strs = std::vector<std::string>;
-  struct Seen {
-    Strs looks, bars;               // the items
-    int look = -1, bar = -1;        // the selections
-    std::string look_label, bars_label;
-    bool shown = false;
-  };
-  auto see = [](HWND dlg) {
-    Seen s;
-    for (auto [id, items] : {std::pair{IDC_LOOK, &s.looks}, std::pair{IDC_BARS, &s.bars}}) {
-      HWND c = GetDlgItem(dlg, id);
-      for (int i = 0, n = (int)SendMessageW(c, CB_GETCOUNT, 0, 0); i < n; ++i) {
-        wchar_t buf[128] = {};
-        if (SendMessageW(c, CB_GETLBTEXTLEN, i, 0) < 128) SendMessageW(c, CB_GETLBTEXT, i, (LPARAM)buf);
-        items->push_back(narrow(buf));
+  // The popup menu process `pid` shows, or nullptr.
+  auto menu_of = [](DWORD pid) -> HWND {
+    struct Find { DWORD pid; HWND found; } f{pid, nullptr};
+    EnumWindows([](HWND h, LPARAM lp) -> BOOL {
+      auto* f = reinterpret_cast<Find*>(lp);
+      DWORD p = 0;
+      GetWindowThreadProcessId(h, &p);
+      wchar_t cls[32] = {};
+      GetClassNameW(h, cls, 32);
+      if (p == f->pid && IsWindowVisible(h) && wcscmp(cls, L"#32768") == 0) {
+        f->found = h;
+        return FALSE;
       }
+      return TRUE;
+    }, reinterpret_cast<LPARAM>(&f));
+    return f.found;
+  };
+  // Its items, as the window manager keeps them (which any process can read).
+  struct Item {
+    UINT type = 0, state = 0, id = 0;
+    std::string text;
+  };
+  auto items_of = [](HWND menu) {
+    std::vector<Item> v;
+    HMENU m = reinterpret_cast<HMENU>(SendMessageW(menu, MN_GETHMENU, 0, 0));
+    for (int i = 0, n = m ? GetMenuItemCount(m) : 0; i < n; ++i) {
+      wchar_t buf[128] = {};
+      MENUITEMINFOW mi{};
+      mi.cbSize = sizeof(mi);
+      mi.fMask = MIIM_FTYPE | MIIM_STATE | MIIM_ID | MIIM_STRING;
+      mi.dwTypeData = buf;
+      mi.cch = 128;
+      Item it;
+      if (GetMenuItemInfoW(m, (UINT)i, TRUE, &mi)) it = Item{mi.fType, mi.fState, mi.wID, narrow(buf)};
+      v.push_back(it);
     }
-    s.look = (int)SendDlgItemMessageW(dlg, IDC_LOOK, CB_GETCURSEL, 0, 0);
-    s.bar = (int)SendDlgItemMessageW(dlg, IDC_BARS, CB_GETCURSEL, 0, 0);
-    s.look_label = window_text(GetDlgItem(dlg, IDC_LOOK_LABEL));
-    s.bars_label = window_text(GetDlgItem(dlg, IDC_BARS_LABEL));
-    s.shown = IsWindowVisible(GetDlgItem(dlg, IDC_LOOK)) && IsWindowVisible(GetDlgItem(dlg, IDC_BARS));
-    return s;
+    return v;
   };
-  // An item picked as the dialog sees a pick.
-  auto pick = [](HWND dlg, int id, int i) {
-    HWND c = GetDlgItem(dlg, id);
-    SendMessageW(c, CB_SETCURSEL, i, 0);
-    SendMessageW(dlg, WM_COMMAND, MAKEWPARAM(id, CBN_SELCHANGE), (LPARAM)c);
+  auto key = [](HWND menu, UINT vk) {
+    PostMessageW(menu, WM_KEYDOWN, vk, 0);
+    PostMessageW(menu, WM_KEYUP, vk, 0xC0000001);
   };
-  // One dialog: `act` sees it and changes what it will, then OK.
-  auto session = [&](const std::function<void(HWND)>& act) {
-    bool acted = false;
+  // The menu a click on the link opened (posted: the menu keeps the dialog's
+  // thread until it closes), or nullptr while none shows; the click again
+  // after 3 s without one, at most three times (`clicks`).
+  auto opened_menu = [&](DWORD pid, HWND dlg, int* clicks, ULONGLONG* at) -> HWND {
+    if (HWND m = menu_of(pid)) return m;
+    if (*clicks == 0 || (*clicks < 3 && GetTickCount64() - *at > 3000)) {
+      PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDC_LOOK_MENU, BN_CLICKED), (LPARAM)GetDlgItem(dlg, IDC_LOOK_MENU));
+      ++*clicks;
+      *at = GetTickCount64();
+    }
+    return nullptr;
+  };
+  // True once no menu shows; Escape to one still showing a second on, and
+  // each second after.
+  auto closed_menu = [&](DWORD pid, ULONGLONG* at) {
+    HWND m = menu_of(pid);
+    if (!m) return true;
+    if (!*at) *at = GetTickCount64();
+    if (GetTickCount64() - *at > 1000) {
+      key(m, VK_ESCAPE);
+      *at = GetTickCount64();
+    }
+    return false;
+  };
+  auto link_text = [](HWND dlg) { return window_text(GetDlgItem(dlg, IDC_LOOK_MENU)); };
+  // One dialog: `act` is called until it says it is done, then OK.
+  auto session = [&](const std::function<bool(DWORD, HWND)>& act) {
+    bool done = false;
     RunResult r = run_scr(o, L"/c", base_env(o, w), 60000, [&](DWORD pid) {
-      if (acted) return;
+      if (done) return;
       HWND dlg = ready(pid);
-      if (!dlg) return;
-      act(dlg);
+      if (!dlg || !act(pid, dlg)) return;
       PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), (LPARAM)GetDlgItem(dlg, IDOK));
-      acted = true;
+      done = true;
     });
-    CHECK(acted);
+    CHECK(done);
     return expect_exit(w, r, 0);
+  };
+  // The menu's commands as a test posts them (no control: HIWORD 0, lParam 0).
+  auto post = [](HWND dlg, std::initializer_list<UINT> cmds) {
+    for (UINT c : cmds) PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(c, 0), 0);
+  };
+  // True once `ms` have passed since the first call with this `since`.
+  auto waited = [](ULONGLONG* since, ULONGLONG ms) {
+    if (!*since) *since = GetTickCount64();
+    return GetTickCount64() - *since >= ms;
+  };
+  // `text` on the link once the dialog has taken what was posted to it (a
+  // WM_GETTEXT, sent, is answered before posted messages), or whatever it
+  // says after 5 s.
+  auto settle = [&](HWND dlg, const std::string& text, ULONGLONG* since, std::string* seen) {
+    const bool late = waited(since, 5000);
+    *seen = link_text(dlg);
+    return *seen == text || late;
   };
   auto file = [&] {
     std::string text;
@@ -7585,68 +7649,207 @@ int test_config_look(const Opts& o) {
     return text;
   };
   auto has = [](const std::string& text, const char* line) { return text.find(line) != std::string::npos; };
-  const Strs four = {"Sharp pixels", "CRT monitor", "Curved CRT monitor", "Smooth"};
-  Strs five = four;
-  five.push_back("Shader preset: x.slangp");
+  const UINT kLook = MFT_STRING | MFT_RADIOCHECK;   // a look's or a bar's item
+  auto describe = [](const std::vector<Item>& items) {
+    std::string s;
+    for (const Item& i : items) s += "  [" + std::to_string(i.id) + " type=" + std::to_string(i.type) + " state=" +
+                                     std::to_string(i.state) + "] " + i.text + "\n";
+    return s;
+  };
 
-  // ---- Look=crt-curved, AmbientBars=1, ShaderPreset=x.slangp: Smooth and Black picked.
+  // ---- Look=crt-curved, AmbientBars=1, ShaderPreset=x.slangp: the menu, a
+  // pick in it, then Smooth and Black posted.
   edit_settings(w, [](Settings& s) {
     s.look = "crt-curved";
     s.ambient_bars = true;
     s.shader_preset = "x.slangp";
   });
-  Seen first;
-  if (!session([&](HWND dlg) {
-        first = see(dlg);
-        pick(dlg, IDC_LOOK, 3);
-        pick(dlg, IDC_BARS, 0);
-      })) {
-    return 1;
+  {
+    std::string opened, picked, posted;
+    bool shown = false;
+    std::vector<Item> menu;
+    int step = 0, clicks = 0, downs = 0, last = -2;
+    ULONGLONG since = 0, at = 0, key_at = 0, esc_at = 0;
+    if (!session([&](DWORD pid, HWND dlg) {
+          if (step == 0) {
+            opened = link_text(dlg);
+            shown = IsWindowVisible(GetDlgItem(dlg, IDC_LOOK_MENU)) != FALSE;
+            step = 1;
+          } else if (step == 1) {
+            // Down until CRT monitor is lit (each Down taken before the
+            // next; again after a second unanswered), then Enter.
+            HWND m = opened_menu(pid, dlg, &clicks, &at);
+            if (!m) return false;
+            const std::vector<Item> now = items_of(m);
+            if (menu.empty()) menu = now;
+            int lit = -1;
+            for (size_t i = 0; i < now.size(); ++i) {
+              if (now[i].state & MFS_HILITE) lit = (int)i;
+            }
+            if (lit == last && GetTickCount64() - key_at < 1000) return false;
+            if (lit >= 0 && now[(size_t)lit].id == IDM_LOOK_CRT) {
+              key(m, VK_RETURN);
+              step = 2;
+            } else if (++downs > 16) {
+              key(m, VK_ESCAPE);
+              step = 2;
+            } else {
+              key(m, VK_DOWN);
+              last = lit;
+              key_at = GetTickCount64();
+            }
+          } else if (step == 2) {
+            if (!closed_menu(pid, &esc_at)) return false;
+            if (!settle(dlg, "Loo&k: CRT monitor, ambient glow", &since, &picked)) return false;
+            post(dlg, {IDM_LOOK_SMOOTH, IDM_BARS_BLACK});
+            since = 0;
+            step = 3;
+          } else {
+            return settle(dlg, "Loo&k: Smooth", &since, &posted);
+          }
+          return false;
+        })) {
+      return 1;
+    }
+    CHECK(shown && opened == "Loo&k: Curved CRT monitor, ambient glow");
+    const std::vector<std::pair<UINT, std::string>> want = {
+        {0, "Look"},
+        {IDM_LOOK_SHARP, "Sharp pixels"},
+        {IDM_LOOK_CRT, "CRT monitor"},
+        {IDM_LOOK_CRT_CURVED, "Curved CRT monitor"},
+        {IDM_LOOK_SMOOTH, "Smooth"},
+        {IDM_LOOK_PRESET, "Shader preset: x.slangp"},
+        {0, ""},
+        {0, "Bars"},
+        {IDM_BARS_BLACK, "Black"},
+        {IDM_BARS_AMBIENT, "Ambient glow"}};
+    CHECK(menu.size() == want.size());
+    for (size_t i = 0; i < menu.size() && i < want.size(); ++i) {
+      const Item& it = menu[i];
+      CHECK(it.id == want[i].first && it.text == want[i].second);
+      const bool header = i == 0 || i == 7, separator = i == 6;
+      if (separator) CHECK(it.type & MFT_SEPARATOR);
+      else if (header) CHECK(it.type == MFT_STRING && (it.state & MFS_DISABLED) && !(it.state & MFS_CHECKED));
+      else CHECK(it.type == kLook && !(it.state & MFS_DISABLED) && ((it.state & MFS_CHECKED) != 0) == (i == 3 || i == 9));
+    }
+    CHECK(picked == "Loo&k: CRT monitor, ambient glow" && posted == "Loo&k: Smooth");
+    if (clicks > 1) printf("config-look: the menu showed after %d clicks\n", clicks);
+    if (g_failures) fprintf(stderr, "opened \"%s\", picked \"%s\", posted \"%s\"; the menu:\n%s", opened.c_str(),
+                            picked.c_str(), posted.c_str(), describe(menu).c_str());
   }
-  CHECK(first.looks == five && first.bars == (Strs{"Black", "Ambient glow"}));
-  CHECK(first.look == 2 && first.bar == 1 && first.shown);
-  CHECK(first.look_label == "Loo&k" && first.bars_label == "&Bars");
   std::string text = file();
   CHECK(has(text, "Look=smooth\r\n") && has(text, "AmbientBars=0\r\n") && has(text, "ShaderPreset=x.slangp\r\n"));
   CHECK(has(text, "FutureKey=keep me\r\n") && has(text, "Module=test.rings\r\n"));
   Settings s;
   CHECK(load_settings(w.settings.wstring(), s) && s.look == "smooth" && !s.ambient_bars && s.shader_preset == "x.slangp");
 
-  // ---- Look=vhs: "Sharp pixels" shown; only Bars changed: Look stays vhs.
+  // ---- Look=vhs: "Sharp pixels", no look checked; only Bars changed: Look stays vhs.
   edit_settings(w, [](Settings& s) { s.look = "vhs"; });
   CHECK(has(file(), "Look=vhs\r\n"));
-  Seen later;
-  if (!session([&](HWND dlg) {
-        later = see(dlg);
-        pick(dlg, IDC_BARS, 1);
-      })) {
-    return 1;
+  {
+    std::string opened, posted;
+    std::vector<Item> menu;
+    int step = 0, clicks = 0;
+    ULONGLONG since = 0, at = 0, esc_at = 0;
+    if (!session([&](DWORD pid, HWND dlg) {
+          if (step == 0) {
+            opened = link_text(dlg);
+            step = 1;
+          } else if (step == 1) {
+            HWND m = opened_menu(pid, dlg, &clicks, &at);
+            if (!m) return false;
+            menu = items_of(m);
+            key(m, VK_ESCAPE);
+            step = 2;
+          } else if (step == 2) {
+            if (!closed_menu(pid, &esc_at)) return false;
+            post(dlg, {IDM_BARS_AMBIENT});
+            step = 3;
+          } else {
+            return settle(dlg, "Loo&k: Sharp pixels, ambient glow", &since, &posted);
+          }
+          return false;
+        })) {
+      return 1;
+    }
+    CHECK(opened == "Loo&k: Sharp pixels" && posted == "Loo&k: Sharp pixels, ambient glow");
+    if (clicks > 1) printf("config-look: vhs: the menu showed after %d clicks\n", clicks);
+    CHECK(menu.size() == 10);
+    for (size_t i = 1; i < menu.size() && i <= 5; ++i) CHECK(menu[i].type == kLook && !(menu[i].state & MFS_CHECKED));
+    CHECK(menu.size() == 10 && (menu[8].state & MFS_CHECKED) && !(menu[9].state & MFS_CHECKED));
+    if (g_failures) fprintf(stderr, "vhs: opened \"%s\", posted \"%s\"; the menu:\n%s", opened.c_str(), posted.c_str(),
+                            describe(menu).c_str());
   }
-  CHECK(later.looks == five && later.look == 0 && later.bar == 0);
   text = file();
   CHECK(has(text, "Look=vhs\r\n") && has(text, "AmbientBars=1\r\n") && has(text, "ShaderPreset=x.slangp\r\n"));
-  // ...and "Sharp pixels" picked (the item it showed): Look=sharp.
-  if (!session([&](HWND dlg) { pick(dlg, IDC_LOOK, 0); })) return 1;
+  // ...and Sharp pixels picked (what it was drawn as): Look=sharp.
+  {
+    ULONGLONG since = 0;
+    std::string seen;
+    if (!session([&](DWORD, HWND dlg) {
+          if (!since) post(dlg, {IDM_LOOK_SHARP});
+          // Half a second on, the link says the same: only what OK writes changes.
+          if (!waited(&since, 500)) return false;
+          seen = link_text(dlg);
+          return true;
+        })) {
+      return 1;
+    }
+    CHECK(seen == "Loo&k: Sharp pixels, ambient glow");
+  }
   text = file();
   CHECK(has(text, "Look=sharp\r\n") && !has(text, "Look=vhs") && has(text, "AmbientBars=1\r\n"));
 
-  // ---- No ShaderPreset: four looks; Look=preset shows "Sharp pixels" and stays.
+  // ---- No ShaderPreset: no preset in the menu; Look=preset stays, its command posted or not.
   edit_settings(w, [](Settings& s) {
     s.look = "preset";
     s.shader_preset.clear();
   });
-  Seen plain;
-  if (!session([&](HWND dlg) { plain = see(dlg); })) return 1;
-  CHECK(plain.looks == four && plain.look == 0 && plain.bar == 1);
+  {
+    std::string opened, after;
+    std::vector<Item> menu;
+    int step = 0, clicks = 0;
+    ULONGLONG since = 0, at = 0, esc_at = 0;
+    if (!session([&](DWORD pid, HWND dlg) {
+          if (step == 0) {
+            opened = link_text(dlg);
+            step = 1;
+          } else if (step == 1) {
+            HWND m = opened_menu(pid, dlg, &clicks, &at);
+            if (!m) return false;
+            menu = items_of(m);
+            key(m, VK_ESCAPE);
+            step = 2;
+          } else if (step == 2) {
+            if (!closed_menu(pid, &esc_at)) return false;
+            post(dlg, {IDM_LOOK_PRESET});
+            step = 3;
+          } else {
+            if (!waited(&since, 500)) return false;
+            after = link_text(dlg);
+            return true;
+          }
+          return false;
+        })) {
+      return 1;
+    }
+    CHECK(opened == "Loo&k: Sharp pixels, ambient glow" && after == opened);
+    if (clicks > 1) printf("config-look: preset: the menu showed after %d clicks\n", clicks);
+    CHECK(menu.size() == 9 && std::none_of(menu.begin(), menu.end(), [](const Item& i) { return i.id == IDM_LOOK_PRESET; }));
+    for (size_t i = 1; i < menu.size() && i <= 4; ++i) CHECK(!(menu[i].state & MFS_CHECKED));
+    if (g_failures) fprintf(stderr, "preset: opened \"%s\", after \"%s\"; the menu:\n%s", opened.c_str(), after.c_str(),
+                            describe(menu).c_str());
+  }
   text = file();
   CHECK(has(text, "Look=preset\r\n") && has(text, "AmbientBars=1\r\n"));
   CHECK(load_settings(w.settings.wstring(), s) && s.shader_preset.empty());
 
-  // ---- Preview with Look=crt and ambient bars: its /s gets them.
+  // ---- Preview after CRT monitor and Ambient glow are picked (the file
+  // saying sharp and black): its /s gets them, and Cancel leaves the file.
   {
     edit_settings(w, [](Settings& s) {
-      s.look = "crt";
-      s.ambient_bars = true;
+      s.look = "sharp";
+      s.ambient_bars = false;
     });
     const std::string before = file();
     const fs::path tmp = w.dir / "tmp";
@@ -7661,19 +7864,28 @@ int test_config_look(const Opts& o) {
     Sleep(200);   // waiting on the folder before anything is written there
     int step = 0;
     DWORD preview_pid = 0;
+    ULONGLONG since = 0;
+    std::string picked;
     RunResult r = run_scr(o, L"/c", env, 90000, [&](DWORD pid) {
       HWND dlg = ready(pid);
-      if (!dlg || step == 2) return;
+      if (!dlg || step == 3) return;
       if (step == 0) {
-        click(dlg, IDC_PREVIEW);
+        post(dlg, {IDM_LOOK_CRT, IDM_BARS_AMBIENT});
         step = 1;
+        return;
+      }
+      if (step == 1) {
+        // Taken (the link says so), then Preview.
+        if (!settle(dlg, "Loo&k: CRT monitor, ambient glow", &since, &picked)) return;
+        click(dlg, IDC_PREVIEW);
+        step = 2;
         return;
       }
       for (auto& e : hosts_of(w, pid, true)) preview_pid = (DWORD)strtoul(e["ppid"].c_str(), nullptr, 10);
       // The Preview has ended (its test exit) and the dialog took it back.
       if (preview_pid && IsWindowEnabled(GetDlgItem(dlg, IDC_PREVIEW))) {
         PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED), 0);
-        step = 2;
+        step = 3;
       }
     });
     InterlockedExchange(&watch.stop, 1);
@@ -7682,7 +7894,7 @@ int test_config_look(const Opts& o) {
       CHECK(WaitForSingleObject(watcher, 10000) == WAIT_OBJECT_0);
       CloseHandle(watcher);
     }
-    CHECK(step == 2);
+    CHECK(step == 3 && picked == "Loo&k: CRT monitor, ambient glow");
     if (!expect_exit(w, r, 0)) return 1;
     CHECK(has(watch.text, "Look=crt\r\n") && has(watch.text, "AmbientBars=1\r\n"));
     CHECK(has(watch.text, "Module=test.rings\r\n"));
@@ -7696,41 +7908,52 @@ int test_config_look(const Opts& o) {
     }
   }
 
-  // ---- renders (kept as look-<name>.png in the test's folder)
-  edit_settings(w, [](Settings& s) { s.shader_preset = "C:\\Shaders\\crt-royale-fake-bloom-ntsc.slangp"; });
+  // ---- renders (kept as look-<name>.png in the test's folder); the file
+  // says Look=crt, AmbientBars=1 and a long preset.
+  edit_settings(w, [](Settings& s) {
+    s.look = "crt";
+    s.ambient_bars = true;
+    s.shader_preset = "C:\\Shaders\\crt-royale-fake-bloom-ntsc.slangp";
+  });
   struct Render {
     const char* name;
-    std::string state, look, bars;
+    std::string state, text;   // the text the link draws ("": one of the forms the rule allows)
   };
   const std::string base = "mode=single;wait=5000;frames=3;size=";
   const std::vector<Render> renders = {
-      {"light-100", "theme=light;dpi=96;look=crt-curved;bars=1;" + base + "1104x784", "crt-curved", "1"},
-      {"dark-100", "theme=dark;dpi=96;look=smooth;bars=0;" + base + "1104x784", "smooth", "0"},
-      {"light-150", "theme=light;dpi=144;look=preset;bars=1;" + base + "1104x784", "preset", "1"},
-      {"dark-150-focus", "theme=dark;dpi=144;focus=look;" + base + "1104x784", "crt", "1"},
-      {"hc-100", "theme=hc;dpi=96;look=sharp;bars=0;focus=bars;" + base + "1104x784", "sharp", "0"},
-      {"light-100-min", "theme=light;dpi=96;look=preset;" + base + "900x600", "preset", "1"},
-      {"dark-150-min", "theme=dark;dpi=144;look=crt;bars=0;" + base + "900x600", "crt", "0"},
+      {"light-100", "theme=light;dpi=96;look=crt-curved;" + base + "1104x716", "Look: Curved CRT monitor, ambient glow"},
+      {"dark-100-min", "theme=dark;dpi=96;look=crt-curved;" + base + "900x600", "Look: Curved CRT monitor"},
+      {"light-150", "theme=light;dpi=144;look=preset;" + base + "1104x716", ""},
+      {"dark-150-focus", "theme=dark;dpi=144;focus=look;" + base + "1104x716", "Look: CRT monitor, ambient glow"},
+      {"hc-100-hover", "theme=hc;dpi=96;look=sharp;bars=0;hover=look;" + base + "1104x716", "Look: Sharp pixels"},
+      {"light-100-pressed", "theme=light;dpi=96;look=smooth;bars=0;pressed=look;" + base + "1104x716", "Look: Smooth"},
+      {"dark-150-min", "theme=dark;dpi=144;look=preset;" + base + "900x600", ""},
   };
   for (const Render& rd : renders) {
     auto kv = dialog_report(o, w, rd.state);
     const fs::path png = w.dir / (std::string("look-") + rd.name + ".png");
     std::error_code ec;
     fs::copy_file(w.dir / "dialog.png", png, fs::copy_options::overwrite_existing, ec);
-    RECT look{}, bars{}, sb{}, card{}, scale{}, sound{};
-    CHECK(report_rect(kv["look"], &look) && report_rect(kv["bars"], &bars) && report_rect(kv["stretch"], &sb));
-    CHECK(report_rect(kv["options_card"], &card) && report_rect(kv["scale"], &scale) && report_rect(kv["sound"], &sound));
-    CHECK(kv["look_sel"] == rd.look && kv["bars_sel"] == rd.bars && kv["look_items"] == "5");
-    for (const RECT& r : {look, bars}) {
-      CHECK(r.left >= card.left && r.right <= card.right && r.top >= card.top && r.bottom <= card.bottom);
+    printf("config-look: %s: \"%s\"\n", rd.name, kv["look_text"].c_str());
+    RECT link{}, sb{}, card{};
+    CHECK(report_rect(kv["look_link"], &link) && report_rect(kv["stretch"], &sb) && report_rect(kv["options_card"], &card));
+    CHECK(kv["look_fits"] == "1" && kv["stretch_fits"] == "1");
+    // In the stretch row, its end on the card's padding (20 DIP; the box 8 past it).
+    CHECK(link.top == sb.top && link.bottom == sb.bottom && link.left > sb.left && link.right > sb.right);
+    CHECK(link.left >= card.left && link.right < card.right && link.top >= card.top && link.bottom <= card.bottom);
+    if (!rd.text.empty()) {
+      CHECK(kv["look_text"] == rd.text);
+    } else {
+      // The long preset: whole, without the bars, its name ellipsized, or "Look".
+      const std::string whole = "Look: Shader preset: crt-royale-fake-bloom-ntsc.slangp, ambient glow";
+      const std::string& t = kv["look_text"];
+      const bool cut = ends_with(t, "\xE2\x80\xA6") && whole.rfind(t.substr(0, t.size() - 3), 0) == 0;
+      CHECK(t == "Look" || (t.rfind("Look: Shader preset: ", 0) == 0 && (whole.rfind(t, 0) == 0 || cut)));
     }
-    CHECK(look.top > sb.bottom && look.bottom < sound.top && std::abs(look.left - scale.left) <= 1);
-    CHECK(bars.top == look.top && bars.left > look.right && look.right - look.left == scale.right - scale.left);
     if (g_failures) {
-      fprintf(stderr, "%s: look=%s bars=%s stretch=%s options_card=%s scale=%s sound=%s look_sel=%s bars_sel=%s items=%s\n",
-              rd.name, kv["look"].c_str(), kv["bars"].c_str(), kv["stretch"].c_str(), kv["options_card"].c_str(),
-              kv["scale"].c_str(), kv["sound"].c_str(), kv["look_sel"].c_str(), kv["bars_sel"].c_str(),
-              kv["look_items"].c_str());
+      fprintf(stderr, "%s: look_link=%s look_text=%s look_fits=%s stretch=%s stretch_fits=%s options_card=%s\n", rd.name,
+              kv["look_link"].c_str(), kv["look_text"].c_str(), kv["look_fits"].c_str(), kv["stretch"].c_str(),
+              kv["stretch_fits"].c_str(), kv["options_card"].c_str());
       return 1;
     }
   }

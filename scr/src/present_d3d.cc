@@ -28,6 +28,7 @@
 #include "hlsl_core.h"
 #include "hlsl_crt.h"
 #include "hlsl_smooth.h"
+#include "paths.h"
 #include "shader_preset.h"
 
 namespace adw::scr {
@@ -820,6 +821,14 @@ void ensure_preset(Gpu& g, Surfaces& s, const LookOptions& opts) {
   }
 }
 
+// The file ShaderPreset::create() reads for ShaderPreset=`path`: a relative
+// path is taken from the data folder, where settings.ini is, as there.
+std::wstring preset_file(const std::wstring& path) {
+  const bool rooted = (!path.empty() && (path[0] == L'\\' || path[0] == L'/')) ||
+                      (path.size() >= 3 && path[1] == L':' && (path[2] == L'\\' || path[2] == L'/'));
+  return rooted ? path : join_path(app_data_root(), path);
+}
+
 std::string look_text(const LookOptions& opts, const ShaderPreset* preset) {
   std::string text;
   if (opts.look == Look::preset) {
@@ -1178,13 +1187,20 @@ void d3d_simulate_device_loss() {
 bool d3d_prepare(const LookOptions& opts, std::string* why) {
   std::lock_guard<std::recursive_mutex> lock(d3d_lock());
   if (!hw_device(why)) return false;
+  Look look = opts.look;
   if (opts.look == Look::preset) {
-    // The chain is each window's; here only whether librashader is there.
+    // The chain is each window's, built as it first draws: here, whether it
+    // can be (librashader and the preset's file there), and the sharp look
+    // that stands in meanwhile.
     std::string reason;
-    return shader_preset_library(&reason) || fail(why, "shader preset: " + reason);
+    if (!shader_preset_library(&reason)) return fail(why, "shader preset: " + reason);
+    const std::wstring file = preset_file(opts.preset);
+    if (!file_exists(file))
+      return fail(why, "shader preset: the shader preset \"" + narrow_utf8(file.c_str()) + "\" isn't there");
+    look = Look::sharp;
   }
   Surfaces s;
-  if (!compile_look(hw_gpu(), s, opts.look, why)) return false;
+  if (!compile_look(hw_gpu(), s, look, why)) return false;
   if (opts.ambient) {
     for (const char* src : {hlsl::kAmbientDownPs, hlsl::kAmbientBlurPs, hlsl::kAmbientFillPs}) {
       if (!pixel_shader(hw_gpu(), with_prelude(src), "ambient", why)) return false;

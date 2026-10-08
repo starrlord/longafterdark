@@ -83,6 +83,42 @@ float3 texel(int2 p) {
   return Pass0.Load(int3(clamp(p, int2(0, 0), int2(OriginalSize.xy) - 1), 0)).rgb;
 }
 
+// A Gaussian of sigma s, d from its middle (not normalised).
+float gauss(float d, float s) {
+  return exp(-0.5 * d * d / (s * s));
+}
+
+// Row y of the frame through the spot, around frame pixel x = n (f from
+// its centre): the three pixels nearest, `w` their weights, and in a small
+// window more each side, out to r, each weighed by the spot (sigma sx)
+// over `spot`, all its weights' sum.
+float3 across(int n, int y, float f, float3 w, int r, float sx, float spot) {
+  float3 c = w.x * texel(int2(n - 1, y)) + w.y * texel(int2(n, y)) + w.z * texel(int2(n + 1, y));
+  [loop] for (int i = 2; i <= r; ++i) {
+    c += gauss(f + i, sx) / spot * texel(int2(n - i, y));
+    c += gauss(f - i, sx) / spot * texel(int2(n + i, y));
+  }
+  return c;
+}
+
+// The beam's sums down, line by line (main's Down).
+struct Lines {
+  float3 lit;     // with scanlines: each line's beam
+  float3 blend;   // without: the lines blended
+  float total;    // the blend's weights
+};
+
+// A line into the sums: c its row through the spot, dy lines from the
+// screen pixel; its beam's sigma by its brightness, never under `least`,
+// the blend's sb.
+void add_line(inout Lines sum, float3 c, float dy, float sb, float least) {
+  float3 sy = max(lerp(Params[1].y, Params[1].z, sqrt(saturate(c))), least);
+  sum.lit += c * exp(-0.5 * dy * dy / (sy * sy)) / sy;
+  float w = exp(-0.5 * dy * dy / (sb * sb));
+  sum.blend += c * w;
+  sum.total += w;
+}
+
 float4 main(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target {
   // Screen pixels per frame pixel, across and down.
   float2 k = FitRect.zw * OriginalSize.zw;
@@ -110,36 +146,43 @@ float4 main(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target {
   float2 n = floor(s + 0.5);
   float2 f = s - n;
 
+  // How far each side of it a screen pixel reads the frame, across and
+  // down: one pixel while a screen pixel spans at most three (k >= 1/3:
+  // every window from a third of the frame's size up); more in a smaller
+  // window (16 at most), enough to cover all the frame under the screen
+  // pixel, where three would leave whole rows and columns read by none, to
+  // twinkle as things move across them. The three nearest are summed
+  // unrolled, as they always were, and only the further ones loop: a loop
+  // over them all cost a quarter more on an Intel UHD 770.
+  int2 r = (int2)clamp(ceil(0.5 / k - 0.5), 1, 16);
+
   // Across: a soft spot, never narrower than half a screen pixel (a window
-  // smaller than the frame would shimmer).
+  // smaller than the frame would shimmer), its weights summing to 1.
   float sx = max(Params[1].x, 0.5 / k.x);
   float3 dx = float3(f.x + 1, f.x, f.x - 1);
   float3 wx = exp(-0.5 * dx * dx / (sx * sx));
-  wx /= wx.x + wx.y + wx.z;
+  float spot = wx.x + wx.y + wx.z;
+  [loop] for (int i = 2; i <= r.x; ++i) spot += gauss(f.x + i, sx) + gauss(f.x - i, sx);
+  wx /= spot;
 
   // Down: with scanlines, each line a beam of its own, taller where it is
   // bright than where dark (each gun's current sets its beam's height: a
   // saturated blue is a bright blue beam), its light spread over its height,
   // so the gaps show. Scanlines only where a line has room (looks.h,
   // crt_scanline_strength); without, the lines blend into each other as the
-  // spot blends pixels across.
+  // spot blends pixels across. The three lines nearest, then in a small
+  // window more each side, out to r.
   float lines = saturate((k.y - 2.5) / 0.5);
   float sb = max(Params[1].x, 0.5 / k.y);
-  float3 lit = 0;
-  float3 blend = 0;
-  float total = 0;
+  Lines sum = (Lines)0;
   [unroll] for (int j = -1; j <= 1; ++j) {
-    int y = (int)n.y + j;
-    float3 c = wx.x * texel(int2((int)n.x - 1, y)) + wx.y * texel(int2((int)n.x, y)) +
-               wx.z * texel(int2((int)n.x + 1, y));
-    float dy = f.y - j;
-    float3 sy = max(lerp(Params[1].y, Params[1].z, sqrt(saturate(c))), 0.5 / k.y);
-    lit += c * exp(-0.5 * dy * dy / (sy * sy)) / sy;
-    float w = exp(-0.5 * dy * dy / (sb * sb));
-    blend += c * w;
-    total += w;
+    add_line(sum, across((int)n.x, (int)n.y + j, f.x, wx, r.x, sx, spot), f.y - j, sb, 0.5 / k.y);
   }
-  float3 beam = lerp(blend / total, lit * 0.3989423, lines);
+  [loop] for (int d = 2; d <= r.y; ++d) {
+    add_line(sum, across((int)n.x, (int)n.y - d, f.x, wx, r.x, sx, spot), f.y + d, sb, 0.5 / k.y);
+    add_line(sum, across((int)n.x, (int)n.y + d, f.x, wx, r.x, sx, spot), f.y - d, sb, 0.5 / k.y);
+  }
+  float3 beam = lerp(sum.blend / sum.total, sum.lit * 0.3989423, lines);
 
   // The mask, at the screen's own pixels: an aperture grille, stripes of
   // red, green and blue (magenta and green where the screen has fewer

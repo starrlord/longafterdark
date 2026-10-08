@@ -51,8 +51,8 @@ struct PerMonitorChoice {
 };
 PerMonitorChoice per_monitor_choice(bool random, bool all_monitors, int monitors);
 
-// The options card's "Look" (looks.h: how /s and /window draw the frames;
-// the live preview and /p draw as they always have): "Sharp pixels"
+// The looks (looks.h: how /s and /window draw the frames; the live preview
+// and /p draw as they always have), offered by the Look menu: "Sharp pixels"
 // (Look=sharp), "CRT monitor" (crt), "Curved CRT monitor" (crt-curved),
 // "Smooth" (smooth) and, only while the settings name a ShaderPreset (it has
 // no UI of its own), "Shader preset: <its file name>" (preset), in that order.
@@ -62,14 +62,58 @@ struct LookChoice {
   bool operator==(const LookChoice&) const = default;
 };
 std::vector<LookChoice> look_choices(const std::string& shader_preset);
-// The item the dropdown opens on for the file's Look (Settings::look): its
-// look's; "Sharp pixels" for a value this version doesn't know (it draws it
-// as sharp) and for preset without a ShaderPreset. Until the user picks an
-// item, OK writes the file's value back as it was, so a later version's look
+// The look the menu checks for the file's Look (Settings::look): its look's
+// item, or -1, none, for a value this version doesn't know and for preset
+// without a ShaderPreset (/s draws both as sharp). Until the user picks a
+// look, OK writes the file's value back as it was, so a later version's look
 // stays in the file.
-int look_choice_index(const std::vector<LookChoice>& choices, const std::string& look);
-// "Bars" (AmbientBars): "Black" (0, the default) and "Ambient glow" (1).
-inline constexpr const wchar_t* kBarsChoices[] = {L"Black", L"Ambient glow"};
+int look_choice_checked(const std::vector<LookChoice>& choices, const std::string& look);
+// The name the Look link gives the look: the checked item's, and with none
+// checked "Sharp pixels", the look /s draws.
+std::wstring look_choice_name(const std::vector<LookChoice>& choices, int checked);
+
+// The Look menu, which the link at the end of the "Stretch to fit the screen"
+// row opens: a grey "Look" over the looks, a separator, a grey "Bars" over
+// "Black" (AmbientBars=0, the default) and "Ambient glow" (1); the looks and
+// the bars are each a group of radio items with the current ones checked
+// (`checked`: look_choice_checked). Top to bottom.
+struct LookMenuItem {
+  enum Kind { header, look, bars, separator } kind = header;
+  std::wstring text;                 // the item's text (a '&' in a file name doubled, so it shows as one)
+  Look value = Look::sharp;          // kind look: the look it picks
+  bool ambient = false;              // kind bars: Ambient glow (else Black)
+  bool checked = false;
+  bool operator==(const LookMenuItem&) const = default;
+};
+std::vector<LookMenuItem> look_menu_items(const std::vector<LookChoice>& choices, int checked, bool ambient);
+
+// The link that opens the menu, "Loo&k: Curved CRT monitor, ambient glow" and
+// a chevron, in the options card at the end of the "Stretch to fit the
+// screen" row (WindowLayout::look_link), in the dialog's link look (adw_ui's
+// ButtonRole::subtle, as "Restore defaults": the body face in the accent
+// text colour, its box kLinkPad past its text and chevron, a fill on hover
+// and a deeper one pressed, the focus ring around it) with About's "More"
+// chevron (E70D, 12 DIP) 4 DIP after its text. Its text, right-aligned on the
+// card's padding: "Loo&k: " and the look's name (look_choice_name), and
+// ", ambient glow" after it while Bars is Ambient glow; where that doesn't fit
+// beside the checkbox's text, without ", ambient glow", then with the look's
+// name ellipsized ("Loo&k: Shader preset: crt-roy…"), and when not a letter of
+// it fits, "Loo&k" alone. Its window text, which screen readers read, is the
+// whole text.
+inline constexpr wchar_t kLookLinkLead[] = L"Loo&k";   // Alt+K: no other control of the dialog takes K
+inline constexpr wchar_t kLookLinkAmbient[] = L", ambient glow";
+inline constexpr int kLookLinkGapDip = 24;       // its text clear of the checkbox's
+inline constexpr int kLookLinkChevronDip = 16;   // the chevron after its text: 4 DIP, then its 12-DIP glyph
+// The whole text (a '&' in the look's name doubled, so it shows as one).
+std::wstring look_link_text(const std::wstring& look, bool ambient);
+// The text that fits `room` px (`measure`: a text's width in px, as drawn,
+// its "&" an underline). `fits` false only when not even "Loo&k" does.
+struct LookLinkText {
+  std::wstring text;
+  bool fits = true;
+};
+LookLinkText fit_look_link_text(const std::wstring& look, bool ambient, int room,
+                                const std::function<int(const std::wstring&)>& measure);
 
 // The Random mode line under the module list: "All 84 in rotation" /
 // "12 of 84 in rotation" / "None in rotation". `runnable` is how many of the
@@ -178,20 +222,16 @@ struct Rc {
 
 // Design sizes, DIPs.
 // The first-open heights carry the options card's "Stretch to fit" row (36
-// DIPs over 680 and 800) and its Look and Bars row (68 more), so the preview
-// keeps its size. 1104 wide: a row of the strip holds kStripMaxCols regular
-// covers (8 * 104 - 8 = 824 DIP of tiles, from 1088), and the edges stay on
-// the 4-DIP grid. The minimums are as they were (with the strip, 680 is all a
-// 1366x768 screen holds): there the details card gives up the room, its
-// preview at its smallest already, the module's settings scrolling a row at a
-// time and "Restore defaults" giving way to them (WindowLayout::defaults).
-inline constexpr int kDesignClientW = 1104, kDesignClientH = 784;   // first-open client size
+// DIPs over 680 and 800), so the preview keeps its size. 1104 wide: a row of
+// the strip holds kStripMaxCols regular covers (8 * 104 - 8 = 824 DIP of
+// tiles, from 1088), and the edges stay on the 4-DIP grid.
+inline constexpr int kDesignClientW = 1104, kDesignClientH = 716;   // first-open client size
 inline constexpr int kMinClientW = 900, kMinClientH = 600;          // the window can't shrink past this
 // With the box-cover strip (two or more releases, COVERS.md §1.2): the
-// regular band on top of those (one row of covers: 904), and a compact band
+// regular band on top of those (one row of covers: 836), and a compact band
 // below kStripCompactBelow (one row; the regular rows need as much more as
 // their band is taller than one row's). The minimum holds one compact row.
-inline constexpr int kDesignClientHStrip = 904, kMinClientHStrip = 680, kStripCompactBelow = 760;
+inline constexpr int kDesignClientHStrip = 836, kMinClientHStrip = 680, kStripCompactBelow = 760;
 
 // ---- the box-cover strip (COVERS.md §1.2, §1.3) ------------------------------------
 // One 4:5 tile per release across the top of the content column, left-aligned,
@@ -306,6 +346,9 @@ struct LayoutInput {
   // Text widths (DIPs) of "Select all" and "Clear", so that their text, not
   // their boxes, lines up with the list card's right edge. 0 = a typical width.
   int link_all_w = 0, link_none_w = 0;
+  // Text width (DIPs) of "Stretch to fit the screen (no black bars)": the
+  // Look link has the rest of its row. 0 = a typical width.
+  int stretch_text_w = 0;
   // The module's name on one line, or (too long for the column even in the
   // smaller face) wrapped onto two, with its chips under them.
   int title_lines = 1;
@@ -341,18 +384,17 @@ struct WindowLayout {
   Rc defaults;                      // "Restore defaults" at the column's foot, centred on the credits'
                                     // first line (the dialog lifts it to just under the last row of
                                     // settings when they all fit); its glyph sits on the column's
-                                    // edge (the box starts kLinkPad before). Empty in a window too
-                                    // short for kPanelRowMinDip of panel over it: the panel then
-                                    // reaches the column's foot (the dialog hides the link)
-  // Options card: three rows of two, each labelled and at the start of its
-  // half of the card -- Resolution and Monitors; Look and Bars (looks.h);
-  // then Sound (a dropdown) and Volume (a slider with its readout at the end
-  // of its label row) -- with "Stretch to fit the screen" across the card
-  // between the first two, and a caption line under them saying where sound
-  // plays (AUDIO.md §9).
+                                    // edge (the box starts kLinkPad before)
+  // Options card: two rows of two, each labelled and at the start of its half
+  // of the card -- Resolution and Monitors, then Sound (a dropdown) and
+  // Volume (a slider with its readout at the end of its label row) -- with
+  // "Stretch to fit the screen" across the card between them, and a caption
+  // line under them saying where sound plays (AUDIO.md §9).
   Rc scale_label, scale, monitors_label, monitors;
   Rc stretch;                       // the "Stretch to fit" checkbox, its box at the card's padding
-  Rc look_label, look, bars_label, bars;
+  Rc look_link;                     // the rest of its row, where the Look link's box goes (right-aligned:
+                                    // layout_look_link): from kLookLinkGapDip past the checkbox's text
+                                    // (less kLinkPad) to kLinkPad past the card's padding
   Rc sound_label, sound, volume_label, volume_value, volume, sound_note;
   // Footer.
   Rc assets, import, preview_button, ok, cancel;
@@ -371,10 +413,24 @@ WindowLayout layout_window(const LayoutInput& in);
 // The client height the window first opens at (DIPs): kDesignClientH, and
 // with the strip (two or more releases) the band of its regular covers'
 // rows at the first-open width over it, so the columns have their design
-// heights: 904 (kDesignClientHStrip) for one row of covers (up to eight
-// releases), 1020 for two (up to sixteen), 1136 for three (up to
-// twenty-four: the twenty releases' 8, 8 and 4).
+// heights: 836 (kDesignClientHStrip) for one row of covers (up to eight
+// releases), 952 for two (up to sixteen), 1068 for three (up to twenty-four:
+// the twenty releases' 8, 8 and 4).
 int design_client_h(int strip_tiles);
+
+// The Look link in WindowLayout::look_link (pixels): its text as it fits
+// (fit_look_link_text, `measure` in the body face), its box right-aligned
+// there, as tall as the row, the text from kLinkPad into it and the chevron
+// ending kLinkPad short of its end, so they end on the card's padding.
+// Nothing (`box` empty, `fits` false) when the row has no room left.
+struct LookLinkLayout {
+  std::wstring text;                // as drawn
+  bool fits = true;                 // false: not even "Loo&k" fits (drawn cut, with an ellipsis)
+  Rc box;                           // hover fill, focus ring (outside it), clicks
+  Rc label, chevron;                // the text's box and the chevron's (12 DIP wide)
+};
+LookLinkLayout layout_look_link(const WindowLayout& L, const std::wstring& look, bool ambient,
+                                const std::function<int(const std::wstring&)>& measure);
 
 // ---- the footer's credit ---------------------------------------------------------------
 // "Made With Love by StarrLord" in the footer, in the free space between the
@@ -431,9 +487,6 @@ PanelLayout layout_panel(const std::vector<Control>& controls, int width, int dp
                          const std::vector<bool>* live_buttons = nullptr);
 // A live module button's width: its text plus padding, within the column.
 inline constexpr double kPanelButtonMinDip = 120, kPanelButtonPadDip = 24;
-// The least panel "Restore defaults" leaves over it (WindowLayout::defaults):
-// a row of a label and a control (56 DIP) and its focus ring.
-inline constexpr double kPanelRowMinDip = 60;
 // A catalog name with nothing to show: only spaces and colons.
 bool blank_label(const std::string& name);
 

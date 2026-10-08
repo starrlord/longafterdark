@@ -71,15 +71,21 @@
 // "Stretch to fit the screen" (Settings::stretch_to_fit), across the options
 // card under Resolution and Monitors (ui_model.h: WindowLayout::stretch).
 #define IDC_STRETCH         1044
-// The looks (looks.h), a row of two dropdowns under "Stretch to fit": "Look"
-// (Settings::look: Sharp pixels / CRT monitor / Curved CRT monitor / Smooth,
-// and "Shader preset: <file>" while ShaderPreset names one) and "Bars"
-// (Settings::ambient_bars: Black / Ambient glow). ui_model.h: look_choices,
-// WindowLayout::look and ::bars.
-#define IDC_LOOK_LABEL      1045
-#define IDC_LOOK            1046
-#define IDC_BARS_LABEL      1047
-#define IDC_BARS            1048
+// The looks (looks.h): "Look: <the look> ⌄", a link at the end of the
+// "Stretch to fit" row (ui_model.h: WindowLayout::look_link), opens the Look
+// menu (look_menu_items): the looks (Settings::look: Sharp pixels / CRT
+// monitor / Curved CRT monitor / Smooth, and "Shader preset: <file>" while
+// ShaderPreset names one) and the bars (Settings::ambient_bars: Black /
+// Ambient glow). The dialog takes the menu's commands as WM_COMMAND too, so a
+// test can post them. IDM_LOOK_SHARP + a Look (looks.h) is that look's.
+#define IDC_LOOK_MENU       1045
+#define IDM_LOOK_SHARP      1100
+#define IDM_LOOK_CRT        1101
+#define IDM_LOOK_CRT_CURVED 1102
+#define IDM_LOOK_SMOOTH     1103
+#define IDM_LOOK_PRESET     1104
+#define IDM_BARS_BLACK      1110
+#define IDM_BARS_AMBIENT    1111
 #define IDC_COVER_TILE_BASE 3000
 
 // Runtime-built controls in the module-settings panel: one block of IDs per

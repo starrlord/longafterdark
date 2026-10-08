@@ -1,8 +1,9 @@
 // scr_unit looks: the CRT look (looks_test.h, hlsl_crt.h): its scanlines
 // come with room for them and go without, its light stays about the sharp
 // look's, the curved glass blacks out the corners, a dot glows but stays
-// put, and nothing lands outside the fit rectangle. Small made-up frames:
-// WARP draws them.
+// put, a thin line shows in a window an eighth of the frame's size, and
+// nothing lands outside the fit rectangle. Small made-up frames: WARP draws
+// them.
 #include "looks_test.h"
 
 #include <algorithm>
@@ -137,9 +138,49 @@ void crt_checks() {
     }
   }
 
-  // Any size: from a window smaller than the frame (k = 0.5) to 8K's k = 9,
-  // the grey comes out about grey, the middle lit (nothing undefined).
-  for (const int eighths : {4, 8, 12, 18, 22, 26, 36, 72}) {
+  // A window under a third of the frame's size (k = 0.25 and 0.125): a
+  // screen pixel reads all the frame under it, so no row or column goes
+  // unseen. A one-pixel white column, then a white row, on black, at every
+  // phase against the screen's pixels: each shows, near where it is, its
+  // peak well above the glow alone (about 20, what a line no screen pixel
+  // reads leaves: three taps a pixel missed one phase in four at 0.25, five
+  // in eight at 0.125).
+  for (const int eighths : {2, 1}) {
+    const int w = 64 * eighths / 8, h = 48 * eighths / 8, period = 8 / eighths;
+    const double k = eighths / 8.0;
+    for (const LookOptions& opts : {kFlat, kCurved}) {
+      for (const bool column : {true, false}) {
+        for (int phase = 0; phase < period; ++phase) {
+          const int at = (column ? 32 : 24) + phase;
+          const Frame line = make_frame8(64, 48, [&](int x, int y) { return (uint8_t)((column ? x : y) == at); },
+                                         {RGBQUAD{0, 0, 0, 0}, RGBQUAD{255, 255, 255, 0}});
+          if (!draw(line, w, h, RectI{0, 0, w, h}, opts, a)) continue;
+          int peak = 0, px = 0, py = 0;
+          for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+              if (luma_at(a, w, x, y) > peak) {
+                peak = luma_at(a, w, x, y);
+                px = x;
+                py = y;
+              }
+            }
+          }
+          const double where = (at + 0.5) * k - 0.5;   // the line's middle, in screen pixels
+          if (peak < 60 || std::fabs((column ? px : py) - where) > 1) {
+            fprintf(stderr, "looks crt: %s at k = %.3f, a %s at %d: peak %d at %d\n", look_name(opts.look), k,
+                    column ? "column" : "row", at, peak, column ? px : py);
+          }
+          LCHECK(peak >= 60);
+          LCHECK(std::fabs((column ? px : py) - where) <= 1);
+        }
+      }
+    }
+  }
+
+  // Any size: from a window an eighth of the frame's size (k = 0.125) to
+  // 8K's k = 9, the grey comes out about grey, the middle lit (nothing
+  // undefined).
+  for (const int eighths : {1, 2, 4, 8, 12, 18, 22, 26, 36, 72}) {
     const int w = 64 * eighths / 8, h = 48 * eighths / 8;
     for (const LookOptions& opts : {kFlat, kCurved}) {
       if (!draw(grey, w, h, RectI{0, 0, w, h}, opts, a)) continue;
