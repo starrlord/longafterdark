@@ -134,12 +134,11 @@ and start of day.
   Castaway's **Setup...** that open the module's original settings windows.
 - **A modern settings window.** It follows Windows' light or dark mode,
   shows each release's box cover, and has a live preview.
-- **Looks, off unless you choose them.** The modules can be drawn as on a
-  1990s CRT monitor, flat or behind curved glass, or smoothed for cartoon
-  art; the bars beside a 4:3 module can show a soft glow of its picture
-  instead of black; and a RetroArch shader preset of your own can draw
-  them, through librashader, which you supply. Otherwise every pixel is
-  drawn sharp, as before.
+- **Looks.** Keep the original, unaltered sharp pixels, or have the
+  modules drawn as on a 1990s CRT monitor (flat or behind curved glass),
+  smoothed for cartoon art, or through a RetroArch shader preset of your
+  own; the bars beside a 4:3 module can glow with its picture instead of
+  black. Each is off unless you choose it: see [Looks](#looks).
 
 On Linux you get the modules, their sound and their games, but not the
 settings window, the looks or the modules' own options (see
@@ -240,9 +239,41 @@ without it, with nine modules.
    (Windows Settings → Personalization → Lock screen → Screen saver), or
    right-click `LongAfterDark.scr` and choose **Configure**. Pick a single
    module, or **Random** and the modules to rotate through and how often.
-   You can also set the resolution, the monitors and the sound. The live
-   preview shows the selected module with your settings, and **Preview**
-   runs it full screen.
+   You can also set the resolution, the monitors, the [look](#looks) and
+   the sound. The live preview shows the selected module with your
+   settings, and **Preview** runs it full screen.
+
+## Looks
+
+The screen saver can draw the modules' pictures in more than one way. In
+the settings window, click **Look: Sharp pixels** at the end of the
+**Stretch to fit the screen** row (or press Alt+K). The menu that opens
+lists the looks and, under them, what fills the bars. Pick one, click
+**OK**, and use **Preview** to see it full screen.
+
+| Look | What you see |
+|---|---|
+| **Sharp pixels** (the default) | The original, unaltered look: every pixel of the module's picture a crisp, square block, scaled to your monitor, the way Long After Dark has always drawn them. |
+| **CRT monitor** | The picture as a 1990s VGA monitor showed it, the kind of screen these modules were drawn for: a soft beam that melts dithering and softens jagged edges, faint scanlines, a fine mask and a little glow. It suits every module, and looks best on a 1440p or 4K monitor; on a 1080p one the scanlines are left out, since they would beat against the monitor's own pixels. |
+| **Curved CRT monitor** | The same, behind curved glass with rounded corners. |
+| **Smooth** | Outlines redrawn as clean curves and diagonals instead of steps (Hyllian's Super-xBR), for flat cartoon art: the Simpsons', the Looney Tunes', Disney's, The Far Side's and Dilbert's modules. Photographs and dithered pictures look better sharp or on the CRT. |
+| **Shader preset: …** | A RetroArch shader preset (`.slangp`) of your own, drawn by [librashader](https://github.com/SnowflakePowered/librashader), which you supply; it shows in the menu once `settings.ini` names one ([how](docs/INSTALL.md#your-own-shader-preset-advanced)). |
+
+The menu's second group, **Bars**, is what fills the bars beside a picture
+that doesn't fill the screen, such as a 640×480 Intermission, Star Wars,
+Star Trek or Johnny Castaway module on a widescreen monitor: **Black** (the
+default, as always), or **Ambient glow**, a blurred, dimmed copy of the
+picture.
+
+With **Sharp pixels** and **Black**, nothing changes: the screen saver
+draws exactly as it always has. The other choices draw on your graphics
+card, through Direct3D 11, on every monitor, and in the
+[window for OBS](#use-it-as-a-be-right-back-screen-in-obs) too. If the
+graphics can't draw a look, or can't draw it fast enough (Smooth on some
+integrated graphics, say), the screen saver goes back to sharp pixels and
+black bars on its own. The settings window's small live preview, and the
+one in Windows' Screen Saver Settings, always show the plain picture;
+**Preview** shows the look.
 
 ## Tips
 
