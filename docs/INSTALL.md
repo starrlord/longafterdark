@@ -405,11 +405,15 @@ have none) and no music, but for Intermission 4.0's Rapping Pig, whose song
 is MIDI. **Preview** plays sound with the values you have not saved yet; the
 small live preview never does.
 
-**Look** and **Bars**, under **Stretch to fit the screen**, change how the
-screen saver draws the modules' pictures. They start at **Sharp pixels** and
-**Black**, the way it has always drawn them, and as long as they stay there
-nothing changes. The other choices draw with your graphics card, through
-Direct3D 11. **Look**:
+The **Look** menu changes how the screen saver draws the modules' pictures.
+Its link, at the end of the **Stretch to fit the screen** row, says what you
+chose: **Look: Sharp pixels**, or **Look: CRT monitor, ambient glow**, say
+(a narrow window shortens it; the menu always shows everything). Click it,
+or press Alt+K, to open the menu. It has two groups, **Look** and **Bars**,
+with the current choice of each checked; pick one and the menu closes, and
+**OK** saves it. They start at **Sharp pixels** and **Black**, the way it
+has always drawn them, and as long as they stay there nothing changes. The
+other choices draw with your graphics card, through Direct3D 11. **Look**:
 
 - **Sharp pixels** (the default): every pixel of the module's picture a
   crisp block.
@@ -435,13 +439,13 @@ Direct3D 11. **Look**:
   crt-lottes.slangp**, only while `settings.ini` names a shader preset of
   your own ([below](#your-own-shader-preset-advanced)).
 
-**Bars** is what fills the bars beside a picture that doesn't fill the
-screen: **Black** (the default), or **Ambient glow**, a blurred, dimmed copy
-of the picture. It is for the modules that always get 640×480
-(Intermission's, Star Wars' among them, both Star Trek releases',
-ScreamSavers', Marvel's and Johnny Castaway) on a widescreen monitor, and
-for After Dark's own on an ultrawide or portrait one; with **Stretch to fit
-the screen** checked, the 640×480 modules have no bars.
+**Bars**, the menu's second group, is what fills the bars beside a picture
+that doesn't fill the screen: **Black** (the default), or **Ambient glow**,
+a blurred, dimmed copy of the picture. It is for the modules that always
+get 640×480 (Intermission's, Star Wars' among them, both Star Trek
+releases', ScreamSavers', Marvel's and Johnny Castaway) on a widescreen
+monitor, and for After Dark's own on an ultrawide or portrait one; with
+**Stretch to fit the screen** checked, the 640×480 modules have no bars.
 
 The live preview in the settings window, its module pictures and the small
 preview in Screen Saver Settings always show the plain picture, with black
@@ -495,7 +499,7 @@ while you are away. From PowerShell, in the programs' folder:
 The switches go in any order, and `-` works as well as `/`. With neither
 `/module` nor `/random`, the window shows what the screen saver would. Each
 module's own settings (its options, Intermission 4.0's Speed), the
-Resolution, **Stretch to fit the screen**, **Look**, **Bars** and the sound
+Resolution, **Stretch to fit the screen**, the **Look** menu and the sound
 apply as they do to the screen saver; the monitor settings don't, as it is
 one window. Every module starts on black, never on a picture of your
 desktop. With `/window`, a switch it doesn't know, a size out of range or a
@@ -571,7 +575,7 @@ librashader.
    `[Saver]` in `settings.ini` (in `%LOCALAPPDATA%\LongAfterDark`), such as
    `ShaderPreset=C:\Shaders\slang-shaders\crt\crt-lottes.slangp` (a
    relative path is taken from that folder).
-4. Open the settings window: **Look** now offers **Shader preset:
+4. Open the settings window: the **Look** menu now offers **Shader preset:
    crt-lottes.slangp**. Choose it, and try it with **Preview**.
 
 Not every preset suits the modules' 480-line pictures: crt-royale, for

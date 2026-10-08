@@ -547,7 +547,7 @@ its own, the settings window's "A different module on each monitor"),
 bars; 1: its frame fills each monitor, the settings window's "Stretch to fit
 the screen"; never in `/p`), `Look=sharp|crt|crt-curved|smooth|preset` and
 `AmbientBars=1|0` (default `sharp` and 0, the frames drawn as they always
-were; the settings window's "Look" and "Bars"; `/s` and `/window` only,
+were; the settings window's Look menu; `/s` and `/window` only,
 below), `ShaderPreset=<path of a .slangp>` (no UI; `Look=preset`'s
 RetroArch preset), `StartFromDesktop=1|0` (no UI;
 INTERACTION.md §8), `Collections=<package id>,…` (the box-strip filter;

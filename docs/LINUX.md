@@ -50,9 +50,9 @@ Different:
 * **No games under XScreenSaver.** XScreenSaver ends the screen saver on
   any key or mouse move; the games are played in `longafterdark`'s own
   full-screen mode.
-* **No looks.** The Windows settings window's **Look** and **Bars** (a CRT
+* **No looks.** The Windows settings window's **Look** menu (a CRT
   monitor, Smooth, an ambient glow in the bars, a shader preset of your
-  own) are for Windows only: the player draws every frame in sharp pixels
+  own) is for Windows only: the player draws every frame in sharp pixels
   between black bars.
 * **Your files** are in other places ([Your files](#your-files)).
 

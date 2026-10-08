@@ -358,7 +358,7 @@ imports all fourteen releases from made-up sources.
   checked in the log and in `AD_SCR_TEST_CAPTURE`'s pictures, so it holds
   on a desktop that is never shown; without Direct3D 11 it checks what it
   can and reports SKIP) and `scr_smoke_config-look` (the
-  settings window's **Look** and **Bars**). While the monitors
+  settings window's **Look** menu). While the monitors
   are asleep the saver pauses its hosts, and every smoke test that runs a
   `/s` times out: set `AD_SCR_TEST_DISPLAY_ON=1` for the run, a lever only
   the test build, `LongAfterDark-test.scr`, reads (`scr_resources` checks
