@@ -186,10 +186,10 @@ std::vector<DurationChoice> duration_choices(int current) {
   return out;
 }
 
-PerMonitorChoice per_monitor_choice(bool random, bool all_monitors, int monitors) {
+PerMonitorChoice per_monitor_choice(bool random, bool all_monitors, int monitors, bool span_monitors) {
   PerMonitorChoice c;
   c.shown = random && monitors > 1;
-  c.enabled = c.shown && all_monitors;
+  c.enabled = c.shown && all_monitors && !span_monitors;
   return c;
 }
 

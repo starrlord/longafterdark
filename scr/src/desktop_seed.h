@@ -59,6 +59,11 @@ using SeedTake = std::function<void(size_t shot, const std::vector<uint8_t>& p6)
 // when the capture fails.
 void capture_monitor_shots(const RECT& monitor, const std::vector<SeedShot>& shots, const SeedTake& take);
 
+// Captures multiple monitors into their positions within `bounds` on one
+// composite bitmap (areas outside any monitor stay black), then shrinks `shots`.
+void capture_spanned_shots(const RECT& bounds, const std::vector<RECT>& monitors,
+                           const std::vector<SeedShot>& shots, const SeedTake& take);
+
 // The shots' pictures from a monitor's picture already in `src` (a DC whose
 // bitmap holds its mw x mh pixels): each part shrunk or stretched with
 // HALFTONE, handed to `take` one by one, in order.

@@ -266,6 +266,7 @@ int count_monitors(size_t layout) {
 
 // The Monitors dropdown says "All monitors" (not "Primary monitor only").
 bool monitors_all(const State& st) { return SendDlgItemMessageW(st.dlg, IDC_MONITORS, CB_GETCURSEL, 0, 0) != 1; }
+bool monitors_spanned(const State& st) { return SendDlgItemMessageW(st.dlg, IDC_MONITORS, CB_GETCURSEL, 0, 0) == 2; }
 
 const Module* shown_module(const State& st) {
   return st.shown >= 0 && st.shown < (int)st.catalog.modules.size() ? &st.catalog.modules[st.shown] : nullptr;
@@ -815,7 +816,7 @@ void layout(State& st) {
   const bool rotation = st.random && rows;
   LayoutInput in{cr.right, cr.bottom, st.theme.dpi, rotation};
   // Under it, with several monitors: "A different module on each monitor".
-  in.per_monitor = rotation && per_monitor_choice(st.random, monitors_all(st), st.monitors).shown;
+  in.per_monitor = rotation && per_monitor_choice(st.random, monitors_all(st), st.monitors, monitors_spanned(st)).shown;
   in.strip_tiles = st.strip_on && st.strip ? (int)st.strip->count() : 0;
   {
     // The links' text widths, so their text lines up with the card's edge;
@@ -2314,7 +2315,7 @@ void update_sound(State& st) {
 // keeping its check, while only the primary monitor plays.
 void update_per_monitor(State& st) {
   HWND pm = GetDlgItem(st.dlg, IDC_PER_MONITOR);
-  const bool on = per_monitor_choice(st.random, monitors_all(st), st.monitors).enabled;
+  const bool on = per_monitor_choice(st.random, monitors_all(st), st.monitors, monitors_spanned(st)).enabled;
   if ((IsWindowEnabled(pm) != FALSE) == on) return;
   if (!on && GetFocus() == pm) SetFocus(GetDlgItem(st.dlg, IDC_MONITORS));
   EnableWindow(pm, on);
@@ -2550,6 +2551,7 @@ Settings gather(State& st) {
   LRESULT sel = SendDlgItemMessageW(st.dlg, IDC_SCALE, CB_GETCURSEL, 0, 0);
   if (sel != CB_ERR) s.scale = (double)SendDlgItemMessageW(st.dlg, IDC_SCALE, CB_GETITEMDATA, sel, 0) / 100.0;
   s.all_monitors = monitors_all(st);
+  s.span_monitors = monitors_spanned(st);
   // As it stands, even while hidden (one monitor, Single module) or greyed
   // (Primary monitor only): the file's value stays until the user changes it.
   s.different_per_monitor = IsDlgButtonChecked(st.dlg, IDC_PER_MONITOR) == BST_CHECKED;
@@ -3517,7 +3519,8 @@ void init_dialog(State& st) {
   HWND mon = item(IDC_MONITORS);
   SendMessageW(mon, CB_ADDSTRING, 0, (LPARAM)L"All monitors");
   SendMessageW(mon, CB_ADDSTRING, 0, (LPARAM)L"Primary monitor only");
-  SendMessageW(mon, CB_SETCURSEL, st.settings.all_monitors ? 0 : 1, 0);
+  SendMessageW(mon, CB_ADDSTRING, 0, (LPARAM)L"Single canvas across all monitors");
+  SendMessageW(mon, CB_SETCURSEL, !st.settings.all_monitors ? 1 : (st.settings.span_monitors ? 2 : 0), 0);
   // Random on several monitors: the same module on all of them, or
   // (DifferentPerMonitor=1) a different one on each.
   CheckDlgButton(st.dlg, IDC_PER_MONITOR, st.settings.different_per_monitor ? BST_CHECKED : BST_UNCHECKED);

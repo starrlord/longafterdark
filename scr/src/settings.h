@@ -73,6 +73,7 @@ struct Settings {
   int duration_min = 5;                       // rotation interval; 0 = never rotate
   double scale = 1.0;                         // 1.0 (480-line) or 1.5 (720-line)
   bool all_monitors = true;                   // false = primary only, others black
+  bool span_monitors = false;                 // true = Monitors=spanned (one canvas across all monitors)
   // [Saver] DifferentPerMonitor: when the saver rotates (Random, or a
   // Randomize list) on several monitors, each monitor plays a different
   // module, on a rotation of its own. False, the default (and a file without

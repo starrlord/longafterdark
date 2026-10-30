@@ -26,6 +26,18 @@ struct RectI {
 // framebuffer.
 SizeI emulated_screen_size(double display_aspect, double scale, int base_w = 640, int base_h = 480);
 
+// Emulated screen size for a spanned multi-monitor virtual desktop: caps width
+// at 8192 (and total pixels at 4096x4096, frame_parser.cc's limit) instead of
+// 2x base_w so 2+ side-by-side widescreen monitors keep their true aspect ratio.
+SizeI spanned_emulated_screen_size(double display_aspect, double scale, int base_w = 640, int base_h = 480);
+
+// Bounding union of a list of monitor rectangles.
+RectI virtual_screen_bounds(const std::vector<RectI>& monitors);
+
+// Maps one monitor's `mon` rectangle inside `bounds` (the virtual desktop union)
+// to the corresponding sub-rectangle of a `fw` x `fh` spanned frame.
+RectI spanned_slice_rect(int fw, int fh, const RectI& mon, const RectI& bounds);
+
 // The largest rect with the source's aspect that fits in dst_w x dst_h,
 // centred (the remainder is letterbox/pillarbox).
 RectI fit_rect(int src_w, int src_h, int dst_w, int dst_h);
@@ -72,7 +84,7 @@ struct ModuleScreen {
 SizeI own_screen(std::string_view abi, SizeI catalog_screen = {});
 // The screen of a module whose own screen is `own` (own_screen; {0, 0}: it
 // has none and follows the display).
-ModuleScreen module_screen(SizeI own, double display_aspect, double scale);
+ModuleScreen module_screen(SizeI own, double display_aspect, double scale, bool spanned = false);
 // The same for a catalog entry without "screen": its ABI's rule alone.
 ModuleScreen module_screen(std::string_view abi, double display_aspect, double scale);
 

@@ -310,7 +310,11 @@ Settings parse_settings(std::string_view text) {
     double d = strtod(tmp.c_str(), &end);
     if (end != tmp.c_str() && d >= 0.5 && d <= 4.0) s.scale = d;
   }
-  if (auto* v = ini.get(kSaver, "Monitors")) s.all_monitors = !iequals(trim(*v), "primary");
+  if (auto* v = ini.get(kSaver, "Monitors")) {
+  std::string_view mv = trim(*v);
+  s.all_monitors = !iequals(mv, "primary");
+  s.span_monitors = iequals(mv, "spanned");
+}
   if (auto* v = ini.get(kSaver, "DifferentPerMonitor")) parse_switch(*v, s.different_per_monitor);
   if (auto* v = ini.get(kSaver, "StretchToFit")) parse_switch(*v, s.stretch_to_fit);
   if (auto* v = ini.get(kSaver, "Look"); v && !trim(*v).empty()) s.look = std::string(trim(*v));
@@ -356,7 +360,7 @@ std::string serialize_settings(const Settings& s, std::string_view base) {
   }
   ini.set(kSaver, "DurationMin", std::to_string(std::max(0, s.duration_min)));
   ini.set(kSaver, "Scale", format_scale(s.scale));
-  ini.set(kSaver, "Monitors", s.all_monitors ? "all" : "primary");
+  ini.set(kSaver, "Monitors", !s.all_monitors ? "primary" : (s.span_monitors ? "spanned" : "all"));
   // A value that already says this ("on", "yes", "false") is left as written.
   {
     bool cur = !s.different_per_monitor;

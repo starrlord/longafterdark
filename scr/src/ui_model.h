@@ -49,7 +49,7 @@ struct PerMonitorChoice {
   bool shown = false, enabled = false;
   bool operator==(const PerMonitorChoice&) const = default;
 };
-PerMonitorChoice per_monitor_choice(bool random, bool all_monitors, int monitors);
+PerMonitorChoice per_monitor_choice(bool random, bool all_monitors, int monitors, bool span_monitors = false);
 
 // The looks (looks.h: how /s and /window draw the frames; the live preview
 // and /p draw as they always have), offered by the Look menu: "Sharp pixels"

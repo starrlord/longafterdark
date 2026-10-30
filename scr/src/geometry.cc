@@ -22,6 +22,41 @@ SizeI emulated_screen_size(double display_aspect, double scale, int base_w, int 
   return {w, h};
 }
 
+SizeI spanned_emulated_screen_size(double display_aspect, double scale, int base_w, int base_h) {
+  if (!(scale > 0.0)) scale = 1.0;
+  int h = std::clamp(snap8(base_h * scale), 8, 4096);
+  double a = std::max(display_aspect > 0.0 ? display_aspect : 0.0, (double)base_w / base_h);
+  int max_w = std::min(8192, (int)((4096LL * 4096) / h) & ~7);
+  int w = std::clamp(snap8(h * a), 8, max_w);
+  return {w, h};
+}
+
+RectI virtual_screen_bounds(const std::vector<RectI>& monitors) {
+  if (monitors.empty()) return {};
+  int x0 = monitors[0].x, y0 = monitors[0].y;
+  int x1 = monitors[0].x + monitors[0].w, y1 = monitors[0].y + monitors[0].h;
+  for (size_t i = 1; i < monitors.size(); ++i) {
+    x0 = std::min(x0, monitors[i].x);
+    y0 = std::min(y0, monitors[i].y);
+    x1 = std::max(x1, monitors[i].x + monitors[i].w);
+    y1 = std::max(y1, monitors[i].y + monitors[i].h);
+  }
+  return {x0, y0, std::max(0, x1 - x0), std::max(0, y1 - y0)};
+}
+
+RectI spanned_slice_rect(int fw, int fh, const RectI& mon, const RectI& bounds) {
+  if (fw <= 0 || fh <= 0 || bounds.w <= 0 || bounds.h <= 0) return {0, 0, std::max(0, fw), std::max(0, fh)};
+  int x0 = (int)(((long long)(mon.x - bounds.x) * fw + bounds.w / 2) / bounds.w);
+  int y0 = (int)(((long long)(mon.y - bounds.y) * fh + bounds.h / 2) / bounds.h);
+  int x1 = (int)(((long long)(mon.x + mon.w - bounds.x) * fw + bounds.w / 2) / bounds.w);
+  int y1 = (int)(((long long)(mon.y + mon.h - bounds.y) * fh + bounds.h / 2) / bounds.h);
+  x0 = std::clamp(x0, 0, fw - 1);
+  y0 = std::clamp(y0, 0, fh - 1);
+  x1 = std::clamp(x1, x0 + 1, fw);
+  y1 = std::clamp(y1, y0 + 1, fh);
+  return {x0, y0, x1 - x0, y1 - y0};
+}
+
 RectI fit_rect(int src_w, int src_h, int dst_w, int dst_h) {
   if (src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0) return {0, 0, std::max(dst_w, 0), std::max(dst_h, 0)};
   // Compare cross-products in 64-bit to pick the limiting axis exactly.
@@ -55,9 +90,11 @@ SizeI own_screen(std::string_view abi, SizeI catalog_screen) {
   return SizeI{};
 }
 
-ModuleScreen module_screen(SizeI own, double display_aspect, double scale) {
+ModuleScreen module_screen(SizeI own, double display_aspect, double scale, bool spanned) {
   if (own.w > 0 && own.h > 0) return ModuleScreen{own, true};
-  return ModuleScreen{emulated_screen_size(display_aspect, scale), false};
+  return ModuleScreen{spanned ? spanned_emulated_screen_size(display_aspect, scale)
+                              : emulated_screen_size(display_aspect, scale),
+                      false};
 }
 
 ModuleScreen module_screen(std::string_view abi, double display_aspect, double scale) {

@@ -97,6 +97,45 @@ void capture_monitor_shots(const RECT& monitor, const std::vector<SeedShot>& sho
   }
 }
 
+void capture_spanned_shots(const RECT& bounds,
+                           const std::vector<RECT>& monitors,
+                           const std::vector<SeedShot>& shots,
+                           const SeedTake& take) {
+  const int vw = bounds.right - bounds.left, vh = bounds.bottom - bounds.top;
+  bool taken = false;
+  HDC screen = vw > 0 && vh > 0 && !shots.empty() ? GetDC(nullptr) : nullptr;
+  if (screen) {
+    HDC src = CreateCompatibleDC(screen);
+    void* src_bits = nullptr;
+    HBITMAP src_bmp = src ? make_dib(screen, vw, vh, &src_bits) : nullptr;
+    if (src_bmp) {
+      memset(src_bits, 0, (size_t)vw * vh * 4);
+      HGDIOBJ old_src = SelectObject(src, src_bmp);
+      bool any_blt = false;
+      for (const RECT& m : monitors) {
+        const int mw = m.right - m.left, mh = m.bottom - m.top;
+        if (mw > 0 && mh > 0) {
+          if (BitBlt(src, m.left - bounds.left, m.top - bounds.top, mw, mh,
+                     screen, m.left, m.top, SRCCOPY | CAPTUREBLT)) {
+            any_blt = true;
+          }
+        }
+      }
+      if (any_blt) {
+        shrink_parts(src, vw, vh, shots, take);
+        taken = true;
+      }
+      SelectObject(src, old_src);
+      DeleteObject(src_bmp);
+    }
+    if (src) DeleteDC(src);
+    ReleaseDC(nullptr, screen);
+  }
+  if (!taken) {
+    for (size_t i = 0; i < shots.size(); ++i) take(i, {});
+  }
+}
+
 void shrink_parts(HDC src, int mw, int mh, const std::vector<SeedShot>& shots, const SeedTake& take) {
   HDC dst = src ? CreateCompatibleDC(src) : nullptr;
   for (size_t i = 0; i < shots.size(); ++i) {

@@ -36,6 +36,9 @@ enum class Filter { smooth, nearest };
 // through its palette, a 32-bit one as it is (stride padding dropped).
 void frame_to_bgrx(const Frame& f, std::vector<uint32_t>& out);
 
+// Extracts sub-rectangle `sub` from `src` into `dst` (preserving bpp and palette).
+void crop_frame(const Frame& src, const RectI& sub, Frame& dst);
+
 // GDI: `f` stretched into `fit` on `dc` with HALFTONE (smooth) or
 // COLORONCOLOR (nearest). The bars around `fit` are the caller's.
 void stretch_frame_gdi(HDC dc, const Frame& f, const RectI& fit, Filter filter);

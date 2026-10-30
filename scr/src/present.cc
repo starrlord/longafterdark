@@ -174,6 +174,34 @@ void frame_to_bgrx(const Frame& f, std::vector<uint32_t>& out) {
   }
 }
 
+void crop_frame(const Frame& src, const RectI& sub, Frame& dst) {
+  int x0 = std::clamp(sub.x, 0, std::max(0, src.width - 1));
+  int y0 = std::clamp(sub.y, 0, std::max(0, src.height - 1));
+  int w = std::clamp(sub.w, 1, std::max(1, src.width - x0));
+  int h = std::clamp(sub.h, 1, std::max(1, src.height - y0));
+  dst.width = w;
+  dst.height = h;
+  dst.bpp = src.bpp;
+  if (src.bpp == 8) {
+    dst.stride = (w + 3) & ~3;
+    dst.palette = src.palette;
+    dst.bits.assign((size_t)dst.stride * h, 0);
+    for (int y = 0; y < h; ++y) {
+      memcpy(dst.bits.data() + (size_t)y * dst.stride,
+             src.bits.data() + (size_t)(y0 + y) * src.stride + x0,
+             (size_t)w);
+    }
+  } else {
+    dst.stride = w * 4;
+    dst.bits.resize((size_t)dst.stride * h);
+    for (int y = 0; y < h; ++y) {
+      memcpy(dst.bits.data() + (size_t)y * dst.stride,
+             src.bits.data() + (size_t)(y0 + y) * src.stride + (size_t)x0 * 4,
+             (size_t)w * 4);
+    }
+  }
+}
+
 void stretch_frame_gdi(HDC dc, const Frame& f, const RectI& fit, Filter filter) {
   Bitmapinfo256 bmi{};
   bmi.h.biSize = sizeof(BITMAPINFOHEADER);

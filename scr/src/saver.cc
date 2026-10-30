@@ -325,6 +325,7 @@ class SaverWindow {
   HWND hwnd = nullptr;
   uint64_t presented = 0;
   bool runs_host() const { return runs_host_; }
+  void present_spanned_frame(const Frame& full_frame);
 
  private:
   // The screen a host of module `m` gets in this window (null: a module not
@@ -339,6 +340,7 @@ class SaverWindow {
   void watchdog();
   void rotate();
   void present_latest();
+  void present_frame_slice(const Frame& slice);
   void render(HDC dc);
   bool paint_frame(HDC dc, const Frame& f, bool force_bars);
   // Direct2D (present.h): false when this frame is GDI's to draw.
@@ -631,6 +633,9 @@ class App {
   // rotation and a clock of its own (seeded apart); showing one module
   // chosen, each has that module.
   bool shared = false;
+  bool spanned = false;                    // Monitors=spanned with 2+ monitors
+  RectI virtual_bounds{};                  // union of all monitors when spanned
+  void update_virtual_bounds(const std::vector<Monitor>& mons);
   std::unique_ptr<SharedRotation> rotation;
   bool rotation_none_runs = false;
   UINT rotate_interval_ms = 0;
@@ -881,6 +886,14 @@ void SaverWindow::follow(milliseconds delay) {
   // Blank between modules, as the original randomizer did.
   if (current_) current_.reset();
   InvalidateRect(hwnd, nullptr, FALSE);
+  if (app_.spanned && this == app_.owner()) {
+    for (auto& w : app_.windows) {
+      if (w.get() != this && w->hwnd) {
+        w->current_.reset();
+        InvalidateRect(w->hwnd, nullptr, FALSE);
+      }
+    }
+  }
   failures_ = 0;
   module_shown_ = module_given_up_ = false;
   // Now, or by the watchdog: after `delay`, and not while the display is off.
@@ -897,15 +910,11 @@ void SaverWindow::follow_skip() {
 }
 
 ModuleScreen SaverWindow::screen_for(const Module* m) const {
-  // /p: a thumbnail in someone else's window, 320x240 for every module. The
-  // host renders an output that small through a guest display of at least
-  // 640x480 (host/ne16 "Small screens"), so a 640x480 scene of a module's own
-  // (an Intermission, Star Trek, ScreamSavers or Marvel module's) fills it
-  // too, as it does a 4:3 monitor.
   if (app_.preview) return ModuleScreen{{320, 240}, true};
-  // Its own screen when it has one (its catalog "screen", or its ABI's),
-  // else the Resolution setting on this monitor (/window: on its client
-  // area's shape, as on a monitor of that shape).
+  if (app_.spanned && app_.virtual_bounds.w > 0 && app_.virtual_bounds.h > 0) {
+    const double span_aspect = (double)app_.virtual_bounds.w / app_.virtual_bounds.h;
+    return module_screen(m ? own_screen(m->abi, m->screen) : SizeI{}, span_aspect, app_.settings.scale, true);
+  }
   return module_screen(m ? own_screen(m->abi, m->screen) : SizeI{}, aspect_, app_.settings.scale);
 }
 
@@ -1110,11 +1119,23 @@ OwnerStatus SaverWindow::status() {
 // monitor, and its clicks and moves land on it (Final Exam's mouse move ends
 // its exam).
 POINT SaverWindow::map_cursor(POINT screen) const {
+  if (app_.spanned && app_.virtual_bounds.w > 0 && app_.virtual_bounds.h > 0) {
+    RECT vb{app_.virtual_bounds.x, app_.virtual_bounds.y,
+            app_.virtual_bounds.x + app_.virtual_bounds.w, app_.virtual_bounds.y + app_.virtual_bounds.h};
+    RectI fit = frame_fit(screen_.emu.w, screen_.emu.h, app_.virtual_bounds.w, app_.virtual_bounds.h);
+    return map_to_frame(screen, vb, fit, screen_.emu);
+  }
   RectI fit = frame_fit(screen_.emu.w, screen_.emu.h, rc_.right - rc_.left, rc_.bottom - rc_.top);
   return map_to_frame(screen, rc_, fit, screen_.emu);
 }
 
 RECT SaverWindow::frame_screen() const {
+  if (app_.spanned && app_.virtual_bounds.w > 0 && app_.virtual_bounds.h > 0) {
+    RECT vb{app_.virtual_bounds.x, app_.virtual_bounds.y,
+            app_.virtual_bounds.x + app_.virtual_bounds.w, app_.virtual_bounds.y + app_.virtual_bounds.h};
+    RectI fit = frame_fit(screen_.emu.w, screen_.emu.h, app_.virtual_bounds.w, app_.virtual_bounds.h);
+    return frame_screen_rect(vb, fit);
+  }
   RectI fit = frame_fit(screen_.emu.w, screen_.emu.h, rc_.right - rc_.left, rc_.bottom - rc_.top);
   return frame_screen_rect(rc_, fit);
 }
@@ -1238,39 +1259,34 @@ void SaverWindow::rotate() {
   const std::string& next = own_rotation_->next();
   last_log("rotate window=%d -> %s", index_, next.c_str());
   kill_host(false);
-  // Blank between modules, as the original randomizer did.
+ // Blank between modules, as the original randomizer did.
   if (current_) current_.reset();
   InvalidateRect(hwnd, nullptr, FALSE);
+  if (app_.spanned && this == app_.owner()) {
+    for (auto& w : app_.windows) {
+      if (w.get() != this && w->hwnd) {
+        w->current_.reset();
+        InvalidateRect(w->hwnd, nullptr, FALSE);
+      }
+    }
+  }
   failures_ = 0;
   module_shown_ = module_given_up_ = false;
   respawn_pending_ = false;
   spawn();
 }
 
-void SaverWindow::present_latest() {
-  // Once exiting, leave the frame untaken: that also keeps the reader from
-  // posting more WM_APP_FRAMEs ahead of the pending WM_QUIT.
-  if (!host_ || app_.exiting) return;
-  auto f = host_->take_frame();
-  if (!f) return;
-  if (current_ && same_frame(*current_, *f)) {
-    host_->recycle(std::move(f));
-    ++stat_dups_;
-    ++presented;   // it *is* what's on screen
-    maybe_capture();
-    app_.on_presented();
-    return;
-  }
+void SaverWindow::present_frame_slice(const Frame& f) {
   auto t0 = Clock::now();
   bool halftone_up = false;
   // A minimized /window draws nothing; it keeps the frame for when it is back.
   const bool shown = !(app_.windowed && IsIconic(hwnd));
   // A look draws through Direct3D; without one (or when it gave way), Direct2D.
-  const bool via_d3d = shown && present_d3d(*f);
-  const bool via_d2d = shown && !via_d3d && present_d2d(*f);
+  const bool via_d3d = shown && present_d3d(f);
+  const bool via_d2d = shown && !via_d3d && present_d2d(f);
   if (!via_d3d && !via_d2d && shown) {
     if (HDC dc = GetDC(hwnd)) {
-      halftone_up = paint_frame(dc, *f, false);
+      halftone_up = paint_frame(dc, f, false);
       ReleaseDC(hwnd, dc);
     }
   }
@@ -1281,17 +1297,11 @@ void SaverWindow::present_latest() {
   stat_ms_total_ += ms;
   stat_ms_max_ = std::max(stat_ms_max_, ms);
   if (via_d3d && !d3d_fresh_ && app_.hooks.present != PresentWay::d3d11) {
-    // A shader preset drawn at last, after the sharp look stood in while
-    // its chain was built: its own cost is judged from here, its first
-    // frame (the driver's compiles) in the warm-up.
     if (const uint32_t changes = d3d_->drawn_changes(); changes != d3d_changes_) {
       d3d_changes_ = changes;
       d3d_samples_ = 0;
       d3d_ms_ = 0;
     }
-    // A look the machine can't keep up with (no GPU but a software one, a
-    // weak GPU at 4K) gives way to Direct2D's sharp upscale. Its cost is the
-    // GPU's time where the device times it, else the CPU's, as Direct2D's.
     if (!d3d_->standing_in() && d3d_samples_ < kPresentWarmup + kPresentSamples) {
       const double gpu = d3d_->gpu_ms();
       if (++d3d_samples_ > kPresentWarmup) d3d_ms_ += gpu >= 0 ? gpu : ms;
@@ -1306,8 +1316,6 @@ void SaverWindow::present_latest() {
   }
   if (via_d2d && !d2d_fresh_ && app_.hooks.stretch == Stretch::automatic &&
       app_.hooks.present == PresentWay::automatic && d2d_samples_ < kPresentWarmup + kPresentSamples) {
-    // Direct2D on a machine without a usable GPU (its software rasterizer)
-    // can cost more than GDI: it gives way when it is over budget.
     if (++d2d_samples_ > kPresentWarmup) d2d_ms_ += ms;
     if (d2d_samples_ == kPresentWarmup + kPresentSamples && d2d_ms_ / kPresentSamples > kPresentBudgetMs) {
       log_line("present window=%d direct2d %.1f ms/frame over budget -> gdi", index_, d2d_ms_ / kPresentSamples);
@@ -1324,6 +1332,71 @@ void SaverWindow::present_latest() {
                halftone_ms_ / kPresentSamples);
     }
   }
+}
+
+void SaverWindow::present_spanned_frame(const Frame& full_frame) {
+  if (app_.exiting || !hwnd) return;
+  const RectI mon{(int)rc_.left, (int)rc_.top, (int)(rc_.right - rc_.left), (int)(rc_.bottom - rc_.top)};
+  const RectI sub = spanned_slice_rect(full_frame.width, full_frame.height, mon, app_.virtual_bounds);
+  auto slice = std::make_unique<Frame>();
+  crop_frame(full_frame, sub, *slice);
+  if (current_ && same_frame(*current_, *slice)) {
+    ++stat_dups_;
+    ++presented;
+    maybe_capture();
+    return;
+  }
+  screen_ = ModuleScreen{{slice->width, slice->height}, false};
+  present_frame_slice(*slice);
+  current_ = std::move(slice);
+  ++presented;
+  dead_modules_ = 0;
+  module_shown_ = true;
+  if (!status_.empty()) set_status({});
+  maybe_capture();
+}
+
+void SaverWindow::present_latest() {
+  // Once exiting, leave the frame untaken: that also keeps the reader from
+  // posting more WM_APP_FRAMEs ahead of the pending WM_QUIT.
+  if (!host_ || app_.exiting) return;
+  auto f = host_->take_frame();
+  if (!f) return;
+  if (app_.spanned && this == app_.owner()) {
+    for (auto& w : app_.windows) {
+      if (w.get() != this) w->present_spanned_frame(*f);
+    }
+    const RectI mon{(int)rc_.left, (int)rc_.top, (int)(rc_.right - rc_.left), (int)(rc_.bottom - rc_.top)};
+    const RectI sub = spanned_slice_rect(f->width, f->height, mon, app_.virtual_bounds);
+    auto slice = std::make_unique<Frame>();
+    crop_frame(*f, sub, *slice);
+    host_->recycle(std::move(f));
+    if (current_ && same_frame(*current_, *slice)) {
+      ++stat_dups_;
+      ++presented;
+      maybe_capture();
+      app_.on_presented();
+      return;
+    }
+    present_frame_slice(*slice);
+    current_ = std::move(slice);
+    ++presented;
+    dead_modules_ = 0;
+    module_shown_ = true;
+    if (!status_.empty()) set_status({});
+    maybe_capture();
+    app_.on_presented();
+    return;
+  }
+  if (current_ && same_frame(*current_, *f)) {
+    host_->recycle(std::move(f));
+    ++stat_dups_;
+    ++presented;   // it *is* what's on screen
+    maybe_capture();
+    app_.on_presented();
+    return;
+  }
+  present_frame_slice(*f);
   if (current_) host_->recycle(std::move(current_));
   current_ = std::move(f);
   ++presented;
@@ -1809,6 +1882,15 @@ bool App::load() {
 // Three at most (plan_seed_shots: a catalog may give every module a screen
 // of its own); a first host whose screen has none starts on black
 // (SaverWindow::spawn).
+void App::update_virtual_bounds(const std::vector<Monitor>& mons) {
+  spanned = !preview && !windowed && settings.all_monitors && settings.span_monitors && mons.size() > 1;
+  std::vector<RectI> rects;
+  for (const Monitor& m : mons) {
+    rects.push_back({(int)m.rc.left, (int)m.rc.top, (int)(m.rc.right - m.rc.left), (int)(m.rc.bottom - m.rc.top)});
+  }
+  virtual_bounds = virtual_screen_bounds(rects);
+}
+
 void App::capture_seeds(const std::vector<Monitor>& mons) {
   if (preview || !message.empty()) return;
   if (!settings.start_from_desktop) {
@@ -1817,6 +1899,48 @@ void App::capture_seeds(const std::vector<Monitor>& mons) {
   }
   const std::set<SizeI> owns =
       first_module_screens(settings, catalog, [this](const std::string& id) { return is_available(id); });
+  if (spanned && virtual_bounds.w > 0 && virtual_bounds.h > 0) {
+    const int idx = next_window_index;
+    const int bw = virtual_bounds.w, bh = virtual_bounds.h;
+    std::vector<ModuleScreen> screens;
+    for (const SizeI& own : owns) {
+      screens.push_back(module_screen(own, (double)bw / std::max(1, bh), settings.scale, true));
+    }
+    size_t left_out = 0;
+    const std::vector<SeedShotPlan> plan = plan_seed_shots(screens, bw, bh, &left_out, settings.stretch_to_fit);
+    std::vector<SeedShot> shots;
+    for (const SeedShotPlan& p : plan) shots.push_back(p.same < 0 ? SeedShot{p.src, p.screen.emu} : SeedShot{});
+    std::vector<RECT> mon_rects;
+    for (const Monitor& m : mons) mon_rects.push_back(m.rc);
+    RECT vb{virtual_bounds.x, virtual_bounds.y, virtual_bounds.x + bw, virtual_bounds.y + bh};
+    auto t0 = Clock::now();
+    std::vector<std::wstring> written(plan.size());
+    capture_spanned_shots(vb, mon_rects, shots, [&](size_t i, const std::vector<uint8_t>& p6) {
+      const ModuleScreen& ms = plan[i].screen;
+      const RectI& src = plan[i].src;
+      if (const int same = plan[i].same; same >= 0) {
+        if (written[same].empty()) return;
+        written[i] = written[same];
+        seed_paths[idx].push_back({ms, written[i]});
+        return;
+      }
+      std::wstring path = seed_file_path(GetCurrentProcessId(), idx,
+                                         ms.fixed ? std::to_wstring(ms.emu.w) + L"x" + std::to_wstring(ms.emu.h) : L""),
+                   err;
+      HANDLE h = write_seed_file(path, p6, &err);
+      if (h == INVALID_HANDLE_VALUE) {
+        last_log("seed spanned window=%d: %s", idx, narrow(err).c_str());
+        return;
+      }
+      seed_files.push_back(h);
+      seed_paths[idx].push_back({ms, path});
+      written[i] = path;
+      last_log("seed spanned window=%d %dx%d from %dx%d in %lld ms", idx, ms.emu.w, ms.emu.h, src.w, src.h,
+               (long long)std::chrono::duration_cast<milliseconds>(Clock::now() - t0).count());
+      t0 = Clock::now();
+    });
+    return;
+  }
   int index = next_window_index;
   for (const Monitor& m : mons) {
     ScreenSlot s = slot_for(m);
@@ -1971,6 +2095,7 @@ int App::run() {
     // The last-exit log (INTERACTION.md §9.1): always on, one per /s run.
     last_log_open(last_exit_log_path());
     std::vector<Monitor> mons = monitors();
+     update_virtual_bounds(mons);
     last_log("start /s build=%s %s monitors=%zu module=%s rotates=%d available=%zu/%zu host=%s settings=%s state=%s%s",
              __DATE__, __TIME__, mons.size(), settings.module.c_str(), settings.rotates() ? 1 : 0, available.size(),
              catalog.modules.size(), narrow(host_exe).c_str(), narrow(settings_path()).c_str(),
@@ -2172,6 +2297,7 @@ bool App::embed_wallpaper(const char* why, bool start) {
   // /p's do: per-monitor-v2 for Explorer's, so nothing changes).
   if (DPI_AWARENESS_CONTEXT ctx = GetWindowDpiAwarenessContext(desk.parent)) SetThreadDpiAwarenessContext(ctx);
   std::vector<Monitor> mons = monitors(topology_changes);
+   update_virtual_bounds(mons);
   for (size_t i = 0; i < mons.size(); ++i) {
     const RECT& r = mons[i].rc;
     last_log("monitor %zu: %ld,%ld %ldx%ld%s", i, r.left, r.top, r.right - r.left, r.bottom - r.top,
@@ -2179,7 +2305,7 @@ bool App::embed_wallpaper(const char* why, bool start) {
   }
   for (const Monitor& m : mons) {
     // A monitor the Monitors setting leaves out keeps the desktop's wallpaper.
-    if (!slot_for(m).runs_host) continue;
+    if (!slot_for(m).runs_host && !spanned) continue;
     auto w = make_window(m);
     if (w->create_wallpaper(m.rc, desk)) windows.push_back(std::move(w));
   }
@@ -2486,14 +2612,20 @@ void App::rotation_moved_on(bool was_waiting) {
 }
 
 ScreenSlot App::slot_for(const Monitor& m) const {
-  ScreenSlot s;
-  s.rc = {(int)m.rc.left, (int)m.rc.top, (int)(m.rc.right - m.rc.left), (int)(m.rc.bottom - m.rc.top)};
-  // Hosts on every monitor, or the primary only (the others stay black); the
-  // not-imported / host-missing message goes on the primary alone.
-  s.runs_host = message.empty() && (settings.all_monitors || m.primary);
-  s.message = m.primary && !message.empty();
-  if (s.runs_host && s.rc.w > 0 && s.rc.h > 0) s.emu = emulated_screen_size((double)s.rc.w / s.rc.h, settings.scale);
-  return s;
+ScreenSlot s;
+s.rc = {(int)m.rc.left, (int)m.rc.top, (int)(m.rc.right - m.rc.left), (int)(m.rc.bottom - m.rc.top)};
+// In spanned mode only the primary monitor window spawns adhostwin.exe;
+// secondary monitor windows receive cropped slices of its frames.
+s.runs_host = message.empty() && (spanned ? m.primary : (settings.all_monitors || m.primary));
+s.message = m.primary && !message.empty();
+if (s.runs_host && s.rc.w > 0 && s.rc.h > 0) {
+ if (spanned && virtual_bounds.w > 0 && virtual_bounds.h > 0) {
+   s.emu = spanned_emulated_screen_size((double)virtual_bounds.w / virtual_bounds.h, settings.scale);
+ } else {
+   s.emu = emulated_screen_size((double)s.rc.w / s.rc.h, settings.scale);
+ }
+}
+return s;
 }
 
 std::unique_ptr<SaverWindow> App::make_window(const Monitor& m) {
@@ -2570,6 +2702,7 @@ void App::relayout() {
   }
   if (preview || exiting || windows.empty()) return;
   std::vector<Monitor> mons = monitors(++topology_changes);
+  update_virtual_bounds(mons);
   std::vector<ScreenSlot> now, next;
   for (auto& w : windows) now.push_back(w->slot());
   for (auto& m : mons) next.push_back(slot_for(m));
