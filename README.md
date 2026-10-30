@@ -204,7 +204,8 @@ module of any engine nor a Windows 3.1 program but the set's Windows 95
 program, which Long After Dark runs unchanged, the first 32-bit program it
 runs whole, starting it as the set's screen saver did.
 
-- **Every monitor.** It runs on all your monitors, or only the main one.
+- **Every monitor.** It runs on all your monitors, only the main one, or
+  as a [single canvas](#tips) spanning them all.
 - **Sound.** The modules' sound effects and music, and the Simpsons'
   voices, with one volume setting for all of it (or off).
 - **Games.** Caps Lock starts the games built into some modules, such as
@@ -435,6 +436,13 @@ one in Windows' Screen Saver Settings, always show the plain picture;
   changes it on all of them at once. For a different module on each, check
   **A different module on each monitor** under **Change module every** (it
   shows only when two or more monitors are connected).
+- **Single canvas across all monitors**, a choice in the **Monitors** list,
+  spans your monitors with one picture. One emulated PC draws for all of
+  them, in the shape they make together, and each monitor shows its part, so
+  a flying toaster crosses from one screen to the next. One module plays
+  across them all, so **A different module on each monitor** is off while
+  it is chosen. It needs two or more monitors, and **Preview** shows it full
+  screen.
 - **Intermission modules (Star Wars, Opus 'n Bill, Flintstones, Far Side,
   Dilbert and Intermission's own), Star Trek (both releases), ScreamSavers
   and Marvel modules, Johnny Castaway, Best Shot's and the Monty Python
